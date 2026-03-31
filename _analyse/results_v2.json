@@ -1,0 +1,386 @@
+{
+  "pages": [
+    {
+      "label": "Startseite",
+      "url": "/",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 1,
+        "markers": 9,
+        "polygons": 1,
+        "tables": 0,
+        "buttons": 32,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\01_startseite.png"
+    },
+    {
+      "label": "Revierkarte",
+      "url": "/revier/demo",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 1,
+        "markers": 9,
+        "polygons": 1,
+        "tables": 0,
+        "buttons": 32,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0,
+        "sidebar": 1,
+        "toolbar": 0,
+        "layerButtons": 4,
+        "rightPanel": 0,
+        "poiItems": 25,
+        "popups": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\02_revierkarte.png"
+    },
+    {
+      "label": "Streckenbuch",
+      "url": "/revier/demo/strecke",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 1,
+        "buttons": 4,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\03_streckenbuch.png"
+    },
+    {
+      "label": "Beobachtungen",
+      "url": "/revier/demo/beobachtungen",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 1,
+        "buttons": 4,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\04_beobachtungen.png"
+    },
+    {
+      "label": "Gäste",
+      "url": "/revier/demo/gaeste",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 1,
+        "buttons": 6,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\05_gaeste.png"
+    },
+    {
+      "label": "JES",
+      "url": "/revier/demo/jes",
+      "status": 500,
+      "error": "HTTP 500",
+      "notes": [
+        "Seite liefert HTTP 500",
+        "Next.js Fehler-Overlay sichtbar"
+      ],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 0,
+        "buttons": 14,
+        "inputs": 0,
+        "modals": 1,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\06_jes.png"
+    },
+    {
+      "label": "Drückjagd",
+      "url": "/revier/demo/drueckjagd",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 2,
+        "buttons": 8,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\07_drueckjagd.png"
+    },
+    {
+      "label": "Kalender",
+      "url": "/revier/demo/kalender",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 1,
+        "buttons": 3,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\08_kalender.png"
+    },
+    {
+      "label": "Einstellungen",
+      "url": "/revier/demo/settings",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 0,
+        "buttons": 7,
+        "inputs": 2,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\09_einstellungen.png"
+    },
+    {
+      "label": "Login",
+      "url": "/login",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 0,
+        "buttons": 2,
+        "inputs": 1,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\10_login.png"
+    },
+    {
+      "label": "JES Login",
+      "url": "/jes-login",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 0,
+        "buttons": 2,
+        "inputs": 1,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\11_jes_login.png"
+    },
+    {
+      "label": "Gästelink",
+      "url": "/r/demo",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 1,
+        "markers": 9,
+        "polygons": 1,
+        "tables": 0,
+        "buttons": 1,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0,
+        "hasMap": 1,
+        "loadingStuck": false,
+        "navButton": 1
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\12_gastelink.png"
+    },
+    {
+      "label": "RSVP",
+      "url": "/rsvp/demo",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 0,
+        "markers": 0,
+        "polygons": 0,
+        "tables": 0,
+        "buttons": 13,
+        "inputs": 2,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0,
+        "loadingStuck": false,
+        "formFields": 2
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\13_rsvp.png"
+    },
+    {
+      "label": "Nachsuche",
+      "url": "/ns/demo",
+      "status": 200,
+      "error": null,
+      "notes": [],
+      "elements": {
+        "leafletMap": 1,
+        "markers": 1,
+        "polygons": 1,
+        "tables": 0,
+        "buttons": 1,
+        "inputs": 0,
+        "modals": 0,
+        "toasts": 1,
+        "badges": 0,
+        "cards": 0,
+        "loadingStuck": false,
+        "hasMap": 1
+      },
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots_v2\\14_nachsuche.png"
+    }
+  ],
+  "karteExtras": [
+    {
+      "action": "Sidebar Klick: \"Revierkarte\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Streckenbuch\n12\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Beobachtungen\n5\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Jagdgäste\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Jagderlaubnisse\n4\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick 5",
+      "success": false,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('nav a, aside a, [class*=\"sidebar\"] a, [class*=\"nav\"] a').nth(5)\u001b[22m\n"
+    },
+    {
+      "action": "Sidebar Klick 6",
+      "success": false,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('nav a, aside a, [class*=\"sidebar\"] a, [class*=\"nav\"] a').nth(6)\u001b[22m\n"
+    },
+    {
+      "action": "Sidebar Klick 7",
+      "success": false,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('nav a, aside a, [class*=\"sidebar\"] a, [class*=\"nav\"] a').nth(7)\u001b[22m\n"
+    },
+    {
+      "action": "Layer \"Karte\"",
+      "success": true
+    },
+    {
+      "action": "Layer \"Luftbild\"",
+      "success": true
+    },
+    {
+      "action": "Layer \"Flurstücke\"",
+      "success": true
+    },
+    {
+      "action": "Layer \"Hybrid\"",
+      "success": true
+    },
+    {
+      "action": "Leaflet Container vorhanden",
+      "success": true
+    },
+    {
+      "action": "Karten-Marker: 9 gefunden",
+      "success": true
+    },
+    {
+      "action": "Reviergrenze (Polygone): 1 gefunden",
+      "success": true
+    },
+    {
+      "action": "Marker-Popups: 0 gefunden",
+      "success": false
+    },
+    {
+      "action": "Marker-Klick -> Popup: true",
+      "success": true
+    },
+    {
+      "action": "Share-Modal geöffnet: false",
+      "success": false
+    },
+    {
+      "action": "Mobile Hamburger-Button: false",
+      "success": false
+    },
+    {
+      "action": "Mobile Sidebar versteckt: false",
+      "success": false
+    }
+  ],
+  "timestamp": "2026-03-31T12:00:23.133Z"
+}

@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RevierApp — Revierverwaltung</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+:root {
+  --ra-green-900: #1a3409;
+  --ra-green-800: #2D5016;
+  --ra-green-700: #3a6620;
+  --ra-green-600: #4A7C2E;
+  --ra-green-500: #6B9F3A;
+  --ra-green-100: #E8F0E0;
+  --ra-green-50: #F4F8EF;
+  --ra-dark: #111;
+  --ra-gray-900: #222;
+  --ra-gray-700: #555;
+  --ra-gray-500: #888;
+  --ra-gray-400: #aaa;
+  --ra-gray-300: #ccc;
+  --ra-gray-200: #e5e5e5;
+  --ra-gray-100: #f3f3f3;
+  --ra-gray-50: #f9f9f9;
+  --ra-orange: #E65100;
+  --ra-blue: #1565C0;
+  --ra-red: #c62828;
+  --sidebar-w: 240px;
+  --panel-w: 300px;
+}
+#app { width: 100%; height: 100vh; display: flex; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: white; }
+
+/* SIDEBAR */
+.sidebar { width: var(--sidebar-w); background: var(--ra-green-900); display: flex; flex-direction: column; flex-shrink: 0; color: white; z-index: 10; }
+.sidebar-logo { padding: 18px 18px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.sidebar-logo-icon { width: 32px; height: 32px; border-radius: 8px; background: var(--ra-green-500); display: flex; align-items: center; justify-content: center; font-size: 16px; }
+.sidebar-logo-text { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+.sidebar-logo-text span { color: var(--ra-green-500); }
+.sidebar-section { padding: 16px 16px 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,0.3); }
+.sidebar-nav { flex: 1; padding: 4px 8px; display: flex; flex-direction: column; gap: 1px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.55); transition: all 0.12s; user-select: none; }
+.nav-item:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
+.nav-item.active { background: rgba(107,159,58,0.18); color: white; }
+.nav-item svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.6; }
+.nav-item.active svg { opacity: 1; color: var(--ra-green-500); }
+.nav-badge { margin-left: auto; background: var(--ra-green-600); font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+.sidebar-revier { padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.sidebar-revier:hover { background: rgba(255,255,255,0.04); }
+.revier-dot { width: 8px; height: 8px; border-radius: 50%; background: #4CAF50; flex-shrink: 0; }
+.revier-info { flex: 1; min-width: 0; }
+.revier-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.revier-meta { font-size: 11px; color: rgba(255,255,255,0.35); }
+
+/* MAIN */
+.main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+
+/* VIEWS */
+.view { display: none; flex: 1; flex-direction: column; min-height: 0; }
+.view.active { display: flex; }
+
+/* TOOLBAR (map view) */
+.toolbar { height: 50px; background: white; border-bottom: 1px solid var(--ra-gray-200); display: flex; align-items: center; padding: 0 12px; gap: 4px; flex-shrink: 0; z-index: 5; }
+.tool-group { display: flex; gap: 2px; padding: 0 2px; }
+.tool-group + .tool-group { border-left: 1px solid var(--ra-gray-200); padding-left: 8px; margin-left: 4px; }
+.tool-btn { height: 34px; padding: 0 10px; border-radius: 7px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--ra-gray-700); transition: all 0.1s; white-space: nowrap; }
+.tool-btn:hover { background: var(--ra-gray-100); color: var(--ra-dark); }
+.tool-btn.active { background: var(--ra-green-100); color: var(--ra-green-800); }
+.tool-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.tool-btn.primary { background: var(--ra-green-800); color: white; }
+.tool-btn.primary:hover { background: var(--ra-green-700); }
+.tool-spacer { flex: 1; }
+.layer-toggle { display: flex; background: var(--ra-gray-100); border-radius: 7px; padding: 2px; }
+.layer-opt { padding: 5px 12px; border-radius: 5px; border: none; font-size: 11px; font-weight: 600; cursor: pointer; background: transparent; color: var(--ra-gray-500); transition: all 0.12s; }
+.layer-opt.active { background: white; color: var(--ra-dark); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+/* MAP */
+.map-and-panel { flex: 1; display: flex; min-height: 0; }
+.map-container { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+
+/* RIGHT PANEL */
+.right-panel { width: var(--panel-w); background: white; border-left: 1px solid var(--ra-gray-200); display: flex; flex-direction: column; flex-shrink: 0; z-index: 5; }
+.panel-header { padding: 14px 16px 10px; border-bottom: 1px solid var(--ra-gray-200); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.panel-title { font-size: 14px; font-weight: 600; color: var(--ra-dark); }
+.panel-count { font-size: 11px; color: var(--ra-gray-500); background: var(--ra-gray-100); padding: 2px 8px; border-radius: 10px; }
+.stat-bar { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--ra-gray-200); flex-shrink: 0; }
+.stat-item { text-align: center; flex: 1; }
+.stat-val { font-size: 18px; font-weight: 700; color: var(--ra-green-800); }
+.stat-label { font-size: 10px; color: var(--ra-gray-500); margin-top: 2px; }
+.panel-tabs { display: flex; border-bottom: 1px solid var(--ra-gray-200); padding: 0 16px; flex-shrink: 0; }
+.panel-tab { padding: 10px 0; margin-right: 18px; font-size: 12px; font-weight: 600; color: var(--ra-gray-500); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.12s; }
+.panel-tab.active { color: var(--ra-green-800); border-bottom-color: var(--ra-green-600); }
+.panel-tab:hover { color: var(--ra-dark); }
+.panel-list { flex: 1; overflow-y: auto; }
+.hs-card { padding: 10px 16px; border-bottom: 1px solid var(--ra-gray-100); cursor: pointer; transition: background 0.1s; display: flex; align-items: flex-start; gap: 10px; }
+.hs-card:hover { background: var(--ra-gray-50); }
+.hs-card.selected { background: var(--ra-green-50); border-left: 3px solid var(--ra-green-600); padding-left: 13px; }
+.hs-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.hs-icon.orange { background: #FFF3E0; }
+.hs-icon.green { background: #E8F5E9; }
+.hs-icon.blue { background: #E3F2FD; }
+.hs-details { flex: 1; min-width: 0; }
+.hs-name { font-size: 13px; font-weight: 600; color: var(--ra-dark); }
+.hs-type { font-size: 11px; color: var(--ra-gray-500); margin-top: 2px; }
+.hs-coords { font-size: 10px; color: var(--ra-gray-300); margin-top: 3px; font-family: 'SF Mono', Consolas, monospace; }
+.hs-actions { display: flex; gap: 2px; flex-shrink: 0; margin-top: 2px; }
+.hs-action-btn { width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ra-gray-500); transition: all 0.1s; }
+.hs-action-btn:hover { background: var(--ra-gray-100); color: var(--ra-dark); }
+.hs-action-btn.share:hover { background: var(--ra-green-100); color: var(--ra-green-800); }
+.hs-action-btn svg { width: 14px; height: 14px; }
+.panel-footer { padding: 10px 16px; border-top: 1px solid var(--ra-gray-200); display: flex; gap: 8px; flex-shrink: 0; }
+.panel-footer-btn { flex: 1; padding: 9px; border-radius: 8px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.btn-add { background: var(--ra-green-800); color: white; }
+.btn-add:hover { background: var(--ra-green-700); }
+.btn-import { background: var(--ra-gray-100); color: var(--ra-gray-700); }
+.btn-import:hover { background: var(--ra-gray-200); }
+
+/* MAP MARKERS */
+.leaflet-control-attribution { font-size: 10px !important; }
+.hs-marker-desk { background: none; border: none; }
+.marker-pin { width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; border: 2.5px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+.marker-pin span { transform: rotate(45deg); font-size: 13px; }
+.marker-pin.t-hochsitz { background: var(--ra-orange); }
+.marker-pin.t-kanzel { background: var(--ra-green-600); }
+.marker-pin.t-parking { background: var(--ra-blue); }
+.m-label { position: absolute; top: -8px; left: 36px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--ra-dark); text-shadow: 0 0 4px white, 0 0 4px white, 0 0 4px white, 0 0 4px white; }
+
+/* TOAST */
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ra-dark); color: white; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 500; z-index: 2000; display: none; align-items: center; gap: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); }
+.toast.visible { display: flex; animation: toastIn 0.3s ease; }
+@keyframes toastIn { from { opacity:0; transform: translateX(-50%) translateY(10px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+
+/* SHARE MODAL */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.visible { display: flex; }
+.modal { background: white; border-radius: 16px; width: 440px; max-width: 90vw; padding: 28px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); animation: modalIn 0.25s ease; }
+@keyframes modalIn { from { opacity:0; transform: scale(0.95); } to { opacity:1; transform: scale(1); } }
+.modal h2 { font-size: 18px; font-weight: 700; color: var(--ra-dark); margin-bottom: 4px; }
+.modal p { font-size: 13px; color: var(--ra-gray-500); margin-bottom: 16px; }
+.share-preview { background: var(--ra-gray-50); border-radius: 10px; padding: 16px; font-size: 13px; color: #444; line-height: 1.6; border: 1px solid var(--ra-gray-200); margin-bottom: 16px; }
+.share-preview strong { color: var(--ra-dark); }
+.share-preview .link { color: var(--ra-blue); }
+.modal-btns { display: flex; flex-direction: column; gap: 8px; }
+.btn-whatsapp { width: 100%; padding: 12px; border-radius: 10px; border: none; background: #25D366; color: white; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-whatsapp:hover { background: #20bd5a; }
+.btn-copy-link { width: 100%; padding: 12px; border-radius: 10px; border: 1.5px solid var(--ra-gray-200); background: white; font-size: 14px; font-weight: 500; cursor: pointer; color: var(--ra-dark); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-copy-link:hover { background: var(--ra-gray-50); }
+.btn-cancel { width: 100%; padding: 10px; border-radius: 10px; border: none; background: transparent; font-size: 13px; color: var(--ra-gray-500); cursor: pointer; margin-top: 4px; }
+.btn-cancel:hover { color: var(--ra-dark); }
+
+/* === CONTENT VIEWS (Strecke, Beobachtungen, Gäste, Einstellungen) === */
+.content-view { flex: 1; overflow-y: auto; background: var(--ra-gray-50); }
+.content-header { padding: 28px 32px 20px; background: white; border-bottom: 1px solid var(--ra-gray-200); }
+.content-header h1 { font-size: 22px; font-weight: 700; color: var(--ra-dark); }
+.content-header p { font-size: 13px; color: var(--ra-gray-500); margin-top: 4px; }
+.content-header-actions { display: flex; gap: 8px; margin-top: 16px; }
+.ch-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; border: none; }
+.ch-btn svg { width: 16px; height: 16px; }
+.ch-btn.primary { background: var(--ra-green-800); color: white; }
+.ch-btn.primary:hover { background: var(--ra-green-700); }
+.ch-btn.secondary { background: var(--ra-gray-100); color: var(--ra-gray-700); border: 1px solid var(--ra-gray-200); }
+.ch-btn.secondary:hover { background: var(--ra-gray-200); }
+
+/* Data Table */
+.data-section { padding: 24px 32px; }
+.data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; border: 1px solid var(--ra-gray-200); }
+.data-table th { text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 600; color: var(--ra-gray-500); text-transform: uppercase; letter-spacing: 0.5px; background: var(--ra-gray-50); border-bottom: 1px solid var(--ra-gray-200); }
+.data-table td { padding: 12px 16px; font-size: 13px; color: var(--ra-dark); border-bottom: 1px solid var(--ra-gray-100); vertical-align: middle; }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--ra-gray-50); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge-green { background: var(--ra-green-100); color: var(--ra-green-800); }
+.badge-orange { background: #FFF3E0; color: var(--ra-orange); }
+.badge-blue { background: #E3F2FD; color: var(--ra-blue); }
+.badge-gray { background: var(--ra-gray-100); color: var(--ra-gray-700); }
+.avatar { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.avatar-green { background: var(--ra-green-100); color: var(--ra-green-800); }
+.avatar-orange { background: #FFF3E0; color: var(--ra-orange); }
+.avatar-blue { background: #E3F2FD; color: var(--ra-blue); }
+.row-flex { display: flex; align-items: center; gap: 10px; }
+.text-muted { color: var(--ra-gray-500); font-size: 11px; }
+.text-mono { font-family: 'SF Mono', Consolas, monospace; font-size: 11px; color: var(--ra-gray-400); }
+
+/* Stats cards */
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 24px 32px 0; }
+.stat-card { background: white; border-radius: 10px; padding: 18px; border: 1px solid var(--ra-gray-200); }
+.stat-card-val { font-size: 28px; font-weight: 700; color: var(--ra-green-800); }
+.stat-card-label { font-size: 12px; color: var(--ra-gray-500); margin-top: 4px; }
+.stat-card-change { font-size: 11px; margin-top: 8px; font-weight: 600; }
+.stat-card-change.up { color: var(--ra-green-600); }
+.stat-card-change.down { color: var(--ra-red); }
+
+/* Settings */
+.settings-section { padding: 24px 32px; }
+.settings-group { background: white; border-radius: 10px; border: 1px solid var(--ra-gray-200); margin-bottom: 20px; overflow: hidden; }
+.settings-group-title { padding: 14px 18px; font-size: 13px; font-weight: 600; color: var(--ra-dark); border-bottom: 1px solid var(--ra-gray-200); background: var(--ra-gray-50); }
+.setting-row { padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--ra-gray-100); }
+.setting-row:last-child { border-bottom: none; }
+.setting-label { font-size: 13px; color: var(--ra-dark); }
+.setting-desc { font-size: 11px; color: var(--ra-gray-500); margin-top: 2px; }
+.setting-value { font-size: 13px; color: var(--ra-gray-500); display: flex; align-items: center; gap: 8px; }
+.toggle { width: 42px; height: 24px; border-radius: 12px; background: var(--ra-gray-300); position: relative; cursor: pointer; transition: background 0.2s; }
+.toggle.on { background: var(--ra-green-500); }
+.toggle::after { content: ''; position: absolute; width: 20px; height: 20px; border-radius: 50%; background: white; top: 2px; left: 2px; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+.toggle.on::after { transform: translateX(18px); }
+.text-input { padding: 6px 12px; border: 1px solid var(--ra-gray-200); border-radius: 6px; font-size: 13px; width: 200px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">🌲</div>
+      <div class="sidebar-logo-text">Revier<span>App</span></div>
+    </div>
+    <div class="sidebar-section">Revier</div>
+    <div class="sidebar-nav">
+      <div class="nav-item active" data-view="karte" onclick="switchView('karte', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l6-4 6 4 6-4v14l-6 4-6-4-6 4V7z"/><path d="M9 3v14m6-10v14"/></svg>
+        Revierkarte
+      </div>
+      <div class="nav-item" data-view="strecke" onclick="switchView('strecke', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Streckenbuch
+        <span class="nav-badge">12</span>
+      </div>
+      <div class="nav-item" data-view="beobachtungen" onclick="switchView('beobachtungen', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Beobachtungen
+        <span class="nav-badge">5</span>
+      </div>
+      <div class="nav-item" data-view="gaeste" onclick="switchView('gaeste', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Jagdgäste
+      </div>
+      <div class="nav-item" data-view="jes" onclick="switchView('jes', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Jagderlaubnisse
+        <span class="nav-badge">4</span>
+      </div>
+      <div class="nav-item" data-view="drueckjagd" onclick="switchView('drueckjagd', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+        Drückjagd
+      </div>
+      <div class="sidebar-section" style="margin-top: 12px;">Verwaltung</div>
+      <div class="nav-item" data-view="kalender" onclick="switchView('kalender', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Jagdkalender
+      </div>
+      <div class="nav-item" data-view="settings" onclick="switchView('settings', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Einstellungen
+      </div>
+    </div>
+    <div class="sidebar-revier">
+      <div class="revier-dot"></div>
+      <div class="revier-info">
+        <div class="revier-name">Revier Brockwinkel</div>
+        <div class="revier-meta">Reppenstedt · ~280 ha</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-area">
+
+    <!-- VIEW: REVIERKARTE -->
+    <div class="view active" id="view-karte">
+      <div class="toolbar">
+        <div class="tool-group">
+          <button class="tool-btn active" onclick="setTool(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>Auswählen</button>
+          <button class="tool-btn" onclick="setTool(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 22 22 22"/></svg>Grenze zeichnen</button>
+          <button class="tool-btn" onclick="setTool(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Zone</button>
+        </div>
+        <div class="tool-group">
+          <button class="tool-btn" onclick="setTool(this); showToast('Klicke auf die Karte um einen Hochsitz zu platzieren')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Hochsitz</button>
+          <button class="tool-btn" onclick="setTool(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Foto</button>
+        </div>
+        <div class="tool-group">
+          <button class="tool-btn" onclick="showToast('GPX / KML Import — Dateiauswahl...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>GPX Import</button>
+        </div>
+        <div class="tool-spacer"></div>
+        <div class="layer-toggle">
+          <button class="layer-opt active" onclick="switchLayer('osm',this)">Karte</button>
+          <button class="layer-opt" onclick="switchLayer('aerial',this)">Luftbild</button>
+          <button class="layer-opt" onclick="switchLayer('flur',this)">Flurstücke</button>
+          <button class="layer-opt" onclick="switchLayer('hybrid',this)">Hybrid</button>
+        </div>
+        <div class="tool-group">
+          <button class="tool-btn primary" onclick="openShareModal('Revier Brockwinkel','revierapp.de/r/brockwinkel')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>Revier teilen</button>
+        </div>
+      </div>
+      <div class="map-and-panel">
+        <div class="map-container"><div id="map"></div></div>
+        <div class="right-panel">
+          <div class="panel-header"><div class="panel-title">Revierobjekte</div><div class="panel-count">9</div></div>
+          <div class="stat-bar">
+            <div class="stat-item"><div class="stat-val">7</div><div class="stat-label">Hochsitze</div></div>
+            <div class="stat-item"><div class="stat-val">2</div><div class="stat-label">Parkplätze</div></div>
+            <div class="stat-item"><div class="stat-val">3</div><div class="stat-label">Zonen</div></div>
+          </div>
+          <div class="panel-tabs">
+            <div class="panel-tab active" onclick="switchTab(this)">Hochsitze</div>
+            <div class="panel-tab" onclick="switchTab(this)">Parkplätze</div>
+            <div class="panel-tab" onclick="switchTab(this)">Zonen</div>
+          </div>
+          <div class="panel-list" id="poi-list"></div>
+          <div class="panel-footer">
+            <button class="panel-footer-btn btn-add" onclick="showToast('Klicke auf die Karte um einen Hochsitz zu platzieren')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Hinzufügen</button>
+            <button class="panel-footer-btn btn-import" onclick="showToast('GPX / KML Import...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: STRECKENBUCH -->
+    <div class="view" id="view-strecke">
+      <div class="content-view">
+        <div class="content-header">
+          <h1>Streckenbuch</h1>
+          <p>Dokumentation aller erlegten Stücke im Revier Brockwinkel</p>
+          <div class="content-header-actions">
+            <button class="ch-btn primary" onclick="showToast('Neue Strecke melden — Formular öffnet sich...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Strecke melden</button>
+            <button class="ch-btn secondary" onclick="showToast('PDF-Export wird generiert...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-card-val">12</div><div class="stat-card-label">Gesamt Saison 25/26</div><div class="stat-card-change up">+3 ggü. Vorjahr</div></div>
+          <div class="stat-card"><div class="stat-card-val">5</div><div class="stat-card-label">Rehwild</div><div class="stat-card-change up">Abschussplan: 8</div></div>
+          <div class="stat-card"><div class="stat-card-val">4</div><div class="stat-card-label">Schwarzwild</div><div class="stat-card-change">Kein Limit</div></div>
+          <div class="stat-card"><div class="stat-card-val">3</div><div class="stat-card-label">Raubwild</div><div class="stat-card-change">2 Fuchs, 1 Marder</div></div>
+        </div>
+        <div class="data-section">
+          <table class="data-table">
+            <thead><tr><th>Datum</th><th>Wildart</th><th>Geschlecht</th><th>Gewicht</th><th>Hochsitz</th><th>Jäger</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>28.03.2026</td><td><div class="row-flex"><span>🦌</span> Rehbock</div></td><td>Männlich</td><td>14,2 kg</td><td>Eicheneck</td><td>M. Lampe</td><td><span class="badge badge-green">Gemeldet</span></td></tr>
+              <tr><td>22.03.2026</td><td><div class="row-flex"><span>🐗</span> Frischling</div></td><td>Weiblich</td><td>18,5 kg</td><td>Fuchsbau</td><td>M. Lampe</td><td><span class="badge badge-green">Gemeldet</span></td></tr>
+              <tr><td>15.03.2026</td><td><div class="row-flex"><span>🦊</span> Fuchs</div></td><td>Männlich</td><td>6,1 kg</td><td>Moorkante</td><td>Gast: H. Weber</td><td><span class="badge badge-green">Gemeldet</span></td></tr>
+              <tr><td>08.03.2026</td><td><div class="row-flex"><span>🦌</span> Ricke</div></td><td>Weiblich</td><td>16,8 kg</td><td>Südblick</td><td>M. Lampe</td><td><span class="badge badge-green">Gemeldet</span></td></tr>
+              <tr><td>01.03.2026</td><td><div class="row-flex"><span>🐗</span> Überläufer</div></td><td>Männlich</td><td>42,0 kg</td><td>Birkenweg</td><td>M. Lampe</td><td><span class="badge badge-green">Gemeldet</span></td></tr>
+              <tr><td>18.02.2026</td><td><div class="row-flex"><span>🐗</span> Bache</div></td><td>Weiblich</td><td>55,3 kg</td><td>Lichtung</td><td>Gast: K. Meier</td><td><span class="badge badge-green">Gemeldet</span></td></tr>
+              <tr><td>02.02.2026</td><td><div class="row-flex"><span>🦌</span> Rehbock</div></td><td>Männlich</td><td>15,1 kg</td><td>Waldrand</td><td>M. Lampe</td><td><span class="badge badge-orange">Nachsuche</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: BEOBACHTUNGEN -->
+    <div class="view" id="view-beobachtungen">
+      <div class="content-view">
+        <div class="content-header">
+          <h1>Beobachtungen</h1>
+          <p>Revierbeobachtungen, Wildwechsel, Schäden und Kirrungen</p>
+          <div class="content-header-actions">
+            <button class="ch-btn primary" onclick="showToast('Neue Beobachtung eintragen...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Beobachtung eintragen</button>
+            <button class="ch-btn secondary">Auf Karte anzeigen</button>
+          </div>
+        </div>
+        <div class="data-section">
+          <table class="data-table">
+            <thead><tr><th>Datum</th><th>Typ</th><th>Ort</th><th>Beschreibung</th><th>Jäger</th></tr></thead>
+            <tbody>
+              <tr><td>29.03.2026</td><td><span class="badge badge-orange">Wildschaden</span></td><td>Feld Nordwest</td><td>Schwarzwild-Schaden im Winterweizen, ca. 200m²</td><td>M. Lampe</td></tr>
+              <tr><td>26.03.2026</td><td><span class="badge badge-blue">Wildwechsel</span></td><td>Waldrand Ost</td><td>Regelmäßiger Rehwild-Wechsel zwischen Wald und Feld</td><td>M. Lampe</td></tr>
+              <tr><td>20.03.2026</td><td><span class="badge badge-green">Kirrung</span></td><td>Fuchsbau Süd</td><td>Kirrung aufgefrischt, 5 kg Mais</td><td>M. Lampe</td></tr>
+              <tr><td>14.03.2026</td><td><span class="badge badge-blue">Wildwechsel</span></td><td>Moorkante</td><td>Schwarzwild-Suhle entdeckt, frische Spuren</td><td>Gast: H. Weber</td></tr>
+              <tr><td>08.03.2026</td><td><span class="badge badge-gray">Salzlecke</span></td><td>Lichtung West</td><td>Salzleckstein erneuert</td><td>M. Lampe</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: JAGDGÄSTE -->
+    <div class="view" id="view-gaeste">
+      <div class="content-view">
+        <div class="content-header">
+          <h1>Jagdgäste</h1>
+          <p>Gäste verwalten und einweisen</p>
+          <div class="content-header-actions">
+            <button class="ch-btn primary" onclick="showToast('Neuen Gast anlegen...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Gast einladen</button>
+          </div>
+        </div>
+        <div class="data-section">
+          <table class="data-table">
+            <thead><tr><th>Name</th><th>Telefon</th><th>Letzter Besuch</th><th>Besuche</th><th>Strecke</th><th>Aktionen</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="row-flex"><div class="avatar avatar-green">HW</div><div><strong>Heinrich Weber</strong><div class="text-muted">Jagdschein NI-2024-4829</div></div></div></td>
+                <td>+49 171 234 5678</td><td>15.03.2026</td><td>6</td><td>2 Stück</td>
+                <td><button class="ch-btn secondary" style="padding:5px 12px;font-size:11px;" onclick="openShareModal('Heinrich Weber','revierapp.de/r/brockwinkel')">Einweisen</button></td>
+              </tr>
+              <tr>
+                <td><div class="row-flex"><div class="avatar avatar-blue">KM</div><div><strong>Karl Meier</strong><div class="text-muted">Jagdschein NI-2023-1182</div></div></div></td>
+                <td>+49 172 876 5432</td><td>18.02.2026</td><td>3</td><td>1 Stück</td>
+                <td><button class="ch-btn secondary" style="padding:5px 12px;font-size:11px;" onclick="openShareModal('Karl Meier','revierapp.de/r/brockwinkel')">Einweisen</button></td>
+              </tr>
+              <tr>
+                <td><div class="row-flex"><div class="avatar avatar-orange">FS</div><div><strong>Frank Schmidt</strong><div class="text-muted">Jagdschein SH-2022-7741</div></div></div></td>
+                <td>+49 160 112 3344</td><td>10.01.2026</td><td>1</td><td>0 Stück</td>
+                <td><button class="ch-btn secondary" style="padding:5px 12px;font-size:11px;" onclick="openShareModal('Frank Schmidt','revierapp.de/r/brockwinkel')">Einweisen</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: JAGDERLAUBNISSCHEINE (JES) -->
+    <div class="view" id="view-jes">
+      <div class="content-view">
+        <div class="content-header">
+          <h1>Jagderlaubnisscheine</h1>
+          <p>Begehungsscheine verwalten, Revierteilkarten zuweisen, Kontingente überwachen</p>
+          <div class="content-header-actions">
+            <button class="ch-btn primary" onclick="showToast('Neuen JES anlegen — Formular öffnet sich...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>JES ausstellen</button>
+            <button class="ch-btn secondary" onclick="showToast('PDF-Vorlage wird generiert...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF generieren</button>
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-card-val">4</div><div class="stat-card-label">Aktive JES</div><div class="stat-card-change up">Alle gültig</div></div>
+          <div class="stat-card"><div class="stat-card-val">1</div><div class="stat-card-label">Läuft bald ab</div><div class="stat-card-change down">In 14 Tagen</div></div>
+          <div class="stat-card"><div class="stat-card-val">18/24</div><div class="stat-card-label">Gesamt Kontingent</div><div class="stat-card-change">75% erfüllt</div></div>
+          <div class="stat-card"><div class="stat-card-val">2</div><div class="stat-card-label">Kurz-JES (1-3 Tage)</div><div class="stat-card-change">Diesen Monat</div></div>
+        </div>
+        <div class="data-section">
+          <table class="data-table">
+            <thead><tr><th>Inhaber</th><th>Zone</th><th>Wildarten</th><th>Kontingent</th><th>Gültig bis</th><th>Status</th><th>Aktionen</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="row-flex"><div class="avatar avatar-green">HW</div><div><strong>H. Weber</strong><div class="text-muted">JS NI-2024-4829</div></div></div></td>
+                <td>Nordfeld</td><td>Rehwild (3), Schwarzwild (unbegr.)</td><td>2 / 3 Reh &middot; 1 SW</td><td>31.03.2027</td>
+                <td><span class="badge badge-green">Aktiv</span></td>
+                <td><div style="display:flex;gap:4px;"><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;" onclick="openShareModal('H. Weber — JES','revierapp.de/jes/hw2024')">Link senden</button><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;" onclick="showToast('JES bearbeiten...')">✏️</button></div></td>
+              </tr>
+              <tr>
+                <td><div class="row-flex"><div class="avatar avatar-blue">KM</div><div><strong>K. Meier</strong><div class="text-muted">JS NI-2023-1182</div></div></div></td>
+                <td>Südwald</td><td>Schwarzwild (unbegr.), Fuchs (2)</td><td>3 SW &middot; 1 / 2 Fuchs</td><td>31.03.2027</td>
+                <td><span class="badge badge-green">Aktiv</span></td>
+                <td><div style="display:flex;gap:4px;"><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;" onclick="openShareModal('K. Meier — JES','revierapp.de/jes/km2024')">Link senden</button><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;">✏️</button></div></td>
+              </tr>
+              <tr>
+                <td><div class="row-flex"><div class="avatar avatar-orange">FS</div><div><strong>F. Schmidt</strong><div class="text-muted">JS SH-2022-7741</div></div></div></td>
+                <td>Nordfeld + Moor</td><td>Rehwild (2), Schwarzwild</td><td>1 / 2 Reh &middot; 0 SW</td><td>15.04.2026</td>
+                <td><span class="badge badge-orange">Läuft ab</span></td>
+                <td><div style="display:flex;gap:4px;"><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;">Link senden</button><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;">✏️</button><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;color:var(--ra-orange);" onclick="showToast('JES verlängert bis 31.03.2027')">↻</button></div></td>
+              </tr>
+              <tr>
+                <td><div class="row-flex"><div class="avatar avatar-green">TB</div><div><strong>T. Braun</strong><div class="text-muted">JS NI-2025-0092</div></div></div></td>
+                <td>Gesamtrevier</td><td>Schwarzwild (unbegr.)</td><td>2 SW</td><td>02.04.2026</td>
+                <td><span class="badge badge-blue">Kurz-JES</span></td>
+                <td><div style="display:flex;gap:4px;"><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;">Link senden</button><button class="ch-btn secondary" style="padding:4px 10px;font-size:11px;color:var(--ra-red);" onclick="showToast('⚠ JES entzogen — T. Braun hat keinen Zugang mehr')">Entziehen</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: DRÜCKJAGD -->
+    <div class="view" id="view-drueckjagd">
+      <div class="content-view">
+        <div class="content-header">
+          <h1>Drückjagd-Planung</h1>
+          <p>Gesellschaftsjagden planen, einladen und durchführen</p>
+          <div class="content-header-actions">
+            <button class="ch-btn primary" onclick="showToast('Neue Drückjagd anlegen...')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Drückjagd anlegen</button>
+          </div>
+        </div>
+        <div class="data-section">
+          <div style="background:white;border-radius:10px;border:1px solid var(--ra-gray-200);overflow:hidden;margin-bottom:20px;">
+            <div style="padding:18px 20px;border-bottom:1px solid var(--ra-gray-200);display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <div style="font-size:16px;font-weight:700;color:var(--ra-dark);">Herbstdrückjagd Brockwinkel 2026</div>
+                <div style="font-size:12px;color:var(--ra-gray-500);margin-top:2px;">Samstag, 18. Oktober 2026 &middot; 08:00 – 15:00</div>
+              </div>
+              <span class="badge badge-orange" style="font-size:12px;padding:5px 14px;">Planung</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--ra-gray-200);">
+              <div style="background:white;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:var(--ra-green-800);">3</div><div style="font-size:10px;color:var(--ra-gray-500);">Treiben</div></div>
+              <div style="background:white;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:var(--ra-green-800);">24</div><div style="font-size:10px;color:var(--ra-gray-500);">Stände</div></div>
+              <div style="background:white;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:var(--ra-green-800);">18/24</div><div style="font-size:10px;color:var(--ra-gray-500);">Zusagen</div></div>
+              <div style="background:white;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:var(--ra-green-800);">6</div><div style="font-size:10px;color:var(--ra-gray-500);">Hunde</div></div>
+              <div style="background:white;padding:14px;text-align:center;"><div style="font-size:22px;font-weight:700;color:var(--ra-orange);">3</div><div style="font-size:10px;color:var(--ra-gray-500);">Offen</div></div>
+            </div>
+            <div style="padding:14px 20px;display:flex;gap:8px;border-top:1px solid var(--ra-gray-200);">
+              <button class="ch-btn primary" style="font-size:12px;padding:7px 14px;" onclick="showToast('Treiben & Stände auf Karte bearbeiten...')">🗺️ Treiben planen</button>
+              <button class="ch-btn secondary" style="font-size:12px;padding:7px 14px;" onclick="showToast('RSVP-Link wird generiert...')">📨 Einladungen senden</button>
+              <button class="ch-btn secondary" style="font-size:12px;padding:7px 14px;" onclick="showToast('Schützen werden den Ständen zugewiesen...')">👥 Stände zuweisen</button>
+              <button class="ch-btn secondary" style="font-size:12px;padding:7px 14px;">📋 Teilnehmerliste</button>
+              <button class="ch-btn secondary" style="font-size:12px;padding:7px 14px;">⏱ Zeitplan</button>
+            </div>
+          </div>
+
+          <div style="font-size:13px;font-weight:600;color:var(--ra-dark);margin-bottom:12px;">Treiben-Übersicht</div>
+          <table class="data-table">
+            <thead><tr><th>Treiben</th><th>Zeitplan</th><th>Stände</th><th>Hundeführer</th><th>Fläche</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Treiben 1 — Nordwald</strong></td><td>08:30 – 10:00</td><td>8 Stände</td><td>2 Gespanne</td><td>~45 ha</td><td><span class="badge badge-green">Fertig geplant</span></td></tr>
+              <tr><td><strong>Treiben 2 — Südfeld</strong></td><td>10:30 – 12:00</td><td>10 Stände</td><td>3 Gespanne</td><td>~60 ha</td><td><span class="badge badge-green">Fertig geplant</span></td></tr>
+              <tr><td><strong>Treiben 3 — Moorkante</strong></td><td>13:00 – 14:30</td><td>6 Stände</td><td>1 Gespann</td><td>~30 ha</td><td><span class="badge badge-orange">Stände offen</span></td></tr>
+            </tbody>
+          </table>
+
+          <div style="font-size:13px;font-weight:600;color:var(--ra-dark);margin:20px 0 12px;">RSVP-Übersicht</div>
+          <table class="data-table">
+            <thead><tr><th>Schütze</th><th>Zusage</th><th>Auto 4x4</th><th>Hund</th><th>Schießnachw.</th><th>Übernachtung</th><th>Stand</th></tr></thead>
+            <tbody>
+              <tr><td><strong>H. Weber</strong></td><td><span class="badge badge-green">Zugesagt</span></td><td>Ja</td><td>DD — Bracke</td><td>✅</td><td>Nein</td><td>Stand 3</td></tr>
+              <tr><td><strong>K. Meier</strong></td><td><span class="badge badge-green">Zugesagt</span></td><td>Ja (2 Pl.)</td><td>Nein</td><td>✅</td><td>Ja</td><td>Stand 7</td></tr>
+              <tr><td><strong>F. Schmidt</strong></td><td><span class="badge badge-green">Zugesagt</span></td><td>Nein</td><td>Nein</td><td>✅</td><td>Nein</td><td>—</td></tr>
+              <tr><td><strong>A. Müller</strong></td><td><span class="badge badge-orange">Offen</span></td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              <tr><td><strong>J. Koch</strong></td><td><span class="badge badge-gray">Abgesagt</span></td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: KALENDER -->
+    <div class="view" id="view-kalender">
+      <div class="content-view">
+        <div class="content-header">
+          <h1>Jagdkalender</h1>
+          <p>Ansitze planen, Drückjagden organisieren, Termine verwalten</p>
+          <div class="content-header-actions">
+            <button class="ch-btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Termin anlegen</button>
+          </div>
+        </div>
+        <div class="data-section">
+          <table class="data-table">
+            <thead><tr><th>Datum</th><th>Typ</th><th>Titel</th><th>Teilnehmer</th><th>Hochsitz / Bereich</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>04.04.2026</td><td><span class="badge badge-green">Ansitz</span></td><td>Abendansitz Rehwild</td><td>M. Lampe</td><td>Eicheneck</td><td><span class="badge badge-blue">Geplant</span></td></tr>
+              <tr><td>12.04.2026</td><td><span class="badge badge-green">Ansitz</span></td><td>Morgenansitz</td><td>M. Lampe, H. Weber</td><td>Fuchsbau, Südblick</td><td><span class="badge badge-blue">Geplant</span></td></tr>
+              <tr><td>18.10.2026</td><td><span class="badge badge-orange">Drückjagd</span></td><td>Herbstdrückjagd Brockwinkel</td><td>12 Schützen (offen)</td><td>Gesamtrevier</td><td><span class="badge badge-gray">Entwurf</span></td></tr>
+              <tr><td>28.03.2026</td><td><span class="badge badge-green">Ansitz</span></td><td>Abendansitz Schwarzwild</td><td>M. Lampe</td><td>Birkenweg</td><td><span class="badge badge-green">Erledigt</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: EINSTELLUNGEN -->
+    <div class="view" id="view-settings">
+      <div class="content-view">
+        <div class="content-header">
+          <h1>Revier-Einstellungen</h1>
+          <p>Konfiguration für Revier Brockwinkel</p>
+        </div>
+        <div class="settings-section">
+          <div class="settings-group">
+            <div class="settings-group-title">Allgemein</div>
+            <div class="setting-row">
+              <div><div class="setting-label">Reviername</div><div class="setting-desc">Öffentlich sichtbar in geteilten Links</div></div>
+              <input class="text-input" value="Revier Brockwinkel" />
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">Fläche</div><div class="setting-desc">Wird aus Reviergrenzen berechnet</div></div>
+              <div class="setting-value">~280 ha (automatisch)</div>
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">Bundesland</div></div>
+              <div class="setting-value">Niedersachsen</div>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-group-title">Gäste-Links</div>
+            <div class="setting-row">
+              <div><div class="setting-label">Reviergrenze für Gäste anzeigen</div><div class="setting-desc">Gäste sehen die Reviergrenzen im geteilten Link</div></div>
+              <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">Alle Hochsitze anzeigen</div><div class="setting-desc">Oder nur den zugewiesenen Hochsitz</div></div>
+              <div class="toggle" onclick="this.classList.toggle('on')"></div>
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">Vorgefertigte WhatsApp-Nachricht</div><div class="setting-desc">Wird beim Teilen als Text vorgeschlagen</div></div>
+              <input class="text-input" value="Waidmannsheil! Hier dein Ansitz:" />
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-group-title">Karte & Daten</div>
+            <div class="setting-row">
+              <div><div class="setting-label">Standard-Kartenlayer</div></div>
+              <div class="setting-value">OpenStreetMap</div>
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">Flurstück-Overlay aktivieren</div><div class="setting-desc">LGLN Niedersachsen WMS-Dienst (kostenlos, CC BY 4.0)</div></div>
+              <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">Offline-Karten vorladen</div><div class="setting-desc">Kartendaten für Feldnutzung ohne Internet cachen</div></div>
+              <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-group-title">Account</div>
+            <div class="setting-row">
+              <div><div class="setting-label">Plan</div></div>
+              <div class="setting-value"><span class="badge badge-green">Free — 1 Revier</span></div>
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">Auf Premium upgraden</div><div class="setting-desc">Unbegrenzte Reviere, Drückjagd-Modus, erweiterte Exports</div></div>
+              <button class="ch-btn primary" style="padding:6px 14px;font-size:12px;" onclick="showToast('Premium-Upgrade — kommt bald!')">Upgrade</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- SHARE MODAL -->
+<div class="modal-overlay" id="share-modal" onclick="closeShareModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2 id="share-title">Jagdgast einweisen</h2>
+    <p>Teile einen Link per WhatsApp — kein App-Download nötig.</p>
+    <div class="share-preview">
+      <strong id="share-poi-name">Hochsitz Eicheneck</strong><br>
+      Hallo! Morgen Ansitz auf Hochsitz Eicheneck.<br>
+      Hier findest du Anfahrt und Karte:<br>
+      <span class="link" id="share-link-text">revierapp.de/r/brockwinkel/eicheneck</span><br><br>
+      Parkplatz ist markiert. Waidmannsheil! 🦌
+    </div>
+    <div class="modal-btns">
+      <button class="btn-whatsapp" onclick="closeShareModal(); showToast('✓ WhatsApp wird geöffnet...')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/></svg>
+        Per WhatsApp teilen
+      </button>
+      <button class="btn-copy-link" onclick="closeShareModal(); showToast('✓ Link in Zwischenablage kopiert')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        Link kopieren
+      </button>
+      <button class="btn-cancel" onclick="closeShareModal()">Abbrechen</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg"></span></div>
+
+<script>
+// === VIEW SWITCHING ===
+function switchView(viewId, navEl) {
+  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+  navEl.classList.add('active');
+  document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('active'); });
+  document.getElementById('view-' + viewId).classList.add('active');
+  if (viewId === 'karte') { setTimeout(function() { map.invalidateSize(); }, 50); }
+}
+
+// === MAP ===
+var map = L.map('map', { center: [53.264, 10.354], zoom: 15, zoomControl: true });
+var osmL = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }).addTo(map);
+var aerialL = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '&copy; Esri' });
+var flurL = L.tileLayer.wms('https://opendata.lgln.niedersachsen.de/doorman/noauth/alkis_wms', { layers: 'adv_alkis_flurstuecke', format: 'image/png', transparent: true, attribution: '&copy; LGLN NI' });
+
+function switchLayer(layer, el) {
+  document.querySelectorAll('.layer-opt').forEach(function(b) { b.classList.remove('active'); });
+  el.classList.add('active');
+  map.removeLayer(osmL); map.removeLayer(aerialL); map.removeLayer(flurL);
+  if (layer === 'osm') osmL.addTo(map);
+  else if (layer === 'aerial') aerialL.addTo(map);
+  else if (layer === 'flur') { osmL.addTo(map); flurL.addTo(map); }
+  else if (layer === 'hybrid') { aerialL.addTo(map); flurL.addTo(map); }
+}
+
+L.polygon([
+  [53.2700,10.3420],[53.2705,10.3520],[53.2690,10.3620],
+  [53.2665,10.3650],[53.2620,10.3640],[53.2580,10.3600],
+  [53.2570,10.3520],[53.2575,10.3440],[53.2600,10.3390],
+  [53.2640,10.3380],[53.2680,10.3400],[53.2700,10.3420]
+], { color: '#2D5016', weight: 3, fillColor: '#6B9F3A', fillOpacity: 0.06, dashArray: '10,6' }).addTo(map);
+
+var pois = [
+  { lat:53.2665, lng:10.3505, name:'Eicheneck', type:'hochsitz', detail:'Ansitzleiter · Waldrand Ost' },
+  { lat:53.2618, lng:10.3580, name:'Fuchsbau', type:'hochsitz', detail:'Geschlossene Kanzel · Südhang' },
+  { lat:53.2680, lng:10.3460, name:'Birkenweg', type:'hochsitz', detail:'Ansitzleiter · Nordrand' },
+  { lat:53.2640, lng:10.3620, name:'Südblick', type:'kanzel', detail:'Drückjagdkanzel · Schneise' },
+  { lat:53.2590, lng:10.3480, name:'Moorkante', type:'hochsitz', detail:'Ansitzleiter · Feuchtwiese' },
+  { lat:53.2695, lng:10.3560, name:'Waldrand', type:'hochsitz', detail:'Ansitzleiter · Feldrand' },
+  { lat:53.2630, lng:10.3440, name:'Lichtung', type:'kanzel', detail:'Kanzel · Lichtung West' },
+  { lat:53.2650, lng:10.3490, name:'Parkplatz Nord', type:'parking', detail:'3 Stellplätze · Forstweg' },
+  { lat:53.2595, lng:10.3560, name:'Parkplatz Süd', type:'parking', detail:'2 Stellplätze · Kreisstraße' }
+];
+
+var listEl = document.getElementById('poi-list');
+var mapMarkers = {};
+
+pois.forEach(function(p, i) {
+  var cls = p.type === 'parking' ? 't-parking' : (p.type === 'kanzel' ? 't-kanzel' : 't-hochsitz');
+  var emoji = p.type === 'parking' ? '🅿️' : (p.type === 'kanzel' ? '🏠' : '🪵');
+  var iconCls = p.type === 'parking' ? 'blue' : (p.type === 'kanzel' ? 'green' : 'orange');
+  var slug = p.name.toLowerCase().replace(/\s+/g,'-').replace(/ü/g,'ue').replace(/ö/g,'oe').replace(/ä/g,'ae');
+
+  var icon = L.divIcon({
+    className: 'hs-marker-desk',
+    html: '<div class="marker-pin '+cls+'"><span>'+emoji+'</span></div><div class="m-label">'+p.name+'</div>',
+    iconSize: [30,40], iconAnchor: [15,40]
+  });
+
+  var marker = L.marker([p.lat, p.lng], { icon: icon }).addTo(map);
+  marker.bindPopup(
+    '<div style="min-width:200px;"><strong style="font-size:14px;">'+p.name+'</strong><br>'+
+    '<span style="font-size:12px;color:#666;">'+p.detail+'</span><br>'+
+    '<span style="font-size:10px;color:#bbb;font-family:monospace;">'+p.lat.toFixed(5)+', '+p.lng.toFixed(5)+'</span>'+
+    '<div style="margin-top:10px;display:flex;gap:6px;">'+
+    '<button onclick="openShareModal(\''+p.name+'\',\'revierapp.de/r/brockwinkel/'+slug+'\')" style="padding:6px 14px;border:none;background:#2D5016;color:white;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">Gast einweisen</button>'+
+    '<button style="padding:6px 14px;border:1px solid #ddd;background:white;border-radius:7px;font-size:12px;cursor:pointer;">Bearbeiten</button></div></div>'
+  );
+  mapMarkers[i] = marker;
+
+  var card = document.createElement('div');
+  card.className = 'hs-card' + (i===0?' selected':'');
+  card.innerHTML =
+    '<div class="hs-icon '+iconCls+'">'+emoji+'</div>'+
+    '<div class="hs-details"><div class="hs-name">'+p.name+'</div><div class="hs-type">'+p.detail+'</div><div class="hs-coords">'+p.lat.toFixed(5)+', '+p.lng.toFixed(5)+'</div></div>'+
+    '<div class="hs-actions">'+
+    '<button class="hs-action-btn share" title="Link teilen" onclick="event.stopPropagation();openShareModal(\''+p.name+'\',\'revierapp.de/r/brockwinkel/'+slug+'\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>'+
+    '<button class="hs-action-btn" title="Bearbeiten" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>';
+  card.onclick = (function(idx, poi) {
+    return function() {
+      document.querySelectorAll('.hs-card').forEach(function(c) { c.classList.remove('selected'); });
+      card.classList.add('selected');
+      map.flyTo([poi.lat, poi.lng], 17, { duration: 0.6 });
+      mapMarkers[idx].openPopup();
+    };
+  })(i, p);
+  listEl.appendChild(card);
+});
+
+// === UI HELPERS ===
+function setTool(el) {
+  el.closest('.toolbar').querySelectorAll('.tool-btn:not(.primary)').forEach(function(b) { b.classList.remove('active'); });
+  el.classList.add('active');
+}
+function switchTab(el) {
+  document.querySelectorAll('.panel-tab').forEach(function(t) { t.classList.remove('active'); });
+  el.classList.add('active');
+}
+
+var toastTimer;
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  t.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function() { t.classList.remove('visible'); }, 2500);
+}
+
+function openShareModal(name, link) {
+  document.getElementById('share-title').textContent = 'Gast einweisen — ' + name;
+  document.getElementById('share-link-text').textContent = link;
+  document.getElementById('share-poi-name').textContent = name;
+  document.getElementById('share-modal').classList.add('visible');
+}
+function closeShareModal(e) {
+  if (!e || e.target.id === 'share-modal')
+    document.getElementById('share-modal').classList.remove('visible');
+}
+
+setTimeout(function() { map.invalidateSize(); }, 150);
+</script>
+</body>
+</html>

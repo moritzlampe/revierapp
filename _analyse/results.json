@@ -1,0 +1,201 @@
+{
+  "pages": [
+    {
+      "label": "Startseite",
+      "url": "/",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\01_startseite.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\01_startseite.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Revierkarte",
+      "url": "/revier/demo",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\02_revierkarte.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\02_revierkarte.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Streckenbuch",
+      "url": "/revier/demo/strecke",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\03_streckenbuch.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\03_streckenbuch.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Beobachtungen",
+      "url": "/revier/demo/beobachtungen",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\04_beobachtungen.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\04_beobachtungen.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Gäste",
+      "url": "/revier/demo/gaeste",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\05_gaeste.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\05_gaeste.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "JES",
+      "url": "/revier/demo/jes",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\06_jes.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\06_jes.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Drückjagd",
+      "url": "/revier/demo/drueckjagd",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\07_drueckjagd.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\07_drueckjagd.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Kalender",
+      "url": "/revier/demo/kalender",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\08_kalender.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\08_kalender.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Einstellungen",
+      "url": "/revier/demo/settings",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\09_einstellungen.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\09_einstellungen.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Login",
+      "url": "/login",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\10_login.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\10_login.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "JES Login",
+      "url": "/jes-login",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\11_jes_login.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\11_jes_login.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Gästelink",
+      "url": "/r/demo",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\12_gastelink.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\12_gastelink.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "RSVP",
+      "url": "/rsvp/demo",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\13_rsvp.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\13_rsvp.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    },
+    {
+      "label": "Nachsuche",
+      "url": "/ns/demo",
+      "desktop": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\14_nachsuche.png",
+      "mobile": "C:\\Users\\mlamp\\Dropbox\\Betrieb\\AAA Umbau Exceltabellen\\Jagdapp Revier\\_analyse\\screenshots\\mobile\\14_nachsuche.png",
+      "error": null,
+      "notes": [],
+      "status": 200
+    }
+  ],
+  "karteExtras": [
+    {
+      "action": "Sidebar Klick: \"Revierkarte\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Streckenbuch\n12\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Beobachtungen\n5\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Jagdgäste\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Jagderlaubnisse\n4\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Drückjagd\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Jagdkalender\"",
+      "success": true
+    },
+    {
+      "action": "Sidebar Klick: \"Einstellungen\"",
+      "success": true
+    },
+    {
+      "action": "Layer \"Karte\"",
+      "success": true
+    },
+    {
+      "action": "Layer \"Luftbild\"",
+      "success": true
+    },
+    {
+      "action": "Layer \"Flurstücke\"",
+      "success": true
+    },
+    {
+      "action": "Layer \"Hybrid\"",
+      "success": true
+    },
+    {
+      "action": "Leaflet Container vorhanden",
+      "success": true
+    },
+    {
+      "action": "Karten-Marker: 0 gefunden",
+      "success": false
+    },
+    {
+      "action": "Reviergrenze (Polygone): 1 gefunden",
+      "success": true
+    },
+    {
+      "action": "Rechtes Panel vorhanden: false",
+      "success": false
+    },
+    {
+      "action": "Toolbar vorhanden: false",
+      "success": false
+    }
+  ],
+  "timestamp": "2026-03-31T08:04:40.485Z"
+}

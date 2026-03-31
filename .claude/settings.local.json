@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /tmp)",
+      "Bash(rm -rf revierapp-init)",
+      "Bash(npx create-next-app@latest revierapp-init --typescript --tailwind --eslint --app --src-dir --no-turbopack --import-alias \"@/*\" --use-npm)",
+      "Bash(printf \"no\\\\nno\\\\n\")",
+      "Bash(yes \"no\")",
+      "Read(//tmp/**)",
+      "Bash(cp -r .eslintrc* .gitignore next.config.* next-env.d.ts package.json package-lock.json tsconfig.json postcss.config.mjs src \"C:/Users/mlamp/Dropbox/Betrieb/AAA Umbau Exceltabellen/Jagdapp Revier/\")",
+      "Bash(cp -r node_modules \"C:/Users/mlamp/Dropbox/Betrieb/AAA Umbau Exceltabellen/Jagdapp Revier/\")",
+      "Bash(TARGET=\"C:/Users/mlamp/Dropbox/Betrieb/AAA Umbau Exceltabellen/Jagdapp Revier\")",
+      "Bash(cp .gitignore eslint.config.mjs next-env.d.ts next.config.ts package.json package-lock.json postcss.config.mjs tsconfig.json \"$TARGET/\")",
+      "Bash(cp -r src public \"$TARGET/\")",
+      "Bash(cp -r node_modules \"$TARGET/\")",
+      "Bash(npx shadcn@latest init -d --style new-york --base-color slate --css-variables)",
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest add card table badge dialog dropdown-menu input label select separator sheet tabs toggle tooltip -y)",
+      "Bash(npm install:*)",
+      "Bash(npx next:*)",
+      "Bash(npx playwright:*)",
+      "Bash(curl:*)",
+      "Bash(node _analyse/analyse.mjs)",
+      "Bash(npm ls:*)",
+      "Bash(find '/c/Users/mlamp/Dropbox/Betrieb/AAA Umbau Exceltabellen/Jagdapp Revier/src' -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\))",
+      "Bash(find '/c/Users/mlamp/Dropbox/Betrieb/AAA Umbau Exceltabellen/Jagdapp Revier' -name tailwind.config.* -o -name tailwind.config.ts)",
+      "Bash(grep -r ra-green '/c/Users/mlamp/Dropbox/Betrieb/AAA Umbau Exceltabellen/Jagdapp Revier/src' --include=*.tsx --include=*.ts --include=*.json --include=*.css)",
+      "Bash(find '/c/Users/mlamp/Dropbox/Betrieb/AAA Umbau Exceltabellen/Jagdapp Revier/src' -name globals.css -o -name *.css)",
+      "Bash(node _analyse/analyse_v2.mjs)",
+      "Bash(find:*)",
+      "Bash(ls -la 'C:\\\\Users\\\\mlamp\\\\Dropbox\\\\Betrieb\\\\AAA Umbau Exceltabellen\\\\Jagdapp Revier\\\\src\\\\app\\\\\\(dashboard\\)\\\\revier\\\\[id]')",
+      "Bash(grep -r \"''use client''\" \"C:\\\\Users\\\\mlamp\\\\Dropbox\\\\Betrieb\\\\AAA Umbau Exceltabellen\\\\Jagdapp Revier\\\\src\\\\app\\\\\\(dashboard\\)\\\\revier\\\\[id]\\\\jes\")"
+    ]
+  }
+}
