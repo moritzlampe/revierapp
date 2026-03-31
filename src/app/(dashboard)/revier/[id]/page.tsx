@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import { RightPanel } from "@/components/map/right-panel";
 import { MapProvider } from "@/components/map/map-context";
 import { ShareModal } from "@/components/map/share-modal";
+import { ObjektDialog } from "@/components/map/objekt-dialog";
+import { ZoneDialog } from "@/components/map/zone-dialog";
 
 const RevierMap = dynamic(() => import("@/components/map/revier-map"), {
   ssr: false,
@@ -26,6 +28,8 @@ export default function RevierKartePage() {
         <RightPanel />
       </div>
       <ShareModal />
+      <ObjektDialog />
+      <ZoneDialog />
     </MapProvider>
   );
 }

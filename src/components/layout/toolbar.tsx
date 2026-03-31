@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   MousePointer2,
   Triangle,
@@ -10,15 +9,14 @@ import {
   Upload,
   Share2,
 } from "lucide-react";
-import { useMapContext } from "@/components/map/map-context";
+import { useMapContext, type Tool } from "@/components/map/map-context";
+import { triggerGPXImport } from "@/components/map/gpx-importer";
 
-type Tool = "select" | "boundary" | "zone" | "hochsitz" | "photo";
 type Layer = "osm" | "aerial" | "flur" | "hybrid";
 
 export function Toolbar() {
-  const [activeTool, setActiveTool] = useState<Tool>("select");
-  const { activeLayer, setActiveLayer, openShareModal } = useMapContext();
-  const defaultSharePOI = { name: "Revier Brockwinkel", type: "hochsitz" as const, detail: "Gesamtes Revier", lat: 53.264, lng: 10.354 };
+  const { activeTool, setActiveTool, activeLayer, setActiveLayer, openShareModal } = useMapContext();
+  const defaultShareTarget = { name: "Revier Brockwinkel", lat: 53.264, lng: 10.354 };
 
   const tools: { id: Tool; label: string; icon: React.ElementType; group: number }[] = [
     { id: "select", label: "Auswählen", icon: MousePointer2, group: 0 },
@@ -64,7 +62,10 @@ export function Toolbar() {
 
       {/* GPX Import */}
       <div className="w-px h-5 bg-gray-200 mx-1.5" />
-      <button className="h-[34px] px-2.5 rounded-[7px] border-none flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 whitespace-nowrap transition-all cursor-pointer">
+      <button
+        onClick={() => triggerGPXImport()}
+        className="h-[34px] px-2.5 rounded-[7px] border-none flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 whitespace-nowrap transition-all cursor-pointer"
+      >
         <Upload className="w-4 h-4 flex-shrink-0" />
         GPX Import
       </button>
@@ -91,7 +92,7 @@ export function Toolbar() {
       {/* Share Button */}
       <div className="w-px h-5 bg-gray-200 mx-1.5" />
       <button
-        onClick={() => openShareModal(defaultSharePOI)}
+        onClick={() => openShareModal(defaultShareTarget)}
         className="h-[34px] px-3 rounded-[7px] border-none bg-ra-green-800 text-white flex items-center gap-1.5 text-xs font-semibold hover:bg-ra-green-700 transition-all cursor-pointer whitespace-nowrap"
       >
         <Share2 className="w-4 h-4 flex-shrink-0" />

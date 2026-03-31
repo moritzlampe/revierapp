@@ -2,17 +2,16 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Copy, Check } from "lucide-react";
-import type { POI } from "@/lib/data/demo-pois";
-import { useMapContext } from "./map-context";
+import { useMapContext, type ShareTarget } from "./map-context";
 
 export function ShareModal() {
   const [isOpen, setIsOpen] = useState(false);
-  const [poi, setPoi] = useState<POI | null>(null);
+  const [target, setTarget] = useState<ShareTarget | null>(null);
   const [copied, setCopied] = useState(false);
   const { registerShareModal } = useMapContext();
 
-  const openModal = useCallback((p: POI) => {
-    setPoi(p);
+  const openModal = useCallback((t: ShareTarget) => {
+    setTarget(t);
     setIsOpen(true);
     setCopied(false);
   }, []);
@@ -21,11 +20,11 @@ export function ShareModal() {
     registerShareModal(openModal);
   }, [registerShareModal, openModal]);
 
-  if (!isOpen || !poi) return null;
+  if (!isOpen || !target) return null;
 
-  const slug = poi.name.toLowerCase().replace(/\s+/g, "-").replace(/ü/g, "ue").replace(/ö/g, "oe").replace(/ä/g, "ae").replace(/ß/g, "ss");
+  const slug = target.name.toLowerCase().replace(/\s+/g, "-").replace(/ü/g, "ue").replace(/ö/g, "oe").replace(/ä/g, "ae").replace(/ß/g, "ss");
   const link = `revierapp.de/r/brockwinkel/${slug}`;
-  const message = `${poi.name}\n\nHallo! Morgen Ansitz auf ${poi.name}.\nHier findest du Anfahrt und Karte:\n${link}\n\nParkplatz ist markiert. Waidmannsheil!`;
+  const message = `${target.name}\n\nHallo! Morgen Ansitz auf ${target.name}.\nHier findest du Anfahrt und Karte:\n${link}\n\nParkplatz ist markiert. Waidmannsheil!`;
   const waLink = `https://wa.me/?text=${encodeURIComponent(message)}`;
 
   const handleCopy = async () => {
@@ -56,7 +55,7 @@ export function ShareModal() {
 
         {/* Title */}
         <h2 className="text-lg font-bold text-gray-900 mb-1">
-          Gast einweisen — {poi.name}
+          Gast einweisen — {target.name}
         </h2>
         <p className="text-sm text-gray-500 mb-5">
           Teile Anfahrt und Kartenlink per WhatsApp oder kopiere den Link.
@@ -65,8 +64,8 @@ export function ShareModal() {
         {/* Preview */}
         <div className="bg-gray-50 rounded-xl p-4 mb-5 border border-gray-100">
           <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">
-            <strong>{poi.name}</strong>
-            {"\n\n"}Hallo! Morgen Ansitz auf {poi.name}.
+            <strong>{target.name}</strong>
+            {"\n\n"}Hallo! Morgen Ansitz auf {target.name}.
             {"\n"}Hier findest du Anfahrt und Karte:
             {"\n"}
             <span className="text-blue-600 underline">{link}</span>

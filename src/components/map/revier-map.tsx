@@ -1,34 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { LatLngExpression } from "leaflet";
-import { DEMO_POIS, getMarkerColor, getEmoji } from "@/lib/data/demo-pois";
-import type { POI } from "@/lib/data/demo-pois";
+import { getMarkerColor, getEmoji, getTypLabel } from "@/lib/data/demo-pois";
+import type { RevierObjekt, ObjektType } from "@/lib/types/revier";
 import { useMapContext } from "./map-context";
+import { useRevier } from "@/lib/context/revier-context";
+import { BoundaryEditor } from "./boundary-editor";
+import { GPXImporter } from "./gpx-importer";
+import { MapToast } from "./map-toast";
+import { ZoneEditor } from "./zone-editor";
+import { ZoneLayers } from "./zone-layers";
+import { createClient } from "@/lib/supabase/client";
 
 const BROCKWINKEL_CENTER: LatLngExpression = [53.264, 10.354];
 
-const REVIER_BOUNDARY: LatLngExpression[] = [
-  [53.27, 10.342],
-  [53.2705, 10.352],
-  [53.269, 10.362],
-  [53.2665, 10.365],
-  [53.262, 10.364],
-  [53.258, 10.36],
-  [53.257, 10.352],
-  [53.2575, 10.344],
-  [53.26, 10.339],
-  [53.264, 10.338],
-  [53.268, 10.34],
-  [53.27, 10.342],
-];
-
-function createPinIcon(poi: POI) {
-  const color = getMarkerColor(poi.type);
-  const emoji = getEmoji(poi.type);
+function createPinIcon(type: ObjektType, name: string) {
+  const color = getMarkerColor(type);
+  const emoji = getEmoji(type);
+  const isLight = type === "salzlecke";
   return L.divIcon({
     className: "",
     iconSize: [30, 42],
@@ -39,7 +32,7 @@ function createPinIcon(poi: POI) {
         <div style="
           width:30px;height:30px;
           background:${color};
-          border:2.5px solid white;
+          border:2.5px solid ${isLight ? "#999" : "white"};
           border-radius:50% 50% 50% 0;
           transform:rotate(-45deg);
           box-shadow:0 2px 8px rgba(0,0,0,0.3);
@@ -47,13 +40,13 @@ function createPinIcon(poi: POI) {
         ">
           <span style="transform:rotate(45deg);font-size:14px;line-height:1;">${emoji}</span>
         </div>
-        <div style="
+        <div class="m-label" style="
           position:absolute;top:-6px;left:36px;
           white-space:nowrap;
           font-size:11px;font-weight:600;
           color:#111;
           text-shadow:0 0 3px white,0 0 3px white,0 0 3px white;
-        ">${poi.name}</div>
+        ">${name}</div>
       </div>
     `,
   });
@@ -61,8 +54,7 @@ function createPinIcon(poi: POI) {
 
 function MapController() {
   const map = useMap();
-  const { selectedPOI, registerFlyTo } = useMapContext();
-  const markerRefs = useRef<Map<string, L.Marker>>(new Map());
+  const { registerFlyTo } = useMapContext();
 
   const flyTo = useCallback(
     (lat: number, lng: number) => {
@@ -76,15 +68,6 @@ function MapController() {
   }, [registerFlyTo, flyTo]);
 
   useEffect(() => {
-    if (selectedPOI) {
-      const marker = markerRefs.current.get(selectedPOI.name);
-      if (marker) {
-        setTimeout(() => marker.openPopup(), 400);
-      }
-    }
-  }, [selectedPOI]);
-
-  useEffect(() => {
     const timer = setTimeout(() => map.invalidateSize(), 150);
     return () => clearTimeout(timer);
   }, [map]);
@@ -92,64 +75,175 @@ function MapController() {
   return null;
 }
 
-function setMarkerRef(name: string, ref: L.Marker | null, refs: React.MutableRefObject<Map<string, L.Marker>>) {
-  if (ref) {
-    refs.current.set(name, ref);
-  } else {
-    refs.current.delete(name);
-  }
+/** When hochsitz tool is active, map clicks open the objekt dialog */
+function MapClickHandler() {
+  const { activeTool, openObjektDialog } = useMapContext();
+
+  useMapEvents({
+    click(e) {
+      if (activeTool === "hochsitz") {
+        openObjektDialog({ position: { lat: e.latlng.lat, lng: e.latlng.lng } });
+      }
+    },
+  });
+
+  return null;
 }
 
 function POIMarkers() {
-  const { selectPOI, openShareModal } = useMapContext();
+  const {
+    objekte,
+    selectedObjekt,
+    selectObjekt,
+    openShareModal,
+    openObjektDialog,
+    objektDialogState,
+    updateObjektDialogPosition,
+    loadObjekte,
+    showToast,
+  } = useMapContext();
   const markerRefs = useRef<Map<string, L.Marker>>(new Map());
+
+  // Open popup when selected from panel
+  useEffect(() => {
+    if (selectedObjekt) {
+      const marker = markerRefs.current.get(selectedObjekt.id);
+      if (marker) {
+        setTimeout(() => marker.openPopup(), 400);
+      }
+    }
+  }, [selectedObjekt]);
+
+  const handleDelete = async (objekt: RevierObjekt) => {
+    if (!confirm(`"${objekt.name}" wirklich l\u00F6schen?`)) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("revier_objekte")
+      .delete()
+      .eq("id", objekt.id);
+    if (error) {
+      showToast("Fehler beim L\u00F6schen: " + error.message, "error");
+      return;
+    }
+    showToast(`${objekt.name} gel\u00F6scht`, "success");
+    await loadObjekte();
+  };
 
   return (
     <>
-      {DEMO_POIS.map((poi) => (
-        <Marker
-          key={poi.name}
-          position={[poi.lat, poi.lng]}
-          icon={createPinIcon(poi)}
-          ref={(ref) => setMarkerRef(poi.name, ref, markerRefs)}
-          eventHandlers={{
-            click: () => selectPOI(poi),
-          }}
-        >
-          <Popup>
-            <div style={{ minWidth: 180, fontFamily: "system-ui, sans-serif" }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                {getEmoji(poi.type)} {poi.name}
-              </div>
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
-                {poi.detail}
-              </div>
-              <div style={{ fontSize: 11, color: "#999", fontFamily: "monospace", marginBottom: 8 }}>
-                {poi.lat.toFixed(5)}, {poi.lng.toFixed(5)}
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button
-                  onClick={() => openShareModal(poi)}
+      {objekte.map((objekt) => {
+        const isEditing =
+          objektDialogState.open && objektDialogState.objekt?.id === objekt.id;
+        const pos =
+          isEditing && objektDialogState.position
+            ? objektDialogState.position
+            : objekt.position;
+
+        return (
+          <Marker
+            key={objekt.id}
+            position={[pos.lat, pos.lng]}
+            icon={createPinIcon(objekt.type, objekt.name)}
+            draggable={isEditing}
+            ref={(ref) => {
+              if (ref) markerRefs.current.set(objekt.id, ref);
+              else markerRefs.current.delete(objekt.id);
+            }}
+            eventHandlers={{
+              click: () => selectObjekt(objekt),
+              dragend: (e) => {
+                if (isEditing) {
+                  const ll = e.target.getLatLng();
+                  updateObjektDialogPosition({ lat: ll.lat, lng: ll.lng });
+                }
+              },
+            }}
+          >
+            <Popup>
+              <div style={{ minWidth: 200, fontFamily: "system-ui, sans-serif" }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>
+                  {getEmoji(objekt.type)} {objekt.name}
+                </div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>
+                  {getTypLabel(objekt.type)}
+                </div>
+                {objekt.description && (
+                  <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
+                    {objekt.description}
+                  </div>
+                )}
+                <div
                   style={{
-                    flex: 1, padding: "6px 8px", fontSize: 11, fontWeight: 600,
-                    background: "#2D5016", color: "white", border: "none",
-                    borderRadius: 6, cursor: "pointer",
+                    fontSize: 11,
+                    color: "#999",
+                    fontFamily: "monospace",
+                    marginBottom: 8,
                   }}
                 >
-                  Gast einweisen
-                </button>
-                <button style={{
-                  flex: 1, padding: "6px 8px", fontSize: 11, fontWeight: 600,
-                  background: "#f3f4f6", color: "#374151", border: "none",
-                  borderRadius: 6, cursor: "pointer",
-                }}>
-                  Bearbeiten
+                  {objekt.position.lat.toFixed(5)}, {objekt.position.lng.toFixed(5)}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    onClick={() =>
+                      openShareModal({
+                        name: objekt.name,
+                        lat: objekt.position.lat,
+                        lng: objekt.position.lng,
+                      })
+                    }
+                    style={{
+                      flex: 1,
+                      padding: "6px 8px",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      background: "#2D5016",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Gast einweisen
+                  </button>
+                  <button
+                    onClick={() => openObjektDialog({ objekt })}
+                    style={{
+                      flex: 1,
+                      padding: "6px 8px",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      background: "#f3f4f6",
+                      color: "#374151",
+                      border: "none",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Bearbeiten
+                  </button>
+                </div>
+                <button
+                  onClick={() => handleDelete(objekt)}
+                  style={{
+                    width: "100%",
+                    marginTop: 6,
+                    padding: "5px 8px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    background: "white",
+                    color: "#DC2626",
+                    border: "1px solid #FCA5A5",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                  }}
+                >
+                  L\u00F6schen
                 </button>
               </div>
-            </div>
-          </Popup>
-        </Marker>
-      ))}
+            </Popup>
+          </Marker>
+        );
+      })}
     </>
   );
 }
@@ -177,9 +271,13 @@ function LayerManager() {
     });
 
     if (activeLayer === "osm" || activeLayer === "flur") {
-      const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      });
+      const osm = L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        }
+      );
       osm.addTo(map);
       layerRef.current = osm;
     }
@@ -217,27 +315,40 @@ function LayerManager() {
   return null;
 }
 
+/** Load boundary from revier context into map context on mount */
+function BoundaryLoader() {
+  const { revier } = useRevier();
+  const { setBoundary } = useMapContext();
+
+  useEffect(() => {
+    if (revier?.boundary) {
+      setBoundary(revier.boundary);
+    }
+  }, [revier, setBoundary]);
+
+  return null;
+}
+
 export default function RevierMap() {
   return (
-    <MapContainer
-      center={BROCKWINKEL_CENTER}
-      zoom={15}
-      className="w-full h-full"
-      zoomControl={true}
-    >
-      <LayerManager />
-      <Polygon
-        positions={REVIER_BOUNDARY}
-        pathOptions={{
-          color: "#2D5016",
-          weight: 3,
-          fillColor: "#6B9F3A",
-          fillOpacity: 0.06,
-          dashArray: "10,6",
-        }}
-      />
-      <POIMarkers />
-      <MapController />
-    </MapContainer>
+    <>
+      <MapContainer
+        center={BROCKWINKEL_CENTER}
+        zoom={15}
+        className="w-full h-full"
+        zoomControl={true}
+      >
+        <LayerManager />
+        <BoundaryLoader />
+        <BoundaryEditor />
+        <GPXImporter />
+        <ZoneLayers />
+        <ZoneEditor />
+        <POIMarkers />
+        <MapClickHandler />
+        <MapController />
+      </MapContainer>
+      <MapToast />
+    </>
   );
 }

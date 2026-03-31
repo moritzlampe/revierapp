@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Map,
   FileText,
@@ -11,8 +11,10 @@ import {
   PlayCircle,
   Calendar,
   Settings,
+  LogOut,
 } from "lucide-react";
 import { RevierSwitcher } from "./revier-switcher";
+import { createClient } from "@/lib/supabase/client";
 
 type NavItem = {
   label: string;
@@ -38,9 +40,23 @@ const navItems: NavItem[] = [
   { label: "Einstellungen", href: "/settings", icon: Settings },
 ];
 
-export function Sidebar({ revierId }: { revierId: string }) {
+export function Sidebar({
+  revierId,
+  userName,
+}: {
+  revierId: string;
+  userName: string;
+}) {
   const pathname = usePathname();
+  const router = useRouter();
   const basePath = `/revier/${revierId}`;
+  const supabase = createClient();
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <aside className="flex w-[240px] flex-col flex-shrink-0 bg-ra-green-900 text-white z-10">
@@ -93,6 +109,20 @@ export function Sidebar({ revierId }: { revierId: string }) {
             </div>
           );
         })}
+
+        {/* Abmelden */}
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2.5 px-3 py-[9px] rounded-lg text-[13px] font-medium text-white/55 hover:bg-white/[0.06] hover:text-white/85 transition-all duration-100 w-full mt-1"
+        >
+          <LogOut className="w-[18px] h-[18px] flex-shrink-0 opacity-60" />
+          Abmelden
+          {userName && (
+            <span className="ml-auto text-[10px] text-white/30 truncate max-w-[80px]">
+              {userName}
+            </span>
+          )}
+        </button>
       </nav>
 
       {/* Revier Switcher */}

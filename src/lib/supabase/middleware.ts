@@ -1,6 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+const PUBLIC_ROUTES = ["/login", "/register", "/jes-login"];
+const GUEST_PREFIXES = ["/r/", "/rsvp/", "/ns/", "/jes/"];
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -25,7 +28,32 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+  const isPublic = PUBLIC_ROUTES.includes(pathname);
+  const isGuestRoute = GUEST_PREFIXES.some((p) => pathname.startsWith(p));
+
+  // Guest routes (Gäste-Links, RSVP, Nachsuche, JES-View) sind immer zugänglich
+  if (isGuestRoute) {
+    return supabaseResponse;
+  }
+
+  // Nicht authentifiziert → Login
+  if (!user && !isPublic) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
+  // Bereits eingeloggt → weg von Login/Register
+  if (user && isPublic) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
 
   return supabaseResponse;
 }

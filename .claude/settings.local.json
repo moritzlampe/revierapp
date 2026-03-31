@@ -29,7 +29,9 @@
       "Bash(node _analyse/analyse_v2.mjs)",
       "Bash(find:*)",
       "Bash(ls -la 'C:\\\\Users\\\\mlamp\\\\Dropbox\\\\Betrieb\\\\AAA Umbau Exceltabellen\\\\Jagdapp Revier\\\\src\\\\app\\\\\\(dashboard\\)\\\\revier\\\\[id]')",
-      "Bash(grep -r \"''use client''\" \"C:\\\\Users\\\\mlamp\\\\Dropbox\\\\Betrieb\\\\AAA Umbau Exceltabellen\\\\Jagdapp Revier\\\\src\\\\app\\\\\\(dashboard\\)\\\\revier\\\\[id]\\\\jes\")"
+      "Bash(grep -r \"''use client''\" \"C:\\\\Users\\\\mlamp\\\\Dropbox\\\\Betrieb\\\\AAA Umbau Exceltabellen\\\\Jagdapp Revier\\\\src\\\\app\\\\\\(dashboard\\)\\\\revier\\\\[id]\\\\jes\")",
+      "Bash(npm run:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
