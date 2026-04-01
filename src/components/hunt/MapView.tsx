@@ -13,6 +13,8 @@ interface MapViewProps {
   boundary?: [number, number][][] | null
   stands?: StandData[]
   participantStands?: Record<string, string>
+  districtId?: string | null
+  onStandsChanged?: () => void
 }
 
 export default function MapView({
@@ -21,6 +23,8 @@ export default function MapView({
   boundary,
   stands,
   participantStands,
+  districtId,
+  onStandsChanged,
 }: MapViewProps) {
   return (
     <div style={{
@@ -35,6 +39,8 @@ export default function MapView({
         boundary={boundary}
         stands={stands}
         participantStands={participantStands}
+        districtId={districtId}
+        onStandsChanged={onStandsChanged}
       />
     </div>
   )

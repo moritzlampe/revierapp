@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useGeolocation } from '@/hooks/useGeolocation'
@@ -99,22 +99,36 @@ export default function HuntPage() {
       if (parsed) setBoundary(parsed)
     }
 
-    // Hochsitze, Kanzeln, Drückjagdstände laden
+    await loadMapObjects(districtId)
+  }
+
+  async function loadMapObjects(districtId: string) {
     const { data: mapObjects } = await supabase
       .from('map_objects')
-      .select('id, name, type, position')
+      .select('id, name, type, position, description')
       .eq('district_id', districtId)
-      .in('type', ['hochsitz', 'kanzel', 'drueckjagdstand'])
 
     if (mapObjects) {
       const parsed: StandData[] = []
       for (const obj of mapObjects) {
         const pos = parsePointHex(obj.position as string)
-        if (pos) parsed.push({ id: obj.id, name: obj.name, type: obj.type, position: pos })
+        if (pos) parsed.push({
+          id: obj.id,
+          name: obj.name,
+          type: obj.type,
+          position: pos,
+          description: (obj as Record<string, unknown>).description as string | null,
+        })
       }
       setStands(parsed)
     }
   }
+
+  const handleStandsChanged = useCallback(() => {
+    if (hunt?.district_id) {
+      loadMapObjects(hunt.district_id)
+    }
+  }, [hunt?.district_id])
 
   async function copyInviteLink() {
     if (!hunt) return
@@ -236,6 +250,8 @@ export default function HuntPage() {
             boundary={boundary}
             stands={stands}
             participantStands={participantStands}
+            districtId={hunt.district_id}
+            onStandsChanged={handleStandsChanged}
           />
         </div>
 

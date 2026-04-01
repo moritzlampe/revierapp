@@ -10,6 +10,8 @@ import 'leaflet/dist/leaflet.css'
 import type { GeolocationState, GeoPosition } from '@/hooks/useGeolocation'
 import type { ParticipantPosition } from '@/hooks/useHuntPositions'
 import { distanceInMeters } from '@/lib/geo-utils'
+import MapObjectSheet from './MapObjectSheet'
+import type { MapObjectData } from './MapObjectSheet'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -52,6 +54,7 @@ export interface StandData {
   name: string
   type: string
   position: { lat: number; lng: number }
+  description?: string | null
 }
 
 export interface MapContentProps {
@@ -60,6 +63,8 @@ export interface MapContentProps {
   boundary?: [number, number][][] | null
   stands?: StandData[]
   participantStands?: Record<string, string>
+  districtId?: string | null
+  onStandsChanged?: () => void
 }
 
 // --- Hilfsfunktionen ---
@@ -151,6 +156,87 @@ function ZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void })
     map.on('zoomend', handleZoom)
     return () => { map.off('zoomend', handleZoom) }
   }, [map, onZoomChange])
+
+  return null
+}
+
+// --- Long-Press Handler ---
+
+const LONG_PRESS_MS = 500
+const PAN_CANCEL_PX = 10
+
+function MapLongPressHandler({ onLongPress }: {
+  onLongPress: (latlng: { lat: number; lng: number }) => void
+}) {
+  const map = useMap()
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const startPos = useRef<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    const container = map.getContainer()
+
+    function cancel() {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      startPos.current = null
+    }
+
+    function handleTouchStart(e: TouchEvent) {
+      if (e.touches.length !== 1) { cancel(); return }
+      const touch = e.touches[0]
+      startPos.current = { x: touch.clientX, y: touch.clientY }
+
+      timerRef.current = setTimeout(() => {
+        if (!startPos.current) return
+        // Koordinaten aus Container-Position berechnen
+        const rect = container.getBoundingClientRect()
+        const point = L.point(
+          startPos.current.x - rect.left,
+          startPos.current.y - rect.top,
+        )
+        const latlng = map.containerPointToLatLng(point)
+        // Vibration-Feedback
+        try { navigator.vibrate?.(50) } catch { /* nicht verfügbar */ }
+        onLongPress({ lat: latlng.lat, lng: latlng.lng })
+        cancel()
+      }, LONG_PRESS_MS)
+    }
+
+    function handleTouchMove(e: TouchEvent) {
+      if (!startPos.current || !timerRef.current) return
+      const touch = e.touches[0]
+      const dx = Math.abs(touch.clientX - startPos.current.x)
+      const dy = Math.abs(touch.clientY - startPos.current.y)
+      if (dx > PAN_CANCEL_PX || dy > PAN_CANCEL_PX) cancel()
+    }
+
+    function handleTouchEnd() { cancel() }
+
+    function handleContextMenu(e: MouseEvent) {
+      e.preventDefault()
+      const rect = container.getBoundingClientRect()
+      const point = L.point(e.clientX - rect.left, e.clientY - rect.top)
+      const latlng = map.containerPointToLatLng(point)
+      onLongPress({ lat: latlng.lat, lng: latlng.lng })
+    }
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchmove', handleTouchMove, { passive: true })
+    container.addEventListener('touchend', handleTouchEnd)
+    container.addEventListener('touchcancel', handleTouchEnd)
+    container.addEventListener('contextmenu', handleContextMenu)
+
+    return () => {
+      cancel()
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchmove', handleTouchMove)
+      container.removeEventListener('touchend', handleTouchEnd)
+      container.removeEventListener('touchcancel', handleTouchEnd)
+      container.removeEventListener('contextmenu', handleContextMenu)
+    }
+  }, [map, onLongPress])
 
   return null
 }
@@ -266,7 +352,11 @@ function ParticipantMarker({
 
 // --- Hochsitz-Marker ---
 
-function StandMarker({ stand, zoom }: { stand: StandData; zoom: number }) {
+function StandMarker({ stand, zoom, onEdit }: {
+  stand: StandData
+  zoom: number
+  onEdit?: (stand: StandData) => void
+}) {
   const icon = useMemo(() => {
     return L.divIcon({
       className: 'stand-marker',
@@ -276,10 +366,17 @@ function StandMarker({ stand, zoom }: { stand: StandData; zoom: number }) {
     })
   }, [])
 
-  const typeLabel = stand.type === 'hochsitz' ? 'Hochsitz'
-    : stand.type === 'kanzel' ? 'Kanzel'
-    : stand.type === 'drueckjagdstand' ? 'Drückjagdstand'
-    : stand.type
+  const TYPE_LABELS: Record<string, string> = {
+    hochsitz: '🪵 Hochsitz',
+    kanzel: '🏠 Kanzel',
+    drueckjagdstand: '🎯 Drückjagdstand',
+    parkplatz: '🅿️ Parkplatz',
+    kirrung: '🌾 Kirrung',
+    salzlecke: '🧂 Salzlecke',
+    wildkamera: '📷 Wildkamera',
+    sonstiges: '📌 Sonstiges',
+  }
+  const typeLabel = TYPE_LABELS[stand.type] || stand.type
 
   return (
     <Marker position={[stand.position.lat, stand.position.lng]} icon={icon}>
@@ -292,6 +389,29 @@ function StandMarker({ stand, zoom }: { stand: StandData; zoom: number }) {
         <div className="stand-popup-content">
           <strong>{stand.name}</strong>
           <span>{typeLabel}</span>
+          {stand.description && (
+            <span style={{ color: 'var(--text-2)', fontSize: '0.6875rem' }}>{stand.description}</span>
+          )}
+          {onEdit && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(stand) }}
+              style={{
+                marginTop: '0.375rem',
+                padding: '0.375rem 0.625rem',
+                borderRadius: '0.5rem',
+                background: 'var(--surface-3)',
+                border: '1px solid var(--border)',
+                color: 'var(--green-bright)',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+                minHeight: '2rem',
+              }}
+            >
+              ✏️ Bearbeiten
+            </button>
+          )}
         </div>
       </Popup>
     </Marker>
@@ -453,6 +573,8 @@ export default function MapContent({
   boundary,
   stands,
   participantStands,
+  districtId,
+  onStandsChanged,
 }: MapContentProps) {
   const hasFlown = useRef(false)
   const [mapMoved, setMapMoved] = useState(false)
@@ -463,6 +585,11 @@ export default function MapContent({
   const [wmsLoading, setWmsLoading] = useState(false)
   const [selectedParticipant, setSelectedParticipant] = useState<string | null>(null)
   const distanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Long-Press / Hochsitz-Erstellung
+  const [tempMarker, setTempMarker] = useState<{ lat: number; lng: number } | null>(null)
+  const [sheetMode, setSheetMode] = useState<'create' | 'edit' | 'hidden'>('hidden')
+  const [editStand, setEditStand] = useState<MapObjectData | null>(null)
 
   const handleMapMoved = useCallback((moved: boolean) => setMapMoved(moved), [])
   const handleZoomChange = useCallback((z: number) => setZoom(z), [])
@@ -475,6 +602,58 @@ export default function MapContent({
 
   const handleCadastreToggle = useCallback(() => {
     setCadastreEnabled(prev => !prev)
+  }, [])
+
+  // Long-Press → Temporären Marker setzen + Sheet öffnen
+  const handleLongPress = useCallback((latlng: { lat: number; lng: number }) => {
+    setTempMarker(latlng)
+    setEditStand(null)
+    setSheetMode('create')
+  }, [])
+
+  // Stand bearbeiten
+  const handleEditStand = useCallback((stand: StandData) => {
+    setEditStand({
+      id: stand.id,
+      name: stand.name,
+      type: stand.type,
+      position: stand.position,
+      description: stand.description ?? null,
+    })
+    setTempMarker(null)
+    setSheetMode('edit')
+  }, [])
+
+  // Sheet schliessen
+  const handleSheetClose = useCallback(() => {
+    setSheetMode('hidden')
+    setTempMarker(null)
+    setEditStand(null)
+  }, [])
+
+  // Nach Speichern/Löschen → Stands neu laden
+  const handleObjectSaved = useCallback(() => {
+    setSheetMode('hidden')
+    setTempMarker(null)
+    setEditStand(null)
+    onStandsChanged?.()
+  }, [onStandsChanged])
+
+  const handleObjectDeleted = useCallback(() => {
+    setSheetMode('hidden')
+    setTempMarker(null)
+    setEditStand(null)
+    onStandsChanged?.()
+  }, [onStandsChanged])
+
+  // Temp-Marker Icon (pulsierend)
+  const tempMarkerIcon = useMemo(() => {
+    return L.divIcon({
+      className: 'temp-marker',
+      html: '<div class="temp-marker-dot"></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    })
   }, [])
 
   // Teilnehmer-Auswahl → Entfernungslinie mit 5s Timer
@@ -587,6 +766,9 @@ export default function MapContent({
           />
         )}
 
+        {/* === Long-Press Handler === */}
+        <MapLongPressHandler onLongPress={handleLongPress} />
+
         {/* === Karten-Steuerung === */}
         <MapResizer />
         <InitialViewSetter boundary={boundary} position={geoState.position} hasFlown={hasFlown} />
@@ -609,8 +791,16 @@ export default function MapContent({
 
         {/* === Hochsitze === */}
         {stands?.map(stand => (
-          <StandMarker key={stand.id} stand={stand} zoom={zoom} />
+          <StandMarker key={stand.id} stand={stand} zoom={zoom} onEdit={handleEditStand} />
         ))}
+
+        {/* === Temporärer Marker (Long-Press Platzierung) === */}
+        {tempMarker && (
+          <Marker
+            position={[tempMarker.lat, tempMarker.lng]}
+            icon={tempMarkerIcon}
+          />
+        )}
 
         {/* === Genauigkeitskreis === */}
         {geoState.position && geoState.accuracy && (
@@ -706,6 +896,18 @@ export default function MapContent({
           <FitAllButton userPosition={geoState.position} participants={participants} />
         )}
       </MapContainer>
+
+      {/* === Hochsitz Bottom Sheet === */}
+      <MapObjectSheet
+        mode={sheetMode}
+        position={tempMarker}
+        editData={editStand}
+        districtId={districtId ?? null}
+        gpsPosition={geoState.position}
+        onSave={handleObjectSaved}
+        onDelete={handleObjectDeleted}
+        onClose={handleSheetClose}
+      />
     </div>
   )
 }

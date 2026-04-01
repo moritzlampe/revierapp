@@ -522,3 +522,292 @@ button:active {
 .leaflet-popup-close-button:hover {
   color: var(--text) !important;
 }
+
+/* ============================================================
+   Temporärer Marker (pulsierend, Long-Press Platzierung)
+   ============================================================ */
+
+.temp-marker {
+  background: transparent !important;
+  border: none !important;
+}
+.temp-marker-dot {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--green-bright);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 0 rgba(139, 195, 74, 0.5);
+  animation: temp-pulse 1.2s ease-in-out infinite;
+}
+@keyframes temp-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 195, 74, 0.5); }
+  50% { box-shadow: 0 0 0 0.75rem rgba(139, 195, 74, 0); }
+}
+
+/* ============================================================
+   Map Object Bottom Sheet
+   ============================================================ */
+
+.map-object-sheet-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.4);
+  animation: sheet-fade-in 0.2s ease-out;
+}
+@keyframes sheet-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.map-object-sheet {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1101;
+  background: var(--surface);
+  border-top-left-radius: 1rem;
+  border-top-right-radius: 1rem;
+  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.5);
+  animation: sheet-slide-up 0.3s ease-out;
+  max-height: 80%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@keyframes sheet-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.sheet-handle {
+  width: 2.5rem;
+  height: 0.25rem;
+  background: var(--text-3);
+  border-radius: 0.125rem;
+  margin: 0.625rem auto 0;
+}
+
+.sheet-header {
+  padding: 0.75rem 1rem 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sheet-body {
+  padding: 0.75rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.sheet-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 0.25rem;
+}
+
+.sheet-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-family: 'DM Sans', sans-serif;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.sheet-input:focus {
+  border-color: var(--green);
+}
+.sheet-input::placeholder {
+  color: var(--text-3);
+}
+
+/* Typ-Auswahl Pill-Buttons */
+.type-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.type-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 1.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border) !important;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-height: 2.75rem;
+}
+.type-pill:active {
+  transform: scale(0.96);
+}
+.type-pill.active {
+  background: var(--green-dim);
+  border-color: var(--green) !important;
+  color: var(--green-bright);
+}
+
+/* Mehr-Button für zusätzliche Typen */
+.type-more-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 1.5rem;
+  background: none;
+  border: 1px dashed var(--border) !important;
+  color: var(--text-3);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  min-height: 2.75rem;
+}
+
+/* Koordinaten-Anzeige */
+.sheet-coords {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-2);
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-3);
+  font-family: monospace;
+}
+.sheet-gps-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 1.25rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border) !important;
+  color: var(--green-bright);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  min-height: 2.75rem;
+}
+.sheet-gps-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Sheet Action Buttons */
+.sheet-actions {
+  display: flex;
+  gap: 0.625rem;
+  padding-top: 0.25rem;
+}
+.sheet-btn-cancel {
+  flex: 1;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border) !important;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  min-height: 2.75rem;
+}
+.sheet-btn-save {
+  flex: 2;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--green);
+  border: none !important;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  min-height: 2.75rem;
+  transition: opacity 0.15s;
+}
+.sheet-btn-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.sheet-btn-delete {
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(239, 83, 80, 0.1);
+  border: 1px solid rgba(239, 83, 80, 0.3) !important;
+  color: var(--red);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  min-height: 2.75rem;
+}
+
+/* Toast Notification */
+.map-toast {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  background: var(--surface-2);
+  border: 1px solid var(--green);
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--green-bright);
+  box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.4);
+  animation: toast-in 0.3s ease-out;
+  white-space: nowrap;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(1rem); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Confirm Dialog */
+.confirm-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.confirm-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  max-width: 20rem;
+  width: 100%;
+  text-align: center;
+}
+.confirm-dialog p {
+  font-size: 0.875rem;
+  color: var(--text);
+  margin-bottom: 1rem;
+}
+.confirm-actions {
+  display: flex;
+  gap: 0.625rem;
+}
