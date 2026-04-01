@@ -1,4 +1,34 @@
 /**
+ * Fläche eines Polygons in Hektar (Shoelace-Formel mit Breitengrad-Korrektur)
+ * Genauigkeit: ±2–5 % — reicht für Revier-Anzeige
+ */
+export function polygonAreaHectares(points: { lat: number; lng: number }[]): number {
+  if (points.length < 3) return 0
+
+  const toRad = (d: number) => d * (Math.PI / 180)
+  const R = 6371000 // Erdradius in Metern
+
+  // Mittlerer Breitengrad für Korrektur
+  const avgLat = points.reduce((s, p) => s + p.lat, 0) / points.length
+  const mPerDegLat = (Math.PI / 180) * R
+  const mPerDegLng = (Math.PI / 180) * R * Math.cos(toRad(avgLat))
+
+  // Shoelace-Formel in Meter-Koordinaten
+  let area = 0
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length
+    const xi = points[i].lng * mPerDegLng
+    const yi = points[i].lat * mPerDegLat
+    const xj = points[j].lng * mPerDegLng
+    const yj = points[j].lat * mPerDegLat
+    area += xi * yj - xj * yi
+  }
+  area = Math.abs(area) / 2
+
+  return area / 10000 // m² → Hektar
+}
+
+/**
  * Haversine-Formel: Entfernung zwischen zwei Koordinaten in Metern
  */
 export function distanceInMeters(

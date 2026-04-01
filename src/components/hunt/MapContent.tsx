@@ -9,9 +9,10 @@ import {
 import 'leaflet/dist/leaflet.css'
 import type { GeolocationState, GeoPosition } from '@/hooks/useGeolocation'
 import type { ParticipantPosition } from '@/hooks/useHuntPositions'
-import { distanceInMeters } from '@/lib/geo-utils'
+import { distanceInMeters, polygonAreaHectares } from '@/lib/geo-utils'
 import MapObjectSheet from './MapObjectSheet'
 import type { MapObjectData } from './MapObjectSheet'
+import BoundarySheet from './BoundarySheet'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -64,7 +65,10 @@ export interface MapContentProps {
   stands?: StandData[]
   participantStands?: Record<string, string>
   districtId?: string | null
+  districtName?: string | null
+  huntId?: string | null
   onStandsChanged?: () => void
+  onBoundaryChanged?: () => void
 }
 
 // --- Hilfsfunktionen ---
@@ -237,6 +241,22 @@ function MapLongPressHandler({ onLongPress }: {
       container.removeEventListener('contextmenu', handleContextMenu)
     }
   }, [map, onLongPress])
+
+  return null
+}
+
+// --- Zeichenmodus: Klick-Handler ---
+
+function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; lng: number }) => void }) {
+  const map = useMap()
+
+  useEffect(() => {
+    function handleClick(e: L.LeafletMouseEvent) {
+      onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng })
+    }
+    map.on('click', handleClick)
+    return () => { map.off('click', handleClick) }
+  }, [map, onMapClick])
 
   return null
 }
@@ -574,7 +594,10 @@ export default function MapContent({
   stands,
   participantStands,
   districtId,
+  districtName,
+  huntId,
   onStandsChanged,
+  onBoundaryChanged,
 }: MapContentProps) {
   const hasFlown = useRef(false)
   const [mapMoved, setMapMoved] = useState(false)
@@ -591,6 +614,11 @@ export default function MapContent({
   const [sheetMode, setSheetMode] = useState<'create' | 'edit' | 'hidden'>('hidden')
   const [editStand, setEditStand] = useState<MapObjectData | null>(null)
 
+  // Zeichenmodus für Reviergrenze
+  const [drawingMode, setDrawingMode] = useState(false)
+  const [drawPoints, setDrawPoints] = useState<{ lat: number; lng: number }[]>([])
+  const [boundarySheetMode, setBoundarySheetMode] = useState<'save' | 'hidden'>('hidden')
+
   const handleMapMoved = useCallback((moved: boolean) => setMapMoved(moved), [])
   const handleZoomChange = useCallback((z: number) => setZoom(z), [])
 
@@ -604,12 +632,13 @@ export default function MapContent({
     setCadastreEnabled(prev => !prev)
   }, [])
 
-  // Long-Press → Temporären Marker setzen + Sheet öffnen
+  // Long-Press → Temporären Marker setzen + Sheet öffnen (nur wenn NICHT im Zeichenmodus)
   const handleLongPress = useCallback((latlng: { lat: number; lng: number }) => {
+    if (drawingMode) return
     setTempMarker(latlng)
     setEditStand(null)
     setSheetMode('create')
-  }, [])
+  }, [drawingMode])
 
   // Stand bearbeiten
   const handleEditStand = useCallback((stand: StandData) => {
@@ -630,6 +659,110 @@ export default function MapContent({
     setTempMarker(null)
     setEditStand(null)
   }, [])
+
+  // --- Zeichenmodus Callbacks ---
+
+  const startDrawing = useCallback(() => {
+    // Bestehendes Polygon zum Bearbeiten laden
+    if (boundary && boundary.length > 0) {
+      const ring = boundary[0]
+      // Letzter Punkt = erster Punkt (geschlossen) → weglassen
+      const pts = ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
+        ? ring.slice(0, -1)
+        : ring
+      setDrawPoints(pts.map(p => ({ lat: p[0], lng: p[1] })))
+    } else {
+      setDrawPoints([])
+    }
+    setDrawingMode(true)
+  }, [boundary])
+
+  const cancelDrawing = useCallback(() => {
+    setDrawingMode(false)
+    setDrawPoints([])
+    setBoundarySheetMode('hidden')
+  }, [])
+
+  const handleDrawClick = useCallback((latlng: { lat: number; lng: number }) => {
+    if (!drawingMode) return
+    setDrawPoints(prev => [...prev, latlng])
+  }, [drawingMode])
+
+  const handleDrawUndo = useCallback(() => {
+    setDrawPoints(prev => prev.slice(0, -1))
+  }, [])
+
+  const handleDrawClear = useCallback(() => {
+    setDrawPoints([])
+  }, [])
+
+  const handleDrawFinish = useCallback(() => {
+    if (drawPoints.length < 3) return
+    setBoundarySheetMode('save')
+  }, [drawPoints.length])
+
+  const handleDrawVertexDrag = useCallback((index: number, latlng: { lat: number; lng: number }) => {
+    setDrawPoints(prev => {
+      const next = [...prev]
+      next[index] = latlng
+      return next
+    })
+  }, [])
+
+  const handleDrawVertexDelete = useCallback((index: number) => {
+    setDrawPoints(prev => {
+      if (prev.length <= 3) return prev
+      return prev.filter((_, i) => i !== index)
+    })
+  }, [])
+
+  const handleInsertMidpoint = useCallback((afterIndex: number, latlng: { lat: number; lng: number }) => {
+    setDrawPoints(prev => {
+      const next = [...prev]
+      next.splice(afterIndex + 1, 0, latlng)
+      return next
+    })
+  }, [])
+
+  const handleBoundarySaved = useCallback(() => {
+    setBoundarySheetMode('hidden')
+    setDrawingMode(false)
+    setDrawPoints([])
+    onBoundaryChanged?.()
+  }, [onBoundaryChanged])
+
+  const handleBoundaryDeleted = useCallback(() => {
+    setBoundarySheetMode('hidden')
+    setDrawingMode(false)
+    setDrawPoints([])
+    onBoundaryChanged?.()
+  }, [onBoundaryChanged])
+
+  const handleBoundarySheetClose = useCallback(() => {
+    setBoundarySheetMode('hidden')
+  }, [])
+
+  // Vertex-Icons für Zeichenmodus
+  const vertexIcon = useMemo(() => L.divIcon({
+    className: 'draw-vertex',
+    html: '<div class="draw-vertex-dot"></div>',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  }), [])
+
+  const firstVertexIcon = useMemo(() => L.divIcon({
+    className: 'draw-vertex',
+    html: '<div class="draw-vertex-dot first"></div>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  }), [])
+
+  const midpointIcon = useMemo(() => L.divIcon({
+    className: 'draw-midpoint',
+    html: '<div class="draw-midpoint-dot"></div>',
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  }), [])
 
   // Nach Speichern/Löschen → Stands neu laden
   const handleObjectSaved = useCallback(() => {
@@ -706,6 +839,56 @@ export default function MapContent({
         cadastreAvailable={cadastreAvailable}
       />
 
+      {/* Grenze zeichnen / bearbeiten Button */}
+      {!drawingMode && (
+        <button className="draw-boundary-btn" onClick={startDrawing}>
+          ✏️ {boundary && boundary.length > 0 ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
+        </button>
+      )}
+      {drawingMode && (
+        <button className="draw-boundary-btn active" onClick={cancelDrawing}>
+          ✏️ Zeichenmodus
+        </button>
+      )}
+
+      {/* Hinweis im Zeichenmodus */}
+      {drawingMode && drawPoints.length === 0 && (
+        <div className="draw-hint">Tippe Punkte auf die Karte</div>
+      )}
+
+      {/* Zeichen-Toolbar */}
+      {drawingMode && boundarySheetMode === 'hidden' && (
+        <div className="draw-toolbar">
+          <button
+            className="draw-toolbar-btn cancel-btn"
+            onClick={cancelDrawing}
+          >
+            Abbrechen
+          </button>
+          <button
+            className="draw-toolbar-btn"
+            onClick={handleDrawUndo}
+            disabled={drawPoints.length === 0}
+          >
+            ↩ Rückgängig
+          </button>
+          <button
+            className="draw-toolbar-btn danger"
+            onClick={handleDrawClear}
+            disabled={drawPoints.length === 0}
+          >
+            Alles löschen
+          </button>
+          <button
+            className="draw-toolbar-btn primary"
+            onClick={handleDrawFinish}
+            disabled={drawPoints.length < 3}
+          >
+            Fertig
+          </button>
+        </div>
+      )}
+
       {/* WMS Lade-Anzeige */}
       {wmsLoading && <WmsLoadingIndicator />}
 
@@ -766,8 +949,11 @@ export default function MapContent({
           />
         )}
 
-        {/* === Long-Press Handler === */}
-        <MapLongPressHandler onLongPress={handleLongPress} />
+        {/* === Long-Press Handler (nur aktiv wenn NICHT im Zeichenmodus) === */}
+        {!drawingMode && <MapLongPressHandler onLongPress={handleLongPress} />}
+
+        {/* === Zeichenmodus: Klick-Handler === */}
+        {drawingMode && <MapClickHandler onMapClick={handleDrawClick} />}
 
         {/* === Karten-Steuerung === */}
         <MapResizer />
@@ -775,8 +961,8 @@ export default function MapContent({
         <MapMoveTracker userPosition={geoState.position} onMoved={handleMapMoved} />
         <ZoomTracker onZoomChange={handleZoomChange} />
 
-        {/* === Reviergrenze === */}
-        {boundary && boundary.length > 0 && (
+        {/* === Reviergrenze (nur anzeigen wenn NICHT im Zeichenmodus) === */}
+        {!drawingMode && boundary && boundary.length > 0 && (
           <Polygon
             positions={boundary}
             pathOptions={{
@@ -787,6 +973,94 @@ export default function MapContent({
               fillOpacity: 0.06,
             }}
           />
+        )}
+
+        {/* === Zeichenmodus Visualisierung === */}
+        {drawingMode && drawPoints.length > 0 && (
+          <>
+            {/* Polygon-Füllung ab 3 Punkten */}
+            {drawPoints.length >= 3 && (
+              <Polygon
+                positions={drawPoints.map(p => [p.lat, p.lng] as [number, number])}
+                pathOptions={{
+                  color: 'hsl(142, 70%, 45%)',
+                  weight: 2,
+                  fillColor: 'hsl(142, 70%, 45%)',
+                  fillOpacity: 0.1,
+                  dashArray: drawPoints.length >= 3 ? undefined : '6 4',
+                }}
+              />
+            )}
+
+            {/* Verbindungslinien zwischen Punkten */}
+            {drawPoints.length >= 2 && (
+              <Polyline
+                positions={drawPoints.map(p => [p.lat, p.lng] as [number, number])}
+                pathOptions={{
+                  color: 'hsl(142, 70%, 45%)',
+                  weight: 2.5,
+                }}
+              />
+            )}
+
+            {/* Schliessende gestrichelte Linie (erster ↔ letzter Punkt) ab 3 Punkte */}
+            {drawPoints.length >= 3 && (
+              <Polyline
+                positions={[
+                  [drawPoints[drawPoints.length - 1].lat, drawPoints[drawPoints.length - 1].lng],
+                  [drawPoints[0].lat, drawPoints[0].lng],
+                ]}
+                pathOptions={{
+                  color: 'hsl(142, 70%, 45%)',
+                  weight: 2,
+                  dashArray: '6 4',
+                  opacity: 0.6,
+                }}
+              />
+            )}
+
+            {/* Vertex-Punkte (draggable) */}
+            {drawPoints.map((p, i) => (
+              <Marker
+                key={`vertex-${i}`}
+                position={[p.lat, p.lng]}
+                icon={i === 0 ? firstVertexIcon : vertexIcon}
+                draggable
+                eventHandlers={{
+                  dragend: (e) => {
+                    const ll = e.target.getLatLng()
+                    handleDrawVertexDrag(i, { lat: ll.lat, lng: ll.lng })
+                  },
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e)
+                    if (drawPoints.length > 3) {
+                      handleDrawVertexDelete(i)
+                    }
+                  },
+                }}
+              />
+            ))}
+
+            {/* Midpoints (Punkte einfügen) — nur im Bearbeitungsmodus ab 3 Punkte */}
+            {drawPoints.length >= 3 && drawPoints.map((p, i) => {
+              const next = drawPoints[(i + 1) % drawPoints.length]
+              const midLat = (p.lat + next.lat) / 2
+              const midLng = (p.lng + next.lng) / 2
+              return (
+                <Marker
+                  key={`mid-${i}`}
+                  position={[midLat, midLng]}
+                  icon={midpointIcon}
+                  eventHandlers={{
+                    click: (e) => {
+                      L.DomEvent.stopPropagation(e)
+                      handleInsertMidpoint(i, { lat: midLat, lng: midLng })
+                    },
+                  }}
+                />
+              )
+            })}
+          </>
         )}
 
         {/* === Hochsitze === */}
@@ -907,6 +1181,17 @@ export default function MapContent({
         onSave={handleObjectSaved}
         onDelete={handleObjectDeleted}
         onClose={handleSheetClose}
+      />
+
+      {/* === Reviergrenze Bottom Sheet === */}
+      <BoundarySheet
+        mode={boundarySheetMode}
+        points={drawPoints}
+        existingDistrict={districtId && districtName ? { id: districtId, name: districtName } : null}
+        huntId={huntId}
+        onSave={handleBoundarySaved}
+        onDelete={handleBoundaryDeleted}
+        onClose={handleBoundarySheetClose}
       />
     </div>
   )

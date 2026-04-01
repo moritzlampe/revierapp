@@ -29,6 +29,7 @@ export default function HuntPage() {
   const [activeTab, setActiveTab] = useState<'karte' | 'chat' | 'nachsuche' | 'strecke'>('karte')
   const [isJagdleiter, setIsJagdleiter] = useState(false)
   const [boundary, setBoundary] = useState<[number, number][][] | null>(null)
+  const [districtName, setDistrictName] = useState<string | null>(null)
   const [stands, setStands] = useState<StandData[]>([])
 
   // GPS sofort starten (auch wenn anderer Tab aktiv)
@@ -87,10 +88,10 @@ export default function HuntPage() {
   }
 
   async function loadDistrictData(districtId: string) {
-    // Reviergrenze laden
+    // Reviergrenze + Name laden
     const { data: district } = await supabase
       .from('districts')
-      .select('boundary')
+      .select('boundary, name')
       .eq('id', districtId)
       .single()
 
@@ -98,6 +99,7 @@ export default function HuntPage() {
       const parsed = parsePolygonHex(district.boundary as string)
       if (parsed) setBoundary(parsed)
     }
+    setDistrictName(district?.name ?? null)
 
     await loadMapObjects(districtId)
   }
@@ -129,6 +131,11 @@ export default function HuntPage() {
       loadMapObjects(hunt.district_id)
     }
   }, [hunt?.district_id])
+
+  const handleBoundaryChanged = useCallback(() => {
+    // Jagd-Daten neu laden (district_id könnte sich geändert haben)
+    loadHunt()
+  }, [params.id])
 
   async function copyInviteLink() {
     if (!hunt) return
@@ -251,7 +258,10 @@ export default function HuntPage() {
             stands={stands}
             participantStands={participantStands}
             districtId={hunt.district_id}
+            districtName={districtName}
+            huntId={hunt.id}
             onStandsChanged={handleStandsChanged}
+            onBoundaryChanged={handleBoundaryChanged}
           />
         </div>
 

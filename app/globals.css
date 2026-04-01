@@ -782,6 +782,154 @@ button:active {
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
+/* ============================================================
+   Boundary Drawing Mode
+   ============================================================ */
+
+/* Zeichnen-Button (oben rechts, unter Layer-Switcher) */
+.draw-boundary-btn {
+  position: absolute;
+  top: 3.5rem;
+  right: 0.75rem;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 1.5rem;
+  background: var(--surface-2);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 0.125rem 0.5rem rgba(0,0,0,0.3);
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  min-height: 2.75rem;
+  transition: all 0.15s;
+}
+.draw-boundary-btn.active {
+  background: var(--green-dim);
+  border-color: var(--green) !important;
+  color: var(--green-bright);
+}
+
+/* Zeichenmodus Hinweis-Overlay */
+.draw-hint {
+  position: absolute;
+  top: 6.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius);
+  padding: 0.375rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--green-bright);
+  white-space: nowrap;
+  animation: draw-hint-in 0.3s ease-out;
+  pointer-events: none;
+}
+@keyframes draw-hint-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-0.5rem); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Zeichen-Toolbar (am unteren Rand über Tab-Bar) */
+.draw-toolbar {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  right: 0.75rem;
+  z-index: 1050;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--surface-2);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 -0.25rem 1rem rgba(0,0,0,0.4);
+}
+.draw-toolbar-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.625rem 0.5rem;
+  border-radius: 0.625rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border) !important;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  min-height: 2.75rem;
+  transition: all 0.15s;
+}
+.draw-toolbar-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.draw-toolbar-btn.primary {
+  background: var(--green);
+  border-color: var(--green) !important;
+  color: #fff;
+  font-weight: 700;
+}
+.draw-toolbar-btn.danger {
+  color: var(--red);
+}
+.draw-toolbar-btn.cancel-btn {
+  flex: 0 0 auto;
+  padding: 0.625rem 0.75rem;
+}
+
+/* Vertex-Punkt (Leaflet-Custom) */
+.draw-vertex {
+  background: transparent !important;
+  border: none !important;
+}
+.draw-vertex-dot {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  background: #fff;
+  border: 2.5px solid hsl(142, 70%, 45%);
+  box-shadow: 0 0.0625rem 0.25rem rgba(0,0,0,0.4);
+  cursor: grab;
+}
+.draw-vertex-dot.first {
+  width: 1rem;
+  height: 1rem;
+  border-width: 3px;
+  box-shadow: 0 0 0 0.25rem rgba(76, 175, 80, 0.25);
+}
+
+/* Midpoint (kleinerer Kreis zum Einfügen) */
+.draw-midpoint {
+  background: transparent !important;
+  border: none !important;
+}
+.draw-midpoint-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1.5px solid hsl(142, 70%, 45%);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.draw-midpoint-dot:hover {
+  opacity: 1;
+}
+
 /* Confirm Dialog */
 .confirm-overlay {
   position: absolute;
