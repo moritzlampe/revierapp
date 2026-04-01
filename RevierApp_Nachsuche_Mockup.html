@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RevierApp — Nachsuche-Mockup</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;}
+:root{--bg:#0a0f08;--surface:#141c10;--surface-2:#1c2818;--surface-3:#243220;--border:rgba(107,159,58,0.12);--border-light:rgba(255,255,255,0.06);--green:#6B9F3A;--green-bright:#8BC34A;--green-dim:#3d5e22;--orange:#FF8F00;--red:#EF5350;--blue:#42A5F5;--text:#f0f0e8;--text-2:rgba(240,240,232,0.6);--text-3:rgba(240,240,232,0.3);--radius:14px;}
+body{font-family:'DM Sans',-apple-system,sans-serif;background:var(--bg);color:var(--text);overscroll-behavior:none;}
+#app{width:100%;max-width:430px;height:100vh;height:100dvh;margin:0 auto;position:relative;overflow:hidden;}
+
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity 0.25s;}
+.screen.active{opacity:1;pointer-events:auto;}
+
+/* Topbar */
+.topbar{height:52px;display:flex;align-items:center;padding:0 12px;gap:10px;background:var(--bg);border-bottom:1px solid var(--border-light);flex-shrink:0;}
+.back-btn{width:34px;height:34px;border-radius:10px;border:none;background:var(--surface-2);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.topbar-title{font-size:14px;font-weight:700;flex:1;}
+.topbar-sub{font-size:11px;color:var(--text-3);}
+.step-pills{display:flex;gap:4px;flex-shrink:0;}
+.step-pill{width:8px;height:8px;border-radius:50%;background:var(--surface-3);}
+.step-pill.active{background:var(--green-bright);width:20px;border-radius:4px;}
+.step-pill.done{background:var(--green);}
+
+/* === SCREEN 1: FOTO + MARKER === */
+.photo-area{flex:1;position:relative;background:#1a2010;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+.photo-placeholder{width:100%;height:100%;background:linear-gradient(135deg,#1a2a10 0%,#0f1a08 50%,#1a2010 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;}
+/* Simulated forest scene */
+.photo-placeholder::before{content:'';position:absolute;inset:0;background:
+  radial-gradient(ellipse at 30% 80%, #1a3010 0%, transparent 50%),
+  radial-gradient(ellipse at 70% 70%, #142808 0%, transparent 40%),
+  radial-gradient(ellipse at 50% 40%, #0d1f06 0%, transparent 60%),
+  linear-gradient(180deg, #0a1506 0%, #162a0c 60%, #1a3510 100%);opacity:0.8;}
+.photo-placeholder::after{content:'Foto vom Anschussbereich';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:13px;color:var(--text-3);background:rgba(0,0,0,0.4);padding:6px 14px;border-radius:8px;}
+
+/* Markers on photo */
+.photo-marker{position:absolute;display:flex;flex-direction:column;align-items:center;gap:2px;z-index:10;cursor:grab;transition:transform 0.1s;}
+.photo-marker:active{transform:scale(1.15);}
+.marker-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:3px solid white;box-shadow:0 2px 12px rgba(0,0,0,0.5);}
+.marker-label{font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap;backdrop-filter:blur(6px);}
+.marker-line{position:absolute;height:2px;transform-origin:left center;z-index:5;}
+
+/* Einwechsel */
+.m-einwechsel .marker-dot{background:#4CAF50;}
+.m-einwechsel .marker-label{background:rgba(76,175,80,0.3);color:#81C784;}
+/* Schuss */
+.m-schuss .marker-dot{background:var(--red);}
+.m-schuss .marker-label{background:rgba(239,83,80,0.3);color:#EF9A9A;}
+/* Flucht */
+.m-flucht .marker-dot{background:var(--orange);}
+.m-flucht .marker-label{background:rgba(255,143,0,0.3);color:#FFCC80;}
+
+/* Arrow line between schuss and flucht */
+.flucht-arrow{position:absolute;z-index:6;}
+.flucht-arrow svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));}
+
+/* Bottom controls */
+.annotation-bar{background:var(--surface);border-top:1px solid var(--border-light);flex-shrink:0;padding:12px 16px 16px;}
+.anno-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.anno-label{font-size:12px;font-weight:600;color:var(--text-2);width:70px;flex-shrink:0;}
+.anno-value{font-size:16px;font-weight:800;color:var(--text);min-width:50px;}
+.anno-scroll{display:flex;align-items:center;gap:2px;flex:1;overflow-x:auto;padding:4px 0;}
+.scroll-tick{padding:6px 10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;border:none;font-family:inherit;background:var(--surface-2);color:var(--text-3);}
+.scroll-tick.active{background:var(--orange);color:white;}
+.anno-stueck{display:flex;gap:6px;}
+.stueck-btn{width:40px;height:40px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-2);cursor:pointer;font-size:16px;font-weight:800;color:var(--text-2);font-family:inherit;display:flex;align-items:center;justify-content:center;}
+.stueck-btn.active{border-color:var(--green);background:rgba(107,159,58,0.15);color:var(--green-bright);}
+.anno-submit{width:100%;padding:16px;border-radius:var(--radius);border:none;background:var(--orange);color:white;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;}
+.anno-submit:active{transform:scale(0.98);}
+
+/* Marker buttons */
+.marker-btns{display:flex;gap:6px;margin-bottom:12px;}
+.marker-btn{flex:1;padding:8px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-2);cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;color:var(--text-3);display:flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;}
+.marker-btn.set{border-color:var(--green);color:var(--green-bright);background:rgba(107,159,58,0.08);}
+
+/* === SCREEN 2: HUNDEFÜHRER SPLIT VIEW === */
+.hf-split{flex:1;display:flex;flex-direction:column;min-height:0;}
+.hf-photo-half{flex:1;position:relative;min-height:0;background:#1a2010;overflow:hidden;}
+.hf-map-half{flex:1;position:relative;min-height:0;background:#111;}
+.hf-divider{height:3px;background:var(--orange);flex-shrink:0;position:relative;}
+.hf-divider-label{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--orange);color:white;font-size:10px;font-weight:700;padding:2px 10px;border-radius:4px;white-space:nowrap;}
+
+/* Aerial overlay markers */
+.aerial-marker{position:absolute;display:flex;flex-direction:column;align-items:center;z-index:10;}
+.aerial-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);}
+.aerial-label{font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;margin-top:2px;white-space:nowrap;}
+.aerial-stand{position:absolute;display:flex;flex-direction:column;align-items:center;z-index:8;}
+.aerial-stand-dot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;border:2px solid rgba(255,255,255,0.3);box-shadow:0 1px 6px rgba(0,0,0,0.3);}
+.aerial-stand-info{font-size:8px;font-weight:600;padding:1px 5px;border-radius:3px;margin-top:1px;white-space:nowrap;max-width:80px;text-align:center;line-height:1.3;}
+
+/* HF info panel */
+.hf-info{position:absolute;bottom:8px;left:8px;right:8px;background:rgba(10,15,8,0.92);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:12px;padding:10px 12px;z-index:20;display:flex;gap:10px;align-items:center;}
+.hf-info-col{display:flex;flex-direction:column;gap:2px;}
+.hf-info-label{font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;}
+.hf-info-val{font-size:13px;font-weight:700;}
+
+/* Tab switcher */
+.view-tabs{display:flex;background:var(--bg);border-bottom:1px solid var(--border-light);flex-shrink:0;}
+.view-tab{flex:1;padding:10px;text-align:center;font-size:13px;font-weight:700;cursor:pointer;color:var(--text-3);border-bottom:2px solid transparent;}
+.view-tab.active{color:var(--orange);border-bottom-color:var(--orange);}
+
+/* Legend */
+.legend{position:absolute;top:8px;right:8px;background:rgba(10,15,8,0.9);border:1px solid var(--border);border-radius:10px;padding:8px 10px;z-index:20;display:flex;flex-direction:column;gap:4px;}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-2);}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- === SCREEN 1: SCHÜTZE — Foto annotieren === -->
+  <div class="screen active" id="screen-schuetze">
+    <div class="topbar">
+      <button class="back-btn" onclick="switchScreen('screen-hf-view')">←</button>
+      <div>
+        <div class="topbar-title">🔴 Nachsuche melden</div>
+        <div class="topbar-sub">Foto markieren — 3 Punkte setzen</div>
+      </div>
+      <div class="step-pills">
+        <div class="step-pill done"></div>
+        <div class="step-pill active"></div>
+        <div class="step-pill"></div>
+      </div>
+    </div>
+
+    <!-- Foto mit Markern -->
+    <div class="photo-area">
+      <div class="photo-placeholder">
+        <!-- Simulated forest elements -->
+        <div style="position:absolute;bottom:0;left:0;right:0;height:40%;background:linear-gradient(0deg,#1a3010,transparent);z-index:1;"></div>
+        <div style="position:absolute;top:15%;left:10%;width:60px;height:120px;background:radial-gradient(ellipse,#1a3510,transparent);z-index:1;"></div>
+        <div style="position:absolute;top:10%;right:15%;width:80px;height:140px;background:radial-gradient(ellipse,#142808,transparent);z-index:1;"></div>
+
+        <!-- Marker: Einwechsel -->
+        <div class="photo-marker m-einwechsel" style="top:30%;left:22%;">
+          <div class="marker-dot">🟢</div>
+          <div class="marker-label">Einwechsel</div>
+        </div>
+
+        <!-- Marker: Schussabgabe -->
+        <div class="photo-marker m-schuss" style="top:65%;left:50%;">
+          <div class="marker-dot">🔴</div>
+          <div class="marker-label">Schuss · 45m</div>
+        </div>
+
+        <!-- Marker: Fluchtrichtung -->
+        <div class="photo-marker m-flucht" style="top:35%;right:18%;">
+          <div class="marker-dot">🟠</div>
+          <div class="marker-label">Flucht →</div>
+        </div>
+
+        <!-- Arrow from Schuss to Flucht -->
+        <svg style="position:absolute;inset:0;z-index:6;pointer-events:none;" width="100%" height="100%">
+          <defs>
+            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#FF8F00"/>
+            </marker>
+          </defs>
+          <line x1="50%" y1="65%" x2="78%" y2="37%" stroke="#FF8F00" stroke-width="2.5" stroke-dasharray="8,4" marker-end="url(#arrowhead)" opacity="0.8"/>
+          <line x1="22%" y1="32%" x2="48%" y2="63%" stroke="#4CAF50" stroke-width="2" stroke-dasharray="6,4" opacity="0.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Annotation Controls -->
+    <div class="annotation-bar">
+      <div class="marker-btns">
+        <button class="marker-btn set">🟢 Einwechsel ✓</button>
+        <button class="marker-btn set">🔴 Schuss ✓</button>
+        <button class="marker-btn set">🟠 Flucht ✓</button>
+      </div>
+      <div class="anno-row">
+        <div class="anno-label">Entfernung</div>
+        <div class="anno-scroll">
+          <button class="scroll-tick">20m</button>
+          <button class="scroll-tick">30m</button>
+          <button class="scroll-tick">40m</button>
+          <button class="scroll-tick active">45m</button>
+          <button class="scroll-tick">50m</button>
+          <button class="scroll-tick">60m</button>
+          <button class="scroll-tick">70m</button>
+          <button class="scroll-tick">80m</button>
+        </div>
+      </div>
+      <div class="anno-row">
+        <div class="anno-label">Stücke</div>
+        <div class="anno-stueck">
+          <button class="stueck-btn active">1</button>
+          <button class="stueck-btn">2</button>
+          <button class="stueck-btn">3</button>
+          <button class="stueck-btn">4+</button>
+        </div>
+      </div>
+      <button class="anno-submit" onclick="switchScreen('screen-hf-view')">
+        🔴 Nachsuche absenden →
+      </button>
+    </div>
+  </div>
+
+  <!-- === SCREEN 2: HUNDEFÜHRER — Split View === -->
+  <div class="screen" id="screen-hf-view">
+    <div class="topbar">
+      <button class="back-btn" onclick="switchScreen('screen-schuetze')">←</button>
+      <div>
+        <div class="topbar-title">🐕 Nachsuche #1 — Überläufer</div>
+        <div class="topbar-sub">Moritz · Fuchsbau · 17:15</div>
+      </div>
+    </div>
+    <div class="view-tabs">
+      <div class="view-tab active">📸 Schützen-Foto</div>
+      <div class="view-tab">🗺️ Luftbild</div>
+    </div>
+
+    <div class="hf-split">
+      <!-- Top: Annotated photo from Schütze -->
+      <div class="hf-photo-half">
+        <div class="photo-placeholder">
+          <div style="position:absolute;bottom:0;left:0;right:0;height:40%;background:linear-gradient(0deg,#1a3010,transparent);z-index:1;"></div>
+          <!-- Same markers as Schütze placed -->
+          <div class="photo-marker m-einwechsel" style="top:30%;left:22%;">
+            <div class="marker-dot" style="width:26px;height:26px;font-size:13px;">🟢</div>
+            <div class="marker-label">Einwechsel</div>
+          </div>
+          <div class="photo-marker m-schuss" style="top:65%;left:50%;">
+            <div class="marker-dot" style="width:26px;height:26px;font-size:13px;">🔴</div>
+            <div class="marker-label">Schuss · 45m</div>
+          </div>
+          <div class="photo-marker m-flucht" style="top:35%;right:18%;">
+            <div class="marker-dot" style="width:26px;height:26px;font-size:13px;">🟠</div>
+            <div class="marker-label">Flucht → NW</div>
+          </div>
+          <svg style="position:absolute;inset:0;z-index:6;pointer-events:none;" width="100%" height="100%">
+            <defs><marker id="ah2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#FF8F00"/></marker></defs>
+            <line x1="50%" y1="65%" x2="78%" y2="37%" stroke="#FF8F00" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#ah2)" opacity="0.7"/>
+            <line x1="22%" y1="32%" x2="48%" y2="63%" stroke="#4CAF50" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.4"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="hf-divider"><div class="hf-divider-label">↕ Foto oben · Luftbild unten</div></div>
+
+      <!-- Bottom: Aerial/Map view with stands -->
+      <div class="hf-map-half" style="background:linear-gradient(135deg,#0d1a08,#111a0a,#0a1206);position:relative;overflow:hidden;">
+        <!-- Simulated aerial texture -->
+        <div style="position:absolute;inset:0;background:
+          radial-gradient(circle at 40% 50%, #1a3010 0%, transparent 30%),
+          radial-gradient(circle at 60% 40%, #142808 0%, transparent 25%),
+          radial-gradient(circle at 30% 30%, #0f2006 0%, transparent 35%),
+          radial-gradient(circle at 70% 65%, #1a2a10 0%, transparent 28%);
+          opacity:0.6;"></div>
+        <!-- Simulated field edge -->
+        <div style="position:absolute;top:0;right:0;width:35%;height:100%;background:linear-gradient(90deg,transparent,rgba(139,119,42,0.08));"></div>
+
+        <!-- Legend -->
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#EF5350;"></div>Anschuss</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#FF8F00;"></div>Flucht</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#4CAF50;"></div>Einwechsel</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#42A5F5;"></div>Andere Stände</div>
+        </div>
+
+        <!-- DEIN Hochsitz (Fuchsbau) - center -->
+        <div class="aerial-marker" style="top:55%;left:48%;">
+          <div class="aerial-icon" style="background:var(--red);font-size:14px;width:32px;height:32px;">🪵</div>
+          <div class="aerial-label" style="background:rgba(239,83,80,0.4);color:#FFCDD2;">Fuchsbau · Moritz</div>
+        </div>
+
+        <!-- Einwechsel marker on aerial -->
+        <div class="aerial-marker" style="top:35%;left:25%;">
+          <div class="aerial-icon" style="background:#4CAF50;width:22px;height:22px;font-size:10px;">↗</div>
+          <div class="aerial-label" style="background:rgba(76,175,80,0.3);color:#A5D6A7;font-size:8px;">Einwechsel</div>
+        </div>
+
+        <!-- Flucht direction arrow on aerial -->
+        <svg style="position:absolute;inset:0;z-index:9;pointer-events:none;" width="100%" height="100%">
+          <defs><marker id="ah3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#FF8F00"/></marker></defs>
+          <!-- Flucht arrow from Fuchsbau to NW -->
+          <line x1="48%" y1="53%" x2="28%" y2="25%" stroke="#FF8F00" stroke-width="3" stroke-dasharray="10,5" marker-end="url(#ah3)" opacity="0.8"/>
+          <!-- Einwechsel path -->
+          <line x1="25%" y1="37%" x2="46%" y2="53%" stroke="#4CAF50" stroke-width="2" stroke-dasharray="6,4" opacity="0.4"/>
+          <!-- 45m radius circle -->
+          <circle cx="48%" cy="55%" r="40" stroke="rgba(239,83,80,0.3)" stroke-width="1" fill="none" stroke-dasharray="4,3"/>
+          <text x="52%" y="46%" fill="rgba(239,83,80,0.4)" font-size="9" font-weight="600">~45m</text>
+        </svg>
+
+        <!-- Andere Stände -->
+        <div class="aerial-stand" style="top:20%;left:60%;">
+          <div class="aerial-stand-dot" style="background:#1565C0;color:white;">HW</div>
+          <div class="aerial-stand-info" style="background:rgba(21,101,192,0.4);color:#90CAF9;">Eicheneck<br>—</div>
+        </div>
+        <div class="aerial-stand" style="top:70%;left:75%;">
+          <div class="aerial-stand-dot" style="background:#E65100;color:white;">KM</div>
+          <div class="aerial-stand-info" style="background:rgba(230,81,0,0.4);color:#FFCC80;">Birkenweg<br>🦌 Rehbock 17:40</div>
+        </div>
+        <div class="aerial-stand" style="top:80%;left:30%;">
+          <div class="aerial-stand-dot" style="background:#6A1B9A;color:white;">FS</div>
+          <div class="aerial-stand-info" style="background:rgba(106,27,154,0.4);color:#CE93D8;">Moorkante<br>—</div>
+        </div>
+        <div class="aerial-stand" style="top:15%;left:35%;">
+          <div class="aerial-stand-dot" style="background:#00838F;color:white;">PB</div>
+          <div class="aerial-stand-info" style="background:rgba(0,131,143,0.4);color:#80DEEA;">Südblick<br>🐗 Überl. 17:50 ⚡</div>
+        </div>
+
+        <!-- HF info overlay -->
+        <div class="hf-info">
+          <div style="font-size:22px;">🐗</div>
+          <div class="hf-info-col" style="flex:1;">
+            <div class="hf-info-label">Wildart</div>
+            <div class="hf-info-val">Überläufer · 1 Stk</div>
+          </div>
+          <div class="hf-info-col">
+            <div class="hf-info-label">Flucht</div>
+            <div class="hf-info-val" style="color:var(--orange);">→ NW · 45m</div>
+          </div>
+          <button onclick="alert('🧭 Navigation startet zum Parkplatz Süd → Fußweg zum Anschuss')" style="padding:10px 14px;border-radius:10px;border:none;background:var(--green);color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0;">🧭</button>
+        </div>
+
+        <!-- Highlight: Peter at Südblick shot same thing! -->
+        <div style="position:absolute;top:6%;left:15%;background:rgba(255,143,0,0.15);border:1.5px solid var(--orange);border-radius:10px;padding:6px 10px;z-index:20;max-width:200px;">
+          <div style="font-size:10px;font-weight:700;color:var(--orange);">⚡ Mögliche Überschneidung</div>
+          <div style="font-size:9px;color:var(--text-2);margin-top:2px;">Peter (Südblick) hat 🐗 Überläufer um 17:50 gemeldet — Fluchtrichtung zeigt zu seinem Stand</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function switchScreen(id){
+  document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
+  document.getElementById(id).classList.add('active');
+}
+// Make scroll ticks interactive
+document.querySelectorAll('.scroll-tick').forEach(function(t){
+  t.onclick=function(){
+    document.querySelectorAll('.scroll-tick').forEach(function(x){x.classList.remove('active');});
+    t.classList.add('active');
+  };
+});
+document.querySelectorAll('.stueck-btn').forEach(function(b){
+  b.onclick=function(){
+    document.querySelectorAll('.stueck-btn').forEach(function(x){x.classList.remove('active');});
+    b.classList.add('active');
+  };
+});
+</script>
+</body>
+</html>

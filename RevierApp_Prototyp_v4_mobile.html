@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RevierApp — Mobile</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,400&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; }
+
+:root {
+  --bg: #0a0f08;
+  --surface: #141c10;
+  --surface-2: #1c2818;
+  --surface-3: #243220;
+  --border: rgba(107,159,58,0.12);
+  --border-light: rgba(255,255,255,0.06);
+  --green: #6B9F3A;
+  --green-bright: #8BC34A;
+  --green-dim: #3d5e22;
+  --green-900: #1a3409;
+  --orange: #FF8F00;
+  --red: #EF5350;
+  --blue: #42A5F5;
+  --text: #f0f0e8;
+  --text-2: rgba(240,240,232,0.6);
+  --text-3: rgba(240,240,232,0.3);
+  --radius: 14px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --bottom-nav-h: 64px;
+}
+
+body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg); color: var(--text); overscroll-behavior: none; }
+
+/* === APP SHELL === */
+#app { width: 100%; max-width: 430px; height: 100vh; height: 100dvh; margin: 0 auto; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+
+/* === SCREENS === */
+.screen { position: absolute; inset: 0; bottom: var(--bottom-nav-h); display: flex; flex-direction: column; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 1; }
+.screen.active { opacity: 1; pointer-events: auto; z-index: 2; }
+/* Fullscreen screens (no bottom nav) */
+.screen.fullscreen { bottom: 0; }
+
+/* === BOTTOM NAV === */
+.bottom-nav { position: absolute; bottom: 0; left: 0; right: 0; height: var(--bottom-nav-h); padding-bottom: var(--safe-bottom); background: var(--surface); border-top: 1px solid var(--border-light); display: flex; z-index: 50; }
+.bnav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; color: var(--text-3); transition: color 0.15s; position: relative; -webkit-tap-highlight-color: transparent; }
+.bnav-item.active { color: var(--green-bright); }
+.bnav-item .bnav-icon { font-size: 22px; line-height: 1; }
+.bnav-item .bnav-label { font-size: 10px; font-weight: 600; }
+.bnav-item .bnav-live { position: absolute; top: 6px; right: calc(50% - 20px); width: 7px; height: 7px; background: var(--red); border-radius: 50%; animation: pulse-dot 2s infinite; }
+@keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+/* === STATUS BAR === */
+.status-bar { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 12px; font-weight: 700; color: var(--text-2); flex-shrink: 0; }
+
+/* ==================== SCREEN: JAGD (QuickHunt Home) ==================== */
+.home-header { padding: 4px 20px 16px; flex-shrink: 0; }
+.home-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.home-logo-icon { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--green), var(--green-dim)); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.home-logo-text { font-size: 19px; font-weight: 700; letter-spacing: -0.3px; }
+.home-logo-text span { color: var(--green-bright); }
+.home-greeting { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.2; }
+.home-greeting span { color: var(--green-bright); }
+.home-sub { font-size: 13px; color: var(--text-2); margin-top: 4px; }
+
+.quick-actions { display: flex; gap: 10px; padding: 0 20px; margin-bottom: 20px; flex-shrink: 0; }
+.qa-btn { flex: 1; padding: 16px 12px; border-radius: var(--radius); border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; font-family: inherit; transition: transform 0.15s; }
+.qa-btn:active { transform: scale(0.97); }
+.qa-btn.primary { background: linear-gradient(135deg, var(--green), #4a7a25); color: white; box-shadow: 0 4px 20px rgba(107,159,58,0.25); }
+.qa-btn.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.qa-icon { font-size: 26px; }
+.qa-label { font-size: 13px; font-weight: 600; }
+.qa-desc { font-size: 10px; opacity: 0.5; margin-top: -3px; }
+
+.section-title { font-size: 12px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 1px; padding: 0 20px; margin-bottom: 8px; }
+.hunt-list { flex: 1; overflow-y: auto; padding: 0 20px 20px; }
+.hunt-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; cursor: pointer; transition: transform 0.12s; }
+.hunt-card:active { transform: scale(0.98); }
+.hunt-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.hunt-card-title { font-size: 15px; font-weight: 700; }
+.hunt-card-badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge-live { background: rgba(239,83,80,0.15); color: var(--red); }
+.badge-planned { background: rgba(66,165,245,0.15); color: var(--blue); }
+.badge-done { background: rgba(107,159,58,0.15); color: var(--green); }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: pulse-dot 1.5s infinite; display: inline-block; margin-right: 4px; }
+.hunt-card-meta { display: flex; gap: 14px; font-size: 12px; color: var(--text-2); flex-wrap: wrap; }
+.hunt-card-meta span { display: flex; align-items: center; gap: 4px; }
+.hunt-card-avatars { display: flex; margin-top: 10px; }
+.mini-avatar { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; margin-left: -5px; }
+.mini-avatar:first-child { margin-left: 0; }
+.mini-avatar.a1 { background: #2E7D32; color: white; }
+.mini-avatar.a2 { background: #1565C0; color: white; }
+.mini-avatar.a3 { background: #E65100; color: white; }
+.mini-avatar.a4 { background: #6A1B9A; color: white; }
+.mini-avatar.a5 { background: var(--surface-3); color: var(--text-2); }
+
+/* ==================== SCREEN: HUNT (Fullscreen map + chat + nachsuche) ==================== */
+.hunt-topbar { height: 52px; display: flex; align-items: center; padding: 0 12px; gap: 10px; background: var(--bg); border-bottom: 1px solid var(--border-light); flex-shrink: 0; z-index: 20; }
+.back-btn { width: 34px; height: 34px; border-radius: 10px; border: none; background: var(--surface-2); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.back-btn:active { background: var(--surface-3); }
+.hunt-topbar-info { flex: 1; min-width: 0; }
+.hunt-topbar-title { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hunt-topbar-sub { font-size: 11px; color: var(--text-3); }
+
+.hunt-tabs { display: flex; background: var(--bg); border-bottom: 1px solid var(--border-light); flex-shrink: 0; z-index: 20; padding: 0 4px; }
+.hunt-tab { flex: 1; padding: 10px 0; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-3); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 5px; }
+.hunt-tab.active { color: var(--green-bright); border-bottom-color: var(--green); }
+.tab-badge { background: var(--red); color: white; font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 700; }
+
+.tab-panel { flex: 1; display: none; flex-direction: column; min-height: 0; }
+.tab-panel.active { display: flex; }
+
+/* Map */
+#hunt-map { flex: 1; min-height: 0; }
+.map-user-list { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 6px; z-index: 500; overflow-x: auto; padding: 2px; }
+.map-user-chip { display: flex; align-items: center; gap: 5px; background: rgba(10,15,8,0.85); backdrop-filter: blur(10px); border-radius: 20px; padding: 4px 10px 4px 4px; white-space: nowrap; flex-shrink: 0; border: 1px solid var(--border); cursor: pointer; }
+.map-user-chip .mini-avatar { width: 22px; height: 22px; font-size: 9px; margin: 0; border-color: transparent; }
+.map-user-chip span { font-size: 11px; font-weight: 600; }
+.chip-dist { font-size: 10px; color: var(--text-3); }
+.map-overlay-btns { position: absolute; bottom: 16px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 500; }
+.map-fab { width: 46px; height: 46px; border-radius: 13px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+.map-fab:active { transform: scale(0.92); }
+.map-fab.green { background: var(--green); color: white; }
+.map-fab.dark { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+/* Chat */
+.chat-messages { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; }
+.chat-msg { max-width: 82%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.4; }
+.chat-msg.other { background: var(--surface-2); border: 1px solid var(--border); align-self: flex-start; border-bottom-left-radius: 4px; }
+.chat-msg.self { background: var(--green-dim); align-self: flex-end; border-bottom-right-radius: 4px; }
+.msg-sender { font-size: 11px; font-weight: 700; color: var(--green-bright); margin-bottom: 2px; }
+.msg-time { font-size: 10px; color: var(--text-3); margin-top: 3px; text-align: right; }
+.msg-photo { width: 100%; aspect-ratio: 4/3; background: var(--surface-3); border-radius: 10px; margin: 6px 0; display: flex; align-items: center; justify-content: center; font-size: 36px; }
+.msg-voice { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.voice-wave { display: flex; align-items: center; gap: 2px; height: 22px; }
+.voice-bar { width: 3px; border-radius: 2px; background: var(--green); animation: voice-anim 0.8s ease-in-out infinite alternate; }
+@keyframes voice-anim { from { height: 4px; } to { height: 18px; } }
+.voice-bar:nth-child(2) { animation-delay: 0.1s; }
+.voice-bar:nth-child(3) { animation-delay: 0.2s; }
+.voice-bar:nth-child(4) { animation-delay: 0.15s; }
+.voice-bar:nth-child(5) { animation-delay: 0.25s; }
+.voice-bar:nth-child(6) { animation-delay: 0.05s; }
+.voice-dur { font-size: 12px; color: var(--text-2); }
+.chat-input-bar { padding: 8px 10px; background: var(--bg); border-top: 1px solid var(--border-light); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.chat-input { flex: 1; height: 40px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); padding: 0 16px; font-size: 14px; color: var(--text); font-family: inherit; outline: none; }
+.chat-input::placeholder { color: var(--text-3); }
+.chat-icon-btn { width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.chat-icon-btn:active { transform: scale(0.9); }
+.chat-icon-btn.cam { background: var(--surface-2); color: var(--text-2); }
+.chat-icon-btn.mic { background: var(--green); color: white; }
+
+/* Nachsuche */
+.ns-header-bar { padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.ns-header-title { font-size: 14px; font-weight: 700; }
+.ns-count { font-size: 11px; color: var(--text-3); }
+.ns-add-btn { padding: 8px 14px; border-radius: 10px; border: none; background: var(--orange); color: white; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.ns-list { flex: 1; overflow-y: auto; padding: 8px; }
+.ns-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 8px; }
+.ns-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ns-prio { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; flex-shrink: 0; }
+.ns-prio.high { background: rgba(239,83,80,0.15); color: var(--red); }
+.ns-prio.medium { background: rgba(255,143,0,0.15); color: var(--orange); }
+.ns-card-info { flex: 1; }
+.ns-card-title { font-size: 14px; font-weight: 700; }
+.ns-card-sub { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.ns-card-photo { width: 50px; height: 50px; border-radius: 10px; background: var(--surface-3); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+.ns-card-details { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.ns-detail-chip { display: flex; align-items: center; gap: 4px; padding: 3px 8px; background: var(--surface-2); border-radius: 8px; font-size: 11px; color: var(--text-2); }
+.ns-card-status { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; display: inline-block; margin-top: 8px; }
+.ns-status-open { background: rgba(255,143,0,0.15); color: var(--orange); }
+.ns-status-assigned { background: rgba(107,159,58,0.15); color: var(--green); }
+
+/* Hundeführer cards */
+.hf-banner { padding: 12px 16px; background: linear-gradient(135deg, #3a2200, #2a1800); border-bottom: 1px solid rgba(255,143,0,0.15); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.hf-banner-icon { font-size: 26px; }
+.hf-banner-text { font-size: 14px; font-weight: 700; color: var(--orange); }
+.hf-banner-sub { font-size: 11px; color: var(--text-2); }
+.hf-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin: 8px 12px; overflow: hidden; }
+.hf-card-header { padding: 12px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border-light); }
+.hf-card-num { width: 34px; height: 34px; border-radius: 10px; background: var(--orange); color: white; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 800; flex-shrink: 0; }
+.hf-card-body { padding: 12px; }
+.hf-detail-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.hf-detail-row .icon { width: 20px; text-align: center; }
+.hf-detail-row .label { color: var(--text-2); }
+.hf-detail-row .value { margin-left: auto; font-weight: 600; }
+.hf-card-actions { padding: 10px 12px; border-top: 1px solid var(--border-light); display: flex; gap: 8px; }
+.hf-action-btn { flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.hf-action-btn:active { transform: scale(0.97); }
+.hf-action-btn.nav { background: var(--green); color: white; }
+.hf-action-btn.done { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+
+/* ==================== SCREEN: REVIER (Mobile) ==================== */
+.revier-map-container { flex: 1; position: relative; }
+#revier-map { width: 100%; height: 100%; }
+.revier-topbar { height: 52px; display: flex; align-items: center; padding: 0 16px; gap: 12px; background: var(--bg); border-bottom: 1px solid var(--border-light); flex-shrink: 0; z-index: 20; }
+.revier-name-bar { font-size: 15px; font-weight: 700; flex: 1; }
+.revier-name-bar small { font-size: 11px; color: var(--text-3); font-weight: 500; display: block; }
+.revier-layer-pills { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 500; display: flex; gap: 6px; overflow-x: auto; }
+.layer-pill { padding: 7px 14px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; background: rgba(10,15,8,0.8); backdrop-filter: blur(10px); color: var(--text-2); border: 1px solid var(--border); white-space: nowrap; }
+.layer-pill.active { background: var(--green-dim); color: var(--green-bright); border-color: var(--green); }
+.revier-fab-group { position: absolute; bottom: 16px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 500; }
+
+/* ==================== SCREEN: STRECKE (Mobile) ==================== */
+.strecke-header { padding: 16px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.strecke-header h2 { font-size: 18px; font-weight: 700; }
+.strecke-header p { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.strecke-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 20px; flex-shrink: 0; }
+.strecke-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }
+.strecke-stat-val { font-size: 22px; font-weight: 700; color: var(--green-bright); }
+.strecke-stat-label { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+.strecke-list { flex: 1; overflow-y: auto; padding: 0 12px 12px; }
+.strecke-item { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 6px; }
+.strecke-item-icon { font-size: 28px; flex-shrink: 0; }
+.strecke-item-info { flex: 1; min-width: 0; }
+.strecke-item-title { font-size: 14px; font-weight: 600; }
+.strecke-item-meta { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.strecke-add-btn { margin: 12px 20px; padding: 14px; border-radius: 12px; border: none; background: var(--green); color: white; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.strecke-add-btn:active { transform: scale(0.98); }
+
+/* ==================== SCREEN: PROFIL ==================== */
+.profil-content { flex: 1; overflow-y: auto; padding: 20px; }
+.profil-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 14px; }
+.profil-avatar { width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(135deg, var(--green), var(--green-dim)); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; flex-shrink: 0; }
+.profil-name { font-size: 18px; font-weight: 700; }
+.profil-sub { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.profil-menu-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 6px; cursor: pointer; }
+.profil-menu-item:active { background: var(--surface-2); }
+.profil-menu-icon { font-size: 20px; width: 28px; text-align: center; }
+.profil-menu-label { font-size: 14px; font-weight: 600; flex: 1; }
+.profil-menu-arrow { color: var(--text-3); font-size: 14px; }
+
+/* === MODAL (Bottom Sheet) === */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 100; display: none; align-items: flex-end; justify-content: center; }
+.modal-overlay.visible { display: flex; }
+.modal-sheet { width: 100%; max-width: 430px; background: var(--surface); border-radius: 20px 20px 0 0; padding: 8px 20px 20px; max-height: 85vh; overflow-y: auto; animation: sheet-up 0.3s ease; }
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.sheet-handle { width: 36px; height: 4px; background: var(--text-3); border-radius: 2px; margin: 8px auto 16px; }
+.sheet-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.sheet-desc { font-size: 13px; color: var(--text-2); margin-bottom: 16px; }
+.form-group { margin-bottom: 14px; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; display: block; }
+.form-input, .form-select { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; font-family: inherit; outline: none; appearance: none; }
+.form-input:focus, .form-select:focus { border-color: var(--green); }
+.form-row { display: flex; gap: 10px; }
+.form-row .form-group { flex: 1; }
+.form-photo-btn { width: 100%; padding: 18px; border-radius: 10px; border: 2px dashed var(--border); background: var(--bg); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text-2); font-family: inherit; font-size: 13px; }
+.form-photo-btn:active { border-color: var(--green); }
+.form-submit-btn { width: 100%; padding: 16px; border-radius: var(--radius); border: none; background: var(--orange); color: white; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; margin-top: 8px; }
+.form-submit-btn:active { transform: scale(0.98); }
+
+/* === TOAST === */
+.toast { position: fixed; top: 56px; left: 50%; transform: translateX(-50%); background: var(--surface); color: var(--text); padding: 11px 18px; border-radius: 12px; font-size: 13px; font-weight: 600; z-index: 200; display: none; align-items: center; gap: 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); border: 1px solid var(--border); max-width: 90%; }
+.toast.visible { display: flex; animation: toast-in 0.3s ease; }
+@keyframes toast-in { from { opacity:0; transform: translateX(-50%) translateY(-10px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+
+/* Leaflet dark */
+.leaflet-container { background: #1a1a1a; }
+.leaflet-control-zoom a { background: var(--surface) !important; color: var(--text) !important; border-color: var(--border) !important; }
+.leaflet-control-attribution { display: none !important; }
+/* User markers */
+.user-marker { background: none !important; border: none !important; }
+.user-marker-inner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 2px 10px rgba(0,0,0,0.4); position: relative; }
+.user-marker-inner::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid; opacity: 0.3; animation: marker-pulse 2s ease infinite; }
+@keyframes marker-pulse { 0% { transform: scale(0.8); opacity: 0.4; } 100% { transform: scale(1.3); opacity: 0; } }
+.user-marker-label { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700; white-space: nowrap; padding: 2px 7px; border-radius: 6px; background: rgba(10,15,8,0.85); color: white; }
+.hs-marker-dark { background: none !important; border: none !important; }
+.hs-pin { width: 24px; height: 24px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.35); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.hs-pin span { transform: rotate(45deg); font-size: 11px; }
+.hs-pin.orange { background: #E65100; }
+.hs-pin.green { background: #2D5016; }
+.hs-pin.blue { background: #1565C0; }
+.hs-label { position: absolute; top: -5px; left: 28px; font-size: 10px; font-weight: 600; white-space: nowrap; color: rgba(255,255,255,0.6); }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ==================== SCREEN: JAGD HOME ==================== -->
+  <div class="screen active" id="screen-jagd">
+    <div class="status-bar"><span>16:30</span><span>📶 🔋 87%</span></div>
+    <div class="home-header">
+      <div class="home-logo">
+        <div class="home-logo-icon">🌲</div>
+        <div class="home-logo-text">Revier<span>App</span></div>
+      </div>
+      <div class="home-greeting">Moin, <span>Moritz</span></div>
+      <div class="home-sub">Was steht an?</div>
+    </div>
+    <div class="quick-actions">
+      <button class="qa-btn primary" onclick="openModal('create-hunt')">
+        <div class="qa-icon">🎯</div>
+        <div class="qa-label">Jagd starten</div>
+        <div class="qa-desc">Gruppe erstellen</div>
+      </button>
+      <button class="qa-btn secondary" onclick="showGuestJoin()">
+        <div class="qa-icon">🔗</div>
+        <div class="qa-label">Beitreten</div>
+        <div class="qa-desc">Per Link</div>
+      </button>
+      <button class="qa-btn secondary" onclick="goTo('screen-hf')">
+        <div class="qa-icon">🐕</div>
+        <div class="qa-label">Nachsuche</div>
+        <div class="qa-desc">Hundeführer</div>
+      </button>
+    </div>
+    <div class="section-title">Aktive & geplante Jagden</div>
+    <div class="hunt-list">
+      <div class="hunt-card" onclick="goTo('screen-hunt')">
+        <div class="hunt-card-top">
+          <div class="hunt-card-title">Ansitz Brockwinkel</div>
+          <div class="hunt-card-badge badge-live"><span class="live-dot"></span>Live</div>
+        </div>
+        <div class="hunt-card-meta">
+          <span>📍 Brockwinkel</span>
+          <span>👥 5 Jäger</span>
+          <span>🕐 Seit 16:30</span>
+        </div>
+        <div class="hunt-card-avatars">
+          <div class="mini-avatar a1">ML</div>
+          <div class="mini-avatar a2">HW</div>
+          <div class="mini-avatar a3">KM</div>
+          <div class="mini-avatar a4">FS</div>
+          <div class="mini-avatar a5">+1</div>
+        </div>
+      </div>
+      <div class="hunt-card" onclick="toast('Drückjagd-Planung öffnet sich...')">
+        <div class="hunt-card-top">
+          <div class="hunt-card-title">Herbstdrückjagd 2026</div>
+          <div class="hunt-card-badge badge-planned">18. Okt.</div>
+        </div>
+        <div class="hunt-card-meta">
+          <span>📍 Brockwinkel</span>
+          <span>👥 18/24</span>
+          <span>🐕 6 Hunde</span>
+        </div>
+        <div class="hunt-card-avatars">
+          <div class="mini-avatar a1">ML</div><div class="mini-avatar a2">HW</div><div class="mini-avatar a3">KM</div><div class="mini-avatar a5">+15</div>
+        </div>
+      </div>
+      <div class="hunt-card">
+        <div class="hunt-card-top">
+          <div class="hunt-card-title">Abendansitz Fuchsbau</div>
+          <div class="hunt-card-badge badge-done">Gestern</div>
+        </div>
+        <div class="hunt-card-meta"><span>👥 2 Jäger</span><span>🦌 1 Rehbock</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: LIVE HUNT ==================== -->
+  <div class="screen fullscreen" id="screen-hunt">
+    <div class="hunt-topbar">
+      <button class="back-btn" onclick="goTo('screen-jagd')">←</button>
+      <div class="hunt-topbar-info">
+        <div class="hunt-topbar-title"><span class="live-dot"></span>Ansitz Brockwinkel</div>
+        <div class="hunt-topbar-sub">🎖️ Jagdleiter · 5 Jäger aktiv</div>
+      </div>
+      <button class="back-btn" onclick="toast('📋 Einladungslink kopiert!')" style="font-size:15px;">🔗</button>
+      <button class="back-btn" onclick="toast('⚙️ Jagd-Einstellungen...')" style="font-size:15px;">⚙️</button>
+      <button class="back-btn" onclick="toggleJLbar()" style="font-size:12px;padding:0 8px;width:auto;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.2);color:#FFD700;font-weight:700;">🎖️</button>
+    </div>
+    <!-- Jagdleiter command bar -->
+    <div id="jl-bar" style="background:linear-gradient(135deg,#2a2008,#1f1a06);border-bottom:1px solid rgba(255,215,0,0.15);padding:8px 12px;display:none;gap:6px;overflow-x:auto;flex-shrink:0;z-index:25;">
+      <button onclick="toast('📢 Signal: Treiben beginnt — alle benachrichtigt!')" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(107,159,58,0.3);background:rgba(107,159,58,0.1);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--green-bright);white-space:nowrap;display:flex;align-items:center;gap:4px;">📢 Treiben!</button>
+      <button onclick="toast('🔴 Signal: Hahn in Ruh — alle benachrichtigt!')" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(239,83,80,0.3);background:rgba(239,83,80,0.1);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--red);white-space:nowrap;display:flex;align-items:center;gap:4px;">🔴 Hahn in Ruh</button>
+      <button onclick="toast('👥 Rollen werden bearbeitet...')" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--text-2);white-space:nowrap;display:flex;align-items:center;gap:4px;">👥 Rollen</button>
+      <button onclick="toast('🐕 Nachsuchenführer wird extern angefordert...')" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(255,143,0,0.3);background:rgba(255,143,0,0.08);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--orange);white-space:nowrap;display:flex;align-items:center;gap:4px;">🐕 +Nachsuche</button>
+    </div>
+    <div class="hunt-tabs">
+      <div class="hunt-tab active" data-tab="tab-map" onclick="switchHuntTab(this)">🗺️ Karte</div>
+      <div class="hunt-tab" data-tab="tab-chat" onclick="switchHuntTab(this)">💬 Chat <span class="tab-badge">3</span></div>
+      <div class="hunt-tab" data-tab="tab-ns" onclick="switchHuntTab(this)">🔴 Nachsuche <span class="tab-badge">2</span></div>
+      <div class="hunt-tab" data-tab="tab-strecke" onclick="switchHuntTab(this)">🦌 Strecke <span class="tab-badge" style="background:var(--green);">3</span></div>
+    </div>
+    <div class="tab-panel active" id="tab-map" style="position:relative;">
+      <div class="map-user-list">
+        <div class="map-user-chip" style="border:1px solid rgba(255,215,0,0.3);"><div class="mini-avatar a1" style="margin:0;border:0;width:22px;height:22px;font-size:9px;">ML</div><span>Du</span><span style="font-size:9px;color:#FFD700;">🎖️</span></div>
+        <div class="map-user-chip"><div class="mini-avatar a2" style="margin:0;border:0;width:22px;height:22px;font-size:9px;">HW</div><span>Heinrich</span><span style="font-size:9px;color:var(--blue);">👥</span><span class="chip-dist">380m</span></div>
+        <div class="map-user-chip"><div class="mini-avatar a3" style="margin:0;border:0;width:22px;height:22px;font-size:9px;">KM</div><span>Karl</span><span style="font-size:9px;">🎯</span><span class="chip-dist">520m</span></div>
+        <div class="map-user-chip"><div class="mini-avatar a4" style="margin:0;border:0;width:22px;height:22px;font-size:9px;">FS</div><span>Frank</span><span style="font-size:9px;color:var(--orange);">🐕</span><span class="chip-dist">1,2km</span></div>
+      </div>
+      <div id="hunt-map"></div>
+      <div class="map-overlay-btns">
+        <button class="map-fab green" onclick="toast('📍 Dein Standort wird live geteilt')">📍</button>
+        <button class="map-fab dark" onclick="toast('Layer wechseln...')">🗺️</button>
+      </div>
+    </div>
+    <div class="tab-panel" id="tab-chat">
+      <div class="chat-messages">
+        <div class="chat-msg other"><div class="msg-sender">Heinrich</div>Bin am Hochsitz Eicheneck. Alles ruhig 🌲<div class="msg-time">16:32</div></div>
+        <div class="chat-msg self">Top, bin am Fuchsbau. Auf der Kirrung waren Sauen 🐗<div class="msg-time">16:34</div></div>
+        <div class="chat-msg other"><div class="msg-sender">Karl</div><div class="msg-photo">📸</div>Wildwechsel am Waldrand, Rehwild aus Süd<div class="msg-time">16:48</div></div>
+        <div class="chat-msg other"><div class="msg-sender">Frank</div><div class="msg-voice"><span style="cursor:pointer;">▶</span><div class="voice-wave"><div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div></div><span class="voice-dur">0:08</span></div><div class="msg-time">17:02</div></div>
+        <div class="chat-msg self">Hab Überläufer beschossen! Flucht NW. Brauche Nachsuche.<div class="msg-time">17:15</div></div>
+        <div class="chat-msg other" style="background:rgba(255,143,0,0.1);border-color:rgba(255,143,0,0.3);"><div class="msg-sender" style="color:var(--orange);">🔴 Nachsuche gemeldet</div><strong>Überläufer</strong> · Moritz · Fuchsbau<br>Flucht NW · Foto angehängt<div class="msg-time">17:15</div></div>
+      </div>
+      <div class="chat-input-bar">
+        <button class="chat-icon-btn cam" onclick="toast('📷 Kamera...')">📷</button>
+        <input class="chat-input" placeholder="Nachricht..." />
+        <button class="chat-icon-btn mic" onclick="toast('🎤 Aufnahme...')">🎤</button>
+      </div>
+    </div>
+    <div class="tab-panel" id="tab-ns" style="padding:0;flex-direction:column;">
+      <div class="ns-header-bar">
+        <div><div class="ns-header-title">Nachsuchen</div><div class="ns-count">2 offen · 1 erledigt</div></div>
+        <button class="ns-add-btn" onclick="openModal('ns-form')">+ Melden</button>
+      </div>
+      <div class="ns-list">
+        <div class="ns-card">
+          <div class="ns-card-top">
+            <div class="ns-prio high">1</div>
+            <div class="ns-card-info"><div class="ns-card-title">Überläufer — Fuchsbau</div><div class="ns-card-sub">Moritz · 17:15 · Flucht NW</div></div>
+            <div class="ns-card-photo">🐗</div>
+          </div>
+          <div class="ns-card-details"><div class="ns-detail-chip">🔴 Schweiß</div><div class="ns-detail-chip">📍 380m NW</div><div class="ns-detail-chip">📸 2 Fotos</div></div>
+          <div class="ns-card-status ns-status-assigned">→ Hundeführer Petersen</div>
+        </div>
+        <div class="ns-card">
+          <div class="ns-card-top">
+            <div class="ns-prio medium">2</div>
+            <div class="ns-card-info"><div class="ns-card-title">Ricke — Moorkante</div><div class="ns-card-sub">Heinrich · 17:45 · Flucht S</div></div>
+            <div class="ns-card-photo">🦌</div>
+          </div>
+          <div class="ns-card-details"><div class="ns-detail-chip">🩸 Pirschzeichen</div><div class="ns-detail-chip">📍 Moorkante</div></div>
+          <div class="ns-card-status ns-status-open">Offen — wartet auf Freigabe</div>
+        </div>
+        <div class="ns-card" style="opacity:0.4;">
+          <div class="ns-card-top">
+            <div class="ns-prio medium" style="background:rgba(255,255,255,0.05);color:var(--text-3);">✓</div>
+            <div class="ns-card-info"><div class="ns-card-title" style="text-decoration:line-through;">Frischling — Birkenweg</div><div class="ns-card-sub">Karl · 16:50 · Tot am Anschuss</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STRECKE TAB -->
+    <div class="tab-panel" id="tab-strecke" style="padding:0;flex-direction:column;">
+      <!-- Quick-Report Buttons -->
+      <div style="padding:12px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;">
+        <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">Schnellmeldung — tippe auf Wildart</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+          <button onclick="reportKill('🐗','Schwarzwild')" style="padding:14px 4px;border-radius:12px;border:2px solid rgba(255,143,0,0.2);background:rgba(255,143,0,0.06);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;">
+            <span style="font-size:32px;">🐗</span>
+            <span style="font-size:11px;font-weight:700;color:var(--orange);">Schwarz</span>
+          </button>
+          <button onclick="reportKill('🦌','Rehwild')" style="padding:14px 4px;border-radius:12px;border:2px solid rgba(107,159,58,0.2);background:rgba(107,159,58,0.06);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;">
+            <span style="font-size:32px;">🦌</span>
+            <span style="font-size:11px;font-weight:700;color:var(--green-bright);">Rehwild</span>
+          </button>
+          <button onclick="reportKill('🦊','Fuchs')" style="padding:14px 4px;border-radius:12px;border:2px solid rgba(239,83,80,0.2);background:rgba(239,83,80,0.06);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;">
+            <span style="font-size:32px;">🦊</span>
+            <span style="font-size:11px;font-weight:700;color:var(--red);">Fuchs</span>
+          </button>
+          <button onclick="reportKill('🦡','Dachs')" style="padding:14px 4px;border-radius:12px;border:2px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:inherit;">
+            <span style="font-size:32px;">🦡</span>
+            <span style="font-size:11px;font-weight:700;color:var(--text-2);">Dachs</span>
+          </button>
+        </div>
+      </div>
+      <!-- Participant Filter -->
+      <div style="padding:8px 12px;display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--border-light);flex-shrink:0;">
+        <button class="pf-chip active" onclick="filterStrecke('alle',this)" style="display:flex;align-items:center;gap:5px;padding:6px 14px;border-radius:20px;border:1.5px solid var(--green);background:rgba(107,159,58,0.15);color:var(--green-bright);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">Alle <span style="opacity:0.6;">3</span></button>
+        <button class="pf-chip" onclick="filterStrecke('moritz',this)" style="display:flex;align-items:center;gap:5px;padding:6px 10px 6px 5px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface-2);color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;"><div class='mini-avatar a1' style='margin:0;border:0;width:22px;height:22px;font-size:9px;'>ML</div>Moritz <span style="opacity:0.5;">1</span></button>
+        <button class="pf-chip" onclick="filterStrecke('karl',this)" style="display:flex;align-items:center;gap:5px;padding:6px 10px 6px 5px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface-2);color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;"><div class='mini-avatar a3' style='margin:0;border:0;width:22px;height:22px;font-size:9px;'>KM</div>Karl <span style="opacity:0.5;">1</span></button>
+        <button class="pf-chip" onclick="filterStrecke('heinrich',this)" style="display:flex;align-items:center;gap:5px;padding:6px 10px 6px 5px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface-2);color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;"><div class='mini-avatar a2' style='margin:0;border:0;width:22px;height:22px;font-size:9px;'>HW</div>Heinrich <span style="opacity:0.5;">1</span></button>
+        <button class="pf-chip" onclick="filterStrecke('frank',this)" style="display:flex;align-items:center;gap:5px;padding:6px 10px 6px 5px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface-2);color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;"><div class='mini-avatar a4' style='margin:0;border:0;width:22px;height:22px;font-size:9px;'>FS</div>Frank <span style="opacity:0.5;">0</span></button>
+        <button class="pf-chip" onclick="filterStrecke('peter',this)" style="display:flex;align-items:center;gap:5px;padding:6px 10px 6px 5px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface-2);color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;"><div class='mini-avatar' style='margin:0;border:0;width:22px;height:22px;font-size:9px;background:#00838F;color:white;'>PB</div>Peter <span style="opacity:0.5;">0</span></button>
+      </div>
+      <!-- Strecke Total -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border-light);flex-shrink:0;">
+        <div style="font-size:14px;font-weight:700;">Strecke heute</div>
+        <div style="display:flex;gap:12px;font-size:13px;font-weight:600;">
+          <span style="color:var(--orange);">🐗 1</span>
+          <span style="color:var(--green-bright);">🦌 1</span>
+          <span style="color:var(--red);">🦊 1</span>
+        </div>
+      </div>
+      <!-- Per participant -->
+      <div style="flex:1;overflow-y:auto;padding:8px 12px;">
+        <!-- Moritz -->
+        <div data-participant="moritz" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;transition:opacity 0.2s,max-height 0.3s;">
+          <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border-light);">
+            <div class="mini-avatar a1" style="margin:0;border:0;width:32px;height:32px;font-size:12px;">ML</div>
+            <div style="flex:1;"><div style="font-size:14px;font-weight:700;">Moritz</div><div style="font-size:11px;color:var(--text-3);">Fuchsbau</div></div>
+            <div style="font-size:13px;font-weight:700;color:var(--green-bright);">1 Stück</div>
+          </div>
+          <div style="padding:10px 14px;display:flex;align-items:center;gap:12px;">
+            <div style="width:56px;height:56px;border-radius:10px;background:var(--surface-3);display:flex;align-items:center;justify-content:center;font-size:28px;">📸</div>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                <span style="font-size:20px;">🐗</span>
+                <span style="font-size:14px;font-weight:700;">Überläufer</span>
+                <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(255,143,0,0.15);color:var(--orange);font-weight:600;">♂ männl.</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-2);">~35 kg · 17:15 · Fuchsbau</div>
+              <div style="font-size:11px;color:var(--orange);margin-top:2px;">⚠ Nachsuche angefordert</div>
+            </div>
+            <button onclick="deleteKill(this)" style="width:36px;height:36px;border-radius:10px;border:1px solid rgba(239,83,80,0.2);background:rgba(239,83,80,0.06);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">🗑️</button>
+          </div>
+        </div>
+        <!-- Karl -->
+        <div data-participant="karl" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;transition:opacity 0.2s,max-height 0.3s;">
+          <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border-light);">
+            <div class="mini-avatar a3" style="margin:0;border:0;width:32px;height:32px;font-size:12px;">KM</div>
+            <div style="flex:1;"><div style="font-size:14px;font-weight:700;">Karl</div><div style="font-size:11px;color:var(--text-3);">Birkenweg</div></div>
+            <div style="font-size:13px;font-weight:700;color:var(--green-bright);">1 Stück</div>
+          </div>
+          <div style="padding:10px 14px;display:flex;align-items:center;gap:12px;">
+            <div style="width:56px;height:56px;border-radius:10px;background:var(--surface-3);display:flex;align-items:center;justify-content:center;font-size:28px;">📸</div>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                <span style="font-size:20px;">🦌</span>
+                <span style="font-size:14px;font-weight:700;">Rehbock</span>
+                <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(107,159,58,0.15);color:var(--green-bright);font-weight:600;">♂ männl.</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-2);">~14 kg · 17:40 · Birkenweg</div>
+              <div style="font-size:11px;color:var(--green);margin-top:2px;">✓ Am Anschuss verendet</div>
+            </div>
+            <button onclick="deleteKill(this)" style="width:36px;height:36px;border-radius:10px;border:1px solid rgba(239,83,80,0.2);background:rgba(239,83,80,0.06);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">🗑️</button>
+          </div>
+        </div>
+        <!-- Heinrich -->
+        <div data-participant="heinrich" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;transition:opacity 0.2s,max-height 0.3s;">
+          <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border-light);">
+            <div class="mini-avatar a2" style="margin:0;border:0;width:32px;height:32px;font-size:12px;">HW</div>
+            <div style="flex:1;"><div style="font-size:14px;font-weight:700;">Heinrich</div><div style="font-size:11px;color:var(--text-3);">Eicheneck</div></div>
+            <div style="font-size:13px;font-weight:700;color:var(--green-bright);">1 Stück</div>
+          </div>
+          <div style="padding:10px 14px;display:flex;align-items:center;gap:12px;">
+            <div style="width:56px;height:56px;border-radius:10px;background:var(--surface-3);display:flex;align-items:center;justify-content:center;font-size:28px;">📸</div>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                <span style="font-size:20px;">🦊</span>
+                <span style="font-size:14px;font-weight:700;">Fuchs</span>
+                <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(239,83,80,0.15);color:var(--red);font-weight:600;">♂ männl.</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-2);">~6 kg · 18:05 · Eicheneck</div>
+              <div style="font-size:11px;color:var(--green);margin-top:2px;">✓ Erlegt</div>
+            </div>
+            <button onclick="deleteKill(this)" style="width:36px;height:36px;border-radius:10px;border:1px solid rgba(239,83,80,0.2);background:rgba(239,83,80,0.06);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">🗑️</button>
+          </div>
+        </div>
+        <!-- Participants without kills -->
+        <div data-participant="frank" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;opacity:0.5;transition:opacity 0.2s;">
+          <div class="mini-avatar a4" style="margin:0;border:0;width:32px;height:32px;font-size:12px;">FS</div>
+          <div style="flex:1;"><div style="font-size:14px;font-weight:600;">Frank</div><div style="font-size:11px;color:var(--text-3);">Moorkante</div></div>
+          <div style="font-size:12px;color:var(--text-3);">—</div>
+        </div>
+        <div data-participant="peter" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;opacity:0.5;transition:opacity 0.2s;">
+          <div class="mini-avatar" style="margin:0;border:0;width:32px;height:32px;font-size:12px;background:#00838F;color:white;">PB</div>
+          <div style="flex:1;"><div style="font-size:14px;font-weight:600;">Peter</div><div style="font-size:11px;color:var(--text-3);">Südblick</div></div>
+          <div style="font-size:12px;color:var(--text-3);">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="screen fullscreen" id="screen-hf">
+    <div class="hunt-topbar">
+      <button class="back-btn" onclick="goTo('screen-jagd')">←</button>
+      <div class="hunt-topbar-info">
+        <div class="hunt-topbar-title">🐕 Nachsuchen-Aufträge</div>
+        <div class="hunt-topbar-sub">Ansitz Brockwinkel · 31.03.2026</div>
+      </div>
+    </div>
+    <div class="hf-banner"><div class="hf-banner-icon">🐕‍🦺</div><div><div class="hf-banner-text">2 Nachsuchen zugewiesen</div><div class="hf-banner-sub">Priorisiert vom Jagdleiter</div></div></div>
+    <div style="flex:1;overflow-y:auto;">
+      <div class="hf-card">
+        <div class="hf-card-header"><div class="hf-card-num">1</div><div style="flex:1;"><div style="font-size:15px;font-weight:700;">Überläufer</div><div style="font-size:11px;color:var(--text-2);">Fuchsbau · Prio Hoch</div></div><div style="font-size:28px;">🐗</div></div>
+        <div class="hf-card-body">
+          <div class="hf-detail-row"><span class="icon">🎯</span><span class="label">Schütze</span><span class="value">Moritz Lampe</span></div>
+          <div class="hf-detail-row"><span class="icon">🕐</span><span class="label">Anschuss</span><span class="value">17:15</span></div>
+          <div class="hf-detail-row"><span class="icon">🧭</span><span class="label">Flucht</span><span class="value">Richtung NW</span></div>
+          <div class="hf-detail-row"><span class="icon">🩸</span><span class="label">Zeichen</span><span class="value">Schweiß 40m</span></div>
+          <div class="hf-detail-row"><span class="icon">🅿️</span><span class="label">Parkplatz</span><span class="value">P-Süd (350m)</span></div>
+          <div class="hf-detail-row"><span class="icon">📞</span><span class="label">Kontakt</span><span class="value" style="color:var(--green-bright);">+49 171 234 5678</span></div>
+          <div style="margin-top:10px;display:flex;gap:6px;">
+            <div style="width:64px;height:64px;background:var(--surface-3);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:26px;">📸</div>
+            <div style="width:64px;height:64px;background:var(--surface-3);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:26px;">📸</div>
+          </div>
+        </div>
+        <div class="hf-card-actions"><button class="hf-action-btn nav" onclick="toast('🧭 Navigation startet...')">🧭 Navigieren</button><button class="hf-action-btn done" onclick="toast('✅ Erledigt!')">✓ Erledigt</button></div>
+      </div>
+      <div class="hf-card">
+        <div class="hf-card-header"><div class="hf-card-num" style="background:var(--orange);">2</div><div style="flex:1;"><div style="font-size:15px;font-weight:700;">Ricke</div><div style="font-size:11px;color:var(--text-2);">Moorkante · Prio Mittel</div></div><div style="font-size:28px;">🦌</div></div>
+        <div class="hf-card-body">
+          <div class="hf-detail-row"><span class="icon">🎯</span><span class="label">Schütze</span><span class="value">Heinrich Weber</span></div>
+          <div class="hf-detail-row"><span class="icon">🕐</span><span class="label">Anschuss</span><span class="value">17:45</span></div>
+          <div class="hf-detail-row"><span class="icon">🧭</span><span class="label">Flucht</span><span class="value">Richtung Süd</span></div>
+          <div class="hf-detail-row"><span class="icon">📞</span><span class="label">Kontakt</span><span class="value" style="color:var(--green-bright);">+49 171 345 6789</span></div>
+        </div>
+        <div class="hf-card-actions"><button class="hf-action-btn nav" onclick="toast('🧭 Navigation startet...')">🧭 Navigieren</button><button class="hf-action-btn done" onclick="toast('✅ Erledigt!')">✓ Erledigt</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: GAST BEITRITT (was der 65-Jährige sieht) ==================== -->
+  <div class="screen fullscreen active" id="screen-guest-join" style="display:none;">
+    <div class="status-bar"><span>16:25</span><span>📶 🔋 72%</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;">
+      <!-- Logo -->
+      <div style="width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg, var(--green), var(--green-dim));display:flex;align-items:center;justify-content:center;font-size:32px;margin-bottom:20px;">🌲</div>
+      <div style="font-size:14px;color:var(--text-2);margin-bottom:6px;">Moritz Lampe lädt dich ein zur</div>
+      <div style="font-size:24px;font-weight:700;text-align:center;margin-bottom:4px;">Ansitz Brockwinkel</div>
+      <div style="font-size:13px;color:var(--text-3);margin-bottom:28px;">Heute · Revier Brockwinkel · 5 Jäger dabei</div>
+
+      <!-- Avatars of who's already in -->
+      <div style="display:flex;margin-bottom:28px;">
+        <div class="mini-avatar a1" style="width:36px;height:36px;font-size:13px;border-color:var(--bg);">ML</div>
+        <div class="mini-avatar a2" style="width:36px;height:36px;font-size:13px;border-color:var(--bg);">HW</div>
+        <div class="mini-avatar a3" style="width:36px;height:36px;font-size:13px;border-color:var(--bg);">KM</div>
+        <div class="mini-avatar a4" style="width:36px;height:36px;font-size:13px;border-color:var(--bg);">FS</div>
+      </div>
+
+      <!-- Name input -->
+      <div style="width:100%;max-width:320px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px;">Dein Name</div>
+        <div style="position:relative;">
+          <input id="guest-name" class="form-input" value="Peter Braun" style="width:100%;padding:14px 16px;font-size:16px;text-align:center;font-weight:600;border-radius:12px;" />
+          <div style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--text-3);">vom Handy</div>
+        </div>
+        <div style="font-size:11px;color:var(--text-3);text-align:center;margin-top:6px;">Wird den anderen Jägern angezeigt</div>
+      </div>
+
+      <!-- Join button -->
+      <button onclick="showGuestHunt()" style="width:100%;max-width:320px;margin-top:24px;padding:18px;border-radius:var(--radius);border:none;background:var(--green);color:white;font-size:18px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 4px 20px rgba(107,159,58,0.3);">
+        Dabei! 🎯
+      </button>
+      <div style="font-size:11px;color:var(--text-3);margin-top:12px;text-align:center;">Kein Account nötig · Kein Download</div>
+      <button onclick="exitGuestDemo()" style="margin-top:24px;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-3);font-size:11px;cursor:pointer;font-family:inherit;">← Zurück zur Jäger-Ansicht (Demo)</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: GAST IN DER JAGD ==================== -->
+  <div class="screen fullscreen" id="screen-guest-hunt" style="display:none;">
+    <div class="hunt-topbar">
+      <button class="back-btn" onclick="exitGuestDemo()">←</button>
+      <div class="hunt-topbar-info">
+        <div class="hunt-topbar-title"><span class="live-dot"></span>Ansitz Brockwinkel</div>
+        <div class="hunt-topbar-sub">Du bist dabei als Peter Braun</div>
+      </div>
+    </div>
+    <div style="display:flex;background:var(--bg);border-bottom:1px solid var(--border-light);flex-shrink:0;padding:0 4px;">
+      <div class="hunt-tab active" data-tab="gtab-map" onclick="switchGuestTab(this)">🗺️ Karte</div>
+      <div class="hunt-tab" data-tab="gtab-chat" onclick="switchGuestTab(this)">💬 Chat</div>
+    </div>
+    <!-- Guest map -->
+    <div class="tab-panel active" id="gtab-map" style="position:relative;">
+      <div style="position:absolute;top:8px;left:8px;right:8px;z-index:500;display:flex;gap:6px;overflow-x:auto;">
+        <div class="map-user-chip" style="border:1.5px solid var(--green);"><div class="mini-avatar" style="margin:0;border:0;width:22px;height:22px;font-size:9px;background:#00838F;color:white;">PB</div><span style="color:var(--green-bright);">Du</span></div>
+        <div class="map-user-chip"><div class="mini-avatar a1" style="margin:0;border:0;width:22px;height:22px;font-size:9px;">ML</div><span>Moritz</span></div>
+        <div class="map-user-chip"><div class="mini-avatar a2" style="margin:0;border:0;width:22px;height:22px;font-size:9px;">HW</div><span>Heinrich</span></div>
+        <div class="map-user-chip"><div class="mini-avatar a3" style="margin:0;border:0;width:22px;height:22px;font-size:9px;">KM</div><span>Karl</span></div>
+      </div>
+      <div id="guest-map" style="flex:1;min-height:0;"></div>
+      <div style="position:absolute;bottom:16px;right:12px;z-index:500;">
+        <button class="map-fab green" onclick="toast('📍 Dein Standort wird geteilt')">📍</button>
+      </div>
+      <!-- Assigned Hochsitz card -->
+      <div style="position:absolute;bottom:16px;left:12px;right:70px;z-index:500;background:rgba(10,15,8,0.9);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:14px;padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:26px;">🪵</span>
+          <div style="flex:1;">
+            <div style="font-size:14px;font-weight:700;">Dein Hochsitz: Südblick</div>
+            <div style="font-size:11px;color:var(--text-2);">Drückjagdkanzel · Schneise</div>
+          </div>
+          <button onclick="toast('🧭 Navigation zum Hochsitz...')" style="padding:8px 14px;border-radius:10px;border:none;background:var(--green);color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">🧭</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <div style="flex:1;padding:6px;background:var(--surface-2);border-radius:8px;font-size:11px;color:var(--text-2);text-align:center;">🅿️ P-Nord · 280m</div>
+          <div style="flex:1;padding:6px;background:var(--surface-2);border-radius:8px;font-size:11px;color:var(--text-2);text-align:center;">🧭 53.264, 10.362</div>
+        </div>
+      </div>
+    </div>
+    <!-- Guest chat -->
+    <div class="tab-panel" id="gtab-chat">
+      <div class="chat-messages" style="flex:1;">
+        <div style="text-align:center;padding:20px;font-size:12px;color:var(--text-3);">Du bist der Jagd beigetreten</div>
+        <div class="chat-msg other"><div class="msg-sender">Moritz</div>Willkommen Peter! Dein Hochsitz ist der Südblick. Parkplatz Nord ist am nächsten. Waidmannsheil! 🦌<div class="msg-time">16:28</div></div>
+        <div class="chat-msg self">Danke Moritz, bin in 15 Min da 👍<div class="msg-time">16:30</div></div>
+      </div>
+      <div class="chat-input-bar">
+        <button class="chat-icon-btn cam" onclick="toast('📷 Kamera...')">📷</button>
+        <input class="chat-input" placeholder="Nachricht..." />
+        <button class="chat-icon-btn mic">🎤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: REVIER ==================== -->
+  <div class="screen" id="screen-revier">
+    <div class="revier-topbar">
+      <div class="home-logo-icon" style="width:32px;height:32px;font-size:16px;border-radius:8px;">🌲</div>
+      <div class="revier-name-bar">Revier Brockwinkel<small>Reppenstedt · ~280 ha</small></div>
+      <button class="back-btn" style="font-size:14px;" onclick="toast('⚙️ Revier-Einstellungen...')">⚙️</button>
+    </div>
+    <div class="revier-map-container">
+      <div class="revier-layer-pills">
+        <button class="layer-pill active">Karte</button>
+        <button class="layer-pill">Luftbild</button>
+        <button class="layer-pill">Flurstücke</button>
+        <button class="layer-pill">Hybrid</button>
+      </div>
+      <div id="revier-map"></div>
+      <div class="revier-fab-group">
+        <button class="map-fab green" onclick="toast('📍 Hochsitz setzen — tippe auf die Karte')">+</button>
+        <button class="map-fab dark" onclick="toast('GPX / KML importieren...')">📂</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: STRECKE ==================== -->
+  <div class="screen" id="screen-strecke">
+    <div class="status-bar"><span>16:30</span><span>📶 🔋 87%</span></div>
+    <div class="strecke-header"><h2>Streckenbuch</h2><p>Saison 2025/26 · Revier Brockwinkel</p></div>
+    <div class="strecke-stats">
+      <div class="strecke-stat"><div class="strecke-stat-val">12</div><div class="strecke-stat-label">Gesamt</div></div>
+      <div class="strecke-stat"><div class="strecke-stat-val">5/8</div><div class="strecke-stat-label">Rehwild</div></div>
+      <div class="strecke-stat"><div class="strecke-stat-val">4</div><div class="strecke-stat-label">Schwarzwild</div></div>
+    </div>
+    <div class="strecke-list">
+      <div class="strecke-item"><div class="strecke-item-icon">🦌</div><div class="strecke-item-info"><div class="strecke-item-title">Rehbock · 14,2 kg</div><div class="strecke-item-meta">28.03. · Eicheneck · M. Lampe</div></div></div>
+      <div class="strecke-item"><div class="strecke-item-icon">🐗</div><div class="strecke-item-info"><div class="strecke-item-title">Frischling · 18,5 kg</div><div class="strecke-item-meta">22.03. · Fuchsbau · M. Lampe</div></div></div>
+      <div class="strecke-item"><div class="strecke-item-icon">🦊</div><div class="strecke-item-info"><div class="strecke-item-title">Fuchs · 6,1 kg</div><div class="strecke-item-meta">15.03. · Moorkante · H. Weber</div></div></div>
+      <div class="strecke-item"><div class="strecke-item-icon">🦌</div><div class="strecke-item-info"><div class="strecke-item-title">Ricke · 16,8 kg</div><div class="strecke-item-meta">08.03. · Südblick · M. Lampe</div></div></div>
+      <div class="strecke-item"><div class="strecke-item-icon">🐗</div><div class="strecke-item-info"><div class="strecke-item-title">Überläufer · 42,0 kg</div><div class="strecke-item-meta">01.03. · Birkenweg · M. Lampe</div></div></div>
+      <div class="strecke-item"><div class="strecke-item-icon">🐗</div><div class="strecke-item-info"><div class="strecke-item-title">Bache · 55,3 kg</div><div class="strecke-item-meta">18.02. · Lichtung · K. Meier</div></div></div>
+    </div>
+    <button class="strecke-add-btn" onclick="toast('Strecke melden...')">+ Strecke melden</button>
+  </div>
+
+  <!-- ==================== SCREEN: PROFIL ==================== -->
+  <div class="screen" id="screen-profil">
+    <div class="status-bar"><span>16:30</span><span>📶 🔋 87%</span></div>
+    <div class="profil-content">
+      <div class="profil-card">
+        <div class="profil-avatar">ML</div>
+        <div><div class="profil-name">Moritz Lampe</div><div class="profil-sub">Pächter · Revier Brockwinkel</div></div>
+      </div>
+      <div class="section-title" style="padding:0;margin:16px 0 10px;">Verwaltung</div>
+      <div class="profil-menu-item" onclick="toast('Jagderlaubnisscheine...')"><span class="profil-menu-icon">📋</span><span class="profil-menu-label">Jagderlaubnisscheine</span><span class="profil-menu-arrow">›</span></div>
+      <div class="profil-menu-item" onclick="toast('Jagdgäste verwalten...')"><span class="profil-menu-icon">👥</span><span class="profil-menu-label">Jagdgäste</span><span class="profil-menu-arrow">›</span></div>
+      <div class="profil-menu-item" onclick="toast('Beobachtungen...')"><span class="profil-menu-icon">👁️</span><span class="profil-menu-label">Beobachtungen</span><span class="profil-menu-arrow">›</span></div>
+      <div class="profil-menu-item" onclick="toast('Jagdkalender...')"><span class="profil-menu-icon">📅</span><span class="profil-menu-label">Jagdkalender</span><span class="profil-menu-arrow">›</span></div>
+      <div class="section-title" style="padding:0;margin:20px 0 10px;">Einstellungen</div>
+      <div class="profil-menu-item" onclick="toast('Revier-Einstellungen...')"><span class="profil-menu-icon">⚙️</span><span class="profil-menu-label">Revier-Einstellungen</span><span class="profil-menu-arrow">›</span></div>
+      <div class="profil-menu-item" onclick="toast('Premium upgraden...')"><span class="profil-menu-icon">⭐</span><span class="profil-menu-label">Premium</span><span class="profil-menu-arrow" style="color:var(--green-bright);">Free</span></div>
+      <div class="profil-menu-item"><span class="profil-menu-icon">🌙</span><span class="profil-menu-label">Dark Mode</span><span class="profil-menu-arrow" style="color:var(--green-bright);">An</span></div>
+    </div>
+  </div>
+
+  <!-- ==================== BOTTOM NAVIGATION ==================== -->
+  <div class="bottom-nav" id="bottom-nav">
+    <div class="bnav-item active" onclick="navTo('screen-jagd', this)">
+      <div class="bnav-live"></div>
+      <div class="bnav-icon">🎯</div>
+      <div class="bnav-label">Jagd</div>
+    </div>
+    <div class="bnav-item" onclick="navTo('screen-revier', this)">
+      <div class="bnav-icon">🗺️</div>
+      <div class="bnav-label">Revier</div>
+    </div>
+    <div class="bnav-item" onclick="navTo('screen-strecke', this)">
+      <div class="bnav-icon">📖</div>
+      <div class="bnav-label">Strecke</div>
+    </div>
+    <div class="bnav-item" onclick="navTo('screen-profil', this)">
+      <div class="bnav-icon">👤</div>
+      <div class="bnav-label">Profil</div>
+    </div>
+  </div>
+</div>
+
+<!-- NACHSUCHE FORM MODAL -->
+<div class="modal-overlay" id="ns-form" onclick="closeModal(event,'ns-form')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">🔴 Nachsuche melden</div>
+    <div class="sheet-desc">Der Jagdleiter wird benachrichtigt und priorisiert.</div>
+    <div class="form-group"><label class="form-label">Wildart</label><select class="form-select"><option>Schwarzwild — Überläufer</option><option>Schwarzwild — Frischling</option><option>Schwarzwild — Bache</option><option>Rehwild — Rehbock</option><option>Rehwild — Ricke</option><option>Fuchs</option></select></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Hochsitz</label><select class="form-select"><option>Fuchsbau</option><option>Eicheneck</option><option>Birkenweg</option><option>Südblick</option><option>Moorkante</option></select></div>
+      <div class="form-group"><label class="form-label">Fluchtrichtung</label><select class="form-select"><option>Nordwest</option><option>Nord</option><option>Nordost</option><option>Ost</option><option>Südost</option><option>Süd</option><option>Südwest</option><option>West</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Pirschzeichen / Beschreibung</label><input class="form-input" placeholder="z.B. Schweiß auf 40m..." /></div>
+    <div class="form-group"><label class="form-label">Foto vom Anschuss</label><button class="form-photo-btn" onclick="toast('📷 Kamera...')"><span style="font-size:24px;">📷</span>Foto aufnehmen</button></div>
+    <div class="form-group"><label class="form-label">GPS-Position</label><div style="padding:10px 14px;background:var(--bg);border-radius:10px;border:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px;"><span style="color:var(--green-bright);">📍</span><span style="font-family:monospace;color:var(--text-2);font-size:12px;">53.26180, 10.35800</span><span style="margin-left:auto;font-size:11px;color:var(--green);">Automatisch</span></div></div>
+    <button class="form-submit-btn" onclick="closeModal(null,'ns-form');toast('🔴 Nachsuche gemeldet!')">Nachsuche melden</button>
+  </div>
+</div>
+
+<!-- STRECKE SCHNELLMELDUNG MODAL -->
+<div class="modal-overlay" id="kill-form" onclick="closeModal(event,'kill-form')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="sheet-handle"></div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="font-size:44px;" id="kill-icon">🐗</div>
+      <div>
+        <div class="sheet-title" style="margin:0;" id="kill-wildart">Schwarzwild</div>
+        <div style="font-size:13px;color:var(--text-2);margin-top:2px;">Schnellmeldung — Details optional</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Typ</label><select class="form-select"><option>Überläufer</option><option>Frischling</option><option>Bache</option><option>Keiler</option></select></div>
+      <div class="form-group"><label class="form-label">Geschlecht</label>
+        <div style="display:flex;gap:6px;">
+          <button style="flex:1;padding:10px;border-radius:10px;border:2px solid var(--green);background:rgba(107,159,58,0.1);color:var(--green-bright);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">♂</button>
+          <button style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">♀</button>
+          <button style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text-3);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">?</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Gewicht (kg) <span style="color:var(--text-3);">optional</span></label><input class="form-input" placeholder="z.B. 35" type="number" /></div>
+      <div class="form-group"><label class="form-label">Hochsitz</label><select class="form-select"><option>📍 Automatisch (Fuchsbau)</option><option>Eicheneck</option><option>Birkenweg</option><option>Südblick</option><option>Moorkante</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Foto <span style="color:var(--text-3);">optional</span></label><button class="form-photo-btn" onclick="toast('📷 Kamera...')"><span style="font-size:24px;">📷</span>Strecke fotografieren</button></div>
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg);border-radius:10px;border:1px solid var(--border);font-size:12px;color:var(--text-2);margin-bottom:12px;">
+      <span>📍</span><span style="font-family:monospace;">53.26180, 10.35800</span><span style="margin-left:auto;color:var(--green);font-size:11px;">Auto</span>
+      <span style="margin-left:4px;">🕐</span><span>17:15</span><span style="margin-left:auto;color:var(--green);font-size:11px;">Auto</span>
+    </div>
+    <button class="form-submit-btn" style="background:var(--green);" onclick="closeModal(null,'kill-form');toast('🦌 Strecke gemeldet — Gruppe wird benachrichtigt!')">✓ Strecke melden</button>
+    <button style="width:100%;padding:12px;border:none;background:transparent;color:var(--orange);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px;" onclick="closeModal(null,'kill-form');openModal('ns-form');">+ Nachsuche anfordern statt melden</button>
+  </div>
+</div>
+
+<!-- JAGD ERSTELLEN MODAL -->
+<div class="modal-overlay" id="create-hunt" onclick="closeModal(event,'create-hunt')">
+  <div class="modal-sheet" style="max-height:92vh;" onclick="event.stopPropagation()">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">🎯 Jagd starten</div>
+    <div class="sheet-desc">Wie bei WhatsApp — wer die App hat wird direkt hinzugefügt.</div>
+
+    <!-- Jagd-Name -->
+    <div class="form-group">
+      <label class="form-label">Name <span style="color:var(--text-3);">optional</span></label>
+      <input class="form-input" placeholder="z.B. Abendansitz Brockwinkel" value="Ansitz Brockwinkel" />
+    </div>
+
+    <!-- Revier -->
+    <div class="form-group">
+      <label class="form-label">Revier verknüpfen</label>
+      <div style="padding:10px 14px;background:var(--bg);border-radius:10px;border:1.5px solid var(--green);display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="toast('Revier wechseln...')">
+        <span style="font-size:20px;">🌲</span>
+        <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:var(--green-bright);">Revier Brockwinkel</div><div style="font-size:11px;color:var(--text-3);">280 ha · 7 Hochsitze · Reviergrenze wird angezeigt</div></div>
+        <span style="color:var(--green);">✓</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px;">Kein Revier? Kein Problem — Jagd funktioniert auch ohne.</div>
+    </div>
+
+    <!-- Wildarten vorauswählen -->
+    <div class="form-group">
+      <label class="form-label">Wildarten für Schnellmeldung</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="wild-preset on" onclick="this.classList.toggle('on')" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--green);background:rgba(107,159,58,0.1);cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;font-size:13px;font-weight:600;color:var(--green-bright);">🐗 Schwarzwild</button>
+        <button class="wild-preset on" onclick="this.classList.toggle('on')" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--green);background:rgba(107,159,58,0.1);cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;font-size:13px;font-weight:600;color:var(--green-bright);">🦌 Rehwild</button>
+        <button class="wild-preset on" onclick="this.classList.toggle('on')" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--green);background:rgba(107,159,58,0.1);cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;font-size:13px;font-weight:600;color:var(--green-bright);">🦊 Fuchs</button>
+        <button class="wild-preset" onclick="this.classList.toggle('on')" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;font-size:13px;font-weight:600;color:var(--text-3);">🦡 Dachs</button>
+      </div>
+    </div>
+
+    <!-- Teilnehmer -->
+    <div class="form-group">
+      <label class="form-label">Jäger einladen</label>
+
+      <!-- Schnellauswahl -->
+      <button onclick="toast('✓ Letzte Mannschaft geladen — Heinrich, Karl, Frank')" style="width:100%;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-2);cursor:pointer;display:flex;align-items:center;gap:10px;font-family:inherit;margin-bottom:12px;">
+        <span style="font-size:16px;">🔄</span>
+        <div style="flex:1;text-align:left;"><div style="font-size:13px;font-weight:700;color:var(--text);">Wie letztes Mal</div></div>
+        <div style="display:flex;"><div class="mini-avatar a2" style="width:22px;height:22px;font-size:9px;margin:0;border-color:var(--surface-2);">HW</div><div class="mini-avatar a3" style="width:22px;height:22px;font-size:9px;border-color:var(--surface-2);">KM</div><div class="mini-avatar a4" style="width:22px;height:22px;font-size:9px;border-color:var(--surface-2);">FS</div></div>
+      </button>
+
+      <!-- Du = Jagdleiter -->
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1.5px solid var(--green);border-radius:10px;margin-bottom:10px;">
+        <div class="mini-avatar a1" style="margin:0;border:0;width:36px;height:36px;font-size:13px;">ML</div>
+        <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:var(--green-bright);">Du (Moritz)</div><div style="font-size:11px;color:var(--text-3);">🎯 Schütze</div></div>
+        <div style="padding:4px 10px;border-radius:8px;background:rgba(255,215,0,0.12);border:1px solid rgba(255,215,0,0.25);font-size:11px;font-weight:700;color:#FFD700;">🎖️ Jagdleiter</div>
+      </div>
+
+      <!-- Suchfeld -->
+      <div style="position:relative;margin-bottom:10px;">
+        <input id="contact-search" oninput="filterContacts(this.value)" class="form-input" placeholder="🔍 Name oder Nummer suchen..." style="width:100%;padding-left:16px;" />
+      </div>
+
+      <!-- Kontaktliste (Telefonbuch) -->
+      <div id="contact-list" style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;margin-bottom:14px;">
+        <!-- App-Nutzer oben -->
+        <div class="contact-row" data-name="heinrich weber" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1.5px solid var(--green);border-radius:10px;">
+          <div class="mini-avatar a2" style="margin:0;border:0;width:36px;height:36px;font-size:13px;">HW</div>
+          <div style="flex:1;min-width:0;" onclick="toggleContact(this.parentElement)">
+            <div style="font-size:14px;font-weight:600;">Heinrich Weber</div>
+            <div style="font-size:11px;color:var(--green);">✓ In der App</div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button onclick="event.stopPropagation();toggleTag(this)" class="tag-btn on" style="padding:4px 8px;border-radius:7px;border:1.5px solid var(--blue);background:rgba(66,165,245,0.12);cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;color:var(--blue);">👥</button>
+            <button onclick="event.stopPropagation();toggleTag(this)" class="tag-btn" style="padding:4px 8px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface-2);cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;color:var(--text-3);">🐕</button>
+          </div>
+          <div class="contact-check" data-on="1" onclick="toggleContact(this.parentElement)" style="width:26px;height:26px;border-radius:50%;border:2px solid var(--green);background:var(--green);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;flex-shrink:0;">✓</div>
+        </div>
+        <div class="contact-row" data-name="karl meier" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1.5px solid var(--green);border-radius:10px;">
+          <div class="mini-avatar a3" style="margin:0;border:0;width:36px;height:36px;font-size:13px;">KM</div>
+          <div style="flex:1;min-width:0;" onclick="toggleContact(this.parentElement)">
+            <div style="font-size:14px;font-weight:600;">Karl Meier</div>
+            <div style="font-size:11px;color:var(--green);">✓ In der App</div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button onclick="event.stopPropagation();toggleTag(this)" class="tag-btn" style="padding:4px 8px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface-2);cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;color:var(--text-3);">👥</button>
+            <button onclick="event.stopPropagation();toggleTag(this)" class="tag-btn" style="padding:4px 8px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface-2);cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;color:var(--text-3);">🐕</button>
+          </div>
+          <div class="contact-check" data-on="1" onclick="toggleContact(this.parentElement)" style="width:26px;height:26px;border-radius:50%;border:2px solid var(--green);background:var(--green);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;flex-shrink:0;">✓</div>
+        </div>
+        <div class="contact-row" data-name="frank schmidt" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1.5px solid var(--green);border-radius:10px;">
+          <div class="mini-avatar a4" style="margin:0;border:0;width:36px;height:36px;font-size:13px;">FS</div>
+          <div style="flex:1;min-width:0;" onclick="toggleContact(this.parentElement)">
+            <div style="font-size:14px;font-weight:600;">Frank Schmidt</div>
+            <div style="font-size:11px;color:var(--green);">✓ In der App</div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button onclick="event.stopPropagation();toggleTag(this)" class="tag-btn" style="padding:4px 8px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface-2);cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;color:var(--text-3);">👥</button>
+            <button onclick="event.stopPropagation();toggleTag(this)" class="tag-btn on" style="padding:4px 8px;border-radius:7px;border:1.5px solid var(--orange);background:rgba(255,143,0,0.12);cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;color:var(--orange);">🐕</button>
+          </div>
+          <div class="contact-check" data-on="1" onclick="toggleContact(this.parentElement)" style="width:26px;height:26px;border-radius:50%;border:2px solid var(--green);background:var(--green);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;flex-shrink:0;">✓</div>
+        </div>
+        <!-- Restliches Telefonbuch (kriegen Link) -->
+        <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.8px;padding:8px 4px 4px;">Weitere Kontakte · bekommen Link</div>
+        <div class="contact-row" data-name="peter braun" onclick="toggleContact(this)" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;cursor:pointer;">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--surface-3);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-3);">PB</div>
+          <div style="flex:1;"><div style="font-size:14px;font-weight:600;">Peter Braun</div><div style="font-size:11px;color:var(--text-3);">+49 176 998 7766</div></div>
+          <div class="contact-check" style="width:26px;height:26px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;"></div>
+        </div>
+        <div class="contact-row" data-name="jens koch" onclick="toggleContact(this)" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;cursor:pointer;">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--surface-3);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-3);">JK</div>
+          <div style="flex:1;"><div style="font-size:14px;font-weight:600;">Jens Koch</div><div style="font-size:11px;color:var(--text-3);">+49 151 223 4455</div></div>
+          <div class="contact-check" style="width:26px;height:26px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;"></div>
+        </div>
+        <div class="contact-row" data-name="thomas hartmann" onclick="toggleContact(this)" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;cursor:pointer;">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--surface-3);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-3);">TH</div>
+          <div style="flex:1;"><div style="font-size:14px;font-weight:600;">Thomas Hartmann</div><div style="font-size:11px;color:var(--text-3);">+49 170 555 1234</div></div>
+          <div class="contact-check" style="width:26px;height:26px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;"></div>
+        </div>
+        <div class="contact-row" data-name="otto berger" onclick="toggleContact(this)" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;cursor:pointer;">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--surface-3);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-3);">OB</div>
+          <div style="flex:1;"><div style="font-size:14px;font-weight:600;">Otto Berger</div><div style="font-size:11px;color:var(--text-3);">+49 163 887 2233</div></div>
+          <div class="contact-check" style="width:26px;height:26px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info box -->
+    <div style="padding:12px 14px;background:rgba(66,165,245,0.06);border:1px solid rgba(66,165,245,0.15);border-radius:10px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start;">
+      <span style="font-size:18px;">💡</span>
+      <div style="font-size:12px;color:var(--text-2);line-height:1.5;">
+        Jeder ist <strong>🎯 Schütze</strong>. Tippe 👥 oder 🐕 für Zusatz-Aufgaben.<br>
+        <span style="color:var(--text-3);">App-Nutzer → sofort dabei · Gäste → WhatsApp-Link</span>
+      </div>
+    </div>
+
+    <!-- Create button -->
+    <button class="form-submit-btn" style="background:var(--green);font-size:16px;" onclick="closeModal(null,'create-hunt');toast('🎯 Jagd gestartet — 3 Jäger eingeladen!')">
+      Jagd starten →
+    </button>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg"></span></div>
+
+<script>
+var currentScreen = 'screen-jagd';
+var huntMap = null, revierMap = null;
+
+// Bottom nav
+function navTo(screenId, navEl) {
+  document.querySelectorAll('.bnav-item').forEach(function(b){b.classList.remove('active');});
+  if(navEl) navEl.classList.add('active');
+  goTo(screenId);
+  // Init maps if needed
+  if(screenId === 'screen-revier') setTimeout(initRevierMap, 150);
+}
+
+// Screen navigation
+function goTo(screenId) {
+  currentScreen = screenId;
+  document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
+  document.getElementById(screenId).classList.add('active');
+  // Show/hide bottom nav for fullscreen screens
+  var isFullscreen = document.getElementById(screenId).classList.contains('fullscreen');
+  document.getElementById('bottom-nav').style.display = isFullscreen ? 'none' : 'flex';
+  // Init hunt map
+  if(screenId === 'screen-hunt') setTimeout(initHuntMap, 150);
+}
+
+// Hunt tabs
+function switchHuntTab(el) {
+  document.querySelectorAll('.hunt-tab').forEach(function(t){t.classList.remove('active');});
+  el.classList.add('active');
+  var tabId = el.getAttribute('data-tab');
+  document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});
+  document.getElementById(tabId).classList.add('active');
+  if(tabId === 'tab-map' && huntMap) huntMap.invalidateSize();
+}
+
+// Quick kill report
+function reportKill(icon, wildart) {
+  openModal('kill-form');
+  document.getElementById('kill-icon').textContent = icon;
+  document.getElementById('kill-wildart').textContent = wildart;
+}
+
+// Filter strecke by participant
+function filterStrecke(who, chipBtn) {
+  document.querySelectorAll('.pf-chip').forEach(function(c) {
+    c.style.border = '1.5px solid var(--border)';
+    c.style.background = 'var(--surface-2)';
+    c.style.color = 'var(--text-2)';
+  });
+  chipBtn.style.border = '1.5px solid var(--green)';
+  chipBtn.style.background = 'rgba(107,159,58,0.15)';
+  chipBtn.style.color = 'var(--green-bright)';
+  document.querySelectorAll('[data-participant]').forEach(function(card) {
+    if (who === 'alle') {
+      card.style.display = '';
+    } else {
+      card.style.display = card.dataset.participant === who ? '' : 'none';
+    }
+  });
+}
+
+// Delete kill entry
+function deleteKill(btn) {
+  var entry = btn.closest('div[style*="padding:10px"]');
+  if(!entry) return;
+  // First tap: turn red and show confirm state
+  if(!btn.dataset.confirm) {
+    btn.dataset.confirm = '1';
+    btn.style.background = 'rgba(239,83,80,0.25)';
+    btn.style.borderColor = 'var(--red)';
+    btn.innerHTML = '✕';
+    btn.style.color = 'var(--red)';
+    btn.style.fontSize = '18px';
+    btn.style.fontWeight = '800';
+    toast('Nochmal tippen zum Löschen');
+    setTimeout(function() { btn.dataset.confirm = ''; btn.style.background = 'rgba(239,83,80,0.06)'; btn.style.borderColor = 'rgba(239,83,80,0.2)'; btn.innerHTML = '🗑️'; btn.style.fontSize = '16px'; btn.style.fontWeight = ''; }, 3000);
+    return;
+  }
+  // Second tap: animate out and remove
+  entry.style.transition = 'opacity 0.3s, transform 0.3s';
+  entry.style.opacity = '0';
+  entry.style.transform = 'translateX(60px)';
+  setTimeout(function() { entry.remove(); }, 300);
+  toast('🗑️ Meldung gelöscht');
+}
+
+// Hunt map
+function initHuntMap() {
+  if(huntMap){huntMap.invalidateSize();return;}
+  huntMap = L.map('hunt-map',{center:[53.264,10.354],zoom:15,zoomControl:false,attributionControl:false});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(huntMap);
+  // Reviergrenze
+  L.polygon([[53.2700,10.3420],[53.2705,10.3520],[53.2690,10.3620],[53.2665,10.3650],[53.2620,10.3640],[53.2580,10.3600],[53.2570,10.3520],[53.2575,10.3440],[53.2600,10.3390],[53.2640,10.3380],[53.2680,10.3400]],{color:'#6B9F3A',weight:2,fillColor:'#6B9F3A',fillOpacity:0.04,dashArray:'8,5'}).addTo(huntMap);
+  // Hochsitze
+  [{lat:53.2665,lng:10.3505,n:'Eicheneck',i:'🪵',c:'orange'},{lat:53.2618,lng:10.3580,n:'Fuchsbau',i:'🪵',c:'orange'},{lat:53.2680,lng:10.3460,n:'Birkenweg',i:'🪵',c:'orange'},{lat:53.2640,lng:10.3620,n:'Südblick',i:'🏠',c:'green'},{lat:53.2590,lng:10.3480,n:'Moorkante',i:'🪵',c:'orange'},{lat:53.2650,lng:10.3490,n:'P-Nord',i:'🅿️',c:'blue'},{lat:53.2595,lng:10.3560,n:'P-Süd',i:'🅿️',c:'blue'}].forEach(function(h){
+    L.marker([h.lat,h.lng],{icon:L.divIcon({className:'hs-marker-dark',html:'<div class="hs-pin '+h.c+'"><span>'+h.i+'</span></div><div class="hs-label">'+h.n+'</div>',iconSize:[24,32],iconAnchor:[12,32]})}).addTo(huntMap);
+  });
+  // Jäger
+  [{lat:53.2618,lng:10.3580,n:'Moritz',init:'ML',bg:'#2E7D32',bd:'#4CAF50'},{lat:53.2665,lng:10.3505,n:'Heinrich',init:'HW',bg:'#1565C0',bd:'#42A5F5'},{lat:53.2680,lng:10.3460,n:'Karl',init:'KM',bg:'#E65100',bd:'#FF8F00'},{lat:53.2590,lng:10.3480,n:'Frank',init:'FS',bg:'#6A1B9A',bd:'#AB47BC'},{lat:53.2640,lng:10.3620,n:'Peter',init:'PB',bg:'#00838F',bd:'#26C6DA'}].forEach(function(j){
+    L.marker([j.lat,j.lng],{icon:L.divIcon({className:'user-marker',html:'<div class="user-marker-inner" style="background:'+j.bg+';border-color:'+j.bd+';color:white;">'+j.init+'<div class="user-marker-label">'+j.n+'</div></div>',iconSize:[34,34],iconAnchor:[17,17]}),zIndexOffset:1000}).addTo(huntMap);
+  });
+  // Anschuss
+  L.marker([53.2608,10.3560],{icon:L.divIcon({className:'user-marker',html:'<div style="width:26px;height:26px;background:rgba(239,83,80,0.25);border:2px solid #EF5350;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;animation:marker-pulse 1.5s infinite;">🔴</div>',iconSize:[26,26],iconAnchor:[13,13]}),zIndexOffset:900}).addTo(huntMap).bindPopup('<b>🔴 Anschuss</b><br>Überläufer · Moritz · 17:15');
+  huntMap.invalidateSize();
+}
+
+// Revier map
+function initRevierMap() {
+  if(revierMap){revierMap.invalidateSize();return;}
+  revierMap = L.map('revier-map',{center:[53.264,10.354],zoom:15,zoomControl:false,attributionControl:false});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(revierMap);
+  L.polygon([[53.2700,10.3420],[53.2705,10.3520],[53.2690,10.3620],[53.2665,10.3650],[53.2620,10.3640],[53.2580,10.3600],[53.2570,10.3520],[53.2575,10.3440],[53.2600,10.3390],[53.2640,10.3380],[53.2680,10.3400]],{color:'#6B9F3A',weight:2.5,fillColor:'#6B9F3A',fillOpacity:0.06,dashArray:'10,6'}).addTo(revierMap);
+  [{lat:53.2665,lng:10.3505,n:'Eicheneck',i:'🪵',c:'orange'},{lat:53.2618,lng:10.3580,n:'Fuchsbau',i:'🪵',c:'orange'},{lat:53.2680,lng:10.3460,n:'Birkenweg',i:'🪵',c:'orange'},{lat:53.2640,lng:10.3620,n:'Südblick',i:'🏠',c:'green'},{lat:53.2590,lng:10.3480,n:'Moorkante',i:'🪵',c:'orange'},{lat:53.2695,lng:10.3560,n:'Waldrand',i:'🪵',c:'orange'},{lat:53.2630,lng:10.3440,n:'Lichtung',i:'🏠',c:'green'},{lat:53.2650,lng:10.3490,n:'P-Nord',i:'🅿️',c:'blue'},{lat:53.2595,lng:10.3560,n:'P-Süd',i:'🅿️',c:'blue'}].forEach(function(h){
+    L.marker([h.lat,h.lng],{icon:L.divIcon({className:'hs-marker-dark',html:'<div class="hs-pin '+h.c+'"><span>'+h.i+'</span></div><div class="hs-label">'+h.n+'</div>',iconSize:[24,32],iconAnchor:[12,32]})}).addTo(revierMap);
+  });
+  revierMap.invalidateSize();
+}
+
+// === GUEST FLOW ===
+var guestMap = null;
+function showGuestJoin() {
+  // Hide all screens, show guest join
+  document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');s.style.display='';});
+  document.getElementById('screen-guest-join').style.display = 'flex';
+  document.getElementById('screen-guest-join').classList.add('active');
+  document.getElementById('bottom-nav').style.display = 'none';
+}
+function showGuestHunt() {
+  document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');s.style.display='';});
+  document.getElementById('screen-guest-hunt').style.display = 'flex';
+  document.getElementById('screen-guest-hunt').classList.add('active');
+  document.getElementById('bottom-nav').style.display = 'none';
+  setTimeout(initGuestMap, 200);
+}
+function switchGuestTab(el) {
+  el.parentElement.querySelectorAll('.hunt-tab').forEach(function(t){t.classList.remove('active');});
+  el.classList.add('active');
+  var tabId = el.getAttribute('data-tab');
+  document.querySelectorAll('.tab-panel').forEach(function(p){
+    if(p.id && p.id.startsWith('gtab-')) p.classList.remove('active');
+  });
+  document.getElementById(tabId).classList.add('active');
+  if(tabId === 'gtab-map' && guestMap) guestMap.invalidateSize();
+}
+function initGuestMap() {
+  if(guestMap){guestMap.invalidateSize();return;}
+  guestMap = L.map('guest-map',{center:[53.264,10.354],zoom:15,zoomControl:false,attributionControl:false});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(guestMap);
+  L.polygon([[53.2700,10.3420],[53.2705,10.3520],[53.2690,10.3620],[53.2665,10.3650],[53.2620,10.3640],[53.2580,10.3600],[53.2570,10.3520],[53.2575,10.3440],[53.2600,10.3390],[53.2640,10.3380],[53.2680,10.3400]],{color:'#6B9F3A',weight:2,fillColor:'#6B9F3A',fillOpacity:0.04,dashArray:'8,5'}).addTo(guestMap);
+  // Hochsitze
+  [{lat:53.2640,lng:10.3620,n:'Südblick (DEIN)',i:'🏠',c:'green'},{lat:53.2650,lng:10.3490,n:'P-Nord',i:'🅿️',c:'blue'},{lat:53.2595,lng:10.3560,n:'P-Süd',i:'🅿️',c:'blue'},{lat:53.2665,lng:10.3505,n:'Eicheneck',i:'🪵',c:'orange'},{lat:53.2618,lng:10.3580,n:'Fuchsbau',i:'🪵',c:'orange'}].forEach(function(h){
+    L.marker([h.lat,h.lng],{icon:L.divIcon({className:'hs-marker-dark',html:'<div class="hs-pin '+h.c+'"><span>'+h.i+'</span></div><div class="hs-label">'+h.n+'</div>',iconSize:[24,32],iconAnchor:[12,32]})}).addTo(guestMap);
+  });
+  // Other hunters
+  [{lat:53.2618,lng:10.3580,n:'Moritz',init:'ML',bg:'#2E7D32',bd:'#4CAF50'},{lat:53.2665,lng:10.3505,n:'Heinrich',init:'HW',bg:'#1565C0',bd:'#42A5F5'},{lat:53.2680,lng:10.3460,n:'Karl',init:'KM',bg:'#E65100',bd:'#FF8F00'}].forEach(function(j){
+    L.marker([j.lat,j.lng],{icon:L.divIcon({className:'user-marker',html:'<div class="user-marker-inner" style="background:'+j.bg+';border-color:'+j.bd+';color:white;">'+j.init+'<div class="user-marker-label">'+j.n+'</div></div>',iconSize:[34,34],iconAnchor:[17,17]}),zIndexOffset:1000}).addTo(guestMap);
+  });
+  // Guest (Peter) marker with highlight
+  L.marker([53.2640,10.3620],{icon:L.divIcon({className:'user-marker',html:'<div class="user-marker-inner" style="background:#00838F;border-color:#26C6DA;color:white;box-shadow:0 0 20px rgba(0,206,209,0.4);">PB<div class="user-marker-label" style="background:var(--green);padding:3px 8px;">Du</div></div>',iconSize:[34,34],iconAnchor:[17,17]}),zIndexOffset:2000}).addTo(guestMap);
+  guestMap.invalidateSize();
+}
+// Back to main app from guest demo
+function exitGuestDemo() {
+  document.getElementById('screen-guest-join').style.display = 'none';
+  document.getElementById('screen-guest-hunt').style.display = 'none';
+  goTo('screen-jagd');
+  document.querySelectorAll('.bnav-item').forEach(function(b,i){b.classList.toggle('active',i===0);});
+}
+
+// Modals
+function openModal(id){document.getElementById(id).classList.add('visible');}
+function closeModal(e,id){if(!e||e.target.id===id)document.getElementById(id).classList.remove('visible');}
+
+// Toggle contact selection
+function toggleContact(row) {
+  var check = row.querySelector('.contact-check');
+  if (!check) return;
+  var isOn = check.dataset.on === '1';
+  if (isOn) {
+    check.dataset.on = '';
+    check.innerHTML = '';
+    check.style.border = '2px solid var(--border)';
+    check.style.background = 'transparent';
+    row.style.borderColor = 'var(--border)';
+  } else {
+    check.dataset.on = '1';
+    check.innerHTML = '✓';
+    check.style.border = '2px solid var(--green)';
+    check.style.background = 'var(--green)';
+    check.style.color = 'white';
+    check.style.fontWeight = '800';
+    row.style.borderColor = 'var(--green)';
+  }
+}
+
+// Toggle tag (additive roles like 🐕 or 👥)
+function toggleTag(btn) {
+  var isOn = btn.classList.contains('on');
+  if (isOn) {
+    btn.classList.remove('on');
+    btn.style.border = '1.5px solid var(--border)';
+    btn.style.background = 'var(--surface-2)';
+    btn.style.color = 'var(--text-3)';
+  } else {
+    btn.classList.add('on');
+    var emoji = btn.textContent.trim();
+    if (emoji === '👥') {
+      btn.style.border = '1.5px solid var(--blue)';
+      btn.style.background = 'rgba(66,165,245,0.12)';
+      btn.style.color = 'var(--blue)';
+    } else {
+      btn.style.border = '1.5px solid var(--orange)';
+      btn.style.background = 'rgba(255,143,0,0.12)';
+      btn.style.color = 'var(--orange)';
+    }
+  }
+}
+
+// Toggle Jagdleiter command bar
+var jlOpen = false;
+function toggleJLbar() {
+  jlOpen = !jlOpen;
+  document.getElementById('jl-bar').style.display = jlOpen ? 'flex' : 'none';
+}
+
+// Filter contacts by search
+function filterContacts(query) {
+  var q = query.toLowerCase().trim();
+  document.querySelectorAll('#contact-list .contact-row').forEach(function(row) {
+    var name = row.getAttribute('data-name') || '';
+    row.style.display = (!q || name.indexOf(q) !== -1) ? 'flex' : 'none';
+  });
+}
+
+// Toast
+var toastTimer;
+function toast(msg){var t=document.getElementById('toast');document.getElementById('toast-msg').textContent=msg;t.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('visible');},2500);}
+</script>
+</body>
+</html>

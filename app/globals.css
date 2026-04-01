@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0f08;
+  --surface: #141c10;
+  --surface-2: #1c2818;
+  --surface-3: #243220;
+  --border: rgba(107,159,58,0.12);
+  --border-light: rgba(255,255,255,0.06);
+  --green: #6B9F3A;
+  --green-bright: #8BC34A;
+  --green-dim: #3d5e22;
+  --green-900: #1a3409;
+  --orange: #FF8F00;
+  --red: #EF5350;
+  --blue: #42A5F5;
+  --gold: #FFD700;
+  --text: #f0f0e8;
+  --text-2: rgba(240,240,232,0.72);
+  --text-3: rgba(240,240,232,0.42);
+  --radius: 0.875rem;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar subtle */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Input base */
+input[type="text"], input[type="email"], input[type="password"], input[type="search"] {
+  font-family: inherit;
+  font-size: 1rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+input:focus {
+  border-color: var(--green);
+}
+input::placeholder {
+  color: var(--text-3);
+}
+
+/* Button base */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+button:active {
+  transform: scale(0.97);
+}
+
+/* Mini avatar */
+.avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.avatar-sm { width: 1.625rem; height: 1.625rem; font-size: 0.625rem; }
+.avatar-xs { width: 1.375rem; height: 1.375rem; font-size: 0.5625rem; }
+.av-1 { background: #2E7D32; color: white; }
+.av-2 { background: #1565C0; color: white; }
+.av-3 { background: #E65100; color: white; }
+.av-4 { background: #6A1B9A; color: white; }
+.av-5 { background: #00838F; color: white; }
+.av-6 { background: #C62828; color: white; }
+.av-muted { background: var(--surface-3); color: var(--text-3); }
+
+/* Badges */
+.badge {
+  padding: 0.1875rem 0.625rem;
+  border-radius: 1.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-live { background: rgba(239,83,80,0.15); color: var(--red); }
+.badge-planned { background: rgba(66,165,245,0.15); color: var(--blue); }
+.badge-done { background: rgba(107,159,58,0.15); color: var(--green); }
+.badge-gold { background: rgba(255,215,0,0.12); border: 1px solid rgba(255,215,0,0.25); color: var(--gold); }
+
+/* Live dot */
+.live-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--red);
+  display: inline-block;
+  animation: pulse-dot 1.5s infinite;
+}
+@keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  z-index: 100;
+  opacity: 0;
+  transition: all 0.3s;
+  pointer-events: none;
+}
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+/* Section title */
+.section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.0625rem;
+}
+
+/* Tag buttons (👥 🐕) */
+.tag-btn {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.4375rem;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--text-3);
+  transition: all 0.15s;
+}
+.tag-btn.on-blue { border-color: var(--blue); background: rgba(66,165,245,0.12); color: var(--blue); }
+.tag-btn.on-orange { border-color: var(--orange); background: rgba(255,143,0,0.12); color: var(--orange); }
