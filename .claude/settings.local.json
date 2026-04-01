@@ -46,7 +46,13 @@
       "Bash(mv components/hunt/MapContent.tsx src/components/hunt/)",
       "Bash(rmdir components/hunt)",
       "Bash(rmdir components:*)",
-      "Bash(node -e \"const rl = require\\('react-leaflet'\\); console.log\\('WMSTileLayer:', typeof rl.WMSTileLayer\\); console.log\\('Polygon:', typeof rl.Polygon\\); console.log\\('Polyline:', typeof rl.Polyline\\); console.log\\('Popup:', typeof rl.Popup\\)\")"
+      "Bash(node -e \"const rl = require\\('react-leaflet'\\); console.log\\('WMSTileLayer:', typeof rl.WMSTileLayer\\); console.log\\('Polygon:', typeof rl.Polygon\\); console.log\\('Polyline:', typeof rl.Polyline\\); console.log\\('Popup:', typeof rl.Popup\\)\")",
+      "Bash(powershell -Command \"Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue\")",
+      "WebFetch(domain:opendata.lgln.niedersachsen.de)",
+      "WebFetch(domain:www.geobasisdaten.niedersachsen.de)",
+      "WebFetch(domain:www.opengeodata.nrw.de)",
+      "WebSearch",
+      "WebFetch(domain:advmis.geodatenzentrum.de)"
     ]
   }
 }

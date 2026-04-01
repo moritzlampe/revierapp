@@ -66,45 +66,7 @@ export default function HuntPage() {
     )
   }, [geoState.position, geoState.isLocked, myParticipantId, hunt?.id, supabase])
 
-  useEffect(() => { loadHunt() }, [params.id])
-
-  async function loadHunt() {
-    const { data: hunt } = await supabase.from('hunts').select('*').eq('id', params.id).single()
-    if (!hunt) { router.push('/app'); return }
-
-    const { data: parts } = await supabase.from('hunt_participants').select('*, profiles(display_name)').eq('hunt_id', params.id)
-    const { data: { user } } = await supabase.auth.getUser()
-
-    setHunt(hunt)
-    setParticipants(parts || [])
-    setUserId(user?.id ?? null)
-    setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter') || false)
-    setLoading(false)
-
-    // Revier-Daten laden (Grenze + Hochsitze)
-    if (hunt.district_id) {
-      loadDistrictData(hunt.district_id)
-    }
-  }
-
-  async function loadDistrictData(districtId: string) {
-    // Reviergrenze + Name laden
-    const { data: district } = await supabase
-      .from('districts')
-      .select('boundary, name')
-      .eq('id', districtId)
-      .single()
-
-    if (district?.boundary) {
-      const parsed = parsePolygonHex(district.boundary as string)
-      if (parsed) setBoundary(parsed)
-    }
-    setDistrictName(district?.name ?? null)
-
-    await loadMapObjects(districtId)
-  }
-
-  async function loadMapObjects(districtId: string) {
+  const loadMapObjects = useCallback(async (districtId: string) => {
     const { data: mapObjects } = await supabase
       .from('map_objects')
       .select('id, name, type, position, description')
@@ -124,18 +86,55 @@ export default function HuntPage() {
       }
       setStands(parsed)
     }
-  }
+  }, [supabase])
+
+  const loadDistrictData = useCallback(async (districtId: string) => {
+    // Reviergrenze + Name laden
+    const { data: district } = await supabase
+      .from('districts')
+      .select('boundary, name')
+      .eq('id', districtId)
+      .single()
+
+    if (district?.boundary) {
+      const parsed = parsePolygonHex(district.boundary as string)
+      if (parsed) setBoundary(parsed)
+    }
+    setDistrictName(district?.name ?? null)
+
+    await loadMapObjects(districtId)
+  }, [supabase, loadMapObjects])
+
+  const loadHunt = useCallback(async () => {
+    const { data: hunt } = await supabase.from('hunts').select('*').eq('id', params.id).single()
+    if (!hunt) { router.push('/app'); return }
+
+    const { data: parts } = await supabase.from('hunt_participants').select('*, profiles(display_name)').eq('hunt_id', params.id)
+    const { data: { user } } = await supabase.auth.getUser()
+
+    setHunt(hunt)
+    setParticipants(parts || [])
+    setUserId(user?.id ?? null)
+    setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter') || false)
+    setLoading(false)
+
+    // Revier-Daten laden (Grenze + Hochsitze)
+    if (hunt.district_id) {
+      loadDistrictData(hunt.district_id)
+    }
+  }, [supabase, params.id, router, loadDistrictData])
+
+  useEffect(() => { loadHunt() }, [loadHunt])
 
   const handleStandsChanged = useCallback(() => {
     if (hunt?.district_id) {
       loadMapObjects(hunt.district_id)
     }
-  }, [hunt?.district_id])
+  }, [hunt?.district_id, loadMapObjects])
 
   const handleBoundaryChanged = useCallback(() => {
-    // Jagd-Daten neu laden (district_id könnte sich geändert haben)
     loadHunt()
-  }, [params.id])
+  }, [loadHunt])
 
   async function copyInviteLink() {
     if (!hunt) return

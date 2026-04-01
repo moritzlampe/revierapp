@@ -914,7 +914,7 @@ export default function MapContent({
         {activeLayer === 'satellite' && (
           <WMSTileLayer
             url="https://opendata.lgln.niedersachsen.de/doorman/noauth/dop_wms"
-            params={{ layers: 'dop20', format: 'image/png' }}
+            params={{ layers: 'ni_dop20', format: 'image/jpeg' }}
             maxZoom={19}
             attribution='&copy; <a href="https://www.lgln.niedersachsen.de">LGLN</a> (2025) CC BY 4.0'
             eventHandlers={{
@@ -935,8 +935,8 @@ export default function MapContent({
         {/* === Kataster-Overlay === */}
         {cadastreEnabled && (
           <WMSTileLayer
-            url="https://www.geobasisdaten.niedersachsen.de/doorman/noauth/wms_ni_alkis"
-            params={{ layers: 'adv_alkis_flurstuecke', format: 'image/png', transparent: true }}
+            url="https://opendata.lgln.niedersachsen.de/doorman/noauth/alkis_wms"
+            params={{ layers: 'ALKIS', format: 'image/png', transparent: true }}
             maxZoom={19}
             opacity={0.7}
             attribution="&copy; LGLN dl-de/zero-2-0"
