@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic'
 import type { GeolocationState } from '@/hooks/useGeolocation'
 import type { ParticipantPosition } from '@/hooks/useHuntPositions'
-import type { StandData } from './MapContent'
+import type { StandData, StandsChangedCallback } from './MapContent'
 
 const MapContent = dynamic(() => import('./MapContent'), { ssr: false })
 
@@ -16,7 +16,7 @@ interface MapViewProps {
   districtId?: string | null
   districtName?: string | null
   huntId?: string | null
-  onStandsChanged?: () => void
+  onStandsChanged?: StandsChangedCallback
   onBoundaryChanged?: () => void
 }
 

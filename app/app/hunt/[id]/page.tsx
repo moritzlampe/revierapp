@@ -126,7 +126,18 @@ export default function HuntPage() {
 
   useEffect(() => { loadHunt() }, [loadHunt])
 
-  const handleStandsChanged = useCallback(() => {
+  const handleStandsChanged = useCallback((newStand?: StandData, deletedId?: string) => {
+    // Optimistisches Update: sofort anzeigen ohne Refetch abzuwarten
+    if (newStand) {
+      setStands(prev => {
+        const exists = prev.some(s => s.id === newStand.id)
+        return exists ? prev.map(s => s.id === newStand.id ? newStand : s) : [...prev, newStand]
+      })
+    }
+    if (deletedId) {
+      setStands(prev => prev.filter(s => s.id !== deletedId))
+    }
+    // Background-Refetch für Konsistenz
     if (hunt?.district_id) {
       loadMapObjects(hunt.district_id)
     }

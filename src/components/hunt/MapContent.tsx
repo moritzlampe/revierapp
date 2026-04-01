@@ -58,6 +58,8 @@ export interface StandData {
   description?: string | null
 }
 
+export type StandsChangedCallback = (newStand?: StandData, deletedId?: string) => void
+
 export interface MapContentProps {
   geoState: GeolocationState
   participants: ParticipantPosition[]
@@ -67,7 +69,7 @@ export interface MapContentProps {
   districtId?: string | null
   districtName?: string | null
   huntId?: string | null
-  onStandsChanged?: () => void
+  onStandsChanged?: StandsChangedCallback
   onBoundaryChanged?: () => void
 }
 
@@ -764,19 +766,27 @@ export default function MapContent({
     iconAnchor: [5, 5],
   }), [])
 
-  // Nach Speichern/Löschen → Stands neu laden
-  const handleObjectSaved = useCallback(() => {
+  // Nach Speichern → Stand optimistisch anzeigen + Background-Refetch
+  const handleObjectSaved = useCallback((obj: MapObjectData) => {
     setSheetMode('hidden')
     setTempMarker(null)
     setEditStand(null)
-    onStandsChanged?.()
+    const stand: StandData = {
+      id: obj.id,
+      name: obj.name,
+      type: obj.type,
+      position: obj.position,
+      description: obj.description ?? null,
+    }
+    onStandsChanged?.(stand)
   }, [onStandsChanged])
 
-  const handleObjectDeleted = useCallback(() => {
+  // Nach Löschen → Stand optimistisch entfernen + Background-Refetch
+  const handleObjectDeleted = useCallback((deletedId: string) => {
     setSheetMode('hidden')
     setTempMarker(null)
     setEditStand(null)
-    onStandsChanged?.()
+    onStandsChanged?.(undefined, deletedId)
   }, [onStandsChanged])
 
   // Temp-Marker Icon (pulsierend)
