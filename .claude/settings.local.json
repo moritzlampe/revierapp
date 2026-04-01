@@ -37,7 +37,16 @@
       "Bash(node -e \":*)",
       "Bash(taskkill //F //IM node.exe)",
       "Bash(rm -rf .next)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(npx tsx:*)",
+      "Bash(mkdir -p public/leaflet)",
+      "Bash(cp node_modules/leaflet/dist/images/marker-icon.png node_modules/leaflet/dist/images/marker-icon-2x.png node_modules/leaflet/dist/images/marker-shadow.png public/leaflet/)",
+      "Bash(mkdir -p src/components/hunt)",
+      "Bash(mv components/hunt/MapView.tsx src/components/hunt/)",
+      "Bash(mv components/hunt/MapContent.tsx src/components/hunt/)",
+      "Bash(rmdir components/hunt)",
+      "Bash(rmdir components:*)",
+      "Bash(node -e \"const rl = require\\('react-leaflet'\\); console.log\\('WMSTileLayer:', typeof rl.WMSTileLayer\\); console.log\\('Polygon:', typeof rl.Polygon\\); console.log\\('Polyline:', typeof rl.Polyline\\); console.log\\('Popup:', typeof rl.Popup\\)\")"
     ]
   }
 }

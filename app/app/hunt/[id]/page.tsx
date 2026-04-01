@@ -148,7 +148,7 @@ export default function HuntPage() {
   ]
 
   return (
-    <div className="h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)' }}>
       {/* Top Bar */}
       <div className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
         style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
@@ -227,7 +227,7 @@ export default function HuntPage() {
       )}
 
       {/* Tab Content */}
-      <div className="flex-1 flex flex-col" style={{ position: 'relative', overflow: 'hidden' }}>
+      <div className="flex-1 flex flex-col min-h-0" style={{ position: 'relative', overflow: 'hidden' }}>
         {/* Karte — NICHT unmounten beim Tab-Wechsel (display statt conditional) */}
         <div style={{ position: 'absolute', inset: 0, display: activeTab === 'karte' ? 'block' : 'none' }}>
           <MapView

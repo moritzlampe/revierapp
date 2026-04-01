@@ -130,6 +130,17 @@ function MapMoveTracker({ userPosition, onMoved }: {
   return null
 }
 
+/** Leaflet Container-Größe nach Mount neu berechnen (Mobile-Fix) */
+function MapResizer() {
+  const map = useMap()
+  useEffect(() => {
+    map.invalidateSize()
+    const timer = setTimeout(() => map.invalidateSize(), 200)
+    return () => clearTimeout(timer)
+  }, [map])
+  return null
+}
+
 /** Zoom-Level tracken für bedingte Stand-Labels */
 function ZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
   const map = useMap()
@@ -577,6 +588,7 @@ export default function MapContent({
         )}
 
         {/* === Karten-Steuerung === */}
+        <MapResizer />
         <InitialViewSetter boundary={boundary} position={geoState.position} hasFlown={hasFlown} />
         <MapMoveTracker userPosition={geoState.position} onMoved={handleMapMoved} />
         <ZoomTracker onZoomChange={handleZoomChange} />

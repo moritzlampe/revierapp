@@ -28,10 +28,9 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
-        <div style={{
+        <div className="min-h-viewport" style={{
           maxWidth: '430px',
           margin: '0 auto',
-          minHeight: '100dvh',
           position: 'relative',
           borderLeft: '1px solid rgba(107,159,58,0.15)',
           borderRight: '1px solid rgba(107,159,58,0.15)',

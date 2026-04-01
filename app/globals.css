@@ -24,6 +24,16 @@
 
 * { -webkit-tap-highlight-color: transparent; }
 
+/* Viewport-Höhe mit vh-Fallback für ältere Mobile-Browser / In-App-WebViews */
+.h-viewport {
+  height: 100vh;
+  height: 100dvh;
+}
+.min-h-viewport {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 html, body {
   height: 100%;
   background: var(--bg);
