@@ -162,3 +162,353 @@ button:active {
 }
 .tag-btn.on-blue { border-color: var(--blue); background: rgba(66,165,245,0.12); color: var(--blue); }
 .tag-btn.on-orange { border-color: var(--orange); background: rgba(255,143,0,0.12); color: var(--orange); }
+
+/* Leaflet Karte: z-index begrenzen, damit Tab-Bar darüber bleibt */
+.leaflet-container {
+  z-index: 0;
+  background: var(--bg);
+}
+.leaflet-control-attribution {
+  font-size: 0.625rem !important;
+  background: rgba(10,15,8,0.7) !important;
+  color: var(--text-3) !important;
+}
+.leaflet-control-attribution a {
+  color: var(--text-3) !important;
+}
+/* Touch-Handling: verhindert Scroll-Konflikte auf Mobile */
+.leaflet-container {
+  touch-action: none;
+}
+
+/* GPS pulsierender Punkt auf der Karte */
+.gps-pulse path {
+  animation: gps-pulse-ring 2s ease-out infinite;
+}
+@keyframes gps-pulse-ring {
+  0% { opacity: 1; }
+  70% { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+
+/* GPS-Suche Spinner */
+.gps-spinner {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--text-3);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: gps-spin 0.8s linear infinite;
+}
+@keyframes gps-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Teilnehmer-Marker auf der Karte */
+.participant-marker {
+  background: transparent !important;
+  border: none !important;
+}
+.marker-circle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255,255,255,0.8);
+  box-shadow: 0 0.125rem 0.375rem rgba(0,0,0,0.4);
+  position: relative;
+}
+.marker-initials {
+  color: white;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  font-family: 'DM Sans', sans-serif;
+}
+.marker-badge {
+  position: absolute;
+  bottom: -0.25rem;
+  right: -0.25rem;
+  font-size: 0.5rem;
+  line-height: 1;
+  background: var(--surface);
+  border-radius: 50%;
+  width: 0.875rem;
+  height: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.participant-marker.is-stale .marker-circle {
+  opacity: 0.4;
+}
+.participant-marker.is-moving .marker-circle {
+  animation: participant-pulse 2s ease-out infinite;
+}
+@keyframes participant-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.3); }
+  70% { box-shadow: 0 0 0 0.5rem rgba(255,255,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); }
+}
+
+/* Teilnehmer Tooltip (Dark Theme) */
+.participant-tooltip.leaflet-tooltip {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  box-shadow: 0 0.125rem 0.5rem rgba(0,0,0,0.4);
+}
+.participant-tooltip.leaflet-tooltip::before {
+  border-top-color: var(--surface-2);
+}
+
+/* ============================================================
+   Karten-Buttons (rund, einheitlich)
+   ============================================================ */
+
+.map-btn {
+  position: absolute;
+  z-index: 1000;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 0.125rem 0.5rem rgba(0,0,0,0.3);
+  color: var(--text);
+  font-size: 1.125rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.map-btn:active {
+  background: var(--green-dim);
+}
+
+/* ============================================================
+   Layer-Switcher Panel
+   ============================================================ */
+
+.layer-panel {
+  position: absolute;
+  top: 3.25rem;
+  right: 0;
+  background: var(--surface-2);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  min-width: 12rem;
+  box-shadow: 0 0.25rem 1rem rgba(0,0,0,0.4);
+  z-index: 1001;
+}
+.layer-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.layer-panel-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.03125rem;
+}
+.layer-panel-grid {
+  display: flex;
+  gap: 0.5rem;
+}
+.layer-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+  border: 2px solid transparent !important;
+  background: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.layer-preview.active {
+  border-color: var(--green) !important;
+}
+.layer-preview-tile {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+.layer-preview-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.layer-panel-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.5rem 0;
+}
+.layer-panel-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Toggle-Switch */
+.layer-toggle {
+  width: 2.5rem;
+  height: 1.375rem;
+  border-radius: 0.6875rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border) !important;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  padding: 0;
+}
+.layer-toggle.on {
+  background: var(--green-dim);
+  border-color: var(--green) !important;
+}
+.layer-toggle.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.layer-toggle-knob {
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.2s;
+  display: block;
+}
+.layer-toggle.on .layer-toggle-knob {
+  transform: translateX(1.125rem);
+}
+.layer-panel-hint {
+  font-size: 0.625rem;
+  color: var(--text-3);
+}
+
+/* ============================================================
+   Hochsitz-Marker
+   ============================================================ */
+
+.stand-marker {
+  background: transparent !important;
+  border: none !important;
+}
+.stand-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  color: var(--text-3);
+  filter: drop-shadow(0 0.0625rem 0.125rem rgba(0,0,0,0.5));
+}
+.stand-tooltip.leaflet-tooltip {
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  box-shadow: 0 0.0625rem 0.25rem rgba(0,0,0,0.3);
+}
+.stand-tooltip.leaflet-tooltip::before {
+  border-top-color: var(--surface-2);
+}
+
+/* ============================================================
+   Teilnehmer-Popup (Dark Theme)
+   ============================================================ */
+
+.participant-popup .leaflet-popup-content-wrapper,
+.stand-popup .leaflet-popup-content-wrapper {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  box-shadow: 0 0.25rem 1rem rgba(0,0,0,0.4);
+  color: var(--text);
+}
+.participant-popup .leaflet-popup-content,
+.stand-popup .leaflet-popup-content {
+  margin: 0;
+}
+.participant-popup .leaflet-popup-tip,
+.stand-popup .leaflet-popup-tip {
+  background: var(--surface-2);
+}
+.participant-popup-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.625rem;
+  font-family: 'DM Sans', sans-serif;
+}
+.participant-popup-content strong {
+  color: var(--text);
+  font-size: 0.8125rem;
+}
+.participant-popup-role {
+  color: var(--text-2);
+  font-size: 0.6875rem;
+}
+.participant-popup-distance {
+  color: var(--green-bright);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.participant-popup-stale {
+  color: var(--orange);
+  font-size: 0.625rem;
+}
+.stand-popup-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.375rem 0.5rem;
+  font-family: 'DM Sans', sans-serif;
+}
+.stand-popup-content strong {
+  color: var(--text);
+  font-size: 0.75rem;
+}
+.stand-popup-content span {
+  color: var(--text-3);
+  font-size: 0.625rem;
+}
+
+/* Leaflet-Popup Schliessen-Button Dark Theme */
+.leaflet-popup-close-button {
+  color: var(--text-3) !important;
+}
+.leaflet-popup-close-button:hover {
+  color: var(--text) !important;
+}

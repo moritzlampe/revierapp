@@ -42,3 +42,9 @@ next-env.d.ts
 
 # analysis screenshots
 _analyse/screenshots/
+
+# local scripts with credentials
+scripts/
+
+# Claude Code local settings
+.claude/settings.local.json
