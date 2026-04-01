@@ -13,6 +13,15 @@ Ziel: Kommerzielle SaaS-Lösung für Jagdpächter, Jagdleiter, Berufsjäger.
 **Sprache:** Deutsch (UI, Variablennamen deutsch, Code-Kommentare deutsch)
 **Stand:** April 2026
 
+### Aktueller Stand (01.04.2026)
+
+- Auth funktioniert (Login, Registrierung, Profil-Trigger)
+- Jagd erstellen funktioniert (mit Kontakten, Rollen, Wildarten, Invite-Code)
+- Dark Theme v4 funktioniert (CSS-Variablen, DM Sans Font)
+- Deployed auf Hetzner via Coolify (Auto-Deploy aus GitHub)
+- 6 User registriert
+- **Nächster Schritt:** Live-Karte (Supabase Realtime + Leaflet + GPS-Positionen)
+
 ---
 
 ## Tech-Stack
@@ -48,6 +57,8 @@ Ziel: Kommerzielle SaaS-Lösung für Jagdpächter, Jagdleiter, Berufsjäger.
 13. **Trichinen-Trigger ist automatisch** — bei Schwarzwild wird `trichinen_pflicht = true` gesetzt.
 14. **Gast-Beitritt:** hunt_participants hat CHECK (user_id OR guest_name). Nie beide NULL.
 15. **Invite-Code:** 8 Zeichen alphanumerisch, unique. Wird beim Jagd-Erstellen generiert.
+16. **Profil-Trigger braucht SET search_path = public** — ohne das findet die Funktion die profiles-Tabelle nicht.
+17. **Confirm sign up muss AUS sein** in Supabase Authentication → Configuration. Sonst bouncen Test-E-Mails.
 
 ---
 
@@ -314,6 +325,6 @@ ssh -i ~/.ssh/revierapp_hetzner root@46.225.149.118
 3. Mobile PWA (installierbar)
 
 ### Offene Bugs
-- Dark Theme / CSS-Variablen greifen nicht (wahrscheinlich Tailwind v4 Override)
-- Profil zeigt "Jäger" statt echten Namen (alter User ohne Profil-Trigger)
+- Profil-Name zeigt "Jäger" bei Moritz (alter User, Trigger existierte beim Registrieren noch nicht). Fix: `UPDATE profiles SET display_name = 'Moritz' WHERE display_name LIKE '%@%' OR display_name = 'Jäger'`
+- Playwright MCP nicht konfiguriert in Claude Code
 - Next.js 16 Middleware-Warnung (deprecated, auf "proxy" umbauen)
