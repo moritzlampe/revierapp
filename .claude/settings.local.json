@@ -52,7 +52,10 @@
       "WebFetch(domain:www.geobasisdaten.niedersachsen.de)",
       "WebFetch(domain:www.opengeodata.nrw.de)",
       "WebSearch",
-      "WebFetch(domain:advmis.geodatenzentrum.de)"
+      "WebFetch(domain:advmis.geodatenzentrum.de)",
+      "Bash(xargs grep:*)",
+      "Bash(mkdir:*)",
+      "Bash(node scripts/generate-icons.mjs)"
     ]
   }
 }

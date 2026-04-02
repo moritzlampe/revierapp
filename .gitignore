@@ -46,5 +46,8 @@ _analyse/screenshots/
 # local scripts with credentials
 scripts/
 
+# VAPID Keys (Secrets)
+.vapid-keys
+
 # Claude Code local settings
 .claude/settings.local.json

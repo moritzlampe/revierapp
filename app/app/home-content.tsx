@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { usePushNotifications } from '@/hooks/usePushNotifications'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
 
@@ -81,6 +82,8 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   const [activeTab, setActiveTab] = useState<'jagden' | 'chats'>(initialTab)
   const [chatItems, setChatItems] = useState<ChatListItem[]>([])
   const [loadingChats, setLoadingChats] = useState(false)
+
+  const { showBanner: showPushBanner, subscribe: subscribePush, dismiss: dismissPush } = usePushNotifications(supabase, userId)
 
   const activeHunts = initialHunts.filter(h => h.status === 'active')
   const pastHunts = initialHunts.filter(h => h.status === 'completed').slice(0, 3)
@@ -218,6 +221,28 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>Was steht an?</p>
       </div>
+
+      {/* Push-Benachrichtigungen Banner */}
+      {showPushBanner && (
+        <div className="mx-5 mb-3 flex items-center gap-2.5 p-3 rounded-xl"
+          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <span style={{ fontSize: '1.25rem' }}>🔔</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Benachrichtigungen aktivieren?</p>
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>Damit du keine Nachrichten verpasst.</p>
+          </div>
+          <button onClick={subscribePush}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg flex-shrink-0"
+            style={{ background: 'var(--green)', color: 'white' }}>
+            Ja
+          </button>
+          <button onClick={dismissPush}
+            className="px-2 py-1.5 text-xs rounded-lg flex-shrink-0"
+            style={{ color: 'var(--text-3)' }}>
+            Später
+          </button>
+        </div>
+      )}
 
       {/* Segmented Control */}
       <div className="mx-5 mb-4" style={{ background: 'var(--surface-2)', borderRadius: '0.625rem', padding: '0.1875rem' }}>

@@ -94,6 +94,22 @@ async function compressImage(file: File, maxWidth = 1200): Promise<Blob> {
   })
 }
 
+// Push-Notification senden (fire-and-forget)
+function sendPushNotification(params: {
+  huntId?: string
+  groupId?: string
+  title: string
+  body: string
+  senderUserId: string
+  url: string
+}) {
+  fetch('/api/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  }).catch(() => {}) // Fehler ignorieren — Push ist best-effort
+}
+
 // === Komponente ===
 
 export default function ChatPanel({ huntId, groupId, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange }: Props) {
@@ -392,6 +408,15 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
     if (error) {
       setMessages(prev => prev.filter(m => m.id !== msgId))
       console.error('Nachricht senden fehlgeschlagen:', error)
+    } else if (userId) {
+      sendPushNotification({
+        huntId: huntId || undefined,
+        groupId: groupId || undefined,
+        title: groupId ? 'Neue Nachricht' : 'Jagd-Chat',
+        body: text.substring(0, 100),
+        senderUserId: userId,
+        url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
+      })
     }
   }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase])
 
@@ -452,6 +477,15 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
       if (error) {
         setMessages(prev => prev.filter(m => m.id !== msgId))
         console.error('Foto senden fehlgeschlagen:', error)
+      } else if (userId) {
+        sendPushNotification({
+          huntId: huntId || undefined,
+          groupId: groupId || undefined,
+          title: groupId ? 'Neue Nachricht' : 'Jagd-Chat',
+          body: '📷 Foto',
+          senderUserId: userId,
+          url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
+        })
       }
     } catch (err) {
       console.error('Foto-Upload fehlgeschlagen:', err)
@@ -513,7 +547,7 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
           const showSenderName = !isMine && !isSystem && sender && memberTotal > 2 && !prevIsFromSameSender
 
           return (
-            <div key={msg.id}>
+            <div key={msg.id} style={{ display: 'contents' }}>
               {showDateSep && (
                 <div className="chat-date-separator">
                   {formatDateSeparator(msg.created_at)}
