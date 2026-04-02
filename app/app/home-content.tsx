@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
+import { usePrefetchChats } from '@/hooks/usePrefetchChats'
 import SwipeToAction from '@/components/ui/swipe-to-action'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
@@ -87,6 +88,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   const [loadingChats, setLoadingChats] = useState(false)
 
   const { showBanner: showPushBanner, subscribe: subscribePush, dismiss: dismissPush } = usePushNotifications(supabase, userId)
+
+  // Chat-Nachrichten vorladen sobald Chat-Liste da ist
+  const prefetchGroupIds = useMemo(() => chatItems.map(c => c.groupId), [chatItems])
+  usePrefetchChats(supabase, prefetchGroupIds)
 
   // Swipe-to-Delete State
   const [hunts, setHunts] = useState(initialHunts)
@@ -247,11 +252,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     setLoadingChats(false)
   }, [supabase, userId])
 
+  // Chats immer beim Mount laden (nicht erst beim Tab-Wechsel)
   useEffect(() => {
-    if (activeTab === 'chats') {
-      loadChats()
-    }
-  }, [activeTab, loadChats])
+    loadChats()
+  }, [loadChats])
 
   function getChatHref(item: ChatListItem) {
     if (item.isHuntChat && item.huntId) {
@@ -335,8 +339,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       </div>
 
       {/* === JAGDEN TAB === */}
-      {activeTab === 'jagden' && (
-        <>
+      <div style={{ display: activeTab === 'jagden' ? undefined : 'none' }}>
           {/* Quick Actions */}
           <div className="flex gap-2.5 px-5 mb-5">
             <Link href="/app/hunt/create" className="flex-1 flex flex-col items-center gap-2 py-4 px-3 rounded-2xl text-white"
@@ -449,12 +452,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
               </p>
             </div>
           )}
-        </>
-      )}
+      </div>
 
       {/* === CHATS TAB === */}
-      {activeTab === 'chats' && (
-        <div className="flex-1 flex flex-col relative">
+      <div className="flex-1 flex flex-col relative" style={{ display: activeTab === 'chats' ? undefined : 'none' }}>
           {loadingChats ? (
             <div className="flex-1 flex items-center justify-center">
               <p style={{ color: 'var(--text-3)', fontSize: '0.875rem' }}>Chats laden...</p>
@@ -569,8 +570,8 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
           >
             +
           </Link>
-        </div>
-      )}
+      </div>
+
       {/* Bestätigungs-Dialog */}
       {confirmDialog && (
         <div
