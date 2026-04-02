@@ -16,7 +16,7 @@ export default async function AppPage() {
     .from('hunt_participants')
     .select(`
       hunt_id, role,
-      hunts (id, name, type, status, invite_code, started_at, ended_at, created_at)
+      hunts (id, name, type, status, invite_code, started_at, ended_at, created_at, created_by)
     `)
     .eq('user_id', user.id)
     .eq('status', 'joined')

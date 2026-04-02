@@ -55,7 +55,8 @@
       "WebFetch(domain:advmis.geodatenzentrum.de)",
       "Bash(xargs grep:*)",
       "Bash(mkdir:*)",
-      "Bash(node scripts/generate-icons.mjs)"
+      "Bash(node scripts/generate-icons.mjs)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")"
     ]
   }
 }

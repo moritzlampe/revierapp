@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
+import SwipeToAction from '@/components/ui/swipe-to-action'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
 
@@ -43,6 +44,7 @@ type Hunt = {
   started_at: string
   ended_at: string | null
   created_at: string
+  created_by: string
   myRole: string
 }
 
@@ -62,6 +64,7 @@ type ChatListItem = {
   emoji: string
   isHuntChat: boolean
   huntId: string | null
+  createdBy: string
   lastMessage: string | null
   lastMessageSender: string | null
   lastMessageTime: string | null
@@ -85,8 +88,67 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
 
   const { showBanner: showPushBanner, subscribe: subscribePush, dismiss: dismissPush } = usePushNotifications(supabase, userId)
 
-  const activeHunts = initialHunts.filter(h => h.status === 'active')
-  const pastHunts = initialHunts.filter(h => h.status === 'completed').slice(0, 3)
+  // Swipe-to-Delete State
+  const [hunts, setHunts] = useState(initialHunts)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    type: 'delete-hunt' | 'delete-group' | 'leave-group'
+    id: string
+    name: string
+  } | null>(null)
+  const [removingId, setRemovingId] = useState<string | null>(null)
+  const activeCloseRef = useRef<(() => void) | null>(null)
+
+  const activeHunts = hunts.filter(h => h.status === 'active')
+  const pastHunts = hunts.filter(h => h.status === 'completed').slice(0, 3)
+
+  // Schließe offene Swipe-Action wenn woanders getippt wird
+  const closeActiveSwipe = useCallback(() => {
+    if (activeCloseRef.current) {
+      activeCloseRef.current()
+      activeCloseRef.current = null
+    }
+  }, [])
+
+  // Jagd löschen
+  const handleDeleteHunt = useCallback(async (huntId: string) => {
+    setConfirmDialog(null)
+    setRemovingId(huntId)
+    // Warte auf Remove-Animation
+    await new Promise(r => setTimeout(r, 300))
+    const { error } = await supabase.from('hunts').delete().eq('id', huntId)
+    if (!error) {
+      setHunts(prev => prev.filter(h => h.id !== huntId))
+    }
+    setRemovingId(null)
+  }, [supabase])
+
+  // Chat-Gruppe löschen
+  const handleDeleteGroup = useCallback(async (groupId: string) => {
+    setConfirmDialog(null)
+    setRemovingId(groupId)
+    await new Promise(r => setTimeout(r, 300))
+    const { error } = await supabase.from('chat_groups').delete().eq('id', groupId)
+    if (!error) {
+      setChatItems(prev => prev.filter(c => c.groupId !== groupId))
+    }
+    setRemovingId(null)
+  }, [supabase])
+
+  // Chat-Gruppe verlassen
+  const handleLeaveGroup = useCallback(async (groupId: string) => {
+    setConfirmDialog(null)
+    setRemovingId(groupId)
+    await new Promise(r => setTimeout(r, 300))
+    const { error } = await supabase
+      .from('chat_group_members')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+    if (!error) {
+      setChatItems(prev => prev.filter(c => c.groupId !== groupId))
+    }
+    setRemovingId(null)
+  }, [supabase, userId])
 
   // Chat-Liste laden
   const loadChats = useCallback(async () => {
@@ -166,6 +228,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         emoji: group.hunt_id ? '🎯' : group.emoji,
         isHuntChat: !!group.hunt_id,
         huntId: group.hunt_id,
+        createdBy: group.created_by,
         lastMessage: msgPreview,
         lastMessageSender,
         lastMessageTime: lastMsg?.created_at || group.updated_at,
@@ -190,14 +253,11 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     }
   }, [activeTab, loadChats])
 
-  function handleChatClick(item: ChatListItem) {
+  function getChatHref(item: ChatListItem) {
     if (item.isHuntChat && item.huntId) {
-      // Jagd-Chat → Live-Jagd öffnen (Chat-Tab wird dort aktiviert)
-      router.push(`/app/hunt/${item.huntId}?tab=chat`)
-    } else {
-      // Gruppen-Chat → Vollbild-Chat
-      router.push(`/app/chat/${item.groupId}`)
+      return `/app/hunt/${item.huntId}?tab=chat`
     }
+    return `/app/chat/${item.groupId}`
   }
 
   return (
@@ -304,19 +364,38 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
             <div className="mb-4">
               <p className="section-label px-5 mb-2">Aktive Jagden</p>
               <div className="px-5 space-y-2.5">
-                {activeHunts.map((hunt) => (
-                  <Link key={hunt.id} href={`/app/hunt/${hunt.id}`}
-                    className="block rounded-2xl p-3.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-base font-bold">{hunt.name}</span>
-                      <span className="badge badge-live"><span className="live-dot mr-1" /> Live</span>
+                {activeHunts.map((hunt) => {
+                  const isOwner = hunt.created_by === userId
+                  return (
+                    <div
+                      key={hunt.id}
+                      className={removingId === hunt.id ? 'swipe-removing' : ''}
+                    >
+                      <SwipeToAction
+                        actionIcon="🗑️"
+                        actionColor="var(--red)"
+                        disabled={!isOwner}
+                        onAction={() => setConfirmDialog({ type: 'delete-hunt', id: hunt.id, name: hunt.name })}
+                        onSwipeOpen={(closeFn) => {
+                          closeActiveSwipe()
+                          activeCloseRef.current = closeFn
+                        }}
+                      >
+                        <Link href={`/app/hunt/${hunt.id}`}
+                          className="block rounded-2xl p-3.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-base font-bold">{hunt.name}</span>
+                            <span className="badge badge-live"><span className="live-dot mr-1" /> Live</span>
+                          </div>
+                          <div className="flex gap-3.5 text-xs" style={{ color: 'var(--text-2)' }}>
+                            <span>🕐 Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>{hunt.myRole === 'jagdleiter' ? '🎖️ Jagdleiter' : '🎯 Schütze'}</span>
+                          </div>
+                        </Link>
+                      </SwipeToAction>
                     </div>
-                    <div className="flex gap-3.5 text-xs" style={{ color: 'var(--text-2)' }}>
-                      <span>🕐 Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
-                      <span>{hunt.myRole === 'jagdleiter' ? '🎖️ Jagdleiter' : '🎯 Schütze'}</span>
-                    </div>
-                  </Link>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -326,17 +405,36 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
             <div className="mb-4">
               <p className="section-label px-5 mb-2">Letzte Jagden</p>
               <div className="px-5 space-y-2.5">
-                {pastHunts.map((hunt) => (
-                  <div key={hunt.id} className="rounded-2xl p-3.5"
-                    style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-bold">{hunt.name}</span>
-                      <span className="badge badge-done">
-                        {hunt.ended_at ? new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) : 'Beendet'}
-                      </span>
+                {pastHunts.map((hunt) => {
+                  const isOwner = hunt.created_by === userId
+                  return (
+                    <div
+                      key={hunt.id}
+                      className={removingId === hunt.id ? 'swipe-removing' : ''}
+                    >
+                      <SwipeToAction
+                        actionIcon="🗑️"
+                        actionColor="var(--red)"
+                        disabled={!isOwner}
+                        onAction={() => setConfirmDialog({ type: 'delete-hunt', id: hunt.id, name: hunt.name })}
+                        onSwipeOpen={(closeFn) => {
+                          closeActiveSwipe()
+                          activeCloseRef.current = closeFn
+                        }}
+                      >
+                        <div className="rounded-2xl p-3.5"
+                          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-bold">{hunt.name}</span>
+                            <span className="badge badge-done">
+                              {hunt.ended_at ? new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) : 'Beendet'}
+                            </span>
+                          </div>
+                        </div>
+                      </SwipeToAction>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -371,56 +469,88 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
-              {chatItems.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => handleChatClick(item)}
-                  className="w-full flex items-center gap-3 text-left"
-                  style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border-light)' }}
-                >
-                  {/* Emoji-Avatar */}
-                  <div className="flex-shrink-0 flex items-center justify-center"
-                    style={{
-                      width: '2.625rem', height: '2.625rem', borderRadius: '50%',
-                      background: 'var(--surface-2)', fontSize: '1.25rem',
-                    }}>
-                    {item.emoji}
-                  </div>
+              {chatItems.map(item => {
+                const isOwner = item.createdBy === userId
+                const isSwipeable = !item.isHuntChat
+                const swipeAction = isOwner ? 'delete-group' : 'leave-group'
+                const swipeIcon = isOwner ? '🗑️' : '🚪'
+                const swipeColor = isOwner ? 'var(--red)' : 'var(--orange)'
 
-                  {/* Name + letzte Nachricht */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold truncate" style={{ fontSize: '0.9375rem' }}>
-                        {item.isHuntChat ? item.name.replace('🎯 ', '') : item.name}
-                      </span>
-                      {item.lastMessageTime && (
-                        <span className="text-xs flex-shrink-0 ml-2"
-                          style={{ color: item.unreadCount > 0 ? 'var(--green-bright)' : 'var(--text-3)', fontSize: '0.6875rem' }}>
-                          {formatChatTime(item.lastMessageTime)}
-                        </span>
-                      )}
+                const chatRow = (
+                  <Link
+                    href={getChatHref(item)}
+                    prefetch={true}
+                    className="w-full flex items-center gap-3 text-left"
+                    style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', textDecoration: 'none', color: 'inherit' }}
+                  >
+                    {/* Emoji-Avatar */}
+                    <div className="flex-shrink-0 flex items-center justify-center"
+                      style={{
+                        width: '2.625rem', height: '2.625rem', borderRadius: '50%',
+                        background: 'var(--surface-2)', fontSize: '1.25rem',
+                      }}>
+                      {item.emoji}
                     </div>
-                    <div className="flex items-center justify-between mt-0.5">
-                      <p className="text-sm truncate" style={{ color: 'var(--text-3)', fontSize: '0.8125rem', maxWidth: '80%' }}>
-                        {item.lastMessage
-                          ? (item.lastMessageSender ? `${item.lastMessageSender}: ${item.lastMessage}` : item.lastMessage)
-                          : 'Noch keine Nachrichten'}
-                      </p>
-                      {item.unreadCount > 0 && (
-                        <span className="flex-shrink-0 flex items-center justify-center"
-                          style={{
-                            minWidth: '1.25rem', height: '1.25rem', borderRadius: '0.625rem',
-                            background: 'var(--green)', color: 'white',
-                            fontSize: '0.6875rem', fontWeight: 700,
-                            padding: '0 0.3125rem',
-                          }}>
-                          {item.unreadCount > 99 ? '99+' : item.unreadCount}
+
+                    {/* Name + letzte Nachricht */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold truncate" style={{ fontSize: '0.9375rem' }}>
+                          {item.isHuntChat ? item.name.replace('🎯 ', '') : item.name}
                         </span>
-                      )}
+                        {item.lastMessageTime && (
+                          <span className="text-xs flex-shrink-0 ml-2"
+                            style={{ color: item.unreadCount > 0 ? 'var(--green-bright)' : 'var(--text-3)', fontSize: '0.6875rem' }}>
+                            {formatChatTime(item.lastMessageTime)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <p className="text-sm truncate" style={{ color: 'var(--text-3)', fontSize: '0.8125rem', maxWidth: '80%' }}>
+                          {item.lastMessage
+                            ? (item.lastMessageSender ? `${item.lastMessageSender}: ${item.lastMessage}` : item.lastMessage)
+                            : 'Noch keine Nachrichten'}
+                        </p>
+                        {item.unreadCount > 0 && (
+                          <span className="flex-shrink-0 flex items-center justify-center"
+                            style={{
+                              minWidth: '1.25rem', height: '1.25rem', borderRadius: '0.625rem',
+                              background: 'var(--green)', color: 'white',
+                              fontSize: '0.6875rem', fontWeight: 700,
+                              padding: '0 0.3125rem',
+                            }}>
+                            {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                  </Link>
+                )
+
+                return (
+                  <div
+                    key={item.id}
+                    className={removingId === item.groupId ? 'swipe-removing' : ''}
+                  >
+                    <SwipeToAction
+                      actionIcon={swipeIcon}
+                      actionColor={swipeColor}
+                      disabled={!isSwipeable}
+                      onAction={() => setConfirmDialog({
+                        type: swipeAction as 'delete-group' | 'leave-group',
+                        id: item.groupId,
+                        name: item.name,
+                      })}
+                      onSwipeOpen={(closeFn) => {
+                        closeActiveSwipe()
+                        activeCloseRef.current = closeFn
+                      }}
+                    >
+                      {chatRow}
+                    </SwipeToAction>
                   </div>
-                </button>
-              ))}
+                )
+              })}
             </div>
           )}
 
@@ -439,6 +569,64 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
           >
             +
           </Link>
+        </div>
+      )}
+      {/* Bestätigungs-Dialog */}
+      {confirmDialog && (
+        <div
+          onClick={() => setConfirmDialog(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            padding: '1.25rem',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: '24rem',
+              background: 'var(--surface-2)',
+              borderRadius: 'var(--radius)',
+              padding: '1.5rem',
+              marginBottom: 'calc(var(--safe-bottom) + 0.5rem)',
+            }}
+          >
+            <p className="text-base font-bold mb-1">
+              {confirmDialog.type === 'leave-group' ? 'Gruppe verlassen?' : 'Löschen?'}
+            </p>
+            <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
+              {confirmDialog.type === 'leave-group'
+                ? `„${confirmDialog.name}" verlassen? Du kannst erneut eingeladen werden.`
+                : confirmDialog.type === 'delete-hunt'
+                  ? `Jagd „${confirmDialog.name}" unwiderruflich löschen? Der Jagd-Chat wird ebenfalls gelöscht.`
+                  : `Gruppe „${confirmDialog.name}" unwiderruflich löschen? Alle Nachrichten gehen verloren.`
+              }
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="flex-1 py-3 text-sm font-semibold rounded-xl"
+                style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={() => {
+                  if (confirmDialog.type === 'delete-hunt') handleDeleteHunt(confirmDialog.id)
+                  else if (confirmDialog.type === 'delete-group') handleDeleteGroup(confirmDialog.id)
+                  else handleLeaveGroup(confirmDialog.id)
+                }}
+                className="flex-1 py-3 text-sm font-bold rounded-xl"
+                style={{
+                  background: confirmDialog.type === 'leave-group' ? 'var(--orange)' : 'var(--red)',
+                  color: 'white',
+                }}
+              >
+                {confirmDialog.type === 'leave-group' ? 'Verlassen' : 'Löschen'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { useChatCache } from '@/contexts/ChatCacheContext'
 
 // === Types ===
 
@@ -41,7 +42,7 @@ type Props = {
 // === Konstanten ===
 
 const SENDER_COLORS = ['#8BC34A', '#42A5F5', '#FF8F00', '#EF5350', '#AB47BC', '#26A69A', '#FF7043', '#5C6BC0']
-const PAGE_SIZE = 50
+const PAGE_SIZE = 20
 const SCROLL_THRESHOLD = 100
 const SYSTEM_TYPES = ['signal', 'kill_report', 'tracking']
 
@@ -117,9 +118,11 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
   const [groupMembers, setGroupMembers] = useState<Record<string, { name: string; colorIndex: number }>>({})
   const isGroupChat = !!groupId && !huntId
   const channelId = huntId || groupId || 'none'
-  const [messages, setMessages] = useState<Message[]>([])
+  const chatCache = useChatCache()
+  const cachedEntry = chatCache.get(channelId)
+  const [messages, setMessages] = useState<Message[]>(cachedEntry?.messages || [])
   const [inputText, setInputText] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!cachedEntry)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [showNewPill, setShowNewPill] = useState(false)
@@ -136,7 +139,7 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
   const onUnreadChangeRef = useRef(onUnreadChange)
   const participantsRef = useRef(participants)
   const userIdRef = useRef(userId)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const lastScrollTopRef = useRef(0)
 
   useEffect(() => { isActiveRef.current = isActive }, [isActive])
@@ -215,35 +218,73 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
     return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD
   }, [])
 
-  // === Nachrichten laden ===
+  // === Nachrichten laden (mit Cache) ===
 
   useEffect(() => {
     let cancelled = false
+    const cached = chatCache.get(channelId)
+
     async function load() {
-      let query = supabase
-        .from('messages')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(PAGE_SIZE)
+      if (cached && cached.messages.length > 0) {
+        // Cache vorhanden → nur neue Nachrichten nachladen
+        let query = supabase
+          .from('messages')
+          .select('*')
+          .gt('created_at', cached.lastFetchedAt)
+          .order('created_at', { ascending: true })
 
-      if (huntId) query = query.eq('hunt_id', huntId)
-      else if (groupId) query = query.eq('group_id', groupId)
-      else return
+        if (huntId) query = query.eq('hunt_id', huntId)
+        else if (groupId) query = query.eq('group_id', groupId)
+        else return
 
-      const { data } = await query
+        const { data } = await query
+        if (cancelled) return
 
-      if (cancelled) return
-      if (data) {
-        setMessages(data.reverse())
-        setHasMore(data.length === PAGE_SIZE)
+        if (data && data.length > 0) {
+          setMessages(prev => {
+            const ids = new Set(prev.map(m => m.id))
+            const newMsgs = data.filter(m => !ids.has(m.id))
+            const merged = [...prev, ...newMsgs]
+            chatCache.set(channelId, merged)
+            return merged
+          })
+        }
+        setLoading(false)
+        requestAnimationFrame(() => bottomRef.current?.scrollIntoView())
+      } else {
+        // Kein Cache → komplett laden
+        let query = supabase
+          .from('messages')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE)
+
+        if (huntId) query = query.eq('hunt_id', huntId)
+        else if (groupId) query = query.eq('group_id', groupId)
+        else return
+
+        const { data } = await query
+        if (cancelled) return
+
+        if (data) {
+          const sorted = data.reverse()
+          setMessages(sorted)
+          setHasMore(data.length === PAGE_SIZE)
+          chatCache.set(channelId, sorted)
+        }
+        setLoading(false)
+        requestAnimationFrame(() => bottomRef.current?.scrollIntoView())
       }
-      setLoading(false)
-      // Nach dem Rendern ganz nach unten scrollen
+    }
+
+    // Bei Cache sofort nach unten scrollen
+    if (cached && cached.messages.length > 0) {
       requestAnimationFrame(() => bottomRef.current?.scrollIntoView())
     }
+
     load()
     return () => { cancelled = true }
-  }, [supabase, huntId, groupId])
+  }, [supabase, huntId, groupId, channelId, chatCache])
 
   // === Realtime Subscription (stabil, nur huntId-abhängig) ===
 
@@ -265,7 +306,9 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
         setMessages(prev => {
           // Duplikat vermeiden (optimistisches Update)
           if (prev.some(m => m.id === msg.id)) return prev
-          return [...prev, msg]
+          const updated = [...prev, msg]
+          chatCache.set(channelId, updated)
+          return updated
         })
 
         // Auto-Scroll oder Pill anzeigen
@@ -293,7 +336,7 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [supabase, channelId, huntId, groupId, isGroupChat])
+  }, [supabase, channelId, huntId, groupId, isGroupChat, chatCache])
 
   // Ungelesen zurücksetzen wenn Tab aktiv wird
   useEffect(() => {
@@ -387,6 +430,8 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
     }
 
     setInputText('')
+    // Textarea-Höhe zurücksetzen
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setMessages(prev => [...prev, optimistic])
     requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
 
@@ -506,8 +551,37 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
 
   if (loading) {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: 'var(--text-3)', fontSize: '0.875rem' }}>Nachrichten laden...</p>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, position: 'relative' }}>
+        {/* Skeleton-Bubbles */}
+        <div className="chat-messages" style={{ flex: 1 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem' }}>
+            {[
+              { side: 'other', width: '65%' },
+              { side: 'other', width: '45%' },
+              { side: 'self', width: '55%' },
+              { side: 'other', width: '70%' },
+              { side: 'self', width: '40%' },
+              { side: 'self', width: '60%' },
+            ].map((bubble, i) => (
+              <div key={i} style={{
+                alignSelf: bubble.side === 'self' ? 'flex-end' : 'flex-start',
+                width: bubble.width,
+                maxWidth: '16rem',
+                height: '2.25rem',
+                borderRadius: '1rem',
+                background: bubble.side === 'self' ? 'var(--green-dim)' : 'var(--surface-2)',
+                animation: 'skeleton-pulse 1.5s ease-in-out infinite',
+                animationDelay: `${i * 0.15}s`,
+              }} />
+            ))}
+          </div>
+        </div>
+        {/* Input-Bar sofort sichtbar */}
+        <div className="chat-input-bar">
+          <button className="chat-icon-btn cam" disabled style={{ opacity: 0.5 }}>📷</button>
+          <input className="chat-input" placeholder="Nachricht..." disabled />
+          <button className="chat-icon-btn mic" disabled>🎤</button>
+        </div>
       </div>
     )
   }
@@ -608,12 +682,19 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
           onChange={handlePhoto}
           style={{ display: 'none' }}
         />
-        <input
+        <textarea
           ref={inputRef}
           className="chat-input"
           placeholder="Nachricht..."
+          rows={1}
           value={inputText}
-          onChange={e => setInputText(e.target.value)}
+          onChange={e => {
+            setInputText(e.target.value)
+            // Auto-Grow: Höhe an Inhalt anpassen
+            const el = e.target
+            el.style.height = 'auto'
+            el.style.height = Math.min(el.scrollHeight, 96) + 'px' // max ~4 Zeilen
+          }}
           onKeyDown={handleKeyDown}
           disabled={(!isGroupChat && !myParticipantId) || (isGroupChat && !userId)}
         />
