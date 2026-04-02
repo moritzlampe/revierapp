@@ -120,11 +120,29 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
   const onUnreadChangeRef = useRef(onUnreadChange)
   const participantsRef = useRef(participants)
   const userIdRef = useRef(userId)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const lastScrollTopRef = useRef(0)
 
   useEffect(() => { isActiveRef.current = isActive }, [isActive])
   useEffect(() => { onUnreadChangeRef.current = onUnreadChange }, [onUnreadChange])
   useEffect(() => { participantsRef.current = participants }, [participants])
   useEffect(() => { userIdRef.current = userId }, [userId])
+
+  // Mobile Keyboard: Auto-Scroll wenn Tastatur aufgeht
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    let prevHeight = vv.height
+    const handleResize = () => {
+      const shrunk = vv.height < prevHeight - 50
+      prevHeight = vv.height
+      if (shrunk && isAtBottomRef.current) {
+        requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
+      }
+    }
+    vv.addEventListener('resize', handleResize)
+    return () => vv.removeEventListener('resize', handleResize)
+  }, [])
 
   // Gruppenchat: Mitglieder-Profile laden
   useEffect(() => {
@@ -316,11 +334,17 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
+    // Keyboard schließen beim Hochscrollen
+    const scrollingUp = el.scrollTop < lastScrollTopRef.current - 10
+    lastScrollTopRef.current = el.scrollTop
     isAtBottomRef.current = checkIsAtBottom()
     if (isAtBottomRef.current) setShowNewPill(false)
     // Ältere Nachrichten laden wenn ganz oben
     if (el.scrollTop < 50 && hasMore && !loadingMore) {
       loadOlder()
+    }
+    if (scrollingUp && document.activeElement === inputRef.current) {
+      inputRef.current?.blur()
     }
   }, [checkIsAtBottom, hasMore, loadingMore, loadOlder])
 
@@ -481,6 +505,13 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
           const senderId = isGroupChat ? msg.sender_id : msg.participant_id
           const sender = senderId ? participantMap[senderId] : undefined
 
+          // Sender-Name: nur in Gruppen 3+, nicht bei aufeinanderfolgenden vom gleichen Sender
+          const memberTotal = Object.keys(participantMap).length
+          const prevIsFromSameSender = prevMsg && !showDateSep
+            && !SYSTEM_TYPES.includes(prevMsg.type) && !isMyMessage(prevMsg)
+            && (isGroupChat ? prevMsg.sender_id : prevMsg.participant_id) === senderId
+          const showSenderName = !isMine && !isSystem && sender && memberTotal > 2 && !prevIsFromSameSender
+
           return (
             <div key={msg.id}>
               {showDateSep && (
@@ -495,7 +526,7 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
                 </div>
               ) : (
                 <div className={`chat-msg ${isMine ? 'self' : 'other'}`}>
-                  {!isMine && sender && (
+                  {showSenderName && (
                     <div className="msg-sender" style={{ color: SENDER_COLORS[sender.colorIndex] }}>
                       {sender.name}
                     </div>
@@ -540,11 +571,11 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
           ref={fileRef}
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={handlePhoto}
           style={{ display: 'none' }}
         />
         <input
+          ref={inputRef}
           className="chat-input"
           placeholder="Nachricht..."
           value={inputText}

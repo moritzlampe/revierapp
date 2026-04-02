@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ChatPanel from '@/components/hunt/ChatPanel'
@@ -21,6 +21,21 @@ export default function GroupChatPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [memberCount, setMemberCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // VisualViewport: Container-Höhe an Keyboard anpassen
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => {
+      if (containerRef.current) {
+        containerRef.current.style.height = `${vv.height}px`
+      }
+    }
+    vv.addEventListener('resize', update)
+    update()
+    return () => vv.removeEventListener('resize', update)
+  }, [])
 
   const loadGroup = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -79,20 +94,23 @@ export default function GroupChatPage() {
   if (!group) return null
 
   return (
-    <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div ref={containerRef} className="h-viewport flex flex-col" style={{ background: 'var(--bg)' }}>
       {/* Header */}
       <div className="flex items-center gap-2.5 px-3 py-2.5 flex-shrink-0"
         style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
         <button onClick={() => router.push('/app?tab=chats')} className="flex items-center justify-center rounded-lg"
           style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
-        <div className="flex items-center justify-center flex-shrink-0"
-          style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '1.125rem' }}>
-          {group.emoji}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold truncate">{group.name}</div>
-          <div className="text-xs" style={{ color: 'var(--text-3)' }}>
-            👥 {memberCount} Mitglieder
+        <div className="flex-1 min-w-0 flex items-center gap-2.5 cursor-pointer"
+          onClick={() => router.push(`/app/chat/${group.id}/info`)}>
+          <div className="flex items-center justify-center flex-shrink-0"
+            style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '1.125rem' }}>
+            {group.emoji}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold truncate">{group.name}</div>
+            <div className="text-xs" style={{ color: 'var(--text-3)' }}>
+              👥 {memberCount} Mitglieder
+            </div>
           </div>
         </div>
       </div>
