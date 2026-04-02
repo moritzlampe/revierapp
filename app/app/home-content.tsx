@@ -81,7 +81,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
-  const initialTab = searchParams.get('tab') === 'chats' ? 'chats' : 'jagden'
+  const initialTab = searchParams.get('tab') === 'jagden' ? 'jagden' : 'chats'
   const [activeTab, setActiveTab] = useState<'jagden' | 'chats'>(initialTab)
   const [chatItems, setChatItems] = useState<ChatListItem[]>([])
   const [loadingChats, setLoadingChats] = useState(false)
