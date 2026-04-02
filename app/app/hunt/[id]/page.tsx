@@ -286,6 +286,7 @@ export default function HuntPage() {
         <div style={{ position: 'absolute', inset: 0, display: activeTab === 'chat' ? 'flex' : 'none', flexDirection: 'column' }}>
           <ChatPanel
             huntId={hunt.id}
+            chatName={hunt.name}
             participants={participants}
             userId={userId}
             myParticipantId={myParticipantId}

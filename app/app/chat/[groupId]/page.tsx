@@ -128,6 +128,7 @@ export default function GroupChatPage() {
       <div className="flex-1 flex flex-col min-h-0">
         <ChatPanel
           groupId={group.id}
+          chatName={group.name}
           userId={userId}
           supabase={supabase}
           isActive={true}

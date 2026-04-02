@@ -38,14 +38,14 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Wenn App schon offen → fokussieren + navigieren
+      // Bestehendes Fenster wiederverwenden → Cache + React-State bleiben erhalten
       for (const client of windowClients) {
         if ('focus' in client) {
-          client.navigate(url)
+          client.postMessage({ type: 'NAVIGATE', url })
           return client.focus()
         }
       }
-      // Sonst: neues Fenster öffnen
+      // Kein offenes Fenster → neu öffnen
       return clients.openWindow(url)
     })
   )

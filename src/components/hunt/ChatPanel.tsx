@@ -31,6 +31,7 @@ type Participant = {
 type Props = {
   huntId?: string
   groupId?: string
+  chatName?: string
   participants?: Participant[]
   userId: string | null
   myParticipantId?: string | null
@@ -113,7 +114,7 @@ function sendPushNotification(params: {
 
 // === Komponente ===
 
-export default function ChatPanel({ huntId, groupId, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange }: Props) {
+export default function ChatPanel({ huntId, groupId, chatName, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange }: Props) {
   // Gruppenchat-Modus: Mitglieder als "Participants" laden
   const [groupMembers, setGroupMembers] = useState<Record<string, { name: string; colorIndex: number }>>({})
   const isGroupChat = !!groupId && !huntId
@@ -198,6 +199,14 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
     })
     return map
   }, [participants, isGroupChat, groupMembers])
+
+  // Eigener Anzeigename (für Push-Notification Body)
+  const mySenderName = useMemo(() => {
+    if (!userId) return undefined
+    if (isGroupChat) return participantMap[userId]?.name
+    const p = participants.find(p => p.user_id === userId)
+    return p ? participantMap[p.id]?.name : undefined
+  }, [userId, isGroupChat, participantMap, participants])
 
   // Prüft ob Nachricht vom aktuellen User ist
   const isMyMessage = useCallback((msg: Message) => {
@@ -454,16 +463,17 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
       setMessages(prev => prev.filter(m => m.id !== msgId))
       console.error('Nachricht senden fehlgeschlagen:', error)
     } else if (userId) {
+      const pushBody = mySenderName ? `${mySenderName}: ${text.substring(0, 100)}` : text.substring(0, 100)
       sendPushNotification({
         huntId: huntId || undefined,
         groupId: groupId || undefined,
-        title: groupId ? 'Neue Nachricht' : 'Jagd-Chat',
-        body: text.substring(0, 100),
+        title: chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat'),
+        body: pushBody,
         senderUserId: userId,
         url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
       })
     }
-  }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase])
+  }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase, chatName, mySenderName])
 
   // === Foto senden ===
 
@@ -526,8 +536,8 @@ export default function ChatPanel({ huntId, groupId, participants = [], userId, 
         sendPushNotification({
           huntId: huntId || undefined,
           groupId: groupId || undefined,
-          title: groupId ? 'Neue Nachricht' : 'Jagd-Chat',
-          body: '📷 Foto',
+          title: chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat'),
+          body: mySenderName ? `${mySenderName}: 📷 Foto` : '📷 Foto',
           senderUserId: userId,
           url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
         })
