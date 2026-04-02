@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { useChatCache } from '@/contexts/ChatCacheContext'
+import SwipeToAction from '@/components/ui/swipe-to-action'
 
 // === Types ===
 
@@ -39,6 +40,8 @@ type Props = {
   supabase: SupabaseClient
   isActive: boolean
   onUnreadChange: (count: number) => void
+  /** Wenn true, darf der User ALLE Nachrichten löschen (Gruppen-/Jagd-Ersteller) */
+  canDeleteAll?: boolean
 }
 
 // === Konstanten ===
@@ -115,7 +118,7 @@ function sendPushNotification(params: {
 
 // === Komponente ===
 
-export default function ChatPanel({ huntId, groupId, chatName, isDirect = false, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange }: Props) {
+export default function ChatPanel({ huntId, groupId, chatName, isDirect = false, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange, canDeleteAll = false }: Props) {
   // Gruppenchat-Modus: Mitglieder als "Participants" laden
   const [groupMembers, setGroupMembers] = useState<Record<string, { name: string; colorIndex: number }>>({})
   const isGroupChat = !!groupId && !huntId
@@ -130,6 +133,9 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
   const [showNewPill, setShowNewPill] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null)
+  const [removingMsgId, setRemovingMsgId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const activeSwipeCloseRef = useRef<(() => void) | null>(null)
 
   // Refs für stabile Subscription-Callbacks
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -215,6 +221,39 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     const p = participants.find(p => p.id === msg.participant_id)
     return p?.user_id === userId
   }, [participants, userId, isGroupChat])
+
+  // Kann diese Nachricht gelöscht werden?
+  const canDeleteMessage = useCallback((msg: Message) => {
+    if (isMyMessage(msg)) return true
+    return canDeleteAll
+  }, [isMyMessage, canDeleteAll])
+
+  // Aktiven Swipe schließen
+  const closeActiveSwipe = useCallback(() => {
+    if (activeSwipeCloseRef.current) {
+      activeSwipeCloseRef.current()
+      activeSwipeCloseRef.current = null
+    }
+  }, [])
+
+  // Nachricht löschen
+  const handleDeleteMessage = useCallback(async (msgId: string) => {
+    setConfirmDeleteId(null)
+    setRemovingMsgId(msgId)
+    await new Promise(r => setTimeout(r, 300))
+
+    const { error } = await supabase.from('messages').delete().eq('id', msgId)
+    if (error) {
+      console.error('Nachricht löschen fehlgeschlagen:', error)
+    } else {
+      setMessages(prev => {
+        const updated = prev.filter(m => m.id !== msgId)
+        chatCache.set(channelId, updated)
+        return updated
+      })
+    }
+    setRemovingMsgId(null)
+  }, [supabase, chatCache, channelId])
 
   // Scroll-Helpers
   const scrollToBottom = useCallback((smooth = true) => {
@@ -342,6 +381,19 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
             onUnreadChangeRef.current(unreadRef.current)
           }
         }
+      })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'messages',
+        filter: `${filterCol}=eq.${filterVal}`,
+      }, (payload) => {
+        const deletedId = (payload.old as { id: string }).id
+        setMessages(prev => {
+          const updated = prev.filter(m => m.id !== deletedId)
+          chatCache.set(channelId, updated)
+          return updated
+        })
       })
       .subscribe()
 
@@ -642,6 +694,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
           const isSystem = SYSTEM_TYPES.includes(msg.type)
           const senderId = isGroupChat ? msg.sender_id : msg.participant_id
           const sender = senderId ? participantMap[senderId] : undefined
+          const deletable = !isSystem && canDeleteMessage(msg)
 
           // Sender-Name: nur in Gruppen 3+, nicht bei aufeinanderfolgenden vom gleichen Sender
           const memberTotal = Object.keys(participantMap).length
@@ -651,7 +704,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
           const showSenderName = !isMine && !isSystem && sender && memberTotal > 2 && !prevIsFromSameSender
 
           return (
-            <div key={msg.id} style={{ display: 'contents' }}>
+            <div key={msg.id}>
               {showDateSep && (
                 <div className="chat-date-separator">
                   {formatDateSeparator(msg.created_at)}
@@ -663,22 +716,37 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                   {msg.content}
                 </div>
               ) : (
-                <div className={`chat-msg ${isMine ? 'self' : 'other'}`}>
-                  {showSenderName && (
-                    <div className="msg-sender" style={{ color: SENDER_COLORS[sender.colorIndex] }}>
-                      {sender.name}
+                <div className={removingMsgId === msg.id ? 'swipe-removing' : ''}>
+                  <SwipeToAction
+                    actionIcon="🗑️"
+                    actionColor="var(--red)"
+                    onAction={() => setConfirmDeleteId(msg.id)}
+                    disabled={!deletable}
+                    onSwipeOpen={(closeFn) => {
+                      closeActiveSwipe()
+                      activeSwipeCloseRef.current = closeFn
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
+                      <div className={`chat-msg ${isMine ? 'self' : 'other'}`}>
+                        {showSenderName && (
+                          <div className="msg-sender" style={{ color: SENDER_COLORS[sender.colorIndex] }}>
+                            {sender.name}
+                          </div>
+                        )}
+                        {msg.type === 'photo' && msg.media_url && (
+                          <img
+                            src={msg.media_url}
+                            alt="Foto"
+                            className="msg-photo-img"
+                            onClick={() => setFullscreenPhoto(msg.media_url)}
+                          />
+                        )}
+                        {msg.content && <div>{msg.content}</div>}
+                        <div className="msg-time">{formatTime(msg.created_at)}</div>
+                      </div>
                     </div>
-                  )}
-                  {msg.type === 'photo' && msg.media_url && (
-                    <img
-                      src={msg.media_url}
-                      alt="Foto"
-                      className="msg-photo-img"
-                      onClick={() => setFullscreenPhoto(msg.media_url)}
-                    />
-                  )}
-                  {msg.content && <div>{msg.content}</div>}
-                  <div className="msg-time">{formatTime(msg.created_at)}</div>
+                  </SwipeToAction>
                 </div>
               )}
             </div>
@@ -693,6 +761,37 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
         <button className="chat-new-pill" onClick={() => scrollToBottom(true)}>
           ↓ Neue Nachrichten
         </button>
+      )}
+
+      {/* Bestätigungs-Dialog: Nachricht löschen */}
+      {confirmDeleteId && (
+        <div className="confirm-overlay" onClick={() => setConfirmDeleteId(null)}>
+          <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
+            <p style={{ color: 'var(--text)', fontSize: '0.9375rem', margin: '0 0 1.25rem' }}>
+              Nachricht löschen?
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => { setConfirmDeleteId(null); closeActiveSwipe() }}
+                style={{
+                  flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)',
+                  background: 'var(--surface-2)', color: 'var(--text)', fontSize: '0.875rem', cursor: 'pointer',
+                }}
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={() => handleDeleteMessage(confirmDeleteId)}
+                style={{
+                  flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)', border: 'none',
+                  background: 'var(--red)', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Löschen
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Eingabeleiste */}

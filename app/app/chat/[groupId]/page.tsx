@@ -162,6 +162,7 @@ export default function GroupChatPage() {
           supabase={supabase}
           isActive={true}
           onUnreadChange={() => {}}
+          canDeleteAll={userId === group.created_by}
         />
       </div>
     </div>

@@ -14,7 +14,7 @@ import type { StandData } from '@/components/hunt/MapContent'
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
 function getInitials(name: string) { return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() }
 
-type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null }
+type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string } | null }
 
 export default function HuntPage() {
@@ -293,6 +293,7 @@ export default function HuntPage() {
             supabase={supabase}
             isActive={activeTab === 'chat'}
             onUnreadChange={setChatUnread}
+            canDeleteAll={userId === hunt.creator_id}
           />
         </div>
         {activeTab === 'nachsuche' && (
