@@ -10,6 +10,7 @@ export default function SignupPage() {
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [einladungscode, setEinladungscode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -19,7 +20,27 @@ export default function SignupPage() {
     setLoading(true)
     setError(null)
 
+    // Client-seitige Einladungscode-Prüfung
+    const gueltigerCode = (process.env.NEXT_PUBLIC_INVITE_CODE || 'Felsenkeller2026')
+    if (einladungscode.toLowerCase() !== gueltigerCode.toLowerCase()) {
+      setError('Ungültiger Einladungscode')
+      setLoading(false)
+      return
+    }
+
     if (password.length < 6) { setError('Passwort muss mindestens 6 Zeichen haben.'); setLoading(false); return }
+
+    // Server-seitige Einladungscode-Prüfung
+    const res = await fetch('/api/validate-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: einladungscode }),
+    })
+    if (!res.ok) {
+      setError('Ungültiger Einladungscode')
+      setLoading(false)
+      return
+    }
 
     const supabase = createClient()
     const { error } = await supabase.auth.signUp({
@@ -71,6 +92,11 @@ export default function SignupPage() {
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-2)' }}>Passwort</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" placeholder="Mindestens 6 Zeichen" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-2)' }}>Einladungscode</label>
+            <input type="text" value={einladungscode} onChange={(e) => setEinladungscode(e.target.value)} required autoComplete="off" placeholder="Code eingeben" />
           </div>
 
           {error && <p className="text-sm" style={{ color: 'var(--red)' }}>{error}</p>}
