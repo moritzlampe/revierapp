@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useGeolocation } from '@/hooks/useGeolocation'
 import { useHuntPositions } from '@/hooks/useHuntPositions'
 import { updatePosition } from '@/lib/position-service'
 import { parsePolygonHex, parsePointHex } from '@/lib/geo-utils'
 import MapView from '@/components/hunt/MapView'
+import ChatPanel from '@/components/hunt/ChatPanel'
 import type { StandData } from '@/components/hunt/MapContent'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
@@ -19,6 +20,7 @@ type Participant = { id: string; user_id: string | null; guest_name: string | nu
 export default function HuntPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
   const [hunt, setHunt] = useState<Hunt | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
@@ -26,11 +28,13 @@ export default function HuntPage() {
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [showJLBar, setShowJLBar] = useState(false)
-  const [activeTab, setActiveTab] = useState<'karte' | 'chat' | 'nachsuche' | 'strecke'>('karte')
+  const initialTab = (searchParams.get('tab') as 'karte' | 'chat' | 'nachsuche' | 'strecke') || 'karte'
+  const [activeTab, setActiveTab] = useState<'karte' | 'chat' | 'nachsuche' | 'strecke'>(initialTab)
   const [isJagdleiter, setIsJagdleiter] = useState(false)
   const [boundary, setBoundary] = useState<[number, number][][] | null>(null)
   const [districtName, setDistrictName] = useState<string | null>(null)
   const [stands, setStands] = useState<StandData[]>([])
+  const [chatUnread, setChatUnread] = useState(0)
 
   // GPS sofort starten (auch wenn anderer Tab aktiv)
   const geoState = useGeolocation()
@@ -236,6 +240,9 @@ export default function HuntPage() {
               borderBottom: activeTab === tab.key ? '2px solid var(--green)' : '2px solid transparent',
             }}>
             {tab.icon} {tab.label}
+            {tab.key === 'chat' && chatUnread > 0 && (
+              <span className="tab-badge">{chatUnread > 99 ? '99+' : chatUnread}</span>
+            )}
           </button>
         ))}
       </div>
@@ -275,13 +282,18 @@ export default function HuntPage() {
           />
         </div>
 
-        {activeTab === 'chat' && (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            <div className="text-5xl mb-4">💬</div>
-            <p className="text-lg font-bold mb-1">Chat</p>
-            <p className="text-sm" style={{ color: 'var(--text-3)' }}>Text, Fotos, Sprachnachrichten.</p>
-          </div>
-        )}
+        {/* Chat — NICHT unmounten beim Tab-Wechsel (Realtime-Subscription + Unread-Counter) */}
+        <div style={{ position: 'absolute', inset: 0, display: activeTab === 'chat' ? 'flex' : 'none', flexDirection: 'column' }}>
+          <ChatPanel
+            huntId={hunt.id}
+            participants={participants}
+            userId={userId}
+            myParticipantId={myParticipantId}
+            supabase={supabase}
+            isActive={activeTab === 'chat'}
+            onUnreadChange={setChatUnread}
+          />
+        </div>
         {activeTab === 'nachsuche' && (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
             <div className="text-5xl mb-4">🐕</div>

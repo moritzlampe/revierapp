@@ -140,6 +140,30 @@ export default function CreateHuntPage() {
       )
     }
 
+    // Automatisch Chat-Gruppe für die Jagd anlegen
+    const huntName = name || 'Jagd am ' + new Date().toLocaleDateString('de-DE')
+    const { data: chatGroup } = await supabase
+      .from('chat_groups')
+      .insert({
+        name: huntName,
+        emoji: '🎯',
+        created_by: currentUser.id,
+        hunt_id: hunt.id,
+      })
+      .select('id')
+      .single()
+
+    if (chatGroup) {
+      // Alle App-Teilnehmer als Chat-Mitglieder
+      const chatMembers = [
+        { group_id: chatGroup.id, user_id: currentUser.id },
+        ...selectedContacts
+          .filter(c => c.inApp)
+          .map(c => ({ group_id: chatGroup.id, user_id: c.id })),
+      ]
+      await supabase.from('chat_group_members').insert(chatMembers)
+    }
+
     router.push(`/app/hunt/${hunt.id}`)
   }
 

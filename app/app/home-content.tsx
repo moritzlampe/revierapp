@@ -1,0 +1,421 @@
+'use client'
+
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+
+const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
+
+function getInitials(name: string) {
+  return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+}
+
+// === Zeitformat wie WhatsApp ===
+function formatChatTime(dateStr: string) {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 86400000)
+  const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+  if (msgDay.getTime() === today.getTime()) {
+    return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+  }
+  if (msgDay.getTime() === yesterday.getTime()) {
+    return 'Gestern'
+  }
+  // Innerhalb der letzten 7 Tage: Wochentag
+  const diffDays = (today.getTime() - msgDay.getTime()) / 86400000
+  if (diffDays < 7) {
+    return date.toLocaleDateString('de-DE', { weekday: 'short' })
+  }
+  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+}
+
+type Hunt = {
+  id: string
+  name: string
+  type: string
+  status: string
+  invite_code: string
+  started_at: string
+  ended_at: string | null
+  created_at: string
+  myRole: string
+}
+
+type ChatGroup = {
+  id: string
+  name: string
+  emoji: string
+  hunt_id: string | null
+  created_by: string
+  updated_at: string
+}
+
+type ChatListItem = {
+  id: string
+  groupId: string
+  name: string
+  emoji: string
+  isHuntChat: boolean
+  huntId: string | null
+  lastMessage: string | null
+  lastMessageSender: string | null
+  lastMessageTime: string | null
+  unreadCount: number
+}
+
+type Props = {
+  displayName: string
+  initialHunts: Hunt[]
+  userId: string
+}
+
+export default function HomeContent({ displayName, initialHunts, userId }: Props) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const supabase = useMemo(() => createClient(), [])
+  const initialTab = searchParams.get('tab') === 'chats' ? 'chats' : 'jagden'
+  const [activeTab, setActiveTab] = useState<'jagden' | 'chats'>(initialTab)
+  const [chatItems, setChatItems] = useState<ChatListItem[]>([])
+  const [loadingChats, setLoadingChats] = useState(false)
+
+  const activeHunts = initialHunts.filter(h => h.status === 'active')
+  const pastHunts = initialHunts.filter(h => h.status === 'completed').slice(0, 3)
+
+  // Chat-Liste laden
+  const loadChats = useCallback(async () => {
+    setLoadingChats(true)
+
+    // Meine Gruppen laden
+    const { data: groups } = await supabase
+      .from('chat_groups')
+      .select('*')
+      .order('updated_at', { ascending: false })
+
+    if (!groups || groups.length === 0) {
+      setChatItems([])
+      setLoadingChats(false)
+      return
+    }
+
+    // Meine Mitgliedschaften laden (für last_read_at)
+    const groupIds = groups.map(g => g.id)
+    const { data: memberships } = await supabase
+      .from('chat_group_members')
+      .select('group_id, last_read_at')
+      .eq('user_id', userId)
+      .in('group_id', groupIds)
+
+    const membershipMap: Record<string, string> = {}
+    memberships?.forEach(m => { membershipMap[m.group_id] = m.last_read_at })
+
+    // Letzte Nachricht pro Gruppe laden
+    const items: ChatListItem[] = []
+    for (const group of groups) {
+      // Letzte Nachricht
+      const { data: lastMsgs } = await supabase
+        .from('messages')
+        .select('content, type, created_at, sender_id, participant_id')
+        .eq('group_id', group.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      const lastMsg = lastMsgs?.[0]
+      let lastMessageSender: string | null = null
+
+      if (lastMsg?.sender_id && lastMsg.sender_id !== userId) {
+        const { data: senderProfile } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', lastMsg.sender_id)
+          .single()
+        lastMessageSender = senderProfile?.display_name?.split(' ')[0] || null
+      }
+
+      // Ungelesen zählen
+      let unreadCount = 0
+      const lastReadAt = membershipMap[group.id]
+      if (lastReadAt && lastMsg) {
+        const { count } = await supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('group_id', group.id)
+          .gt('created_at', lastReadAt)
+          .neq('sender_id', userId)
+
+        unreadCount = count || 0
+      }
+
+      let msgPreview: string | null = null
+      if (lastMsg) {
+        if (lastMsg.type === 'photo') msgPreview = '📷 Foto'
+        else if (lastMsg.type === 'audio') msgPreview = '🎤 Sprachnachricht'
+        else msgPreview = lastMsg.content
+      }
+
+      items.push({
+        id: group.id,
+        groupId: group.id,
+        name: group.hunt_id ? `🎯 ${group.name}` : group.name,
+        emoji: group.hunt_id ? '🎯' : group.emoji,
+        isHuntChat: !!group.hunt_id,
+        huntId: group.hunt_id,
+        lastMessage: msgPreview,
+        lastMessageSender,
+        lastMessageTime: lastMsg?.created_at || group.updated_at,
+        unreadCount,
+      })
+    }
+
+    // Sortierung: neueste Nachricht oben
+    items.sort((a, b) => {
+      const timeA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0
+      const timeB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0
+      return timeB - timeA
+    })
+
+    setChatItems(items)
+    setLoadingChats(false)
+  }, [supabase, userId])
+
+  useEffect(() => {
+    if (activeTab === 'chats') {
+      loadChats()
+    }
+  }, [activeTab, loadChats])
+
+  function handleChatClick(item: ChatListItem) {
+    if (item.isHuntChat && item.huntId) {
+      // Jagd-Chat → Live-Jagd öffnen (Chat-Tab wird dort aktiviert)
+      router.push(`/app/hunt/${item.huntId}?tab=chat`)
+    } else {
+      // Gruppen-Chat → Vollbild-Chat
+      router.push(`/app/chat/${item.groupId}`)
+    }
+  }
+
+  return (
+    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
+      {/* Header */}
+      <div style={{ padding: '0.25rem 1.25rem 0.75rem' }}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg"
+              style={{ background: 'linear-gradient(135deg, var(--green), var(--green-dim))' }}>🌲</div>
+            <span className="text-lg font-bold tracking-tight">
+              Revier<span style={{ color: 'var(--green-bright)' }}>App</span>
+            </span>
+          </div>
+          <Link href="/app" style={{ color: 'var(--text-3)', fontSize: '0.8125rem' }}>
+            {/* LogoutButton wird separat importiert */}
+          </Link>
+        </div>
+        <h1 className="text-2xl font-bold" style={{ letterSpacing: '-0.03rem' }}>
+          Moin, <span style={{ color: 'var(--green-bright)' }}>{displayName}</span>
+        </h1>
+        <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>Was steht an?</p>
+      </div>
+
+      {/* Segmented Control */}
+      <div className="mx-5 mb-4" style={{ background: 'var(--surface-2)', borderRadius: '0.625rem', padding: '0.1875rem' }}>
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('jagden')}
+            className="flex-1 py-2 text-sm font-semibold text-center transition-all"
+            style={{
+              borderRadius: '0.5rem',
+              background: activeTab === 'jagden' ? 'var(--green-dim)' : 'transparent',
+              color: activeTab === 'jagden' ? 'var(--text)' : 'var(--text-2)',
+              fontWeight: activeTab === 'jagden' ? 700 : 600,
+            }}
+          >
+            🎯 Jagden
+          </button>
+          <button
+            onClick={() => setActiveTab('chats')}
+            className="flex-1 py-2 text-sm font-semibold text-center transition-all"
+            style={{
+              borderRadius: '0.5rem',
+              background: activeTab === 'chats' ? 'var(--green-dim)' : 'transparent',
+              color: activeTab === 'chats' ? 'var(--text)' : 'var(--text-2)',
+              fontWeight: activeTab === 'chats' ? 700 : 600,
+            }}
+          >
+            💬 Chats
+          </button>
+        </div>
+      </div>
+
+      {/* === JAGDEN TAB === */}
+      {activeTab === 'jagden' && (
+        <>
+          {/* Quick Actions */}
+          <div className="flex gap-2.5 px-5 mb-5">
+            <Link href="/app/hunt/create" className="flex-1 flex flex-col items-center gap-2 py-4 px-3 rounded-2xl text-white"
+              style={{ background: 'linear-gradient(135deg, var(--green), #4a7a25)', boxShadow: '0 0.25rem 1.25rem rgba(107,159,58,0.25)' }}>
+              <span className="text-2xl">🎯</span>
+              <span className="text-sm font-semibold">Jagd starten</span>
+              <span className="text-xs" style={{ opacity: 0.5 }}>Gruppe erstellen</span>
+            </Link>
+            <button className="flex-1 flex flex-col items-center gap-2 py-4 px-3 rounded-2xl"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+              <span className="text-2xl">🔗</span>
+              <span className="text-sm font-semibold">Beitreten</span>
+              <span className="text-xs" style={{ opacity: 0.5 }}>Per Link</span>
+            </button>
+            <button className="flex-1 flex flex-col items-center gap-2 py-4 px-3 rounded-2xl"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+              <span className="text-2xl">🐕</span>
+              <span className="text-sm font-semibold">Nachsuche</span>
+              <span className="text-xs" style={{ opacity: 0.5 }}>Hundeführer</span>
+            </button>
+          </div>
+
+          {/* Aktive Jagden */}
+          {activeHunts.length > 0 && (
+            <div className="mb-4">
+              <p className="section-label px-5 mb-2">Aktive Jagden</p>
+              <div className="px-5 space-y-2.5">
+                {activeHunts.map((hunt) => (
+                  <Link key={hunt.id} href={`/app/hunt/${hunt.id}`}
+                    className="block rounded-2xl p-3.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-base font-bold">{hunt.name}</span>
+                      <span className="badge badge-live"><span className="live-dot mr-1" /> Live</span>
+                    </div>
+                    <div className="flex gap-3.5 text-xs" style={{ color: 'var(--text-2)' }}>
+                      <span>🕐 Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>{hunt.myRole === 'jagdleiter' ? '🎖️ Jagdleiter' : '🎯 Schütze'}</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Vergangene Jagden */}
+          {pastHunts.length > 0 && (
+            <div className="mb-4">
+              <p className="section-label px-5 mb-2">Letzte Jagden</p>
+              <div className="px-5 space-y-2.5">
+                {pastHunts.map((hunt) => (
+                  <div key={hunt.id} className="rounded-2xl p-3.5"
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-bold">{hunt.name}</span>
+                      <span className="badge badge-done">
+                        {hunt.ended_at ? new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) : 'Beendet'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Leerer Zustand */}
+          {activeHunts.length === 0 && pastHunts.length === 0 && (
+            <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+              <p className="text-3xl mb-3">🌲</p>
+              <p className="font-semibold mb-1">Noch keine Jagden</p>
+              <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+                Starte deine erste Jagd oder tritt per Link bei.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* === CHATS TAB === */}
+      {activeTab === 'chats' && (
+        <div className="flex-1 flex flex-col relative">
+          {loadingChats ? (
+            <div className="flex-1 flex items-center justify-center">
+              <p style={{ color: 'var(--text-3)', fontSize: '0.875rem' }}>Chats laden...</p>
+            </div>
+          ) : chatItems.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+              <p className="text-3xl mb-3">💬</p>
+              <p className="font-semibold mb-1">Noch keine Chats</p>
+              <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+                Erstelle eine Gruppe oder starte eine Jagd — der Chat kommt automatisch.
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              {chatItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleChatClick(item)}
+                  className="w-full flex items-center gap-3 text-left"
+                  style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border-light)' }}
+                >
+                  {/* Emoji-Avatar */}
+                  <div className="flex-shrink-0 flex items-center justify-center"
+                    style={{
+                      width: '2.625rem', height: '2.625rem', borderRadius: '50%',
+                      background: 'var(--surface-2)', fontSize: '1.25rem',
+                    }}>
+                    {item.emoji}
+                  </div>
+
+                  {/* Name + letzte Nachricht */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold truncate" style={{ fontSize: '0.9375rem' }}>
+                        {item.isHuntChat ? item.name.replace('🎯 ', '') : item.name}
+                      </span>
+                      {item.lastMessageTime && (
+                        <span className="text-xs flex-shrink-0 ml-2"
+                          style={{ color: item.unreadCount > 0 ? 'var(--green-bright)' : 'var(--text-3)', fontSize: '0.6875rem' }}>
+                          {formatChatTime(item.lastMessageTime)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <p className="text-sm truncate" style={{ color: 'var(--text-3)', fontSize: '0.8125rem', maxWidth: '80%' }}>
+                        {item.lastMessage
+                          ? (item.lastMessageSender ? `${item.lastMessageSender}: ${item.lastMessage}` : item.lastMessage)
+                          : 'Noch keine Nachrichten'}
+                      </p>
+                      {item.unreadCount > 0 && (
+                        <span className="flex-shrink-0 flex items-center justify-center"
+                          style={{
+                            minWidth: '1.25rem', height: '1.25rem', borderRadius: '0.625rem',
+                            background: 'var(--green)', color: 'white',
+                            fontSize: '0.6875rem', fontWeight: 700,
+                            padding: '0 0.3125rem',
+                          }}>
+                          {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* FAB: Gruppe erstellen */}
+          <Link
+            href="/app/chat/create"
+            className="flex items-center justify-center"
+            style={{
+              position: 'fixed', bottom: '1.5rem', right: '1.5rem',
+              width: '3.5rem', height: '3.5rem', borderRadius: '50%',
+              background: 'var(--green)',
+              boxShadow: '0 0.25rem 1rem rgba(107,159,58,0.4)',
+              color: 'white', fontSize: '1.5rem', fontWeight: 700,
+              zIndex: 50,
+            }}
+          >
+            +
+          </Link>
+        </div>
+      )}
+    </div>
+  )
+}
