@@ -13,10 +13,26 @@ export default function ServiceWorkerRegistration() {
       })
     }
 
-    // App-Badge zurücksetzen wenn App geöffnet wird
-    if ('clearAppBadge' in navigator) {
-      (navigator as unknown as { clearAppBadge: () => Promise<void> }).clearAppBadge()
+    // Badge + Notifications löschen
+    function clearBadgeAndNotifications() {
+      if ('clearAppBadge' in navigator) {
+        (navigator as unknown as { clearAppBadge: () => Promise<void> }).clearAppBadge().catch(() => {})
+      }
+      // Service Worker bitten, alle Notifications zu schließen
+      navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_NOTIFICATIONS' })
     }
+
+    // Sofort beim Mount
+    clearBadgeAndNotifications()
+
+    // Wenn App wieder in den Vordergrund kommt
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        clearBadgeAndNotifications()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
 
   // SW-Nachrichten empfangen (z.B. Notification-Click → clientseitige Navigation)

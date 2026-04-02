@@ -252,6 +252,13 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     setLoadingChats(false)
   }, [supabase, userId])
 
+  // App-Badge zurücksetzen wenn Home geladen wird
+  useEffect(() => {
+    if ('clearAppBadge' in navigator) {
+      (navigator as unknown as { clearAppBadge: () => Promise<void> }).clearAppBadge().catch(() => {})
+    }
+  }, [])
+
   // Chats immer beim Mount laden (nicht erst beim Tab-Wechsel)
   useEffect(() => {
     loadChats()

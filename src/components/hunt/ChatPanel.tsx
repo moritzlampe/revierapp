@@ -347,11 +347,17 @@ export default function ChatPanel({ huntId, groupId, chatName, participants = []
     return () => { supabase.removeChannel(channel) }
   }, [supabase, channelId, huntId, groupId, isGroupChat, chatCache])
 
-  // Ungelesen zurücksetzen wenn Tab aktiv wird
+  // Ungelesen zurücksetzen + Badge löschen wenn Tab aktiv wird
   useEffect(() => {
-    if (isActive && unreadRef.current > 0) {
-      unreadRef.current = 0
-      onUnreadChange(0)
+    if (isActive) {
+      if (unreadRef.current > 0) {
+        unreadRef.current = 0
+        onUnreadChange(0)
+      }
+      // App-Badge zurücksetzen
+      if ('clearAppBadge' in navigator) {
+        (navigator as unknown as { clearAppBadge: () => Promise<void> }).clearAppBadge().catch(() => {})
+      }
     }
   }, [isActive, onUnreadChange])
 

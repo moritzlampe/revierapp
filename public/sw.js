@@ -31,6 +31,19 @@ self.addEventListener('push', (event) => {
   )
 })
 
+// Client-Message: Alle Notifications schließen
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'CLEAR_NOTIFICATIONS') {
+    self.registration.getNotifications().then((notifications) => {
+      notifications.forEach((n) => n.close())
+    })
+    // Badge auch im SW zurücksetzen
+    if (self.navigator && self.navigator.clearAppBadge) {
+      self.navigator.clearAppBadge()
+    }
+  }
+})
+
 // Notification-Click: App öffnen/fokussieren
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
