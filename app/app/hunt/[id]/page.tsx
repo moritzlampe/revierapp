@@ -111,7 +111,7 @@ export default function HuntPage() {
 
   const loadHunt = useCallback(async () => {
     const { data: hunt } = await supabase.from('hunts').select('*').eq('id', params.id).single()
-    if (!hunt) { router.push('/app'); return }
+    if (!hunt) { router.push('/app?tab=jagden'); return }
 
     const { data: parts } = await supabase.from('hunt_participants').select('*, profiles(display_name)').eq('hunt_id', params.id)
     const { data: { user } } = await supabase.auth.getUser()
@@ -166,7 +166,7 @@ export default function HuntPage() {
   async function endHunt() {
     if (!hunt || !confirm('Jagd wirklich beenden?')) return
     await supabase.from('hunts').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', hunt.id)
-    router.push('/app')
+    router.push('/app?tab=jagden')
   }
 
   if (loading) return <div className="min-h-dvh flex items-center justify-center" style={{ background: 'var(--bg)' }}><p style={{ color: 'var(--text-3)' }}>Lädt...</p></div>
@@ -187,7 +187,7 @@ export default function HuntPage() {
       {/* Top Bar */}
       <div className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
         style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
-        <button onClick={() => router.push('/app')} className="flex items-center justify-center rounded-lg"
+        <button onClick={() => router.push('/app?tab=jagden')} className="flex items-center justify-center rounded-lg"
           style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold flex items-center gap-1.5">

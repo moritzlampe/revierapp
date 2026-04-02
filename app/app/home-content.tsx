@@ -47,7 +47,7 @@ type Hunt = {
   started_at: string
   ended_at: string | null
   created_at: string
-  created_by: string
+  creator_id: string
   myRole: string
 }
 
@@ -108,6 +108,29 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   } | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const activeCloseRef = useRef<(() => void) | null>(null)
+
+  // Client-seitiges Nachladen der Jagden (Server-Cache kann veraltet sein)
+  const loadHunts = useCallback(async () => {
+    const { data: myParticipations } = await supabase
+      .from('hunt_participants')
+      .select(`
+        hunt_id, role,
+        hunts (id, name, type, status, invite_code, started_at, ended_at, created_at, creator_id)
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'joined')
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    if (myParticipations) {
+      const freshHunts = myParticipations
+        .filter((p: any) => p.hunts)
+        .map((p: any) => ({ ...p.hunts, myRole: p.role }))
+      setHunts(freshHunts)
+    }
+  }, [supabase, userId])
+
+  useEffect(() => { loadHunts() }, [loadHunts])
 
   const activeHunts = hunts.filter(h => h.status === 'active')
   const pastHunts = hunts.filter(h => h.status === 'completed').slice(0, 3)
@@ -192,15 +215,26 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     // Alle Mitglieder aller Gruppen batch-laden (für 2er-Chat-Erkennung)
     const { data: allMembers } = await supabase
       .from('chat_group_members')
-      .select('group_id, user_id, profiles:user_id(display_name)')
+      .select('group_id, user_id')
       .in('group_id', groupIds)
+
+    // Profile separat laden (umgeht FK-Join-Probleme bei fehlender Profiles-RLS)
+    const allUserIds = [...new Set((allMembers || []).map(m => m.user_id))]
+    const profileMap: Record<string, string> = {}
+    if (allUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name')
+        .in('id', allUserIds)
+      profiles?.forEach(p => { profileMap[p.id] = p.display_name })
+    }
 
     const membersByGroup: Record<string, ChatMember[]> = {}
     allMembers?.forEach((m: any) => {
       if (!membersByGroup[m.group_id]) membersByGroup[m.group_id] = []
       membersByGroup[m.group_id].push({
         user_id: m.user_id,
-        display_name: m.profiles?.display_name || 'Unbekannt',
+        display_name: profileMap[m.user_id] || 'Unbekannt',
       })
     })
 
@@ -404,7 +438,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
               <p className="section-label px-5 mb-2">Aktive Jagden</p>
               <div className="px-5 space-y-2.5">
                 {activeHunts.map((hunt) => {
-                  const isOwner = hunt.created_by === userId
+                  const isOwner = hunt.creator_id === userId
                   return (
                     <div
                       key={hunt.id}
@@ -445,7 +479,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
               <p className="section-label px-5 mb-2">Letzte Jagden</p>
               <div className="px-5 space-y-2.5">
                 {pastHunts.map((hunt) => {
-                  const isOwner = hunt.created_by === userId
+                  const isOwner = hunt.creator_id === userId
                   return (
                     <div
                       key={hunt.id}
@@ -492,6 +526,24 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
 
       {/* === CHATS TAB === */}
       <div className="flex-1 flex flex-col relative" style={{ display: activeTab === 'chats' ? undefined : 'none' }}>
+          {/* Aktive-Jagd-Banner */}
+          {activeHunts.length > 0 && (
+            <Link
+              href={`/app/hunt/${activeHunts[0].id}`}
+              className="flex items-center gap-2.5 mx-5 mb-3 px-4 py-3 rounded-xl"
+              style={{
+                background: 'rgba(107,159,58,0.12)',
+                border: '1px solid rgba(107,159,58,0.25)',
+              }}
+            >
+              <span className="live-dot flex-shrink-0" />
+              <span className="flex-1 text-sm font-semibold truncate" style={{ color: 'var(--green-bright)' }}>
+                Aktive Jagd: {activeHunts[0].name}
+              </span>
+              <span style={{ color: 'var(--text-3)', fontSize: '1rem' }}>→</span>
+            </Link>
+          )}
+
           {loadingChats ? (
             <div className="flex-1 flex items-center justify-center">
               <p style={{ color: 'var(--text-3)', fontSize: '0.875rem' }}>Chats laden...</p>

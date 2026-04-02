@@ -59,22 +59,31 @@ export default function CreateChatGroupPage() {
   const filteredContacts = contacts.filter(c =>
     c.display_name.toLowerCase().includes(search.toLowerCase())
   )
-  const selectedCount = contacts.filter(c => c.selected).length
+  const selectedContacts = contacts.filter(c => c.selected)
+  const selectedCount = selectedContacts.length
+  const isDirectChat = selectedCount === 1
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !currentUserId) return
+    if (!currentUserId) return
+    // Bei Gruppenchats ist der Name Pflicht, bei Einzelchats nicht
+    if (!isDirectChat && !name.trim()) return
     setLoading(true)
     setError(null)
 
     const supabase = createClient()
 
+    // Chat-Name: Bei Einzelchat den Namen des Kontakts verwenden
+    const chatName = isDirectChat
+      ? selectedContacts[0].display_name
+      : name.trim()
+
     // Gruppe erstellen
     const { data: group, error: groupError } = await supabase
       .from('chat_groups')
       .insert({
-        name: name.trim(),
-        emoji,
+        name: chatName,
+        emoji: isDirectChat ? '💬' : emoji,
         created_by: currentUserId,
       })
       .select('id')
@@ -115,48 +124,54 @@ export default function CreateChatGroupPage() {
         <button onClick={() => router.back()} className="flex items-center justify-center rounded-lg"
           style={{ color: 'var(--text-2)', background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
         <div>
-          <h1 className="text-lg font-bold">💬 Gruppe erstellen</h1>
-          <p className="text-xs" style={{ color: 'var(--text-3)' }}>Chat-Gruppe für Jagdfreunde, Revierinfos, etc.</p>
+          <h1 className="text-lg font-bold">{isDirectChat ? '💬 Neuer Chat' : '💬 Gruppe erstellen'}</h1>
+          <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+            {isDirectChat ? `Einzelchat mit ${selectedContacts[0].display_name}` : 'Chat-Gruppe für Jagdfreunde, Revierinfos, etc.'}
+          </p>
         </div>
       </div>
 
       <form onSubmit={handleCreate} className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-        {/* Gruppenname */}
-        <div>
-          <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>
-            Gruppenname <span style={{ color: 'var(--red)', fontWeight: 400 }}>*</span>
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="z.B. Jagdfreunde Brockwinkel"
-            required
-          />
-        </div>
-
-        {/* Emoji wählen */}
-        <div>
-          <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Gruppen-Emoji</label>
-          <div className="flex gap-2 flex-wrap">
-            {EMOJI_OPTIONS.map(e => (
-              <button
-                key={e}
-                type="button"
-                onClick={() => setEmoji(e)}
-                className="flex items-center justify-center"
-                style={{
-                  width: '2.75rem', height: '2.75rem', borderRadius: '50%',
-                  fontSize: '1.25rem',
-                  border: `2px solid ${emoji === e ? 'var(--green)' : 'var(--border)'}`,
-                  background: emoji === e ? 'rgba(107,159,58,0.1)' : 'var(--surface-2)',
-                }}
-              >
-                {e}
-              </button>
-            ))}
+        {/* Gruppenname — nur bei Gruppenchats (2+ Kontakte oder 0) */}
+        {!isDirectChat && (
+          <div>
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>
+              Gruppenname <span style={{ color: 'var(--red)', fontWeight: 400 }}>*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="z.B. Jagdfreunde Brockwinkel"
+              required
+            />
           </div>
-        </div>
+        )}
+
+        {/* Emoji wählen — nur bei Gruppenchats */}
+        {!isDirectChat && (
+          <div>
+            <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Gruppen-Emoji</label>
+            <div className="flex gap-2 flex-wrap">
+              {EMOJI_OPTIONS.map(e => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => setEmoji(e)}
+                  className="flex items-center justify-center"
+                  style={{
+                    width: '2.75rem', height: '2.75rem', borderRadius: '50%',
+                    fontSize: '1.25rem',
+                    border: `2px solid ${emoji === e ? 'var(--green)' : 'var(--border)'}`,
+                    background: emoji === e ? 'rgba(107,159,58,0.1)' : 'var(--surface-2)',
+                  }}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Teilnehmer */}
         <div>
@@ -218,11 +233,16 @@ export default function CreateChatGroupPage() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={loading || !name.trim()}
+          disabled={loading || (!isDirectChat && !name.trim()) || selectedCount === 0}
           className="w-full font-bold text-base text-white transition disabled:opacity-50"
           style={{ height: '3.5rem', borderRadius: 'var(--radius)', background: 'var(--green)', fontSize: '1rem' }}
         >
-          {loading ? 'Wird erstellt...' : `Gruppe erstellen${selectedCount > 0 ? ` · ${selectedCount + 1} Mitglieder` : ''}`}
+          {loading
+            ? 'Wird erstellt...'
+            : isDirectChat
+              ? `Chat starten mit ${selectedContacts[0].display_name}`
+              : `Gruppe erstellen${selectedCount > 0 ? ` · ${selectedCount + 1} Mitglieder` : ''}`
+          }
         </button>
       </form>
     </div>

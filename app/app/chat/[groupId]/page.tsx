@@ -44,12 +44,23 @@ export default function GroupChatPage() {
     // Mitglieder laden für Anzahl + 2er-Chat-Erkennung
     const { data: membersData } = await supabase
       .from('chat_group_members')
-      .select('user_id, profiles:user_id(display_name)')
+      .select('user_id')
       .eq('group_id', params.groupId)
+
+    // Profile separat laden (umgeht FK-Join-Probleme bei fehlender Profiles-RLS)
+    const memberUserIds = (membersData || []).map(m => m.user_id)
+    const profileMap: Record<string, string> = {}
+    if (memberUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name')
+        .in('id', memberUserIds)
+      profiles?.forEach(p => { profileMap[p.id] = p.display_name })
+    }
 
     const members: ChatMember[] = (membersData || []).map((m: any) => ({
       user_id: m.user_id,
-      display_name: m.profiles?.display_name || 'Unbekannt',
+      display_name: profileMap[m.user_id] || 'Unbekannt',
     }))
     setMemberCount(members.length)
 

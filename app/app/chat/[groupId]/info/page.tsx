@@ -119,17 +119,27 @@ export default function GroupInfoPage() {
     setGroup(groupData)
     setNewName(groupData.name)
 
-    // Mitglieder mit Profil-Namen laden
-    const { data: membersData } = await supabase
+    // Mitglieder laden
+    const { data: membersRaw } = await supabase
       .from('chat_group_members')
-      .select('user_id, joined_at, profiles:user_id(display_name)')
+      .select('user_id, joined_at')
       .eq('group_id', groupId)
       .order('joined_at', { ascending: true })
 
-    if (membersData) {
-      const memberList = membersData.map((m: any) => ({
+    if (membersRaw && membersRaw.length > 0) {
+      // Profile separat laden (umgeht Probleme mit FK-Join + Profiles-RLS)
+      const userIds = membersRaw.map(m => m.user_id)
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name')
+        .in('id', userIds)
+
+      const profileMap: Record<string, string> = {}
+      profiles?.forEach(p => { profileMap[p.id] = p.display_name })
+
+      const memberList = membersRaw.map((m: any) => ({
         user_id: m.user_id,
-        display_name: m.profiles?.display_name || 'Unbekannt',
+        display_name: profileMap[m.user_id] || 'Unbekannt',
         joined_at: m.joined_at,
       }))
       setMembers(memberList)

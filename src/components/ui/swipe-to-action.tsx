@@ -13,7 +13,7 @@ type SwipeToActionProps = {
 }
 
 const ACTION_WIDTH = 80 // px – Breite des aufgedeckten Bereichs
-const THRESHOLD = 60   // px – ab hier einrasten
+const THRESHOLD = 32   // px – ab hier einrasten (40% von ACTION_WIDTH)
 const DIRECTION_LOCK_DISTANCE = 10 // px – entscheidet ob horizontal oder vertikal
 
 export default function SwipeToAction({
@@ -147,11 +147,22 @@ export default function SwipeToAction({
   }, [onAction])
 
   // Klick auf Content verhindern wenn geswiped wurde (damit Link nicht feuert)
+  // Wichtig: Nach einem Touch-Swipe feuert der Browser einen synthetischen Click.
+  // Wenn wir gerade geswiped haben (didSwipe=true), darf der Click NICHT close() aufrufen,
+  // sonst verschwindet der Button sofort wieder.
   const handleContentClick = useCallback((e: React.MouseEvent) => {
-    if (didSwipe.current || isOpen.current) {
+    if (didSwipe.current) {
+      // Synthetischer Click nach Swipe-Geste — Link verhindern, aber NICHT schließen
       e.preventDefault()
       e.stopPropagation()
-      if (isOpen.current) close()
+      didSwipe.current = false
+      return
+    }
+    if (isOpen.current) {
+      // Echter Tap auf offenen Content → schließen
+      e.preventDefault()
+      e.stopPropagation()
+      close()
     }
   }, [close])
 
