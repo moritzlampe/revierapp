@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { usePrefetchChats } from '@/hooks/usePrefetchChats'
 import SwipeToAction from '@/components/ui/swipe-to-action'
+import { getChatDisplayInfo } from '@/lib/chat-utils'
+import type { ChatMember } from '@/lib/chat-utils'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
 
@@ -56,6 +58,7 @@ type ChatGroup = {
   hunt_id: string | null
   created_by: string
   updated_at: string
+  avatar_url: string | null
 }
 
 type ChatListItem = {
@@ -70,6 +73,9 @@ type ChatListItem = {
   lastMessageSender: string | null
   lastMessageTime: string | null
   unreadCount: number
+  isDirect: boolean
+  displayInitial: string | null
+  avatarUrl: string | null
 }
 
 type Props = {
@@ -171,8 +177,9 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       return
     }
 
-    // Meine Mitgliedschaften laden (für last_read_at)
     const groupIds = groups.map(g => g.id)
+
+    // Meine Mitgliedschaften laden (für last_read_at)
     const { data: memberships } = await supabase
       .from('chat_group_members')
       .select('group_id, last_read_at')
@@ -181,6 +188,21 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
 
     const membershipMap: Record<string, string> = {}
     memberships?.forEach(m => { membershipMap[m.group_id] = m.last_read_at })
+
+    // Alle Mitglieder aller Gruppen batch-laden (für 2er-Chat-Erkennung)
+    const { data: allMembers } = await supabase
+      .from('chat_group_members')
+      .select('group_id, user_id, profiles:user_id(display_name)')
+      .in('group_id', groupIds)
+
+    const membersByGroup: Record<string, ChatMember[]> = {}
+    allMembers?.forEach((m: any) => {
+      if (!membersByGroup[m.group_id]) membersByGroup[m.group_id] = []
+      membersByGroup[m.group_id].push({
+        user_id: m.user_id,
+        display_name: m.profiles?.display_name || 'Unbekannt',
+      })
+    })
 
     // Letzte Nachricht pro Gruppe laden
     const items: ChatListItem[] = []
@@ -226,10 +248,14 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         else msgPreview = lastMsg.content
       }
 
+      // 2er-Chat-Erkennung
+      const groupMembers = membersByGroup[group.id] || []
+      const displayInfo = getChatDisplayInfo(group.name, groupMembers, userId)
+
       items.push({
         id: group.id,
         groupId: group.id,
-        name: group.hunt_id ? `🎯 ${group.name}` : group.name,
+        name: group.hunt_id ? `🎯 ${group.name}` : displayInfo.displayName,
         emoji: group.hunt_id ? '🎯' : group.emoji,
         isHuntChat: !!group.hunt_id,
         huntId: group.hunt_id,
@@ -238,6 +264,9 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         lastMessageSender,
         lastMessageTime: lastMsg?.created_at || group.updated_at,
         unreadCount,
+        isDirect: displayInfo.isDirect,
+        displayInitial: displayInfo.displayInitial,
+        avatarUrl: group.avatar_url,
       })
     }
 
@@ -491,14 +520,31 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                     className="w-full flex items-center gap-3 text-left"
                     style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', textDecoration: 'none', color: 'inherit' }}
                   >
-                    {/* Emoji-Avatar */}
-                    <div className="flex-shrink-0 flex items-center justify-center"
-                      style={{
-                        width: '2.625rem', height: '2.625rem', borderRadius: '50%',
-                        background: 'var(--surface-2)', fontSize: '1.25rem',
-                      }}>
-                      {item.emoji}
-                    </div>
+                    {/* Avatar: 2er-Chat → Initial, Gruppen-Avatar → Bild, sonst Emoji */}
+                    {item.isDirect && item.displayInitial ? (
+                      <div className="flex-shrink-0 flex items-center justify-center avatar av-1"
+                        style={{
+                          width: '2.625rem', height: '2.625rem', borderRadius: '50%',
+                          fontSize: '0.9375rem', fontWeight: 700,
+                        }}>
+                        {item.displayInitial}
+                      </div>
+                    ) : item.avatarUrl ? (
+                      <img src={item.avatarUrl} alt=""
+                        className="flex-shrink-0"
+                        style={{
+                          width: '2.625rem', height: '2.625rem', borderRadius: '50%',
+                          objectFit: 'cover',
+                        }} />
+                    ) : (
+                      <div className="flex-shrink-0 flex items-center justify-center"
+                        style={{
+                          width: '2.625rem', height: '2.625rem', borderRadius: '50%',
+                          background: 'var(--surface-2)', fontSize: '1.25rem',
+                        }}>
+                        {item.emoji}
+                      </div>
+                    )}
 
                     {/* Name + letzte Nachricht */}
                     <div className="flex-1 min-w-0">
@@ -516,7 +562,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                       <div className="flex items-center justify-between mt-0.5">
                         <p className="text-sm truncate" style={{ color: 'var(--text-3)', fontSize: '0.8125rem', maxWidth: '80%' }}>
                           {item.lastMessage
-                            ? (item.lastMessageSender ? `${item.lastMessageSender}: ${item.lastMessage}` : item.lastMessage)
+                            ? (item.lastMessageSender && !item.isDirect ? `${item.lastMessageSender}: ${item.lastMessage}` : item.lastMessage)
                             : 'Noch keine Nachrichten'}
                         </p>
                         {item.unreadCount > 0 && (

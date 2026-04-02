@@ -32,6 +32,7 @@ type Props = {
   huntId?: string
   groupId?: string
   chatName?: string
+  isDirect?: boolean
   participants?: Participant[]
   userId: string | null
   myParticipantId?: string | null
@@ -114,7 +115,7 @@ function sendPushNotification(params: {
 
 // === Komponente ===
 
-export default function ChatPanel({ huntId, groupId, chatName, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange }: Props) {
+export default function ChatPanel({ huntId, groupId, chatName, isDirect = false, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange }: Props) {
   // Gruppenchat-Modus: Mitglieder als "Participants" laden
   const [groupMembers, setGroupMembers] = useState<Record<string, { name: string; colorIndex: number }>>({})
   const isGroupChat = !!groupId && !huntId
@@ -469,17 +470,24 @@ export default function ChatPanel({ huntId, groupId, chatName, participants = []
       setMessages(prev => prev.filter(m => m.id !== msgId))
       console.error('Nachricht senden fehlgeschlagen:', error)
     } else if (userId) {
-      const pushBody = mySenderName ? `${mySenderName}: ${text.substring(0, 100)}` : text.substring(0, 100)
+      // 2er-Chat: Titel = Absendername, Body = nur Nachricht (wie WhatsApp)
+      // Gruppenchat: Titel = Gruppenname, Body = "Name: Nachricht"
+      const pushTitle = isDirect && mySenderName
+        ? mySenderName
+        : chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat')
+      const pushBody = isDirect
+        ? text.substring(0, 100)
+        : (mySenderName ? `${mySenderName}: ${text.substring(0, 100)}` : text.substring(0, 100))
       sendPushNotification({
         huntId: huntId || undefined,
         groupId: groupId || undefined,
-        title: chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat'),
+        title: pushTitle,
         body: pushBody,
         senderUserId: userId,
         url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
       })
     }
-  }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase, chatName, mySenderName])
+  }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase, chatName, mySenderName, isDirect])
 
   // === Foto senden ===
 
@@ -539,11 +547,17 @@ export default function ChatPanel({ huntId, groupId, chatName, participants = []
         setMessages(prev => prev.filter(m => m.id !== msgId))
         console.error('Foto senden fehlgeschlagen:', error)
       } else if (userId) {
+        const pushTitle = isDirect && mySenderName
+          ? mySenderName
+          : chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat')
+        const pushBody = isDirect
+          ? '📷 Foto'
+          : (mySenderName ? `${mySenderName}: 📷 Foto` : '📷 Foto')
         sendPushNotification({
           huntId: huntId || undefined,
           groupId: groupId || undefined,
-          title: chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat'),
-          body: mySenderName ? `${mySenderName}: 📷 Foto` : '📷 Foto',
+          title: pushTitle,
+          body: pushBody,
           senderUserId: userId,
           url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
         })

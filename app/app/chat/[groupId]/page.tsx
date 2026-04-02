@@ -4,6 +4,8 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ChatPanel from '@/components/hunt/ChatPanel'
+import { getChatDisplayInfo } from '@/lib/chat-utils'
+import type { ChatMember } from '@/lib/chat-utils'
 
 type ChatGroup = {
   id: string
@@ -11,6 +13,7 @@ type ChatGroup = {
   emoji: string
   created_by: string
   hunt_id: string | null
+  avatar_url: string | null
 }
 
 export default function GroupChatPage() {
@@ -20,6 +23,9 @@ export default function GroupChatPage() {
   const [group, setGroup] = useState<ChatGroup | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [memberCount, setMemberCount] = useState(0)
+  const [displayName, setDisplayName] = useState('')
+  const [isDirect, setIsDirect] = useState(false)
+  const [displayInitial, setDisplayInitial] = useState<string | null>(null)
 
   const loadGroup = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -35,12 +41,22 @@ export default function GroupChatPage() {
     if (!groupData) { router.push('/app'); return }
     setGroup(groupData)
 
-    const { count } = await supabase
+    // Mitglieder laden für Anzahl + 2er-Chat-Erkennung
+    const { data: membersData } = await supabase
       .from('chat_group_members')
-      .select('id', { count: 'exact', head: true })
+      .select('user_id, profiles:user_id(display_name)')
       .eq('group_id', params.groupId)
 
-    setMemberCount(count || 0)
+    const members: ChatMember[] = (membersData || []).map((m: any) => ({
+      user_id: m.user_id,
+      display_name: m.profiles?.display_name || 'Unbekannt',
+    }))
+    setMemberCount(members.length)
+
+    const info = getChatDisplayInfo(groupData.name, members, user.id)
+    setDisplayName(info.displayName)
+    setIsDirect(info.isDirect)
+    setDisplayInitial(info.displayInitial)
 
     // last_read_at aktualisieren
     await supabase
@@ -111,14 +127,26 @@ export default function GroupChatPage() {
           style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
         <div className="flex-1 min-w-0 flex items-center gap-2.5 cursor-pointer"
           onClick={() => router.push(`/app/chat/${group.id}/info`)}>
-          <div className="flex items-center justify-center flex-shrink-0"
-            style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '1.125rem' }}>
-            {group.emoji}
-          </div>
+          {/* Avatar: 2er-Chat → Initial, Gruppen-Avatar → Bild, sonst Emoji */}
+          {isDirect && displayInitial ? (
+            <div className="flex items-center justify-center flex-shrink-0 avatar av-1"
+              style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', fontSize: '0.875rem', fontWeight: 700 }}>
+              {displayInitial}
+            </div>
+          ) : group.avatar_url ? (
+            <img src={group.avatar_url} alt=""
+              className="flex-shrink-0"
+              style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', objectFit: 'cover' }} />
+          ) : (
+            <div className="flex items-center justify-center flex-shrink-0"
+              style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '1.125rem' }}>
+              {group.emoji}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold truncate">{group.name}</div>
+            <div className="text-sm font-bold truncate">{displayName || group.name}</div>
             <div className="text-xs" style={{ color: 'var(--text-3)' }}>
-              👥 {memberCount} Mitglieder
+              {isDirect ? 'Einzelchat' : `👥 ${memberCount} Mitglieder`}
             </div>
           </div>
         </div>
@@ -128,7 +156,8 @@ export default function GroupChatPage() {
       <div className="flex-1 flex flex-col min-h-0">
         <ChatPanel
           groupId={group.id}
-          chatName={group.name}
+          chatName={displayName || group.name}
+          isDirect={isDirect}
           userId={userId}
           supabase={supabase}
           isActive={true}
