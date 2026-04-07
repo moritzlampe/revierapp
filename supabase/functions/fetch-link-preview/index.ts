@@ -154,6 +154,42 @@ Deno.serve(async (req) => {
       }
     }
 
+    // YouTube-Spezialfall: oEmbed API statt HTML-Parsing
+    // (YouTube liefert OG-Tags nur per JavaScript, nicht im statischen HTML)
+    const isYouTube = /^https?:\/\/(www\.)?(youtube\.com\/(watch|shorts)|youtu\.be\/)/i.test(url)
+
+    if (isYouTube) {
+      try {
+        const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`
+        const oembedResponse = await fetch(oembedUrl)
+
+        if (oembedResponse.ok) {
+          const oembed = await oembedResponse.json()
+          const preview = {
+            title: oembed.title,
+            description: `Video von ${oembed.author_name}`,
+            image_url: oembed.thumbnail_url,
+            favicon_url: 'https://www.youtube.com/favicon.ico',
+            site_name: 'YouTube',
+            og_type: 'video',
+          }
+
+          await supabase.from('link_previews').upsert({
+            url,
+            ...preview,
+            fetched_at: new Date().toISOString(),
+            fetch_failed: false,
+          })
+
+          return new Response(JSON.stringify(preview), {
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          })
+        }
+      } catch {
+        // oEmbed fehlgeschlagen → weiter mit normalem HTML-Parsing als Fallback
+      }
+    }
+
     // HTML fetchen
     let html: string
     try {

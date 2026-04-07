@@ -6,6 +6,7 @@ import { useChatCache } from '@/contexts/ChatCacheContext'
 import SwipeToAction from '@/components/ui/swipe-to-action'
 import { extractFirstUrl } from '@/lib/chat-utils'
 import LinkPreviewCard from '@/components/chat/LinkPreviewCard'
+import { MessageContextSheet } from '@/components/chat/MessageContextSheet'
 
 // === Types ===
 
@@ -164,7 +165,9 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null)
   const [removingMsgId, setRemovingMsgId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [contextMenuMessage, setContextMenuMessage] = useState<Message | null>(null)
   const activeSwipeCloseRef = useRef<(() => void) | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Refs für stabile Subscription-Callbacks
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -757,7 +760,18 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
-                      <div className={`chat-msg ${isMine ? 'self' : 'other'}`}>
+                      <div
+                        className={`chat-msg ${isMine ? 'self' : 'other'}`}
+                        onTouchStart={() => {
+                          longPressTimerRef.current = setTimeout(() => {
+                            if (navigator.vibrate) navigator.vibrate(15)
+                            setContextMenuMessage(msg)
+                          }, 500)
+                        }}
+                        onTouchEnd={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current) }}
+                        onTouchMove={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current) }}
+                        onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
+                      >
                         {showSenderName && (
                           <div className="msg-sender" style={{ color: SENDER_COLORS[sender.colorIndex] }}>
                             {sender.name}
@@ -874,6 +888,32 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
           <button className="chat-fullscreen-close" onClick={() => setFullscreenPhoto(null)}>✕</button>
         </div>
       )}
+
+      {/* Kontextmenü für Nachrichten (Long-Press / Rechtsklick) */}
+      <MessageContextSheet
+        isOpen={contextMenuMessage !== null}
+        isOwn={contextMenuMessage ? isMyMessage(contextMenuMessage) : false}
+        hasText={!!contextMenuMessage?.content}
+        onReply={() => {
+          alert('Antworten kommt in Schritt 34b')
+          setContextMenuMessage(null)
+        }}
+        onForward={() => {
+          alert('Weiterleiten kommt in Schritt 34c')
+          setContextMenuMessage(null)
+        }}
+        onCopy={() => {
+          if (contextMenuMessage?.content) {
+            navigator.clipboard.writeText(contextMenuMessage.content)
+          }
+          setContextMenuMessage(null)
+        }}
+        onDelete={() => {
+          alert('Löschen kommt später')
+          setContextMenuMessage(null)
+        }}
+        onClose={() => setContextMenuMessage(null)}
+      />
     </div>
   )
 }

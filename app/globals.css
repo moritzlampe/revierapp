@@ -1059,6 +1059,9 @@ button:active {
   padding: 0.625rem 0.875rem;
   border-radius: 1rem;
   font-size: 0.875rem;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   line-height: 1.4;
   word-break: break-word;
 }
@@ -1300,6 +1303,11 @@ button:active {
     margin-bottom: 0;
     padding: 0;
   }
+}
+
+@keyframes context-sheet-slide-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
 /* ============================================================
