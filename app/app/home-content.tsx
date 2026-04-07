@@ -68,6 +68,7 @@ type ChatListItem = {
   emoji: string
   isHuntChat: boolean
   huntId: string | null
+  huntStatus: string | null
   createdBy: string
   lastMessage: string | null
   lastMessageSender: string | null
@@ -202,6 +203,17 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
 
     const groupIds = groups.map(g => g.id)
 
+    // Hunt-Status für Jagd-Chats laden
+    const huntIds = groups.filter(g => g.hunt_id).map(g => g.hunt_id!)
+    const huntStatusMap: Record<string, string> = {}
+    if (huntIds.length > 0) {
+      const { data: huntData } = await supabase
+        .from('hunts')
+        .select('id, status')
+        .in('id', huntIds)
+      huntData?.forEach(h => { huntStatusMap[h.id] = h.status })
+    }
+
     // Meine Mitgliedschaften laden (für last_read_at)
     const { data: memberships } = await supabase
       .from('chat_group_members')
@@ -293,6 +305,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         emoji: group.hunt_id ? '🎯' : group.emoji,
         isHuntChat: !!group.hunt_id,
         huntId: group.hunt_id,
+        huntStatus: group.hunt_id ? (huntStatusMap[group.hunt_id] || null) : null,
         createdBy: group.created_by,
         lastMessage: msgPreview,
         lastMessageSender,
@@ -304,8 +317,12 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       })
     }
 
-    // Sortierung: neueste Nachricht oben
+    // Sortierung: aktive Jagd-Chats gepinnt oben, Rest nach letzter Nachricht
     items.sort((a, b) => {
+      const aLive = a.isHuntChat && a.huntStatus === 'active'
+      const bLive = b.isHuntChat && b.huntStatus === 'active'
+      if (aLive && !bLive) return -1
+      if (!aLive && bLive) return 1
       const timeA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0
       const timeB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0
       return timeB - timeA
@@ -565,12 +582,21 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                 const swipeIcon = isOwner ? '🗑️' : '🚪'
                 const swipeColor = isOwner ? 'var(--red)' : 'var(--orange)'
 
+                const isLiveHunt = item.isHuntChat && item.huntStatus === 'active'
+
                 const chatRow = (
                   <Link
                     href={getChatHref(item)}
                     prefetch={true}
                     className="w-full flex items-center gap-3 text-left"
-                    style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', textDecoration: 'none', color: 'inherit' }}
+                    style={{
+                      padding: '0.875rem 1.25rem',
+                      borderBottom: '1px solid var(--border-light)',
+                      display: 'flex',
+                      textDecoration: 'none',
+                      color: 'inherit',
+                      ...(isLiveHunt ? { background: 'rgba(107,159,58,0.06)' } : {}),
+                    }}
                   >
                     {/* Avatar: 2er-Chat → Initial, Gruppen-Avatar → Bild, sonst Emoji */}
                     {item.isDirect && item.displayInitial ? (
@@ -601,8 +627,13 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                     {/* Name + letzte Nachricht */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold truncate" style={{ fontSize: '0.9375rem' }}>
+                        <span className="text-sm font-semibold truncate flex items-center gap-1.5" style={{ fontSize: '0.9375rem' }}>
                           {item.isHuntChat ? item.name.replace('🎯 ', '') : item.name}
+                          {item.isHuntChat && item.huntStatus === 'active' && (
+                            <span className="badge badge-live" style={{ fontSize: '0.5625rem', padding: '0.0625rem 0.375rem' }}>
+                              <span className="live-dot mr-1" style={{ width: '0.375rem', height: '0.375rem' }} />Live
+                            </span>
+                          )}
                         </span>
                         {item.lastMessageTime && (
                           <span className="text-xs flex-shrink-0 ml-2"

@@ -13,6 +13,7 @@ export default function JoinHuntPage() {
   const [loading, setLoading] = useState(true)
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [seatInfo, setSeatInfo] = useState<string | null>(null)
 
   useEffect(() => { loadHunt() }, [params.code])
 
@@ -27,11 +28,28 @@ export default function JoinHuntPage() {
     setHuntName(hunt.name)
     setLoading(false)
 
-    // Falls eingeloggt und schon dabei → direkt weiter
+    // Falls eingeloggt → Hochsitz-Zuweisung laden + prüfen ob schon dabei
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data: existing } = await supabase.from('hunt_participants').select('id').eq('hunt_id', hunt.id).eq('user_id', user.id).single()
       if (existing) { router.push(`/app/hunt/${hunt.id}`); return }
+
+      // Hochsitz-Zuweisung prüfen
+      const { data: assignment } = await supabase
+        .from('hunt_seat_assignments')
+        .select('seat_type, seat_id, map_objects(name)')
+        .eq('hunt_id', hunt.id)
+        .eq('user_id', user.id)
+        .single()
+
+      if (assignment) {
+        if (assignment.seat_type === 'free') {
+          setSeatInfo('Freie Standwahl')
+        } else if (assignment.seat_id && assignment.map_objects) {
+          const obj = assignment.map_objects as unknown as { name: string }
+          setSeatInfo(obj.name)
+        }
+      }
     }
   }
 
@@ -84,9 +102,19 @@ export default function JoinHuntPage() {
         </div>
 
         <h1 className="text-2xl font-bold mb-1">Du bist eingeladen!</h1>
-        <p className="text-sm mb-8" style={{ color: 'var(--text-2)' }}>
+        <p className="text-sm mb-2" style={{ color: 'var(--text-2)' }}>
           Jagd: <strong style={{ color: 'var(--text)' }}>{huntName}</strong>
         </p>
+        {seatInfo && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl mb-4"
+            style={{ background: 'rgba(107,159,58,0.08)', border: '1px solid rgba(107,159,58,0.2)' }}>
+            <span>🪑</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--green-bright)' }}>
+              Dein Stand: {seatInfo}
+            </span>
+          </div>
+        )}
+        {!seatInfo && <div className="mb-6" />}
 
         <form onSubmit={handleJoin} className="space-y-4">
           <div>

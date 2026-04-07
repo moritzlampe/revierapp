@@ -56,7 +56,8 @@
       "Bash(xargs grep:*)",
       "Bash(mkdir:*)",
       "Bash(node scripts/generate-icons.mjs)",
-      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(ssh:*)"
     ]
   }
 }
