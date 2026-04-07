@@ -1223,3 +1223,229 @@ button:active {
     padding: 0;
   }
 }
+
+/* ============================================================
+   Karten-basierte Stand-Zuweisung (Step 2 Jagd erstellen)
+   ============================================================ */
+
+/* Teilnehmer-Chips (horizontal scrollbar) */
+.assign-chips {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.75rem 1.25rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.assign-chips::-webkit-scrollbar { display: none; }
+
+.assign-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem 0.375rem 0.375rem;
+  border-radius: 1.5rem;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: border-color 0.2s, background 0.2s, transform 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+}
+.assign-chip .avatar {
+  width: 1.625rem;
+  height: 1.625rem;
+  font-size: 0.625rem;
+}
+.assign-chip.placed {
+  border-color: var(--green);
+  background: rgba(107,159,58,0.1);
+}
+.assign-chip.active {
+  border-color: var(--green-bright);
+  background: rgba(107,159,58,0.2);
+  transform: scale(1.05);
+  box-shadow: 0 0 0.75rem rgba(107,159,58,0.3);
+}
+.assign-chip.dragging {
+  opacity: 0.4;
+  transform: scale(0.95);
+}
+
+/* Drag-Ghost (absolut positionierter Clone während Drag) */
+.assign-drag-ghost {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem 0.375rem 0.375rem;
+  border-radius: 1.5rem;
+  border: 2px solid var(--green-bright);
+  background: rgba(107,159,58,0.25);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translate(-50%, -50%) scale(1.1);
+  box-shadow: 0 0.5rem 2rem rgba(0,0,0,0.5);
+}
+.assign-drag-ghost .avatar {
+  width: 1.625rem;
+  height: 1.625rem;
+  font-size: 0.625rem;
+}
+
+/* Modus-Toggle */
+.assign-mode-toggle {
+  display: flex;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  overflow: hidden;
+  background: var(--surface);
+}
+.assign-mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  min-height: 2.75rem;
+}
+.assign-mode-btn.active {
+  background: rgba(107,159,58,0.15);
+  color: var(--green-bright);
+}
+
+/* Stand-Marker auf der Zuweisungskarte */
+.assign-stand-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 2px solid var(--green-dim);
+  font-size: 0.875rem;
+  color: var(--text);
+  transition: border-color 0.2s, transform 0.2s;
+}
+.assign-stand-marker.has-person {
+  border-color: var(--green-bright);
+  background: rgba(107,159,58,0.2);
+}
+.assign-stand-marker.highlight {
+  border-color: var(--green-bright);
+  transform: scale(1.2);
+  box-shadow: 0 0 0.75rem rgba(107,159,58,0.4);
+}
+
+/* Stand-Label unter dem Marker */
+.assign-stand-label {
+  background: rgba(10,15,8,0.85);
+  backdrop-filter: blur(4px);
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+.assign-stand-label .person-name {
+  color: var(--green-bright);
+  font-size: 0.625rem;
+  display: block;
+}
+
+/* Freie-Position Avatar-Marker */
+.assign-free-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 2.5px solid var(--green-bright);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 0.125rem 0.5rem rgba(0,0,0,0.4);
+}
+
+/* Bottom-Sheet für Stand-Bearbeitung */
+.assign-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.assign-sheet {
+  width: 100%;
+  max-width: 30rem;
+  background: var(--surface);
+  border-radius: 1.25rem 1.25rem 0 0;
+  padding: 1.25rem 1.25rem max(1.25rem, var(--safe-bottom));
+}
+.assign-sheet-handle {
+  width: 2.5rem;
+  height: 0.25rem;
+  border-radius: 0.125rem;
+  background: var(--border);
+  margin: 0 auto 1rem;
+}
+
+/* Karten-Drop-Zone Indikator (Rand leuchtet grün bei Drag) */
+.assign-map-container {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+.assign-map-container.drag-active {
+  border-color: var(--green-bright);
+}
+
+/* Tap-Hinweis auf der Karte */
+.assign-map-hint {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(10,15,8,0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.375rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+  pointer-events: none;
+}

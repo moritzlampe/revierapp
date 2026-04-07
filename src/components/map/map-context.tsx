@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect } f
 import type { RevierObjekt, Zone } from "@/lib/types/revier";
 import { useRevier } from "@/lib/context/revier-context";
 import { createClient } from "@/lib/supabase/client";
+import { parsePointHex } from "@/lib/geo-utils";
 
 export type Tool = "select" | "boundary" | "zone" | "hochsitz" | "photo";
 type Layer = "osm" | "aerial" | "flur" | "hybrid";
@@ -78,7 +79,9 @@ function parsePosition(pos: unknown): { lat: number; lng: number } {
         return { lat: parsed.coordinates[1], lng: parsed.coordinates[0] };
       }
     } catch {
-      // WKB hex — not parseable client-side
+      // WKB hex — parsePointHex aus geo-utils verwenden
+      const parsed = parsePointHex(pos);
+      if (parsed) return parsed;
     }
   }
   return { lat: 0, lng: 0 };

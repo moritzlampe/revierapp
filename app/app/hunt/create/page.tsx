@@ -1,10 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import StandAssignmentMapView from '@/components/hunt/StandAssignmentMapView'
+import type { AssignStand, AssignParticipant, FreePosition } from '@/components/hunt/StandAssignmentMap'
+import { useGeolocation } from '@/hooks/useGeolocation'
+import { parsePointHex } from '@/lib/geo-utils'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
+const AVATAR_HEX = ['#2E7D32', '#1565C0', '#E65100', '#6A1B9A', '#00838F', '#C62828']
 
 const BUNDESLAENDER = [
   'Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen',
@@ -39,19 +44,7 @@ type MapObject = {
   id: string
   name: string
   type: string
-}
-
-type AdhocSeat = {
-  tempId: string
-  name: string
-}
-
-type SeatAssignment = {
-  userId: string
-  userName: string
-  seatId: string | null
-  seatType: 'assigned' | 'free' | 'adhoc' | 'none'
-  seatName?: string  // Nur bei adhoc
+  position?: { lat: number; lng: number }
 }
 
 function getInitials(name: string) {
@@ -79,15 +72,42 @@ export default function CreateHuntPage() {
   const [creatingRevier, setCreatingRevier] = useState(false)
   const [revierError, setRevierError] = useState<string | null>(null)
 
-  // Step 2: Hochsitz-Zuweisung
-  const [availableSeats, setAvailableSeats] = useState<MapObject[]>([])
-  const [seatAssignments, setSeatAssignments] = useState<SeatAssignment[]>([])
-  const [loadingSeats, setLoadingSeats] = useState(false)
+  // "Jetzt einrichten?" Dialog nach Revier-Erstellung
+  const [showSetupDialog, setShowSetupDialog] = useState(false)
+  const [newRevierData, setNewRevierData] = useState<{ id: string; name: string } | null>(null)
 
-  // Ad-hoc Stände (Freie Jagd)
-  const [adhocSeats, setAdhocSeats] = useState<AdhocSeat[]>([])
-  const [newAdhocName, setNewAdhocName] = useState('')
-  const [showAdhocInput, setShowAdhocInput] = useState(false)
+  // Step 2: Karten-basierte Stand-Zuweisung
+  const [revierStands, setRevierStands] = useState<AssignStand[]>([])
+  const [adhocStands, setAdhocStands] = useState<AssignStand[]>([])
+  const [freePositions, setFreePositions] = useState<FreePosition[]>([])
+  const [assignMode, setAssignMode] = useState<'stands' | 'free'>('stands')
+  const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null)
+  const [loadingSeats, setLoadingSeats] = useState(false)
+  const [revierBoundary, setRevierBoundary] = useState<[number, number][][] | null>(null)
+
+  // Stand-Edit Sheet
+  const [editingStand, setEditingStand] = useState<AssignStand | null>(null)
+  const [editName, setEditName] = useState('')
+
+  // Ad-hoc Stand Counter
+  const adhocCounter = useRef(0)
+
+  // GPS fuer Karten-Zentrierung
+  const geoState = useGeolocation()
+
+  // Alle Teilnehmer als AssignParticipant
+  const allParticipants: AssignParticipant[] = [
+    ...(currentUser ? [{
+      userId: currentUser.id,
+      userName: currentUser.name,
+      avatarColor: AVATAR_HEX[0],
+    }] : []),
+    ...contacts.filter(c => c.selected).map((c, i) => ({
+      userId: c.id,
+      userName: c.display_name,
+      avatarColor: AVATAR_HEX[(i + 1) % AVATAR_HEX.length],
+    })),
+  ]
 
   useEffect(() => {
     loadData()
@@ -174,6 +194,10 @@ export default function CreateHuntPage() {
     setNewRevierName('')
     setNewRevierBundesland('')
     setCreatingRevier(false)
+
+    // "Jetzt einrichten?" Dialog zeigen
+    setNewRevierData(data)
+    setShowSetupDialog(true)
   }
 
   function toggleContact(id: string) {
@@ -193,95 +217,190 @@ export default function CreateHuntPage() {
   )
   const selectedCount = contacts.filter(c => c.selected).length
 
-  // Hochsitze laden und zu Step 2 wechseln
+  // Hochsitze + Grenze laden und zu Step 2 wechseln
   async function handleContinue(e: React.FormEvent) {
     e.preventDefault()
+    setLoadingSeats(true)
 
-    // Bei Revier-Jagd: Hochsitze laden
+    const supabase = createClient()
+
     if (selectedDistrictId) {
-      setLoadingSeats(true)
-      const supabase = createClient()
+      // Hochsitze mit Position laden
       const { data: seats } = await supabase
         .from('map_objects')
-        .select('id, name, type')
+        .select('id, name, type, position')
         .eq('district_id', selectedDistrictId)
         .in('type', ['hochsitz', 'kanzel', 'drueckjagdstand'])
         .order('name')
 
-      setAvailableSeats(seats || [])
-      setLoadingSeats(false)
+      const parsed: AssignStand[] = (seats || []).map(s => {
+        let pos = { lat: 0, lng: 0 }
+        if (s.position && typeof s.position === 'string') {
+          const p = parsePointHex(s.position)
+          if (p) pos = p
+        } else if (s.position && typeof s.position === 'object') {
+          const obj = s.position as any
+          if (obj.coordinates) {
+            pos = { lat: obj.coordinates[1], lng: obj.coordinates[0] }
+          }
+        }
+        return { id: s.id, name: s.name, type: s.type, position: pos, assignedUserId: null }
+      })
+      setRevierStands(parsed)
+
+      // Reviergrenze laden
+      const { data: district } = await supabase
+        .from('districts')
+        .select('boundary')
+        .eq('id', selectedDistrictId)
+        .single()
+
+      if (district?.boundary) {
+        try {
+          const geo = typeof district.boundary === 'string'
+            ? JSON.parse(district.boundary)
+            : district.boundary
+          if (geo?.coordinates) {
+            const ring = geo.coordinates[0].map((c: number[]) => [c[1], c[0]] as [number, number])
+            setRevierBoundary([ring])
+          }
+        } catch { /* keine Grenze */ }
+      } else {
+        setRevierBoundary(null)
+      }
     } else {
-      // Freie Jagd: keine Revier-Hochsitze
-      setAvailableSeats([])
+      setRevierStands([])
+      setRevierBoundary(null)
     }
 
-    // Alle Teilnehmer (Jagdleiter + ausgewählte Kontakte) für Zuweisung vorbereiten
-    const allParticipants: SeatAssignment[] = []
-    if (currentUser) {
-      allParticipants.push({
-        userId: currentUser.id,
-        userName: currentUser.name,
-        seatId: null,
-        seatType: 'none',
-      })
-    }
-    contacts.filter(c => c.selected).forEach(c => {
-      allParticipants.push({
-        userId: c.id,
-        userName: c.display_name,
-        seatId: null,
-        seatType: 'none',
-      })
-    })
-
-    setSeatAssignments(allParticipants)
-    setAdhocSeats([])
+    setAdhocStands([])
+    setFreePositions([])
+    setActiveParticipantId(null)
+    setAssignMode('stands')
+    adhocCounter.current = 0
+    setLoadingSeats(false)
     setStep(2)
   }
 
-  // Hochsitz-Zuweisung ändern
-  function handleSeatChange(userId: string, value: string) {
-    setSeatAssignments(prev => prev.map(a => {
-      if (a.userId !== userId) return a
-      if (value === '') return { ...a, seatId: null, seatType: 'none', seatName: undefined }
-      if (value === 'free') return { ...a, seatId: null, seatType: 'free', seatName: undefined }
-      // Adhoc-Stand? (Prefix "adhoc:")
-      if (value.startsWith('adhoc:')) {
-        const tempId = value.replace('adhoc:', '')
-        const adhoc = adhocSeats.find(s => s.tempId === tempId)
-        return { ...a, seatId: null, seatType: 'adhoc', seatName: adhoc?.name }
-      }
-      return { ...a, seatId: value, seatType: 'assigned', seatName: undefined }
-    }))
-  }
+  // Karten-Callbacks
 
-  // Ad-hoc Stand hinzufügen
-  function addAdhocSeat() {
-    const trimmed = newAdhocName.trim()
-    if (!trimmed) return
-    const tempId = crypto.randomUUID()
-    setAdhocSeats(prev => [...prev, { tempId, name: trimmed }])
-    setNewAdhocName('')
-    setShowAdhocInput(false)
-  }
+  // Neuen Stand auf der Karte erstellen (Tap in Hochsitz-Modus)
+  const handleStandCreated = useCallback((position: { lat: number; lng: number }) => {
+    adhocCounter.current += 1
+    const newStand: AssignStand = {
+      id: `adhoc-${crypto.randomUUID()}`,
+      name: `Stand ${adhocCounter.current}`,
+      type: 'adhoc',
+      position,
+      assignedUserId: null,
+    }
+    setAdhocStands(prev => [...prev, newStand])
+  }, [])
 
-  // Ad-hoc Stand entfernen
-  function removeAdhocSeat(tempId: string) {
-    setAdhocSeats(prev => prev.filter(s => s.tempId !== tempId))
-    // Zuweisungen zu diesem Stand zurücksetzen
-    setSeatAssignments(prev => prev.map(a =>
-      a.seatType === 'adhoc' && a.seatName === adhocSeats.find(s => s.tempId === tempId)?.name
-        ? { ...a, seatId: null, seatType: 'none', seatName: undefined }
-        : a
+  // Bestehenden Stand getappt (Bottom-Sheet oeffnen)
+  const handleStandTapped = useCallback((standId: string) => {
+    const stand = [...revierStands, ...adhocStands].find(s => s.id === standId)
+    if (stand) {
+      setEditingStand(stand)
+      setEditName(stand.name)
+    }
+  }, [revierStands, adhocStands])
+
+  // Teilnehmer einem Stand zuweisen
+  const handleStandAssign = useCallback((standId: string, userId: string) => {
+    // Vorherige Zuweisung dieses Users entfernen (bei allen Staenden)
+    setRevierStands(prev => prev.map(s =>
+      s.assignedUserId === userId ? { ...s, assignedUserId: null } : s
     ))
+    setAdhocStands(prev => prev.map(s =>
+      s.assignedUserId === userId ? { ...s, assignedUserId: null } : s
+    ))
+    // Freie Position dieses Users entfernen
+    setFreePositions(prev => prev.filter(fp => fp.userId !== userId))
+
+    // Neuen Stand zuweisen
+    const inRevier = revierStands.find(s => s.id === standId)
+    if (inRevier) {
+      setRevierStands(prev => prev.map(s =>
+        s.id === standId ? { ...s, assignedUserId: userId } : s
+      ))
+    } else {
+      setAdhocStands(prev => prev.map(s =>
+        s.id === standId ? { ...s, assignedUserId: userId } : s
+      ))
+    }
+    // Naechsten unzugewiesenen Teilnehmer auswaehlen
+    selectNextUnassigned(userId)
+  }, [revierStands, adhocStands])
+
+  // Freie Position setzen (Tap in Frei-Modus)
+  const handleFreePositionSet = useCallback((userId: string, position: { lat: number; lng: number }) => {
+    // Vorherige Zuweisungen entfernen
+    setRevierStands(prev => prev.map(s =>
+      s.assignedUserId === userId ? { ...s, assignedUserId: null } : s
+    ))
+    setAdhocStands(prev => prev.map(s =>
+      s.assignedUserId === userId ? { ...s, assignedUserId: null } : s
+    ))
+    // Freie Position upserten
+    setFreePositions(prev => {
+      const existing = prev.findIndex(fp => fp.userId === userId)
+      if (existing >= 0) {
+        const next = [...prev]
+        next[existing] = { userId, position }
+        return next
+      }
+      return [...prev, { userId, position }]
+    })
+    selectNextUnassigned(userId)
+  }, [])
+
+  // Naechsten unzugewiesenen Teilnehmer automatisch auswaehlen
+  function selectNextUnassigned(justAssignedUserId: string) {
+    // Timeout damit der State-Update durchgeht
+    setTimeout(() => {
+      setActiveParticipantId(prev => {
+        // Prüfen welche Teilnehmer noch nicht zugewiesen sind
+        // (wird im naechsten Render-Zyklus korrekt sein)
+        return null // Reset — User waehlt naechsten manuell oder Auto-Logik greift
+      })
+    }, 100)
   }
 
-  // Verfügbare Hochsitze für einen Teilnehmer (bereits zugewiesene ausschließen)
-  function getAvailableSeatsForUser(userId: string) {
-    const takenSeatIds = seatAssignments
-      .filter(a => a.seatType === 'assigned' && a.seatId && a.userId !== userId)
-      .map(a => a.seatId)
-    return availableSeats.filter(s => !takenSeatIds.includes(s.id))
+  // Stand umbenennen
+  function handleRenameStand() {
+    if (!editingStand || !editName.trim()) return
+    const isAdhoc = editingStand.id.startsWith('adhoc-')
+    if (isAdhoc) {
+      setAdhocStands(prev => prev.map(s =>
+        s.id === editingStand.id ? { ...s, name: editName.trim() } : s
+      ))
+    } else {
+      setRevierStands(prev => prev.map(s =>
+        s.id === editingStand.id ? { ...s, name: editName.trim() } : s
+      ))
+    }
+    setEditingStand(null)
+  }
+
+  // Stand loeschen (nur ad-hoc)
+  function handleDeleteStand() {
+    if (!editingStand) return
+    setAdhocStands(prev => prev.filter(s => s.id !== editingStand.id))
+    setEditingStand(null)
+  }
+
+  // Chip-Tap: Teilnehmer auswaehlen/abwaehlen
+  function toggleParticipant(userId: string) {
+    setActiveParticipantId(prev => prev === userId ? null : userId)
+  }
+
+  // Pruefen ob ein Teilnehmer zugewiesen ist
+  function isParticipantPlaced(userId: string): boolean {
+    if (revierStands.some(s => s.assignedUserId === userId)) return true
+    if (adhocStands.some(s => s.assignedUserId === userId)) return true
+    if (freePositions.some(fp => fp.userId === userId)) return true
+    return false
   }
 
   async function handleCreate() {
@@ -367,232 +486,294 @@ export default function CreateHuntPage() {
       await supabase.from('chat_group_members').insert(chatMembers)
     }
 
-    // Hochsitz-Zuweisungen speichern (nur wenn Step 2 durchlaufen)
-    const assignmentsToInsert = seatAssignments.filter(a => a.seatType !== 'none')
-    if (assignmentsToInsert.length > 0) {
-      await supabase.from('hunt_seat_assignments').insert(
-        assignmentsToInsert.map(a => ({
+    // Karten-basierte Zuweisungen speichern
+    const assignments: {
+      hunt_id: string
+      user_id: string
+      seat_id: string | null
+      seat_type: string
+      seat_name: string | null
+      position_lat: number | null
+      position_lng: number | null
+    }[] = []
+
+    // Revier-Hochsitz-Zuweisungen
+    for (const s of revierStands) {
+      if (s.assignedUserId) {
+        assignments.push({
           hunt_id: hunt.id,
-          user_id: a.userId,
-          seat_id: a.seatType === 'assigned' ? a.seatId : null,
-          seat_type: a.seatType,
-          seat_name: a.seatType === 'adhoc' ? a.seatName : null,
-        }))
-      )
+          user_id: s.assignedUserId,
+          seat_id: s.id,
+          seat_type: 'assigned',
+          seat_name: null,
+          position_lat: null,
+          position_lng: null,
+        })
+      }
+    }
+
+    // Ad-hoc Stand-Zuweisungen
+    for (const s of adhocStands) {
+      if (s.assignedUserId) {
+        assignments.push({
+          hunt_id: hunt.id,
+          user_id: s.assignedUserId,
+          seat_id: null,
+          seat_type: 'adhoc',
+          seat_name: s.name,
+          position_lat: s.position.lat,
+          position_lng: s.position.lng,
+        })
+      }
+    }
+
+    // Freie Positionen
+    for (const fp of freePositions) {
+      assignments.push({
+        hunt_id: hunt.id,
+        user_id: fp.userId,
+        seat_id: null,
+        seat_type: 'free_pos',
+        seat_name: null,
+        position_lat: fp.position.lat,
+        position_lng: fp.position.lng,
+      })
+    }
+
+    if (assignments.length > 0) {
+      await supabase.from('hunt_seat_assignments').insert(assignments)
     }
 
     router.push(`/app/hunt/${hunt.id}`)
   }
 
-  // === STEP 2: Hochsitz-Zuweisung ===
+  // === STEP 2: Karten-basierte Stand-Zuweisung ===
   if (step === 2) {
+    const placedCount = allParticipants.filter(p => isParticipantPlaced(p.userId)).length
+    const hasAnyAssignment = placedCount > 0
+
     return (
-      <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
+      <div className="h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+        <div className="flex items-center gap-3 px-4 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid var(--border-light)' }}>
           <button onClick={() => setStep(1)} className="flex items-center justify-center rounded-lg"
             style={{ color: 'var(--text-2)', background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
-          <div>
-            <h1 className="text-lg font-bold">🪑 Stände zuweisen</h1>
-            <p className="text-xs" style={{ color: 'var(--text-3)' }}>Wer sitzt wo? Optional — du kannst auch überspringen.</p>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold">Stände zuweisen</h1>
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+              {assignMode === 'stands' ? 'Tippe Karte = neuer Stand' : 'Tippe Karte = Position setzen'}
+            </p>
           </div>
+          <span className="text-xs font-semibold" style={{ color: placedCount > 0 ? 'var(--green-bright)' : 'var(--text-3)' }}>
+            {placedCount}/{allParticipants.length}
+          </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        {/* Teilnehmer-Chips */}
+        <div className="assign-chips flex-shrink-0">
+          {allParticipants.map((p, i) => {
+            const placed = isParticipantPlaced(p.userId)
+            const active = activeParticipantId === p.userId
+            return (
+              <button
+                key={p.userId}
+                className={`assign-chip${placed ? ' placed' : ''}${active ? ' active' : ''}`}
+                onClick={() => toggleParticipant(p.userId)}
+              >
+                <div className={`avatar ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
+                  {getInitials(p.userName)}
+                </div>
+                {p.userName.split(' ')[0]}
+                {i === 0 && <span style={{ fontSize: '0.625rem' }}>🎖️</span>}
+                {placed && <span style={{ fontSize: '0.625rem', color: 'var(--green-bright)' }}>✓</span>}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Karte */}
+        <div className="assign-map-container flex-1">
           {loadingSeats ? (
-            <div className="flex items-center justify-center py-12">
-              <p style={{ color: 'var(--text-3)' }}>Lade Hochsitze...</p>
+            <div className="flex items-center justify-center h-full">
+              <p style={{ color: 'var(--text-3)' }}>Lade Karte...</p>
             </div>
           ) : (
-            <>
-              {/* Freie Jagd: Ad-hoc Stände erstellen */}
-              {!selectedDistrictId && (
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold" style={{ color: 'var(--text-2)' }}>
-                      Stände für diese Jagd
-                    </label>
-                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-                      {adhocSeats.length} {adhocSeats.length === 1 ? 'Stand' : 'Stände'}
-                    </span>
-                  </div>
-
-                  {/* Bestehende Ad-hoc Stände */}
-                  {adhocSeats.map(seat => (
-                    <div key={seat.tempId} className="flex items-center gap-2.5 p-3 rounded-xl"
-                      style={{ background: 'var(--bg)', border: '1.5px solid var(--green)' }}>
-                      <span className="text-lg">📍</span>
-                      <span className="flex-1 text-sm font-semibold">{seat.name}</span>
-                      <button type="button" onClick={() => removeAdhocSeat(seat.tempId)}
-                        className="flex items-center justify-center"
-                        style={{
-                          width: '2rem', height: '2rem', borderRadius: '50%',
-                          background: 'var(--surface-2)', color: 'var(--text-3)', fontSize: '0.875rem',
-                        }}>✕</button>
-                    </div>
-                  ))}
-
-                  {/* Eingabefeld für neuen Stand */}
-                  {showAdhocInput ? (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newAdhocName}
-                        onChange={(e) => setNewAdhocName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAdhocSeat() } }}
-                        placeholder="z.B. Eiche am Feldrand, Mais 1..."
-                        autoFocus
-                        style={{ flex: 1 }}
-                      />
-                      <button type="button" onClick={addAdhocSeat} disabled={!newAdhocName.trim()}
-                        className="flex items-center justify-center font-bold text-white disabled:opacity-50"
-                        style={{
-                          minWidth: '2.75rem', height: '3rem', borderRadius: 'var(--radius)',
-                          background: 'var(--green)', fontSize: '1.25rem',
-                        }}>+</button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setShowAdhocInput(true)}
-                      className="w-full flex items-center justify-center gap-2 font-semibold text-sm transition"
-                      style={{
-                        height: '2.75rem', borderRadius: 'var(--radius)',
-                        border: '1.5px dashed var(--border)',
-                        background: 'transparent', color: 'var(--green-bright)',
-                      }}>
-                      + Stand hinzufügen
-                    </button>
-                  )}
-
-                  {adhocSeats.length === 0 && (
-                    <div className="flex gap-2.5 p-3 rounded-xl"
-                      style={{ background: 'rgba(66,165,245,0.06)', border: '1px solid rgba(66,165,245,0.15)' }}>
-                      <span className="text-lg">💡</span>
-                      <div className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                        Lege Stände an, um Jägern feste Positionen zuzuweisen.<br />
-                        <span style={{ color: 'var(--text-3)' }}>Oder überspringe diesen Schritt — alle starten als "Freier Stand".</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Revier-Jagd ohne Hochsitze: Hinweis */}
-              {selectedDistrictId && availableSeats.length === 0 && (
-                <div className="flex gap-2.5 p-4 rounded-xl"
-                  style={{ background: 'rgba(255,143,0,0.06)', border: '1px solid rgba(255,143,0,0.15)' }}>
-                  <span className="text-lg flex-shrink-0">⚠️</span>
-                  <div className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                    <strong>Keine Hochsitze im Revier.</strong><br />
-                    Lege zuerst Hochsitze auf der Revierkarte an, um sie hier zuweisen zu können.
-                  </div>
-                </div>
-              )}
-
-              {/* Zuweisungs-Liste (wenn Revier-Hochsitze ODER Ad-hoc Stände vorhanden) */}
-              {(availableSeats.length > 0 || adhocSeats.length > 0) && (
-                <>
-                  {!selectedDistrictId && adhocSeats.length > 0 && (
-                    <div style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.75rem' }}>
-                      <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-2)' }}>
-                        Jäger zuweisen
-                      </label>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    {seatAssignments.map((a, i) => {
-                      const seatsForUser = getAvailableSeatsForUser(a.userId)
-                      const currentValue = a.seatType === 'none' ? ''
-                        : a.seatType === 'free' ? 'free'
-                        : a.seatType === 'adhoc' ? `adhoc:${adhocSeats.find(s => s.name === a.seatName)?.tempId || ''}`
-                        : a.seatId || ''
-
-                      return (
-                        <div key={a.userId} className="flex items-center gap-2.5 p-3 rounded-xl"
-                          style={{ background: 'var(--bg)', border: `1.5px solid ${a.seatType !== 'none' ? 'var(--green)' : 'var(--border)'}` }}>
-                          <div className={`avatar ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
-                            {getInitials(a.userName)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold truncate">{a.userName}</div>
-                            {i === 0 && (
-                              <span className="text-xs font-bold" style={{ color: 'var(--gold)' }}>🎖️ Jagdleiter</span>
-                            )}
-                          </div>
-                          <select
-                            value={currentValue}
-                            onChange={(e) => handleSeatChange(a.userId, e.target.value)}
-                            style={{
-                              maxWidth: '10rem',
-                              height: '2.5rem',
-                              padding: '0 2rem 0 0.625rem',
-                              borderRadius: 'var(--radius)',
-                              border: `1.5px solid ${a.seatType !== 'none' ? 'var(--green)' : 'var(--border)'}`,
-                              background: 'var(--surface)',
-                              color: 'var(--text)',
-                              fontSize: '0.8125rem',
-                              appearance: 'none',
-                              WebkitAppearance: 'none',
-                            }}
-                          >
-                            <option value="">Nicht zugewiesen</option>
-                            <option value="free">🏃 Freier Stand</option>
-                            {/* Revier-Hochsitze */}
-                            {seatsForUser.map(s => (
-                              <option key={s.id} value={s.id}>
-                                {s.type === 'kanzel' ? '🏠' : s.type === 'drueckjagdstand' ? '🎯' : '🪜'} {s.name}
-                              </option>
-                            ))}
-                            {/* Ad-hoc Stände */}
-                            {adhocSeats.map(s => (
-                              <option key={s.tempId} value={`adhoc:${s.tempId}`}>
-                                📍 {s.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex gap-2.5 p-3 rounded-xl"
-                    style={{ background: 'rgba(66,165,245,0.06)', border: '1px solid rgba(66,165,245,0.15)' }}>
-                    <span className="text-lg">💡</span>
-                    <div className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                      Jeder Stand kann nur <strong>einem Jäger</strong> zugewiesen werden.
-                      Zuweisungen sind optional und können während der Jagd geändert werden.
-                    </div>
-                  </div>
-                </>
-              )}
-            </>
+            <StandAssignmentMapView
+              revierStands={revierStands}
+              adhocStands={adhocStands}
+              participants={allParticipants}
+              freePositions={freePositions}
+              boundary={revierBoundary}
+              mode={assignMode}
+              activeParticipantId={activeParticipantId}
+              userPosition={geoState.position}
+              onStandCreated={handleStandCreated}
+              onStandTapped={handleStandTapped}
+              onStandAssign={handleStandAssign}
+              onFreePositionSet={handleFreePositionSet}
+            />
           )}
+        </div>
 
-          {error && <p className="text-sm" style={{ color: 'var(--red)' }}>{error}</p>}
-
-          {/* Buttons */}
-          <div className="space-y-2 pt-2">
-            <button type="button" onClick={() => handleCreate()} disabled={loading}
-              className="w-full font-bold text-base text-white transition disabled:opacity-50"
-              style={{ height: '3.5rem', borderRadius: 'var(--radius)', background: 'var(--green)', fontSize: '1rem' }}>
-              {loading ? 'Wird erstellt...' : `Jagd starten · ${seatAssignments.length} Jäger →`}
+        {/* Modus-Toggle */}
+        <div className="px-4 py-2 flex-shrink-0">
+          <div className="assign-mode-toggle">
+            <button
+              className={`assign-mode-btn${assignMode === 'stands' ? ' active' : ''}`}
+              onClick={() => setAssignMode('stands')}
+            >
+              📍 Hochsitze
             </button>
-
-            {(availableSeats.length > 0 || adhocSeats.length > 0) && seatAssignments.some(a => a.seatType !== 'none') ? null : (
-              <button type="button"
-                onClick={() => {
-                  setSeatAssignments(prev => prev.map(a => ({ ...a, seatId: null, seatType: 'none', seatName: undefined })))
-                  handleCreate()
-                }}
-                disabled={loading}
-                className="w-full font-semibold text-sm transition disabled:opacity-50"
-                style={{ height: '2.75rem', color: 'var(--text-3)', borderRadius: 'var(--radius)' }}>
-                Überspringen — ohne Zuweisungen starten
-              </button>
-            )}
+            <button
+              className={`assign-mode-btn${assignMode === 'free' ? ' active' : ''}`}
+              onClick={() => setAssignMode('free')}
+            >
+              👤 Frei platzieren
+            </button>
           </div>
         </div>
+
+        {error && <p className="text-sm px-4" style={{ color: 'var(--red)' }}>{error}</p>}
+
+        {/* Buttons */}
+        <div className="flex gap-3 px-4 pb-4 pt-1 flex-shrink-0" style={{ paddingBottom: 'max(1rem, var(--safe-bottom))' }}>
+          {!hasAnyAssignment && (
+            <button type="button"
+              onClick={() => {
+                setRevierStands(prev => prev.map(s => ({ ...s, assignedUserId: null })))
+                setAdhocStands([])
+                setFreePositions([])
+                handleCreate()
+              }}
+              disabled={loading}
+              className="font-semibold text-sm transition disabled:opacity-50"
+              style={{
+                height: '3.25rem', borderRadius: 'var(--radius)',
+                color: 'var(--text-3)', padding: '0 1rem',
+                whiteSpace: 'nowrap',
+              }}>
+              Überspringen
+            </button>
+          )}
+          <button type="button" onClick={() => handleCreate()} disabled={loading}
+            className="flex-1 font-bold text-base text-white transition disabled:opacity-50"
+            style={{ height: '3.25rem', borderRadius: 'var(--radius)', background: 'var(--green)', fontSize: '0.9375rem' }}>
+            {loading ? 'Wird erstellt...' : `Jagd starten · ${allParticipants.length} Jäger`}
+          </button>
+        </div>
+
+        {/* Stand-Edit Bottom Sheet */}
+        {editingStand && (
+          <div className="assign-sheet-overlay" onClick={() => setEditingStand(null)}>
+            <div className="assign-sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="assign-sheet-handle" />
+              <h3 className="text-base font-bold mb-3">Stand bearbeiten</h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-2)' }}>Name</label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRenameStand() }}
+                    autoFocus
+                  />
+                </div>
+
+                <div className="text-xs" style={{ color: 'var(--text-3)' }}>
+                  Typ: {editingStand.type === 'kanzel' ? '🏠 Kanzel' : editingStand.type === 'drueckjagdstand' ? '🎯 Drückjagdstand' : editingStand.type === 'adhoc' ? '📍 Ad-hoc' : '🪜 Hochsitz'}
+                </div>
+
+                {/* Teilnehmer-Zuweisung per Tap */}
+                {!editingStand.assignedUserId && (
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Jäger zuweisen</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {allParticipants.filter(p => !isParticipantPlaced(p.userId)).map((p, i) => (
+                        <button
+                          key={p.userId}
+                          className="assign-chip"
+                          onClick={() => {
+                            handleStandAssign(editingStand.id, p.userId)
+                            setEditingStand(null)
+                          }}
+                        >
+                          <div className={`avatar ${AVATAR_COLORS[allParticipants.indexOf(p) % AVATAR_COLORS.length]}`}>
+                            {getInitials(p.userName)}
+                          </div>
+                          {p.userName.split(' ')[0]}
+                        </button>
+                      ))}
+                      {allParticipants.filter(p => !isParticipantPlaced(p.userId)).length === 0 && (
+                        <p className="text-xs" style={{ color: 'var(--text-3)' }}>Alle Jäger sind bereits zugewiesen.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {editingStand.assignedUserId && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl"
+                    style={{ background: 'var(--bg)', border: '1.5px solid var(--green)' }}>
+                    <span className="text-sm">✓</span>
+                    <span className="text-sm font-semibold">
+                      {allParticipants.find(p => p.userId === editingStand.assignedUserId)?.userName || 'Zugewiesen'}
+                    </span>
+                    <button
+                      className="ml-auto text-xs font-semibold"
+                      style={{ color: 'var(--red)' }}
+                      onClick={() => {
+                        // Zuweisung entfernen
+                        const isAdhoc = editingStand.id.startsWith('adhoc-')
+                        if (isAdhoc) {
+                          setAdhocStands(prev => prev.map(s =>
+                            s.id === editingStand.id ? { ...s, assignedUserId: null } : s
+                          ))
+                        } else {
+                          setRevierStands(prev => prev.map(s =>
+                            s.id === editingStand.id ? { ...s, assignedUserId: null } : s
+                          ))
+                        }
+                        setEditingStand(prev => prev ? { ...prev, assignedUserId: null } : null)
+                      }}
+                    >
+                      Entfernen
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  {editingStand.id.startsWith('adhoc-') && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteStand}
+                      className="font-semibold text-sm"
+                      style={{
+                        height: '2.75rem', padding: '0 1rem',
+                        borderRadius: 'var(--radius)',
+                        border: '1.5px solid rgba(239,83,80,0.3)',
+                        color: 'var(--red)', background: 'transparent',
+                      }}
+                    >
+                      Löschen
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRenameStand}
+                    className="flex-1 font-bold text-sm text-white"
+                    style={{
+                      height: '2.75rem', borderRadius: 'var(--radius)',
+                      background: 'var(--green)',
+                    }}
+                  >
+                    Speichern
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -764,6 +945,59 @@ export default function CreateHuntPage() {
           }
         </button>
       </form>
+
+      {/* Dialog: Jetzt einrichten? */}
+      {showSetupDialog && newRevierData && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 110,
+          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '1.5rem',
+        }}>
+          <div style={{
+            width: '100%', maxWidth: '22rem',
+            background: 'var(--surface)', borderRadius: '1.25rem',
+            padding: '2rem 1.5rem',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>✅</div>
+            <h2 className="text-lg font-bold" style={{ marginBottom: '0.25rem' }}>
+              Revier erstellt!
+            </h2>
+            <p className="text-sm" style={{ color: 'var(--text-2)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+              Möchtest du jetzt direkt Reviergrenzen{'\n'}und Hochsitze einrichten?
+            </p>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSetupDialog(false)
+                  router.push(`/app/revier/${newRevierData.id}/setup?returnTo=hunt-create`)
+                }}
+                className="w-full font-bold text-base text-white"
+                style={{
+                  height: '3.25rem', borderRadius: 'var(--radius)',
+                  background: 'var(--green)', fontSize: '1rem',
+                }}
+              >
+                Jetzt einrichten →
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSetupDialog(false)}
+                className="w-full font-semibold text-sm"
+                style={{
+                  height: '2.75rem', borderRadius: 'var(--radius)',
+                  color: 'var(--text-3)', background: 'transparent',
+                }}
+              >
+                Später
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Neues Revier erstellen */}
       {showRevierModal && (

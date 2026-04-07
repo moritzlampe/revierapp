@@ -48,9 +48,11 @@ export default function HuntPage() {
   const [districtName, setDistrictName] = useState<string | null>(null)
   const [stands, setStands] = useState<StandData[]>([])
   const [chatUnread, setChatUnread] = useState(0)
-  const [showChatSwitcher, setShowChatSwitcher] = useState(false)
   const [switcherChats, setSwitcherChats] = useState<SwitcherChat[]>([])
   const [switcherLoaded, setSwitcherLoaded] = useState(false)
+  const [chatSubTab, setChatSubTab] = useState<'jagd' | 'andere'>('jagd')
+  const [selectedOtherChat, setSelectedOtherChat] = useState<SwitcherChat | null>(null)
+  const [otherChatUnread, setOtherChatUnread] = useState(0)
 
   // GPS sofort starten (auch wenn anderer Tab aktiv)
   const geoState = useGeolocation()
@@ -237,12 +239,9 @@ export default function HuntPage() {
       })
     }
     setSwitcherChats(items)
+    // Gesamtzahl ungelesener Nachrichten in "Andere" berechnen
+    setOtherChatUnread(items.reduce((sum, c) => sum + c.unreadCount, 0))
   }, [supabase, userId, params.id, switcherLoaded])
-
-  const openChatSwitcher = useCallback(() => {
-    loadSwitcherChats()
-    setShowChatSwitcher(true)
-  }, [loadSwitcherChats])
 
   const handleStandsChanged = useCallback((newStand?: StandData, deletedId?: string) => {
     // Optimistisches Update: sofort anzeigen ohne Refetch abzuwarten
@@ -303,17 +302,9 @@ export default function HuntPage() {
         style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
         <button onClick={() => router.push('/app?tab=jagden')} className="flex items-center justify-center rounded-lg"
           style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
-        <div className="flex-1 min-w-0"
-          {...(activeTab === 'chat' ? {
-            onClick: openChatSwitcher,
-            role: 'button',
-            style: { cursor: 'pointer' },
-          } : {})}>
+        <div className="flex-1 min-w-0">
           <div className="text-sm font-bold flex items-center gap-1.5">
             <span className="live-dot" /> {hunt.name}
-            {activeTab === 'chat' && (
-              <span style={{ color: 'var(--text-3)', fontSize: '0.625rem', marginLeft: '0.125rem' }}>▼</span>
-            )}
           </div>
           <div className="text-xs" style={{ color: 'var(--text-3)' }}>
             {isJagdleiter ? '🎖️ Jagdleiter' : '🎯 Schütze'} · {joinedParticipants.length} Jäger aktiv
@@ -369,6 +360,51 @@ export default function HuntPage() {
         ))}
       </div>
 
+      {/* Chat Sub-Toggle (nur auf Chat-Tab) */}
+      {activeTab === 'chat' && (
+        <div className="flex gap-1 px-3 py-2 flex-shrink-0"
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
+          <button
+            onClick={() => { setChatSubTab('jagd'); setSelectedOtherChat(null) }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background: chatSubTab === 'jagd' ? 'rgba(107,159,58,0.15)' : 'transparent',
+              border: chatSubTab === 'jagd' ? '1px solid rgba(107,159,58,0.3)' : '1px solid var(--border)',
+              color: chatSubTab === 'jagd' ? 'var(--green-bright)' : 'var(--text-3)',
+            }}>
+            <span className="live-dot" style={{ width: '0.375rem', height: '0.375rem' }} /> Jagd-Chat
+            {chatSubTab !== 'jagd' && chatUnread > 0 && (
+              <span style={{
+                minWidth: '1.125rem', height: '1.125rem', borderRadius: '0.5625rem',
+                background: 'var(--green)', color: 'white',
+                fontSize: '0.625rem', fontWeight: 700,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                padding: '0 0.25rem',
+              }}>{chatUnread > 99 ? '99+' : chatUnread}</span>
+            )}
+          </button>
+          <button
+            onClick={() => { setChatSubTab('andere'); loadSwitcherChats() }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background: chatSubTab === 'andere' ? 'rgba(107,159,58,0.15)' : 'transparent',
+              border: chatSubTab === 'andere' ? '1px solid rgba(107,159,58,0.3)' : '1px solid var(--border)',
+              color: chatSubTab === 'andere' ? 'var(--green-bright)' : 'var(--text-3)',
+            }}>
+            💬 Andere
+            {chatSubTab !== 'andere' && otherChatUnread > 0 && (
+              <span style={{
+                minWidth: '1.125rem', height: '1.125rem', borderRadius: '0.5625rem',
+                background: 'var(--green)', color: 'white',
+                fontSize: '0.625rem', fontWeight: 700,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                padding: '0 0.25rem',
+              }}>{otherChatUnread > 99 ? '99+' : otherChatUnread}</span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Teilnehmer-Chips (nur auf Karte-Tab) */}
       {activeTab === 'karte' && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
@@ -404,8 +440,8 @@ export default function HuntPage() {
           />
         </div>
 
-        {/* Chat — NICHT unmounten beim Tab-Wechsel (Realtime-Subscription + Unread-Counter) */}
-        <div style={{ position: 'absolute', inset: 0, display: activeTab === 'chat' ? 'flex' : 'none', flexDirection: 'column' }}>
+        {/* Jagd-Chat — bleibt gemountet für Realtime */}
+        <div style={{ position: 'absolute', inset: 0, display: activeTab === 'chat' && chatSubTab === 'jagd' ? 'flex' : 'none', flexDirection: 'column' }}>
           <ChatPanel
             huntId={hunt.id}
             chatName={hunt.name}
@@ -413,11 +449,122 @@ export default function HuntPage() {
             userId={userId}
             myParticipantId={myParticipantId}
             supabase={supabase}
-            isActive={activeTab === 'chat'}
+            isActive={activeTab === 'chat' && chatSubTab === 'jagd'}
             onUnreadChange={setChatUnread}
             canDeleteAll={userId === hunt.creator_id}
           />
         </div>
+
+        {/* Andere Chats — Liste oder ausgewählter Chat */}
+        {activeTab === 'chat' && chatSubTab === 'andere' && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+            {selectedOtherChat ? (
+              <>
+                {/* Header für ausgewählten Chat */}
+                <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0"
+                  style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
+                  <button onClick={() => setSelectedOtherChat(null)}
+                    className="flex items-center justify-center rounded-lg"
+                    style={{ background: 'var(--surface-2)', minWidth: '2.25rem', minHeight: '2.25rem', fontSize: '0.875rem' }}>←</button>
+                  {/* Avatar */}
+                  {selectedOtherChat.isDirect && selectedOtherChat.displayInitial ? (
+                    <div className="flex-shrink-0 flex items-center justify-center avatar av-1"
+                      style={{ width: '2rem', height: '2rem', borderRadius: '50%', fontSize: '0.75rem', fontWeight: 700 }}>
+                      {selectedOtherChat.displayInitial}
+                    </div>
+                  ) : selectedOtherChat.avatarUrl ? (
+                    <img src={selectedOtherChat.avatarUrl} alt=""
+                      style={{ width: '2rem', height: '2rem', borderRadius: '50%', objectFit: 'cover' }} />
+                  ) : (
+                    <div className="flex-shrink-0 flex items-center justify-center"
+                      style={{ width: '2rem', height: '2rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '0.875rem' }}>
+                      {selectedOtherChat.emoji}
+                    </div>
+                  )}
+                  <p className="text-sm font-semibold truncate flex-1">{selectedOtherChat.name}</p>
+                </div>
+                {/* ChatPanel für Gruppen-Chat */}
+                <div className="flex-1 flex flex-col min-h-0">
+                  <ChatPanel
+                    groupId={selectedOtherChat.groupId}
+                    chatName={selectedOtherChat.name}
+                    isDirect={selectedOtherChat.isDirect}
+                    userId={userId}
+                    supabase={supabase}
+                    isActive={true}
+                    onUnreadChange={() => {}}
+                    canDeleteAll={false}
+                  />
+                </div>
+              </>
+            ) : (
+              /* Chat-Liste */
+              <div className="flex-1 overflow-y-auto">
+                {/* Neue Gruppe mit Jagdteilnehmern */}
+                <button
+                  onClick={() => router.push(`/app/chat/create?huntId=${hunt.id}`)}
+                  className="w-full flex items-center gap-3 text-left"
+                  style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)' }}>
+                  <div className="flex-shrink-0 flex items-center justify-center"
+                    style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'rgba(107,159,58,0.12)', border: '1px solid rgba(107,159,58,0.25)' }}>
+                    <span style={{ fontSize: '1rem' }}>+</span>
+                  </div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--green-bright)' }}>Neue Gruppe mit Jagdteilnehmern</p>
+                </button>
+
+                {switcherChats.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <p className="text-sm" style={{ color: 'var(--text-3)' }}>Noch keine anderen Chats</p>
+                  </div>
+                ) : (
+                  switcherChats.map(chat => (
+                    <button
+                      key={chat.groupId}
+                      onClick={() => setSelectedOtherChat(chat)}
+                      className="w-full flex items-center gap-3 text-left"
+                      style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)' }}>
+                      {/* Avatar */}
+                      {chat.isDirect && chat.displayInitial ? (
+                        <div className="flex-shrink-0 flex items-center justify-center avatar av-1"
+                          style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', fontSize: '0.875rem', fontWeight: 700 }}>
+                          {chat.displayInitial}
+                        </div>
+                      ) : chat.avatarUrl ? (
+                        <img src={chat.avatarUrl} alt=""
+                          className="flex-shrink-0"
+                          style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : (
+                        <div className="flex-shrink-0 flex items-center justify-center"
+                          style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '1.125rem' }}>
+                          {chat.emoji}
+                        </div>
+                      )}
+                      {/* Name + Vorschau */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{chat.name}</p>
+                        {chat.lastMessagePreview && (
+                          <p className="text-xs truncate" style={{ color: 'var(--text-3)' }}>{chat.lastMessagePreview}</p>
+                        )}
+                      </div>
+                      {/* Unread Badge */}
+                      {chat.unreadCount > 0 && (
+                        <span className="flex-shrink-0 flex items-center justify-center"
+                          style={{
+                            minWidth: '1.25rem', height: '1.25rem', borderRadius: '0.625rem',
+                            background: 'var(--green)', color: 'white',
+                            fontSize: '0.6875rem', fontWeight: 700,
+                            padding: '0 0.3125rem',
+                          }}>
+                          {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {activeTab === 'nachsuche' && (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
             <div className="text-5xl mb-4">🐕</div>
@@ -434,127 +581,6 @@ export default function HuntPage() {
         )}
       </div>
 
-      {/* Chat-Switcher Bottom Sheet */}
-      {showChatSwitcher && (
-        <div
-          onClick={() => setShowChatSwitcher(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 100,
-            background: 'rgba(0,0,0,0.6)',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%', maxWidth: '28rem',
-              background: 'var(--surface)',
-              borderRadius: '1rem 1rem 0 0',
-              paddingBottom: 'calc(var(--safe-bottom, 0rem) + 0.75rem)',
-              maxHeight: '70dvh',
-              display: 'flex', flexDirection: 'column',
-              animation: 'sheet-slide-up 200ms ease-out',
-            }}
-          >
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
-              <div style={{ width: '2.5rem', height: '0.25rem', borderRadius: '0.125rem', background: 'var(--text-3)' }} />
-            </div>
-
-            {/* Aktueller Jagd-Chat */}
-            <div
-              className="flex items-center gap-3 mx-4 mb-2 px-3 py-3 rounded-xl"
-              style={{ background: 'rgba(107,159,58,0.12)', border: '1px solid rgba(107,159,58,0.25)' }}
-            >
-              <span className="live-dot flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate" style={{ color: 'var(--green-bright)' }}>{hunt.name}</p>
-                <p className="text-xs" style={{ color: 'var(--text-3)' }}>Jagd-Chat · aktiv</p>
-              </div>
-              <span className="text-xs font-semibold" style={{ color: 'var(--green)', background: 'rgba(107,159,58,0.15)', padding: '0.25rem 0.5rem', borderRadius: '0.375rem' }}>Aktuell</span>
-            </div>
-
-            {/* Trenner */}
-            <div className="mx-4 mb-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }} />
-            <p className="text-xs font-semibold mx-4 mb-2 flex-shrink-0" style={{ color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05rem' }}>
-              Deine Chats
-            </p>
-
-            {/* Chat-Liste */}
-            <div className="flex-1 overflow-y-auto min-h-0">
-              {switcherChats.length === 0 ? (
-                <div className="px-4 py-6 text-center">
-                  <p className="text-sm" style={{ color: 'var(--text-3)' }}>Noch keine anderen Chats</p>
-                </div>
-              ) : (
-                switcherChats.map(chat => (
-                  <button
-                    key={chat.groupId}
-                    onClick={() => {
-                      setShowChatSwitcher(false)
-                      router.push(`/app/chat/${chat.groupId}`)
-                    }}
-                    className="w-full flex items-center gap-3 text-left"
-                    style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)' }}
-                  >
-                    {/* Avatar */}
-                    {chat.isDirect && chat.displayInitial ? (
-                      <div className="flex-shrink-0 flex items-center justify-center avatar av-1"
-                        style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', fontSize: '0.875rem', fontWeight: 700 }}>
-                        {chat.displayInitial}
-                      </div>
-                    ) : chat.avatarUrl ? (
-                      <img src={chat.avatarUrl} alt=""
-                        className="flex-shrink-0"
-                        style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', objectFit: 'cover' }} />
-                    ) : (
-                      <div className="flex-shrink-0 flex items-center justify-center"
-                        style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '1.125rem' }}>
-                        {chat.emoji}
-                      </div>
-                    )}
-
-                    {/* Name + Vorschau */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{chat.name}</p>
-                      {chat.lastMessagePreview && (
-                        <p className="text-xs truncate" style={{ color: 'var(--text-3)' }}>{chat.lastMessagePreview}</p>
-                      )}
-                    </div>
-
-                    {/* Unread Badge */}
-                    {chat.unreadCount > 0 && (
-                      <span className="flex-shrink-0 flex items-center justify-center"
-                        style={{
-                          minWidth: '1.25rem', height: '1.25rem', borderRadius: '0.625rem',
-                          background: 'var(--green)', color: 'white',
-                          fontSize: '0.6875rem', fontWeight: 700,
-                          padding: '0 0.3125rem',
-                        }}>
-                        {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-                      </span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-
-            {/* Neue Gruppe erstellen */}
-            <div className="mx-4 mt-2 flex-shrink-0">
-              <button
-                onClick={() => {
-                  setShowChatSwitcher(false)
-                  router.push('/app/chat/create')
-                }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--green-bright)' }}
-              >
-                + Neue Gruppe erstellen
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
