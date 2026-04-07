@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { polygonAreaHectares } from '@/lib/geo-utils'
 import dynamic from 'next/dynamic'
 
 const SetupMap = dynamic(() => import('./setup-map'), { ssr: false })
@@ -238,6 +239,11 @@ function RevierSetupContent() {
             <span className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
               {boundaryPoints.length} {boundaryPoints.length === 1 ? 'Punkt' : 'Punkte'}
             </span>
+            {boundaryPoints.length >= 3 && (
+              <span className="text-xs font-semibold" style={{ color: 'var(--orange)' }}>
+                📐 {polygonAreaHectares(boundaryPoints).toFixed(0)} ha
+              </span>
+            )}
             <button
               onClick={handleUndo}
               className="text-xs font-semibold"

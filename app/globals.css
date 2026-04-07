@@ -443,6 +443,9 @@ button:active {
   color: var(--text-3);
   filter: drop-shadow(0 0.0625rem 0.125rem rgba(0,0,0,0.5));
 }
+.stand-icon.has-person {
+  color: var(--green-bright);
+}
 .stand-tooltip.leaflet-tooltip {
   background: var(--surface-2);
   color: var(--text-2);
@@ -456,6 +459,12 @@ button:active {
 }
 .stand-tooltip.leaflet-tooltip::before {
   border-top-color: var(--surface-2);
+}
+.stand-tooltip .person-name {
+  color: var(--green-bright);
+  font-size: 0.5625rem;
+  display: block;
+  margin-top: 0.0625rem;
 }
 
 /* ============================================================

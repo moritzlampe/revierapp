@@ -10,9 +10,11 @@ import 'leaflet/dist/leaflet.css'
 import type { GeolocationState, GeoPosition } from '@/hooks/useGeolocation'
 import type { ParticipantPosition } from '@/hooks/useHuntPositions'
 import { distanceInMeters, polygonAreaHectares } from '@/lib/geo-utils'
+import { createClient } from '@/lib/supabase/client'
 import MapObjectSheet from './MapObjectSheet'
 import type { MapObjectData } from './MapObjectSheet'
 import BoundarySheet from './BoundarySheet'
+import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -60,17 +62,30 @@ export interface StandData {
 
 export type StandsChangedCallback = (newStand?: StandData, deletedId?: string) => void
 
+export interface FreePositionData {
+  userId: string
+  position: { lat: number; lng: number }
+  userName: string
+  avatarColor: string
+}
+
 export interface MapContentProps {
   geoState: GeolocationState
   participants: ParticipantPosition[]
   boundary?: [number, number][][] | null
   stands?: StandData[]
   participantStands?: Record<string, string>
+  freePositions?: FreePositionData[]
+  standAssignedNames?: Record<string, string>
   districtId?: string | null
   districtName?: string | null
   huntId?: string | null
+  huntParticipants?: HuntParticipantInfo[]
+  seatAssignments?: SeatAssignmentData[]
+  isJagdleiter?: boolean
   onStandsChanged?: StandsChangedCallback
   onBoundaryChanged?: () => void
+  onSeatAssignmentsChanged?: (assignments: SeatAssignmentData[]) => void
 }
 
 // --- Hilfsfunktionen ---
@@ -374,24 +389,28 @@ function ParticipantMarker({
 
 // --- Hochsitz-Marker ---
 
-function StandMarker({ stand, zoom, onEdit }: {
+function StandMarker({ stand, zoom, onEdit, onTap, assignedTo }: {
   stand: StandData
   zoom: number
   onEdit?: (stand: StandData) => void
+  onTap?: (stand: StandData) => void
+  assignedTo?: string | null
 }) {
   const icon = useMemo(() => {
+    const hp = assignedTo ? ' has-person' : ''
     return L.divIcon({
       className: 'stand-marker',
-      html: '<div class="stand-icon">▲</div>',
+      html: `<div class="stand-icon${hp}">▲</div>`,
       iconSize: [24, 24],
       iconAnchor: [12, 12],
     })
-  }, [])
+  }, [assignedTo])
 
   const TYPE_LABELS: Record<string, string> = {
     hochsitz: '🪵 Hochsitz',
     kanzel: '🏠 Kanzel',
     drueckjagdstand: '🎯 Drückjagdstand',
+    adhoc: '📌 Ad-hoc Stand',
     parkplatz: '🅿️ Parkplatz',
     kirrung: '🌾 Kirrung',
     salzlecke: '🧂 Salzlecke',
@@ -400,43 +419,238 @@ function StandMarker({ stand, zoom, onEdit }: {
   }
   const typeLabel = TYPE_LABELS[stand.type] || stand.type
 
+  const labelHtml = assignedTo
+    ? `${stand.name}<span class="person-name">${assignedTo}</span>`
+    : stand.name
+
   return (
-    <Marker position={[stand.position.lat, stand.position.lng]} icon={icon}>
+    <Marker
+      position={[stand.position.lat, stand.position.lng]}
+      icon={icon}
+      eventHandlers={onTap ? { click: () => onTap(stand) } : undefined}
+    >
       {zoom >= 15 && (
         <Tooltip direction="top" offset={[0, -12]} permanent className="stand-tooltip">
-          {stand.name}
+          <span dangerouslySetInnerHTML={{ __html: labelHtml }} />
         </Tooltip>
       )}
-      <Popup className="stand-popup">
-        <div className="stand-popup-content">
-          <strong>{stand.name}</strong>
-          <span>{typeLabel}</span>
-          {stand.description && (
-            <span style={{ color: 'var(--text-2)', fontSize: '0.6875rem' }}>{stand.description}</span>
-          )}
-          {onEdit && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(stand) }}
-              style={{
-                marginTop: '0.375rem',
-                padding: '0.375rem 0.625rem',
-                borderRadius: '0.5rem',
-                background: 'var(--surface-3)',
-                border: '1px solid var(--border)',
-                color: 'var(--green-bright)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: "'DM Sans', sans-serif",
-                minHeight: '2rem',
-              }}
-            >
-              ✏️ Bearbeiten
-            </button>
+      {!onTap && (
+        <Popup className="stand-popup">
+          <div className="stand-popup-content">
+            <strong>{stand.name}</strong>
+            <span>{typeLabel}</span>
+            {assignedTo && <span style={{ color: 'var(--green-bright)', fontSize: '0.6875rem' }}>→ {assignedTo}</span>}
+            {stand.description && (
+              <span style={{ color: 'var(--text-2)', fontSize: '0.6875rem' }}>{stand.description}</span>
+            )}
+            {onEdit && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit(stand) }}
+                style={{
+                  marginTop: '0.375rem',
+                  padding: '0.375rem 0.625rem',
+                  borderRadius: '0.5rem',
+                  background: 'var(--surface-3)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--green-bright)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  minHeight: '2rem',
+                }}
+              >
+                ✏️ Bearbeiten
+              </button>
+            )}
+          </div>
+        </Popup>
+      )}
+    </Marker>
+  )
+}
+
+// --- Freie-Position-Marker (Avatar auf der Karte) ---
+
+function FreePositionMarker({ position, userName, avatarColor }: FreePositionData) {
+  const icon = useMemo(() => {
+    const initials = getInitials(userName)
+    return L.divIcon({
+      className: '',
+      html: `<div class="assign-free-marker" style="background: ${avatarColor}">${initials}</div>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    })
+  }, [userName, avatarColor])
+
+  return (
+    <Marker position={[position.lat, position.lng]} icon={icon}>
+      <Tooltip direction="bottom" offset={[0, 14]} permanent className="stand-tooltip">
+        {userName}
+      </Tooltip>
+    </Marker>
+  )
+}
+
+// --- Schnellzuweisung Sheet (Tap auf Stand → Jäger-Liste) ---
+
+function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, stands, onAssign, onClose, onEdit }: {
+  stand: StandData
+  huntParticipants: HuntParticipantInfo[]
+  seatAssignments: SeatAssignmentData[]
+  huntId: string
+  stands: StandData[]
+  onAssign: (newAssignments: SeatAssignmentData[]) => void
+  onClose: () => void
+  onEdit: (stand: StandData) => void
+}) {
+  const [saving, setSaving] = useState(false)
+
+  // Zuordnung: welcher User ist wo zugewiesen?
+  const userAssignments = useMemo(() => {
+    const map = new Map<string, { standName: string; assignmentId: string }>()
+    for (const a of seatAssignments) {
+      if (a.seat_type === 'assigned' && a.seat_id) {
+        const s = stands.find(st => st.id === a.seat_id)
+        map.set(a.user_id, { standName: s?.name || '?', assignmentId: a.id })
+      } else if (a.seat_type === 'adhoc') {
+        map.set(a.user_id, { standName: a.seat_name || 'Ad-hoc', assignmentId: a.id })
+      } else if (a.seat_type === 'free_pos') {
+        map.set(a.user_id, { standName: 'Freie Position', assignmentId: a.id })
+      }
+    }
+    return map
+  }, [seatAssignments, stands])
+
+  // Wer ist bereits diesem Stand zugewiesen?
+  const currentAssignee = seatAssignments.find(a =>
+    (a.seat_type === 'assigned' && a.seat_id === stand.id) ||
+    (a.seat_type === 'adhoc' && a.id === stand.id)
+  )
+
+  async function handleAssign(userId: string) {
+    setSaving(true)
+    const supabase = createClient()
+
+    // Alte Zuweisung des Users löschen (falls vorhanden)
+    const existing = seatAssignments.find(a => a.user_id === userId)
+    if (existing) {
+      await supabase.from('hunt_seat_assignments').delete().eq('id', existing.id)
+    }
+
+    // Wenn User schon auf diesem Stand ist → nur entfernen (toggle)
+    if (currentAssignee && currentAssignee.user_id === userId) {
+      const updated = seatAssignments.filter(a => a.id !== currentAssignee.id)
+      onAssign(updated)
+      setSaving(false)
+      onClose()
+      return
+    }
+
+    // Alte Zuweisung dieses Stands löschen (falls jemand anders drauf war)
+    if (currentAssignee) {
+      await supabase.from('hunt_seat_assignments').delete().eq('id', currentAssignee.id)
+    }
+
+    // Neue Zuweisung erstellen
+    const isAdhoc = stand.type === 'adhoc'
+    const newAssignment = {
+      hunt_id: huntId,
+      user_id: userId,
+      seat_id: isAdhoc ? null : stand.id,
+      seat_type: isAdhoc ? 'adhoc' : 'assigned',
+      seat_name: isAdhoc ? stand.name : null,
+      position_lat: isAdhoc ? stand.position.lat : null,
+      position_lng: isAdhoc ? stand.position.lng : null,
+    }
+
+    const { data } = await supabase
+      .from('hunt_seat_assignments')
+      .insert(newAssignment)
+      .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng')
+      .single()
+
+    if (data) {
+      // Optimistisches Update
+      let updated = seatAssignments.filter(a => a.user_id !== userId)
+      if (currentAssignee && currentAssignee.user_id !== userId) {
+        updated = updated.filter(a => a.id !== currentAssignee.id)
+      }
+      updated.push(data)
+      onAssign(updated)
+    }
+
+    setSaving(false)
+    onClose()
+  }
+
+  const pName = (p: HuntParticipantInfo) => p.profiles?.display_name || p.guest_name || 'Unbekannt'
+
+  return (
+    <>
+      <div className="map-object-sheet-overlay" onClick={onClose} />
+      <div className="map-object-sheet" style={{ maxHeight: '60vh' }}>
+        <div className="sheet-handle" />
+        <div className="sheet-header" style={{ fontSize: '0.8125rem' }}>
+          🪜 {stand.name}
+          {currentAssignee && (
+            <span style={{ color: 'var(--green-bright)', fontWeight: 400, marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+              → {pName(huntParticipants.find(p => p.user_id === currentAssignee.user_id) || { profiles: null, guest_name: null } as any)}
+            </span>
           )}
         </div>
-      </Popup>
-    </Marker>
+        <div style={{ padding: '0 1rem', maxHeight: '40vh', overflowY: 'auto' }}>
+          {huntParticipants.filter(p => p.user_id).map(p => {
+            const assignment = userAssignments.get(p.user_id!)
+            const isOnThisStand = currentAssignee?.user_id === p.user_id
+            const isAssignedElsewhere = assignment && !isOnThisStand
+
+            return (
+              <button
+                key={p.id}
+                onClick={() => !saving && p.user_id && handleAssign(p.user_id)}
+                disabled={saving}
+                className="w-full flex items-center gap-3 text-left"
+                style={{
+                  padding: '0.75rem 0',
+                  borderBottom: '1px solid var(--border-light)',
+                  opacity: isAssignedElsewhere ? 0.5 : 1,
+                  background: isOnThisStand ? 'rgba(107,159,58,0.08)' : 'transparent',
+                }}
+              >
+                <div className="avatar-xs av-1" style={{ flexShrink: 0 }}>
+                  {getInitials(pName(p))}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{pName(p)}</p>
+                  {isOnThisStand && (
+                    <p className="text-xs" style={{ color: 'var(--green-bright)' }}>Hier zugewiesen ✓</p>
+                  )}
+                  {isAssignedElsewhere && (
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>Auf: {assignment.standName}</p>
+                  )}
+                </div>
+                {p.role === 'jagdleiter' && <span className="text-xs" style={{ color: 'var(--gold)' }}>🎖️</span>}
+                {p.tags?.includes('hundefuehrer') && <span className="text-xs" style={{ color: 'var(--orange)' }}>🐕</span>}
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border-light)' }}>
+          <button
+            onClick={() => { onClose(); onEdit(stand) }}
+            className="w-full text-center text-xs font-semibold"
+            style={{
+              padding: '0.625rem', borderRadius: 'var(--radius)',
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+              color: 'var(--text-2)',
+            }}
+          >
+            ✏️ Bearbeiten
+          </button>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -595,11 +809,17 @@ export default function MapContent({
   boundary,
   stands,
   participantStands,
+  freePositions,
+  standAssignedNames,
   districtId,
   districtName,
   huntId,
+  huntParticipants,
+  seatAssignments,
+  isJagdleiter,
   onStandsChanged,
   onBoundaryChanged,
+  onSeatAssignmentsChanged,
 }: MapContentProps) {
   const hasFlown = useRef(false)
   const [mapMoved, setMapMoved] = useState(false)
@@ -615,6 +835,9 @@ export default function MapContent({
   const [tempMarker, setTempMarker] = useState<{ lat: number; lng: number } | null>(null)
   const [sheetMode, setSheetMode] = useState<'create' | 'edit' | 'hidden'>('hidden')
   const [editStand, setEditStand] = useState<MapObjectData | null>(null)
+
+  // Schnellzuweisung
+  const [assignStand, setAssignStand] = useState<StandData | null>(null)
 
   // Zeichenmodus für Reviergrenze
   const [drawingMode, setDrawingMode] = useState(false)
@@ -866,6 +1089,20 @@ export default function MapContent({
         <div className="draw-hint">Tippe Punkte auf die Karte</div>
       )}
 
+      {/* Flächen-Anzeige im Zeichenmodus */}
+      {drawingMode && drawPoints.length >= 3 && (
+        <div style={{
+          position: 'absolute', top: '6.5rem', right: '0.75rem', zIndex: 1000,
+          display: 'flex', alignItems: 'center', gap: '0.375rem',
+          background: 'rgba(255,143,0,0.15)', backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(255,143,0,0.3)', borderRadius: 'var(--radius)',
+          padding: '0.375rem 0.75rem', fontSize: '0.75rem', fontWeight: 600,
+          color: 'var(--orange)', pointerEvents: 'none',
+        }}>
+          📐 {polygonAreaHectares(drawPoints).toFixed(0)} ha
+        </div>
+      )}
+
       {/* Zeichen-Toolbar */}
       {drawingMode && boundarySheetMode === 'hidden' && (
         <div className="draw-toolbar">
@@ -1075,7 +1312,19 @@ export default function MapContent({
 
         {/* === Hochsitze === */}
         {stands?.map(stand => (
-          <StandMarker key={stand.id} stand={stand} zoom={zoom} onEdit={handleEditStand} />
+          <StandMarker
+            key={stand.id}
+            stand={stand}
+            zoom={zoom}
+            onEdit={handleEditStand}
+            onTap={isJagdleiter && huntParticipants && huntId ? () => setAssignStand(stand) : undefined}
+            assignedTo={standAssignedNames?.[stand.id]}
+          />
+        ))}
+
+        {/* === Freie Positionen === */}
+        {freePositions?.map(fp => (
+          <FreePositionMarker key={fp.userId} {...fp} />
         ))}
 
         {/* === Temporärer Marker (Long-Press Platzierung) === */}
@@ -1203,6 +1452,20 @@ export default function MapContent({
         onDelete={handleBoundaryDeleted}
         onClose={handleBoundarySheetClose}
       />
+
+      {/* === Schnellzuweisung Sheet === */}
+      {assignStand && huntParticipants && huntId && seatAssignments && (
+        <StandAssignSheet
+          stand={assignStand}
+          huntParticipants={huntParticipants}
+          seatAssignments={seatAssignments}
+          huntId={huntId}
+          stands={stands || []}
+          onAssign={(updated) => onSeatAssignmentsChanged?.(updated)}
+          onClose={() => setAssignStand(null)}
+          onEdit={handleEditStand}
+        />
+      )}
     </div>
   )
 }

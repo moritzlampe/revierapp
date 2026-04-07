@@ -88,6 +88,7 @@ export default function CreateHuntPage() {
   // Stand-Edit Sheet
   const [editingStand, setEditingStand] = useState<AssignStand | null>(null)
   const [editName, setEditName] = useState('')
+  const [assigningStand, setAssigningStand] = useState<AssignStand | null>(null)
 
   // Ad-hoc Stand Counter
   const adhocCounter = useRef(0)
@@ -297,12 +298,11 @@ export default function CreateHuntPage() {
     setAdhocStands(prev => [...prev, newStand])
   }, [])
 
-  // Bestehenden Stand getappt (Bottom-Sheet oeffnen)
+  // Bestehenden Stand getappt → Schnellzuweisung öffnen
   const handleStandTapped = useCallback((standId: string) => {
     const stand = [...revierStands, ...adhocStands].find(s => s.id === standId)
     if (stand) {
-      setEditingStand(stand)
-      setEditName(stand.name)
+      setAssigningStand(stand)
     }
   }, [revierStands, adhocStands])
 
@@ -401,6 +401,15 @@ export default function CreateHuntPage() {
     if (adhocStands.some(s => s.assignedUserId === userId)) return true
     if (freePositions.some(fp => fp.userId === userId)) return true
     return false
+  }
+
+  function getAssignedStandName(userId: string): string | null {
+    const r = revierStands.find(s => s.assignedUserId === userId)
+    if (r) return r.name
+    const a = adhocStands.find(s => s.assignedUserId === userId)
+    if (a) return a.name
+    if (freePositions.some(fp => fp.userId === userId)) return 'Freie Position'
+    return null
   }
 
   async function handleCreate() {
@@ -662,6 +671,89 @@ export default function CreateHuntPage() {
           </button>
         </div>
 
+        {/* Schnellzuweisung Sheet (Tap auf Stand → Jäger-Liste) */}
+        {assigningStand && (
+          <div className="assign-sheet-overlay" onClick={() => setAssigningStand(null)}>
+            <div className="assign-sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '60vh' }}>
+              <div className="assign-sheet-handle" />
+              <h3 className="text-sm font-bold mb-2" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                🪜 {assigningStand.name}
+                {assigningStand.assignedUserId && (
+                  <span style={{ color: 'var(--green-bright)', fontWeight: 400, fontSize: '0.75rem' }}>
+                    → {allParticipants.find(p => p.userId === assigningStand.assignedUserId)?.userName}
+                  </span>
+                )}
+              </h3>
+
+              <div style={{ maxHeight: '40vh', overflowY: 'auto' }}>
+                {allParticipants.map((p, i) => {
+                  const isOnThisStand = assigningStand.assignedUserId === p.userId
+                  const assignedElsewhere = !isOnThisStand ? getAssignedStandName(p.userId) : null
+
+                  return (
+                    <button
+                      key={p.userId}
+                      onClick={() => {
+                        if (isOnThisStand) {
+                          // Toggle: Zuweisung entfernen
+                          const isAdhoc = assigningStand.id.startsWith('adhoc-')
+                          if (isAdhoc) {
+                            setAdhocStands(prev => prev.map(s => s.id === assigningStand.id ? { ...s, assignedUserId: null } : s))
+                          } else {
+                            setRevierStands(prev => prev.map(s => s.id === assigningStand.id ? { ...s, assignedUserId: null } : s))
+                          }
+                          setAssigningStand(prev => prev ? { ...prev, assignedUserId: null } : null)
+                        } else {
+                          handleStandAssign(assigningStand.id, p.userId)
+                          setAssigningStand(null)
+                        }
+                      }}
+                      className="w-full flex items-center gap-3 text-left"
+                      style={{
+                        padding: '0.75rem 0',
+                        borderBottom: '1px solid var(--border-light)',
+                        opacity: assignedElsewhere ? 0.5 : 1,
+                        background: isOnThisStand ? 'rgba(107,159,58,0.08)' : 'transparent',
+                      }}
+                    >
+                      <div className={`avatar-xs ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`} style={{ flexShrink: 0 }}>
+                        {getInitials(p.userName)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{p.userName}</p>
+                        {isOnThisStand && (
+                          <p className="text-xs" style={{ color: 'var(--green-bright)' }}>Hier zugewiesen ✓</p>
+                        )}
+                        {assignedElsewhere && (
+                          <p className="text-xs" style={{ color: 'var(--text-3)' }}>Auf: {assignedElsewhere}</p>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div style={{ padding: '0.75rem 0 0', borderTop: '1px solid var(--border-light)' }}>
+                <button
+                  onClick={() => {
+                    setEditingStand(assigningStand)
+                    setEditName(assigningStand.name)
+                    setAssigningStand(null)
+                  }}
+                  className="w-full text-center text-xs font-semibold"
+                  style={{
+                    padding: '0.625rem', borderRadius: 'var(--radius)',
+                    background: 'var(--surface-2)', border: '1px solid var(--border)',
+                    color: 'var(--text-2)',
+                  }}
+                >
+                  ✏️ Bearbeiten
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Stand-Edit Bottom Sheet */}
         {editingStand && (
           <div className="assign-sheet-overlay" onClick={() => setEditingStand(null)}>
@@ -684,63 +776,6 @@ export default function CreateHuntPage() {
                 <div className="text-xs" style={{ color: 'var(--text-3)' }}>
                   Typ: {editingStand.type === 'kanzel' ? '🏠 Kanzel' : editingStand.type === 'drueckjagdstand' ? '🎯 Drückjagdstand' : editingStand.type === 'adhoc' ? '📍 Ad-hoc' : '🪜 Hochsitz'}
                 </div>
-
-                {/* Teilnehmer-Zuweisung per Tap */}
-                {!editingStand.assignedUserId && (
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Jäger zuweisen</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {allParticipants.filter(p => !isParticipantPlaced(p.userId)).map((p, i) => (
-                        <button
-                          key={p.userId}
-                          className="assign-chip"
-                          onClick={() => {
-                            handleStandAssign(editingStand.id, p.userId)
-                            setEditingStand(null)
-                          }}
-                        >
-                          <div className={`avatar ${AVATAR_COLORS[allParticipants.indexOf(p) % AVATAR_COLORS.length]}`}>
-                            {getInitials(p.userName)}
-                          </div>
-                          {p.userName.split(' ')[0]}
-                        </button>
-                      ))}
-                      {allParticipants.filter(p => !isParticipantPlaced(p.userId)).length === 0 && (
-                        <p className="text-xs" style={{ color: 'var(--text-3)' }}>Alle Jäger sind bereits zugewiesen.</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {editingStand.assignedUserId && (
-                  <div className="flex items-center gap-2 p-2.5 rounded-xl"
-                    style={{ background: 'var(--bg)', border: '1.5px solid var(--green)' }}>
-                    <span className="text-sm">✓</span>
-                    <span className="text-sm font-semibold">
-                      {allParticipants.find(p => p.userId === editingStand.assignedUserId)?.userName || 'Zugewiesen'}
-                    </span>
-                    <button
-                      className="ml-auto text-xs font-semibold"
-                      style={{ color: 'var(--red)' }}
-                      onClick={() => {
-                        // Zuweisung entfernen
-                        const isAdhoc = editingStand.id.startsWith('adhoc-')
-                        if (isAdhoc) {
-                          setAdhocStands(prev => prev.map(s =>
-                            s.id === editingStand.id ? { ...s, assignedUserId: null } : s
-                          ))
-                        } else {
-                          setRevierStands(prev => prev.map(s =>
-                            s.id === editingStand.id ? { ...s, assignedUserId: null } : s
-                          ))
-                        }
-                        setEditingStand(prev => prev ? { ...prev, assignedUserId: null } : null)
-                      }}
-                    >
-                      Entfernen
-                    </button>
-                  </div>
-                )}
 
                 <div className="flex gap-2 pt-1">
                   {editingStand.id.startsWith('adhoc-') && (

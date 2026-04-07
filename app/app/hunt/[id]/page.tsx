@@ -14,10 +14,17 @@ import ChatPanel from '@/components/hunt/ChatPanel'
 import type { StandData } from '@/components/hunt/MapContent'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
+const SEAT_AVATAR_COLORS = ['#2E7D32', '#1565C0', '#E65100', '#6A1B9A', '#00838F', '#C62828']
 function getInitials(name: string) { return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() }
+function getAvatarColor(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) { hash = ((hash << 5) - hash) + id.charCodeAt(i) }
+  return SEAT_AVATAR_COLORS[Math.abs(hash) % SEAT_AVATAR_COLORS.length]
+}
 
 type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string } | null }
+type SeatAssignment = { id: string; user_id: string; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null }
 
 type SwitcherChat = {
   groupId: string
@@ -53,6 +60,7 @@ export default function HuntPage() {
   const [chatSubTab, setChatSubTab] = useState<'jagd' | 'andere'>('jagd')
   const [selectedOtherChat, setSelectedOtherChat] = useState<SwitcherChat | null>(null)
   const [otherChatUnread, setOtherChatUnread] = useState(0)
+  const [seatAssignments, setSeatAssignments] = useState<SeatAssignment[]>([])
 
   // GPS sofort starten (auch wenn anderer Tab aktiv)
   const geoState = useGeolocation()
@@ -65,14 +73,51 @@ export default function HuntPage() {
   // Realtime-Positionen aller anderen Teilnehmer
   const otherPositions = useHuntPositions(hunt?.id ?? null, participants, userId)
 
-  // Stand-Zuweisungen: participantId → standId
-  const participantStands = useMemo(() => {
-    const mapping: Record<string, string> = {}
-    participants.forEach(p => {
-      if (p.stand_id) mapping[p.id] = p.stand_id
-    })
-    return mapping
-  }, [participants])
+  // Seat Assignments → Stände, Zuweisungen, freie Positionen ableiten
+  const { allStands, allParticipantStands, freePositions, standAssignedNames } = useMemo(() => {
+    const userToParticipant = new Map<string, string>()
+    participants.forEach(p => { if (p.user_id) userToParticipant.set(p.user_id, p.id) })
+
+    const pStands: Record<string, string> = {}
+    const adhocList: StandData[] = []
+    const freePos: { userId: string; position: { lat: number; lng: number }; userName: string; avatarColor: string }[] = []
+    const assignedNames: Record<string, string> = {}
+
+    for (const a of seatAssignments) {
+      const p = participants.find(pp => pp.user_id === a.user_id)
+      const name = p?.profiles?.display_name || p?.guest_name || 'Unbekannt'
+      const pid = userToParticipant.get(a.user_id)
+
+      if (a.seat_type === 'assigned' && a.seat_id && pid) {
+        pStands[pid] = a.seat_id
+        assignedNames[a.seat_id] = name
+      } else if (a.seat_type === 'adhoc' && a.position_lat != null && a.position_lng != null) {
+        adhocList.push({
+          id: a.id,
+          name: a.seat_name || 'Ad-hoc Stand',
+          type: 'adhoc',
+          position: { lat: a.position_lat, lng: a.position_lng },
+          description: null,
+        })
+        if (pid) pStands[pid] = a.id
+        assignedNames[a.id] = name
+      } else if (a.seat_type === 'free_pos' && a.position_lat != null && a.position_lng != null) {
+        freePos.push({
+          userId: a.user_id,
+          position: { lat: a.position_lat, lng: a.position_lng },
+          userName: name,
+          avatarColor: getAvatarColor(pid || a.user_id),
+        })
+      }
+    }
+
+    return {
+      allStands: [...stands, ...adhocList],
+      allParticipantStands: pStands,
+      freePositions: freePos,
+      standAssignedNames: assignedNames,
+    }
+  }, [stands, seatAssignments, participants])
 
   // Eigene Position an Supabase senden (throttled in updatePosition)
   useEffect(() => {
@@ -139,6 +184,13 @@ export default function HuntPage() {
     setUserId(user?.id ?? null)
     setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter') || false)
     setLoading(false)
+
+    // Seat Assignments laden (Hochsitz-Zuweisungen, Ad-hoc Stände, freie Positionen)
+    const { data: assignments } = await supabase
+      .from('hunt_seat_assignments')
+      .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng')
+      .eq('hunt_id', params.id)
+    setSeatAssignments(assignments || [])
 
     // Revier-Daten laden (Grenze + Hochsitze)
     if (hunt.district_id) {
@@ -430,13 +482,19 @@ export default function HuntPage() {
             geoState={geoState}
             participants={otherPositions}
             boundary={boundary}
-            stands={stands}
-            participantStands={participantStands}
+            stands={allStands}
+            participantStands={allParticipantStands}
+            freePositions={freePositions}
+            standAssignedNames={standAssignedNames}
             districtId={hunt.district_id}
             districtName={districtName}
             huntId={hunt.id}
+            huntParticipants={participants}
+            seatAssignments={seatAssignments}
+            isJagdleiter={isJagdleiter}
             onStandsChanged={handleStandsChanged}
             onBoundaryChanged={handleBoundaryChanged}
+            onSeatAssignmentsChanged={setSeatAssignments}
           />
         </div>
 
