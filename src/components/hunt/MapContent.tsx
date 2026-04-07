@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import {
-  MapContainer, TileLayer, WMSTileLayer, Circle, CircleMarker,
+  MapContainer, TileLayer, WMSTileLayer,
   Marker, Tooltip, Popup, Polygon, Polyline, useMap,
 } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -15,6 +15,8 @@ import MapObjectSheet from './MapObjectSheet'
 import type { MapObjectData } from './MapObjectSheet'
 import BoundarySheet from './BoundarySheet'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
+import OwnPositionMarker from './OwnPositionMarker'
+import GpsStatusBadge from './GpsStatusBadge'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -387,50 +389,21 @@ function ParticipantMarker({
   )
 }
 
-// --- Long-Press Konstanten für Marker ---
-const MARKER_LONG_PRESS_MS = 600
-const MARKER_MOVE_CANCEL_PX = 5
-
 // --- Hochsitz-Marker ---
 
-function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, editMode, isJagdleiter, onLongPress, onDragEnd }: {
+function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingActive, isJagdleiter, onDragEnd }: {
   stand: StandData
   zoom: number
   onEdit?: (stand: StandData) => void
   onTap?: (stand: StandData) => void
   assignedTo?: string | null
-  editMode?: boolean
+  isMoving?: boolean
+  movingActive?: boolean
   isJagdleiter?: boolean
-  onLongPress?: () => void
   onDragEnd?: (standId: string, position: { lat: number; lng: number }) => void
 }) {
-  // Long-Press Detection auf dem Marker (nur Jagdleiter)
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pressStart = useRef<{ x: number; y: number } | null>(null)
-
-  const handlePointerDown = useCallback((e: L.LeafletMouseEvent) => {
-    if (!isJagdleiter || !onLongPress) return
-    pressStart.current = { x: e.originalEvent.clientX, y: e.originalEvent.clientY }
-    pressTimer.current = setTimeout(() => {
-      try { navigator.vibrate?.(50) } catch { /* nicht verfuegbar */ }
-      onLongPress()
-    }, MARKER_LONG_PRESS_MS)
-  }, [isJagdleiter, onLongPress])
-
-  const cancelPress = useCallback(() => {
-    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null }
-    pressStart.current = null
-  }, [])
-
-  const handlePointerMove = useCallback((e: L.LeafletMouseEvent) => {
-    if (!pressStart.current || !pressTimer.current) return
-    const dx = Math.abs(e.originalEvent.clientX - pressStart.current.x)
-    const dy = Math.abs(e.originalEvent.clientY - pressStart.current.y)
-    if (dx > MARKER_MOVE_CANCEL_PX || dy > MARKER_MOVE_CANCEL_PX) cancelPress()
-  }, [cancelPress])
-
-  const showBadge = isJagdleiter && !assignedTo && !editMode
-  const wiggleClass = editMode ? ' seat-wiggle' : ''
+  const showBadge = isJagdleiter && !assignedTo && !isMoving
+  const wiggleClass = isMoving ? ' seat-wiggle' : ''
 
   const icon = useMemo(() => {
     const hp = assignedTo ? ' has-person' : ''
@@ -464,12 +437,9 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, editMode, isJagdl
     <Marker
       position={[stand.position.lat, stand.position.lng]}
       icon={icon}
-      draggable={!!editMode}
+      draggable={!!isMoving}
       eventHandlers={{
-        click: editMode ? undefined : (onTap ? () => onTap(stand) : undefined),
-        mousedown: handlePointerDown,
-        mousemove: handlePointerMove,
-        mouseup: cancelPress,
+        click: (movingActive && !isMoving) ? undefined : (!isMoving ? (onTap ? () => onTap(stand) : undefined) : undefined),
         dragend: (e) => {
           const ll = e.target.getLatLng()
           onDragEnd?.(stand.id, { lat: ll.lat, lng: ll.lng })
@@ -481,7 +451,7 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, editMode, isJagdl
           <span dangerouslySetInnerHTML={{ __html: labelHtml }} />
         </Tooltip>
       )}
-      {!onTap && !editMode && (
+      {!onTap && !isMoving && (
         <Popup className="stand-popup">
           <div className="stand-popup-content">
             <strong>{stand.name}</strong>
@@ -772,54 +742,7 @@ function LayerSwitcher({
   )
 }
 
-// --- GPS-Status-Badge ---
-
-function GpsStatusBadge({ geo }: { geo: GeolocationState }) {
-  let icon: string
-  let label: string
-  let bgColor: string
-  let textColor: string
-
-  if (geo.error) {
-    icon = '❌'; label = 'GPS nicht verfügbar'
-    bgColor = 'rgba(239, 83, 80, 0.15)'; textColor = 'var(--red)'
-  } else if (geo.mode === 'searching') {
-    icon = '🔍'
-    label = geo.accuracy ? `GPS sucht... (${Math.round(geo.accuracy)}m)` : 'GPS sucht...'
-    bgColor = 'rgba(255, 255, 255, 0.1)'; textColor = 'var(--text-2)'
-  } else if (geo.mode === 'locked') {
-    icon = '📍'; label = 'Position fixiert'
-    bgColor = 'rgba(107, 159, 58, 0.15)'; textColor = 'var(--green-bright)'
-  } else {
-    icon = '🚶'; label = 'Unterwegs'
-    bgColor = 'rgba(255, 143, 0, 0.15)'; textColor = 'var(--orange)'
-  }
-
-  return (
-    <div style={{
-      position: 'absolute',
-      top: '0.75rem',
-      left: '0.75rem',
-      zIndex: 1000,
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.375rem',
-      background: bgColor,
-      backdropFilter: 'blur(8px)',
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)',
-      padding: '0.375rem 0.75rem',
-      fontSize: '0.75rem',
-      fontWeight: 600,
-      color: textColor,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-    }}>
-      {geo.mode === 'searching' && !geo.error && <span className="gps-spinner" />}
-      <span>{icon}</span>
-      <span>{label}</span>
-    </div>
-  )
-}
+// GpsStatusBadge: importiert aus ./GpsStatusBadge
 
 // --- WMS Lade-Indikator ---
 
@@ -886,8 +809,9 @@ export default function MapContent({
   // Schnellzuweisung
   const [assignStand, setAssignStand] = useState<StandData | null>(null)
 
-  // Wiggle-Edit-Mode (nur Jagdleiter)
-  const [seatEditMode, setSeatEditMode] = useState(false)
+  // Per-Marker Move-Mode (nur Jagdleiter)
+  const [movingStandId, setMovingStandId] = useState<string | null>(null)
+  const isMovingActive = !!movingStandId
 
   // Zeichenmodus für Reviergrenze
   const [drawingMode, setDrawingMode] = useState(false)
@@ -907,13 +831,13 @@ export default function MapContent({
     setCadastreEnabled(prev => !prev)
   }, [])
 
-  // Long-Press → Temporären Marker setzen + Sheet öffnen (nur wenn NICHT im Zeichenmodus und NICHT im Wiggle-Mode)
+  // Long-Press → Temporären Marker setzen + Sheet öffnen (nur wenn NICHT im Zeichenmodus und NICHT im Move-Mode)
   const handleLongPress = useCallback((latlng: { lat: number; lng: number }) => {
-    if (drawingMode || seatEditMode) return
+    if (drawingMode || isMovingActive) return
     setTempMarker(latlng)
     setEditStand(null)
     setSheetMode('create')
-  }, [drawingMode, seatEditMode])
+  }, [drawingMode, isMovingActive])
 
   // Stand bearbeiten
   const handleEditStand = useCallback((stand: StandData) => {
@@ -935,7 +859,16 @@ export default function MapContent({
     setEditStand(null)
   }, [])
 
-  // Stand verschoben im Wiggle-Edit-Mode → Position in DB persistieren
+  // "Position ändern" aus dem Bearbeiten-Sheet → Move-Mode für diesen Stand starten
+  const handleMovePosition = useCallback(() => {
+    if (editStand) {
+      setMovingStandId(editStand.id)
+      setSheetMode('hidden')
+      setEditStand(null)
+    }
+  }, [editStand])
+
+  // Stand verschoben im Move-Mode → Position in DB persistieren
   const handleStandDragEnd = useCallback((standId: string, position: { lat: number; lng: number }) => {
     const stand = stands?.find(s => s.id === standId)
     if (!stand) return
@@ -1214,9 +1147,9 @@ export default function MapContent({
         </div>
       )}
 
-      {/* Fertig-Button im Wiggle-Edit-Mode */}
-      {seatEditMode && (
-        <button className="seat-edit-done-btn" onClick={() => setSeatEditMode(false)}>
+      {/* Fertig-Button im Move-Mode */}
+      {isMovingActive && (
+        <button className="seat-edit-done-btn" onClick={() => setMovingStandId(null)}>
           Fertig
         </button>
       )}
@@ -1287,8 +1220,7 @@ export default function MapContent({
         {/* === Zeichenmodus: Klick-Handler === */}
         {drawingMode && <MapClickHandler onMapClick={handleDrawClick} />}
 
-        {/* === Wiggle-Edit-Mode: Tap auf Karte beendet Modus === */}
-        {seatEditMode && <MapClickHandler onMapClick={() => setSeatEditMode(false)} />}
+        {/* === Move-Mode: Klicks auf Karte ignorieren === */}
 
         {/* === Karten-Steuerung === */}
         <MapResizer />
@@ -1405,11 +1337,11 @@ export default function MapContent({
             stand={stand}
             zoom={zoom}
             onEdit={handleEditStand}
-            onTap={isJagdleiter && huntParticipants && huntId && !seatEditMode ? () => setAssignStand(stand) : undefined}
+            onTap={isJagdleiter && huntParticipants && huntId && !isMovingActive ? () => setAssignStand(stand) : undefined}
             assignedTo={standAssignedNames?.[stand.id]}
-            editMode={seatEditMode}
+            isMoving={movingStandId === stand.id}
+            movingActive={isMovingActive}
             isJagdleiter={isJagdleiter}
-            onLongPress={() => setSeatEditMode(true)}
             onDragEnd={handleStandDragEnd}
           />
         ))}
@@ -1427,45 +1359,12 @@ export default function MapContent({
           />
         )}
 
-        {/* === Genauigkeitskreis === */}
-        {geoState.position && geoState.accuracy && (
-          <Circle
-            center={[geoState.position.lat, geoState.position.lng]}
-            radius={geoState.accuracy}
-            pathOptions={{
-              color: 'rgba(66, 165, 245, 0.3)',
-              fillColor: 'rgba(66, 165, 245, 0.08)',
-              fillOpacity: 1,
-              weight: 1,
-            }}
-          />
-        )}
-
-        {/* === User-Position: pulsierender blauer Punkt === */}
+        {/* === Eigene Position: Accuracy-Kreis + blauer Punkt === */}
         {geoState.position && (
-          <>
-            <CircleMarker
-              center={[geoState.position.lat, geoState.position.lng]}
-              radius={12}
-              pathOptions={{
-                color: 'rgba(66, 165, 245, 0.4)',
-                fillColor: 'rgba(66, 165, 245, 0.15)',
-                fillOpacity: 1,
-                weight: 2,
-              }}
-              className="gps-pulse"
-            />
-            <CircleMarker
-              center={[geoState.position.lat, geoState.position.lng]}
-              radius={6}
-              pathOptions={{
-                color: '#ffffff',
-                fillColor: '#42A5F5',
-                fillOpacity: 1,
-                weight: 2,
-              }}
-            />
-          </>
+          <OwnPositionMarker
+            position={geoState.position}
+            accuracy={geoState.accuracy}
+          />
         )}
 
         {/* === Teilnehmer-Marker === */}
@@ -1532,6 +1431,7 @@ export default function MapContent({
         onSave={handleObjectSaved}
         onDelete={handleObjectDeleted}
         onClose={handleSheetClose}
+        onMovePosition={handleMovePosition}
       />
 
       {/* === Reviergrenze Bottom Sheet === */}

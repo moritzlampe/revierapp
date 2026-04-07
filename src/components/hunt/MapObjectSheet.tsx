@@ -38,6 +38,8 @@ interface MapObjectSheetProps {
   onSave: (obj: MapObjectData) => void
   onDelete?: (id: string) => void
   onClose: () => void
+  /** Callback um den Move-Mode für diesen Stand zu starten */
+  onMovePosition?: () => void
 }
 
 export default function MapObjectSheet({
@@ -49,6 +51,7 @@ export default function MapObjectSheet({
   onSave,
   onDelete,
   onClose,
+  onMovePosition,
 }: MapObjectSheetProps) {
   const [name, setName] = useState('')
   const [type, setType] = useState('hochsitz')
@@ -278,6 +281,16 @@ export default function MapObjectSheet({
               </button>
             </div>
           </div>
+
+          {/* Position ändern (nur im Edit-Mode) */}
+          {mode === 'edit' && onMovePosition && (
+            <button
+              className="sheet-move-btn"
+              onClick={onMovePosition}
+            >
+              📍 Position ändern
+            </button>
+          )}
 
           {/* Aktions-Buttons */}
           <div className="sheet-actions">

@@ -773,6 +773,23 @@ button:active {
   cursor: not-allowed;
 }
 
+/* Position ändern Button */
+.sheet-move-btn {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  min-height: 2.75rem;
+  text-align: center;
+  margin-bottom: 0.25rem;
+}
+
 /* Sheet Action Buttons */
 .sheet-actions {
   display: flex;

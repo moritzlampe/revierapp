@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import StandAssignmentMapView from '@/components/hunt/StandAssignmentMapView'
 import type { AssignStand, AssignParticipant, FreePosition } from '@/components/hunt/StandAssignmentMap'
 import { useGeolocation } from '@/hooks/useGeolocation'
+import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
 import { parsePointHex } from '@/lib/geo-utils'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
@@ -89,6 +90,9 @@ export default function CreateHuntPage() {
   const [editingStand, setEditingStand] = useState<AssignStand | null>(null)
   const [editName, setEditName] = useState('')
   const [assigningStand, setAssigningStand] = useState<AssignStand | null>(null)
+
+  // Per-Marker Move-Mode
+  const [movingStandId, setMovingStandId] = useState<string | null>(null)
 
   // Ad-hoc Stand Counter
   const adhocCounter = useRef(0)
@@ -390,6 +394,22 @@ export default function CreateHuntPage() {
     setEditingStand(null)
   }
 
+  // Stand verschoben (Drag-End im Move-Mode)
+  function handleStandMoved(standId: string, position: { lat: number; lng: number }, standType: string) {
+    if (standType === 'adhoc') {
+      setAdhocStands(prev => prev.map(s => s.id === standId ? { ...s, position } : s))
+    } else {
+      setRevierStands(prev => prev.map(s => s.id === standId ? { ...s, position } : s))
+    }
+  }
+
+  // "Position ändern" aus dem Edit-Sheet
+  function handleMovePosition() {
+    if (!editingStand) return
+    setMovingStandId(editingStand.id)
+    setEditingStand(null)
+  }
+
   // Chip-Tap: Teilnehmer auswaehlen/abwaehlen
   function toggleParticipant(userId: string) {
     setActiveParticipantId(prev => prev === userId ? null : userId)
@@ -602,6 +622,7 @@ export default function CreateHuntPage() {
 
         {/* Karte */}
         <div className="assign-map-container flex-1">
+          <GpsStatusBadge geo={geoState} />
           {loadingSeats ? (
             <div className="flex items-center justify-center h-full">
               <p style={{ color: 'var(--text-3)' }}>Lade Karte...</p>
@@ -616,10 +637,14 @@ export default function CreateHuntPage() {
               mode={assignMode}
               activeParticipantId={activeParticipantId}
               userPosition={geoState.position}
+              userAccuracy={geoState.accuracy}
               onStandCreated={handleStandCreated}
               onStandTapped={handleStandTapped}
               onStandAssign={handleStandAssign}
               onFreePositionSet={handleFreePositionSet}
+              onStandMoved={handleStandMoved}
+              movingStandId={movingStandId}
+              onMovingDone={() => setMovingStandId(null)}
             />
           )}
         </div>
@@ -776,6 +801,14 @@ export default function CreateHuntPage() {
                 <div className="text-xs" style={{ color: 'var(--text-3)' }}>
                   Typ: {editingStand.type === 'kanzel' ? '🏠 Kanzel' : editingStand.type === 'drueckjagdstand' ? '🎯 Drückjagdstand' : editingStand.type === 'adhoc' ? '📍 Ad-hoc' : '🪜 Hochsitz'}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleMovePosition}
+                  className="sheet-move-btn"
+                >
+                  📍 Position ändern
+                </button>
 
                 <div className="flex gap-2 pt-1">
                   {editingStand.id.startsWith('adhoc-') && (

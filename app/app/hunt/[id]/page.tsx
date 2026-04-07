@@ -119,9 +119,11 @@ export default function HuntPage() {
     }
   }, [stands, seatAssignments, participants])
 
-  // Eigene Position an Supabase senden (throttled in updatePosition)
+  // Eigene Position an Supabase senden — NUR bei guter Genauigkeit (<10m)
+  // Ungenaue Positionen werden nur lokal angezeigt (Sicherheit bei Drückjagd)
   useEffect(() => {
     if (!myParticipantId || !hunt?.id || !geoState.position) return
+    if ((geoState.accuracy ?? 999) >= 10) return
 
     updatePosition(
       supabase,
@@ -131,7 +133,7 @@ export default function HuntPage() {
       geoState.accuracy ?? 999,
       geoState.isLocked,
     )
-  }, [geoState.position, geoState.isLocked, myParticipantId, hunt?.id, supabase])
+  }, [geoState.position, geoState.accuracy, geoState.isLocked, myParticipantId, hunt?.id, supabase])
 
   const loadMapObjects = useCallback(async (districtId: string) => {
     const { data: mapObjects } = await supabase

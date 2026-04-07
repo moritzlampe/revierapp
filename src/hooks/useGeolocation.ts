@@ -110,13 +110,16 @@ export function useGeolocation(options?: UseGeolocationOptions) {
             // dist <= GEOFENCE_RADIUS → nichts tun (Position stabil)
           }
         } else {
-          // Schlechte Messung — im Suchstatus anzeigen wenn noch kein Lock
+          // Schlechte Messung — Position trotzdem sofort lokal anzeigen
           if (!lockedPosition.current) {
-            setState(prev => ({
-              ...prev,
+            setState({
+              position: pos,
               accuracy: acc,
+              isLocked: false,
               mode: 'searching',
-            }))
+              error: null,
+              lastUpdate: new Date(),
+            })
           }
         }
       },

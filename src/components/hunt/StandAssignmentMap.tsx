@@ -8,6 +8,7 @@ import {
 } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { createClient } from '@/lib/supabase/client'
+import OwnPositionMarker from './OwnPositionMarker'
 
 // Leaflet Icon Fix
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -71,6 +72,8 @@ export interface StandAssignmentMapProps {
   activeParticipantId: string | null
   /** GPS-Position des Users */
   userPosition?: { lat: number; lng: number } | null
+  /** GPS-Genauigkeit in Metern */
+  userAccuracy?: number | null
   /** Callbacks */
   onStandCreated: (position: { lat: number; lng: number }) => void
   onStandTapped: (standId: string) => void
@@ -78,6 +81,10 @@ export interface StandAssignmentMapProps {
   onFreePositionSet: (userId: string, position: { lat: number; lng: number }) => void
   onStandMoved?: (standId: string, position: { lat: number; lng: number }, standType: string) => void
   onMapReady?: () => void
+  /** ID des Stands der gerade verschoben wird (vom Parent gesteuert) */
+  movingStandId?: string | null
+  /** Callback wenn Move-Mode beendet wird */
+  onMovingDone?: () => void
 }
 
 // --- Hilfsfunktionen ---
@@ -133,50 +140,22 @@ function MapClickHandler({ onMapClick }: {
   return null
 }
 
-// --- Long-Press Konstanten ---
-const LONG_PRESS_MARKER_MS = 600
-const LONG_PRESS_MOVE_PX = 5
-
 // --- Stand-Marker (Hochsitz/Kanzel/Drückjagdstand) ---
-function AssignStandMarker({ stand, participants, highlight, editMode, onTap, onLongPress, onDragEnd }: {
+function AssignStandMarker({ stand, participants, highlight, isMoving, movingActive, onTap, onDragEnd }: {
   stand: AssignStand
   participants: AssignParticipant[]
   highlight: boolean
-  editMode: boolean
+  isMoving: boolean
+  movingActive: boolean
   onTap: () => void
-  onLongPress: () => void
   onDragEnd: (standId: string, position: { lat: number; lng: number }) => void
 }) {
   const assigned = stand.assignedUserId
     ? participants.find(p => p.userId === stand.assignedUserId)
     : null
 
-  // Long-Press Detection auf dem Marker
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pressStart = useRef<{ x: number; y: number } | null>(null)
-
-  const handlePointerDown = useCallback((e: L.LeafletMouseEvent) => {
-    pressStart.current = { x: e.originalEvent.clientX, y: e.originalEvent.clientY }
-    pressTimer.current = setTimeout(() => {
-      try { navigator.vibrate?.(50) } catch { /* nicht verfuegbar */ }
-      onLongPress()
-    }, LONG_PRESS_MARKER_MS)
-  }, [onLongPress])
-
-  const cancelPress = useCallback(() => {
-    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null }
-    pressStart.current = null
-  }, [])
-
-  const handlePointerMove = useCallback((e: L.LeafletMouseEvent) => {
-    if (!pressStart.current || !pressTimer.current) return
-    const dx = Math.abs(e.originalEvent.clientX - pressStart.current.x)
-    const dy = Math.abs(e.originalEvent.clientY - pressStart.current.y)
-    if (dx > LONG_PRESS_MOVE_PX || dy > LONG_PRESS_MOVE_PX) cancelPress()
-  }, [cancelPress])
-
-  const showBadge = !assigned && !editMode
-  const wiggleClass = editMode ? ' seat-wiggle' : ''
+  const showBadge = !assigned && !isMoving
+  const wiggleClass = isMoving ? ' seat-wiggle' : ''
 
   const icon = useMemo(() => {
     const hl = highlight ? ' highlight' : ''
@@ -198,12 +177,9 @@ function AssignStandMarker({ stand, participants, highlight, editMode, onTap, on
     <Marker
       position={[stand.position.lat, stand.position.lng]}
       icon={icon}
-      draggable={editMode}
+      draggable={isMoving}
       eventHandlers={{
-        click: editMode ? undefined : onTap,
-        mousedown: handlePointerDown,
-        mousemove: handlePointerMove,
-        mouseup: cancelPress,
+        click: (movingActive && !isMoving) ? undefined : (!isMoving ? onTap : undefined),
         dragend: (e) => {
           const ll = e.target.getLatLng()
           onDragEnd(stand.id, { lat: ll.lat, lng: ll.lng })
@@ -261,26 +237,26 @@ export default function StandAssignmentMap({
   mode,
   activeParticipantId,
   userPosition,
+  userAccuracy,
   onStandCreated,
   onStandTapped,
   onStandAssign,
   onFreePositionSet,
   onStandMoved,
   onMapReady,
+  movingStandId,
+  onMovingDone,
 }: StandAssignmentMapProps) {
   const hasFlown = useRef(false)
   const [activeLayer] = useState<BaseLayerKey>(getSavedLayer)
-  const [editMode, setEditMode] = useState(false)
 
   const allStands = useMemo(() => [...revierStands, ...adhocStands], [revierStands, adhocStands])
+  const isMovingActive = !!movingStandId
 
   // Karten-Klick
   const handleMapClick = useCallback((latlng: { lat: number; lng: number }) => {
-    // Im Edit-Mode: Klick auf leere Karte beendet den Modus
-    if (editMode) {
-      setEditMode(false)
-      return
-    }
+    // Im Move-Mode: Klick auf Karte ignorieren
+    if (isMovingActive) return
     if (mode === 'stands') {
       onStandCreated(latlng)
     } else {
@@ -288,7 +264,7 @@ export default function StandAssignmentMap({
         onFreePositionSet(activeParticipantId, latlng)
       }
     }
-  }, [editMode, mode, activeParticipantId, onStandCreated, onFreePositionSet])
+  }, [isMovingActive, mode, activeParticipantId, onStandCreated, onFreePositionSet])
 
   // Stand getappt
   const handleStandTap = useCallback((standId: string) => {
@@ -388,16 +364,24 @@ export default function StandAssignmentMap({
           />
         )}
 
+        {/* Eigene Position */}
+        {userPosition && (
+          <OwnPositionMarker
+            position={userPosition}
+            accuracy={userAccuracy ?? null}
+          />
+        )}
+
         {/* Hochsitz-Marker */}
         {allStands.map(stand => (
           <AssignStandMarker
             key={stand.id}
             stand={stand}
             participants={participants}
-            highlight={!editMode && !!activeParticipantId && !stand.assignedUserId}
-            editMode={editMode}
+            highlight={!isMovingActive && !!activeParticipantId && !stand.assignedUserId}
+            isMoving={movingStandId === stand.id}
+            movingActive={isMovingActive}
             onTap={() => handleStandTap(stand.id)}
-            onLongPress={() => setEditMode(true)}
             onDragEnd={handleDragEnd}
           />
         ))}
@@ -413,15 +397,15 @@ export default function StandAssignmentMap({
         ))}
       </MapContainer>
 
-      {/* Fertig-Button im Edit-Mode */}
-      {editMode && (
-        <button className="seat-edit-done-btn" onClick={() => setEditMode(false)}>
+      {/* Fertig-Button im Move-Mode */}
+      {isMovingActive && (
+        <button className="seat-edit-done-btn" onClick={() => onMovingDone?.()}>
           Fertig
         </button>
       )}
 
       {/* Hinweis-Overlay */}
-      {!editMode && <div className="assign-map-hint">{hintText}</div>}
+      {!isMovingActive && <div className="assign-map-hint">{hintText}</div>}
     </>
   )
 }
