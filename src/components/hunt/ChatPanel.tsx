@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { useChatCache } from '@/contexts/ChatCacheContext'
 import SwipeToAction from '@/components/ui/swipe-to-action'
+import { extractFirstUrl } from '@/lib/chat-utils'
+import LinkPreviewCard from '@/components/chat/LinkPreviewCard'
 
 // === Types ===
 
@@ -114,6 +116,33 @@ function sendPushNotification(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   }).catch(() => {}) // Fehler ignorieren — Push ist best-effort
+}
+
+// === Link-Vorschau Hilfsfunktion ===
+
+function renderMessageContent(content: string) {
+  const extracted = extractFirstUrl(content)
+
+  if (!extracted) {
+    return <div>{content}</div>
+  }
+
+  const { url, before, after } = extracted
+  const hasOtherText = before.trim().length > 0 || after.trim().length > 0
+
+  return (
+    <div>
+      {before.trim() && <div>{before}</div>}
+      {!hasOtherText ? (
+        <LinkPreviewCard url={url} compact={false} />
+      ) : (
+        <>
+          <LinkPreviewCard url={url} compact={true} />
+          {after.trim() && <div>{after}</div>}
+        </>
+      )}
+    </div>
+  )
 }
 
 // === Komponente ===
@@ -742,7 +771,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                             onClick={() => setFullscreenPhoto(msg.media_url)}
                           />
                         )}
-                        {msg.content && <div>{msg.content}</div>}
+                        {msg.content && renderMessageContent(msg.content)}
                         <div className="msg-time">{formatTime(msg.created_at)}</div>
                       </div>
                     </div>

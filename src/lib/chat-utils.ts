@@ -41,3 +41,26 @@ export function getChatDisplayInfo(
     displayInitial: null,
   }
 }
+
+/**
+ * Extrahiert die erste URL aus einem Text.
+ * Gibt den Text davor, die bereinigte URL und den Text danach zurück.
+ * Trailing-Satzzeichen werden von der URL entfernt.
+ */
+export function extractFirstUrl(text: string): { url: string; before: string; after: string } | null {
+  const match = text.match(/(https?:\/\/[^\s]+)/i)
+  if (!match || match.index === undefined) return null
+
+  const matchedUrl = match[0]
+  // Trailing-Satzzeichen entfernen (.,;:!?]}"')
+  const trailingMatch = matchedUrl.match(/([.,;:!?\]}"')+]+)$/)
+  const trailingPunctuation = trailingMatch ? trailingMatch[0] : ''
+  const cleanUrl = trailingPunctuation
+    ? matchedUrl.slice(0, -trailingPunctuation.length)
+    : matchedUrl
+
+  const before = text.slice(0, match.index)
+  const after = trailingPunctuation + text.slice(match.index + matchedUrl.length)
+
+  return { url: cleanUrl, before, after }
+}
