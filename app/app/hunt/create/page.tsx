@@ -6,6 +6,13 @@ import { createClient } from '@/lib/supabase/client'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
 
+const BUNDESLAENDER = [
+  'Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen',
+  'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen',
+  'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen',
+  'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen',
+]
+
 const WILD_PRESETS = [
   { value: 'schwarzwild', label: 'Schwarzwild', icon: '🐗', items: ['keiler', 'bache', 'ueberlaeufer', 'frischling'] },
   { value: 'rehwild', label: 'Rehwild', icon: '🦌', items: ['rehbock', 'ricke', 'rehkitz'] },
@@ -34,11 +41,17 @@ type MapObject = {
   type: string
 }
 
+type AdhocSeat = {
+  tempId: string
+  name: string
+}
+
 type SeatAssignment = {
   userId: string
   userName: string
   seatId: string | null
-  seatType: 'assigned' | 'free' | 'none'
+  seatType: 'assigned' | 'free' | 'adhoc' | 'none'
+  seatName?: string  // Nur bei adhoc
 }
 
 function getInitials(name: string) {
@@ -59,10 +72,22 @@ export default function CreateHuntPage() {
   const [error, setError] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null)
 
+  // Neues Revier Modal
+  const [showRevierModal, setShowRevierModal] = useState(false)
+  const [newRevierName, setNewRevierName] = useState('')
+  const [newRevierBundesland, setNewRevierBundesland] = useState('')
+  const [creatingRevier, setCreatingRevier] = useState(false)
+  const [revierError, setRevierError] = useState<string | null>(null)
+
   // Step 2: Hochsitz-Zuweisung
   const [availableSeats, setAvailableSeats] = useState<MapObject[]>([])
   const [seatAssignments, setSeatAssignments] = useState<SeatAssignment[]>([])
   const [loadingSeats, setLoadingSeats] = useState(false)
+
+  // Ad-hoc Stände (Freie Jagd)
+  const [adhocSeats, setAdhocSeats] = useState<AdhocSeat[]>([])
+  const [newAdhocName, setNewAdhocName] = useState('')
+  const [showAdhocInput, setShowAdhocInput] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -112,6 +137,45 @@ export default function CreateHuntPage() {
     }
   }
 
+  function handleRevierChange(value: string) {
+    if (value === '__new__') {
+      setShowRevierModal(true)
+    } else {
+      setSelectedDistrictId(value || null)
+    }
+  }
+
+  async function handleCreateRevier() {
+    if (!newRevierName.trim() || !newRevierBundesland || !currentUser) return
+    setCreatingRevier(true)
+    setRevierError(null)
+
+    const supabase = createClient()
+    const { data, error: insertErr } = await supabase
+      .from('districts')
+      .insert({
+        owner_id: currentUser.id,
+        name: newRevierName.trim(),
+        bundesland: newRevierBundesland,
+      })
+      .select('id, name')
+      .single()
+
+    if (insertErr) {
+      setRevierError(insertErr.message)
+      setCreatingRevier(false)
+      return
+    }
+
+    // Neues Revier in die Liste aufnehmen und auswählen
+    setDistricts(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+    setSelectedDistrictId(data.id)
+    setShowRevierModal(false)
+    setNewRevierName('')
+    setNewRevierBundesland('')
+    setCreatingRevier(false)
+  }
+
   function toggleContact(id: string) {
     setContacts(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c))
   }
@@ -129,27 +193,27 @@ export default function CreateHuntPage() {
   )
   const selectedCount = contacts.filter(c => c.selected).length
 
-  // Hochsitze laden und zu Step 2 wechseln (oder direkt erstellen)
+  // Hochsitze laden und zu Step 2 wechseln
   async function handleContinue(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!selectedDistrictId) {
-      // Freie Jagd → direkt erstellen
-      await handleCreate()
-      return
+    // Bei Revier-Jagd: Hochsitze laden
+    if (selectedDistrictId) {
+      setLoadingSeats(true)
+      const supabase = createClient()
+      const { data: seats } = await supabase
+        .from('map_objects')
+        .select('id, name, type')
+        .eq('district_id', selectedDistrictId)
+        .in('type', ['hochsitz', 'kanzel', 'drueckjagdstand'])
+        .order('name')
+
+      setAvailableSeats(seats || [])
+      setLoadingSeats(false)
+    } else {
+      // Freie Jagd: keine Revier-Hochsitze
+      setAvailableSeats([])
     }
-
-    setLoadingSeats(true)
-    const supabase = createClient()
-    const { data: seats } = await supabase
-      .from('map_objects')
-      .select('id, name, type')
-      .eq('district_id', selectedDistrictId)
-      .in('type', ['hochsitz', 'kanzel', 'drueckjagdstand'])
-      .order('name')
-
-    const loadedSeats = seats || []
-    setAvailableSeats(loadedSeats)
 
     // Alle Teilnehmer (Jagdleiter + ausgewählte Kontakte) für Zuweisung vorbereiten
     const allParticipants: SeatAssignment[] = []
@@ -171,7 +235,7 @@ export default function CreateHuntPage() {
     })
 
     setSeatAssignments(allParticipants)
-    setLoadingSeats(false)
+    setAdhocSeats([])
     setStep(2)
   }
 
@@ -179,10 +243,37 @@ export default function CreateHuntPage() {
   function handleSeatChange(userId: string, value: string) {
     setSeatAssignments(prev => prev.map(a => {
       if (a.userId !== userId) return a
-      if (value === '') return { ...a, seatId: null, seatType: 'none' }
-      if (value === 'free') return { ...a, seatId: null, seatType: 'free' }
-      return { ...a, seatId: value, seatType: 'assigned' }
+      if (value === '') return { ...a, seatId: null, seatType: 'none', seatName: undefined }
+      if (value === 'free') return { ...a, seatId: null, seatType: 'free', seatName: undefined }
+      // Adhoc-Stand? (Prefix "adhoc:")
+      if (value.startsWith('adhoc:')) {
+        const tempId = value.replace('adhoc:', '')
+        const adhoc = adhocSeats.find(s => s.tempId === tempId)
+        return { ...a, seatId: null, seatType: 'adhoc', seatName: adhoc?.name }
+      }
+      return { ...a, seatId: value, seatType: 'assigned', seatName: undefined }
     }))
+  }
+
+  // Ad-hoc Stand hinzufügen
+  function addAdhocSeat() {
+    const trimmed = newAdhocName.trim()
+    if (!trimmed) return
+    const tempId = crypto.randomUUID()
+    setAdhocSeats(prev => [...prev, { tempId, name: trimmed }])
+    setNewAdhocName('')
+    setShowAdhocInput(false)
+  }
+
+  // Ad-hoc Stand entfernen
+  function removeAdhocSeat(tempId: string) {
+    setAdhocSeats(prev => prev.filter(s => s.tempId !== tempId))
+    // Zuweisungen zu diesem Stand zurücksetzen
+    setSeatAssignments(prev => prev.map(a =>
+      a.seatType === 'adhoc' && a.seatName === adhocSeats.find(s => s.tempId === tempId)?.name
+        ? { ...a, seatId: null, seatType: 'none', seatName: undefined }
+        : a
+    ))
   }
 
   // Verfügbare Hochsitze für einen Teilnehmer (bereits zugewiesene ausschließen)
@@ -285,6 +376,7 @@ export default function CreateHuntPage() {
           user_id: a.userId,
           seat_id: a.seatType === 'assigned' ? a.seatId : null,
           seat_type: a.seatType,
+          seat_name: a.seatType === 'adhoc' ? a.seatName : null,
         }))
       )
     }
@@ -311,76 +403,169 @@ export default function CreateHuntPage() {
             <div className="flex items-center justify-center py-12">
               <p style={{ color: 'var(--text-3)' }}>Lade Hochsitze...</p>
             </div>
-          ) : availableSeats.length === 0 ? (
-            <>
-              {/* Hinweis: keine Hochsitze */}
-              <div className="flex gap-2.5 p-4 rounded-xl"
-                style={{ background: 'rgba(255,143,0,0.06)', border: '1px solid rgba(255,143,0,0.15)' }}>
-                <span className="text-lg flex-shrink-0">⚠️</span>
-                <div className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                  <strong>Keine Hochsitze im Revier.</strong><br />
-                  Lege zuerst Hochsitze auf der Revierkarte an, um sie hier zuweisen zu können.
-                </div>
-              </div>
-            </>
           ) : (
             <>
-              {/* Zuweisungs-Liste */}
-              <div className="space-y-2">
-                {seatAssignments.map((a, i) => {
-                  const seatsForUser = getAvailableSeatsForUser(a.userId)
-                  const currentValue = a.seatType === 'none' ? '' : a.seatType === 'free' ? 'free' : a.seatId || ''
+              {/* Freie Jagd: Ad-hoc Stände erstellen */}
+              {!selectedDistrictId && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold" style={{ color: 'var(--text-2)' }}>
+                      Stände für diese Jagd
+                    </label>
+                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                      {adhocSeats.length} {adhocSeats.length === 1 ? 'Stand' : 'Stände'}
+                    </span>
+                  </div>
 
-                  return (
-                    <div key={a.userId} className="flex items-center gap-2.5 p-3 rounded-xl"
-                      style={{ background: 'var(--bg)', border: `1.5px solid ${a.seatType !== 'none' ? 'var(--green)' : 'var(--border)'}` }}>
-                      <div className={`avatar ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
-                        {getInitials(a.userName)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold truncate">{a.userName}</div>
-                        {i === 0 && (
-                          <span className="text-xs font-bold" style={{ color: 'var(--gold)' }}>🎖️ Jagdleiter</span>
-                        )}
-                      </div>
-                      <select
-                        value={currentValue}
-                        onChange={(e) => handleSeatChange(a.userId, e.target.value)}
+                  {/* Bestehende Ad-hoc Stände */}
+                  {adhocSeats.map(seat => (
+                    <div key={seat.tempId} className="flex items-center gap-2.5 p-3 rounded-xl"
+                      style={{ background: 'var(--bg)', border: '1.5px solid var(--green)' }}>
+                      <span className="text-lg">📍</span>
+                      <span className="flex-1 text-sm font-semibold">{seat.name}</span>
+                      <button type="button" onClick={() => removeAdhocSeat(seat.tempId)}
+                        className="flex items-center justify-center"
                         style={{
-                          maxWidth: '10rem',
-                          height: '2.5rem',
-                          padding: '0 2rem 0 0.625rem',
-                          borderRadius: 'var(--radius)',
-                          border: `1.5px solid ${a.seatType !== 'none' ? 'var(--green)' : 'var(--border)'}`,
-                          background: 'var(--surface)',
-                          color: 'var(--text)',
-                          fontSize: '0.8125rem',
-                          appearance: 'none',
-                          WebkitAppearance: 'none',
-                        }}
-                      >
-                        <option value="">Nicht zugewiesen</option>
-                        <option value="free">🏃 Freier Stand</option>
-                        {seatsForUser.map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.type === 'kanzel' ? '🏠' : s.type === 'drueckjagdstand' ? '🎯' : '🪜'} {s.name}
-                          </option>
-                        ))}
-                      </select>
+                          width: '2rem', height: '2rem', borderRadius: '50%',
+                          background: 'var(--surface-2)', color: 'var(--text-3)', fontSize: '0.875rem',
+                        }}>✕</button>
                     </div>
-                  )
-                })}
-              </div>
+                  ))}
 
-              {/* Info */}
-              <div className="flex gap-2.5 p-3 rounded-xl"
-                style={{ background: 'rgba(66,165,245,0.06)', border: '1px solid rgba(66,165,245,0.15)' }}>
-                <span className="text-lg">💡</span>
-                <div className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                  Jeder Hochsitz kann nur <strong>einem Jäger</strong> zugewiesen werden.
-                  Zuweisungen sind optional und können während der Jagd geändert werden.
+                  {/* Eingabefeld für neuen Stand */}
+                  {showAdhocInput ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newAdhocName}
+                        onChange={(e) => setNewAdhocName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAdhocSeat() } }}
+                        placeholder="z.B. Eiche am Feldrand, Mais 1..."
+                        autoFocus
+                        style={{ flex: 1 }}
+                      />
+                      <button type="button" onClick={addAdhocSeat} disabled={!newAdhocName.trim()}
+                        className="flex items-center justify-center font-bold text-white disabled:opacity-50"
+                        style={{
+                          minWidth: '2.75rem', height: '3rem', borderRadius: 'var(--radius)',
+                          background: 'var(--green)', fontSize: '1.25rem',
+                        }}>+</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setShowAdhocInput(true)}
+                      className="w-full flex items-center justify-center gap-2 font-semibold text-sm transition"
+                      style={{
+                        height: '2.75rem', borderRadius: 'var(--radius)',
+                        border: '1.5px dashed var(--border)',
+                        background: 'transparent', color: 'var(--green-bright)',
+                      }}>
+                      + Stand hinzufügen
+                    </button>
+                  )}
+
+                  {adhocSeats.length === 0 && (
+                    <div className="flex gap-2.5 p-3 rounded-xl"
+                      style={{ background: 'rgba(66,165,245,0.06)', border: '1px solid rgba(66,165,245,0.15)' }}>
+                      <span className="text-lg">💡</span>
+                      <div className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                        Lege Stände an, um Jägern feste Positionen zuzuweisen.<br />
+                        <span style={{ color: 'var(--text-3)' }}>Oder überspringe diesen Schritt — alle starten als "Freier Stand".</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
+
+              {/* Revier-Jagd ohne Hochsitze: Hinweis */}
+              {selectedDistrictId && availableSeats.length === 0 && (
+                <div className="flex gap-2.5 p-4 rounded-xl"
+                  style={{ background: 'rgba(255,143,0,0.06)', border: '1px solid rgba(255,143,0,0.15)' }}>
+                  <span className="text-lg flex-shrink-0">⚠️</span>
+                  <div className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                    <strong>Keine Hochsitze im Revier.</strong><br />
+                    Lege zuerst Hochsitze auf der Revierkarte an, um sie hier zuweisen zu können.
+                  </div>
+                </div>
+              )}
+
+              {/* Zuweisungs-Liste (wenn Revier-Hochsitze ODER Ad-hoc Stände vorhanden) */}
+              {(availableSeats.length > 0 || adhocSeats.length > 0) && (
+                <>
+                  {!selectedDistrictId && adhocSeats.length > 0 && (
+                    <div style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.75rem' }}>
+                      <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-2)' }}>
+                        Jäger zuweisen
+                      </label>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {seatAssignments.map((a, i) => {
+                      const seatsForUser = getAvailableSeatsForUser(a.userId)
+                      const currentValue = a.seatType === 'none' ? ''
+                        : a.seatType === 'free' ? 'free'
+                        : a.seatType === 'adhoc' ? `adhoc:${adhocSeats.find(s => s.name === a.seatName)?.tempId || ''}`
+                        : a.seatId || ''
+
+                      return (
+                        <div key={a.userId} className="flex items-center gap-2.5 p-3 rounded-xl"
+                          style={{ background: 'var(--bg)', border: `1.5px solid ${a.seatType !== 'none' ? 'var(--green)' : 'var(--border)'}` }}>
+                          <div className={`avatar ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
+                            {getInitials(a.userName)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold truncate">{a.userName}</div>
+                            {i === 0 && (
+                              <span className="text-xs font-bold" style={{ color: 'var(--gold)' }}>🎖️ Jagdleiter</span>
+                            )}
+                          </div>
+                          <select
+                            value={currentValue}
+                            onChange={(e) => handleSeatChange(a.userId, e.target.value)}
+                            style={{
+                              maxWidth: '10rem',
+                              height: '2.5rem',
+                              padding: '0 2rem 0 0.625rem',
+                              borderRadius: 'var(--radius)',
+                              border: `1.5px solid ${a.seatType !== 'none' ? 'var(--green)' : 'var(--border)'}`,
+                              background: 'var(--surface)',
+                              color: 'var(--text)',
+                              fontSize: '0.8125rem',
+                              appearance: 'none',
+                              WebkitAppearance: 'none',
+                            }}
+                          >
+                            <option value="">Nicht zugewiesen</option>
+                            <option value="free">🏃 Freier Stand</option>
+                            {/* Revier-Hochsitze */}
+                            {seatsForUser.map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.type === 'kanzel' ? '🏠' : s.type === 'drueckjagdstand' ? '🎯' : '🪜'} {s.name}
+                              </option>
+                            ))}
+                            {/* Ad-hoc Stände */}
+                            {adhocSeats.map(s => (
+                              <option key={s.tempId} value={`adhoc:${s.tempId}`}>
+                                📍 {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex gap-2.5 p-3 rounded-xl"
+                    style={{ background: 'rgba(66,165,245,0.06)', border: '1px solid rgba(66,165,245,0.15)' }}>
+                    <span className="text-lg">💡</span>
+                    <div className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                      Jeder Stand kann nur <strong>einem Jäger</strong> zugewiesen werden.
+                      Zuweisungen sind optional und können während der Jagd geändert werden.
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -394,11 +579,10 @@ export default function CreateHuntPage() {
               {loading ? 'Wird erstellt...' : `Jagd starten · ${seatAssignments.length} Jäger →`}
             </button>
 
-            {availableSeats.length > 0 && seatAssignments.some(a => a.seatType !== 'none') ? null : (
+            {(availableSeats.length > 0 || adhocSeats.length > 0) && seatAssignments.some(a => a.seatType !== 'none') ? null : (
               <button type="button"
                 onClick={() => {
-                  // Alle Zuweisungen auf 'none' setzen → erstellen ohne Zuweisungen
-                  setSeatAssignments(prev => prev.map(a => ({ ...a, seatId: null, seatType: 'none' })))
+                  setSeatAssignments(prev => prev.map(a => ({ ...a, seatId: null, seatType: 'none', seatName: undefined })))
                   handleCreate()
                 }}
                 disabled={loading}
@@ -443,7 +627,7 @@ export default function CreateHuntPage() {
           <div className="relative">
             <select
               value={selectedDistrictId || ''}
-              onChange={(e) => setSelectedDistrictId(e.target.value || null)}
+              onChange={(e) => handleRevierChange(e.target.value)}
               style={{
                 width: '100%',
                 height: '3rem',
@@ -461,6 +645,7 @@ export default function CreateHuntPage() {
               {districts.map(d => (
                 <option key={d.id} value={d.id}>🌲 {d.name}</option>
               ))}
+              <option value="__new__">➕ Neues Revier erstellen</option>
             </select>
             <div style={{
               position: 'absolute', right: '0.875rem', top: '50%', transform: 'translateY(-50%)',
@@ -575,12 +760,102 @@ export default function CreateHuntPage() {
             ? 'Lade Hochsitze...'
             : loading
               ? 'Wird erstellt...'
-              : selectedDistrictId
-                ? `Weiter: Stände zuweisen →`
-                : `Jagd starten${selectedCount > 0 ? ` · ${selectedCount + 1} Jäger` : ''} →`
+              : `Weiter: Stände zuweisen →`
           }
         </button>
       </form>
+
+      {/* Modal: Neues Revier erstellen */}
+      {showRevierModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 100,
+          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        }} onClick={() => setShowRevierModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            width: '100%', maxWidth: '30rem',
+            background: 'var(--surface)', borderRadius: '1.25rem 1.25rem 0 0',
+            padding: '1.5rem', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))',
+          }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">🌲 Neues Revier</h2>
+              <button onClick={() => setShowRevierModal(false)}
+                className="flex items-center justify-center"
+                style={{
+                  width: '2.25rem', height: '2.25rem', borderRadius: '50%',
+                  background: 'var(--surface-2)', color: 'var(--text-3)', fontSize: '1.125rem',
+                }}>✕</button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-semibold mb-1" style={{ color: 'var(--text-2)' }}>
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  value={newRevierName}
+                  onChange={(e) => setNewRevierName(e.target.value)}
+                  placeholder="z.B. Revier Brockwinkel"
+                  autoFocus
+                />
+              </div>
+
+              {/* Bundesland */}
+              <div>
+                <label className="block text-sm font-semibold mb-1" style={{ color: 'var(--text-2)' }}>
+                  Bundesland *
+                </label>
+                <div className="relative">
+                  <select
+                    value={newRevierBundesland}
+                    onChange={(e) => setNewRevierBundesland(e.target.value)}
+                    style={{
+                      width: '100%', height: '3rem',
+                      padding: '0 2.75rem 0 0.875rem',
+                      borderRadius: 'var(--radius)',
+                      border: `1.5px solid ${newRevierBundesland ? 'var(--green)' : 'var(--border)'}`,
+                      background: 'var(--bg)', color: 'var(--text)',
+                      fontSize: '0.9375rem',
+                      appearance: 'none', WebkitAppearance: 'none',
+                    }}
+                  >
+                    <option value="">Bitte wählen…</option>
+                    {BUNDESLAENDER.map(bl => (
+                      <option key={bl} value={bl}>{bl}</option>
+                    ))}
+                  </select>
+                  <div style={{
+                    position: 'absolute', right: '0.875rem', top: '50%', transform: 'translateY(-50%)',
+                    pointerEvents: 'none', color: 'var(--text-3)', fontSize: '0.75rem',
+                  }}>▼</div>
+                </div>
+              </div>
+
+              {/* Hinweis */}
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+                Hochsitze und Reviergrenzen kannst du später auf der Karte ergänzen.
+              </p>
+
+              {revierError && (
+                <p className="text-sm" style={{ color: 'var(--red)' }}>{revierError}</p>
+              )}
+
+              {/* Buttons */}
+              <button
+                type="button"
+                onClick={handleCreateRevier}
+                disabled={creatingRevier || !newRevierName.trim() || !newRevierBundesland}
+                className="w-full font-bold text-base text-white transition disabled:opacity-50"
+                style={{ height: '3.25rem', borderRadius: 'var(--radius)', background: 'var(--green)', fontSize: '1rem' }}
+              >
+                {creatingRevier ? 'Wird erstellt...' : 'Revier erstellen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
