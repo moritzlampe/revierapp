@@ -58,11 +58,16 @@ export default function LinkPreviewCard({ url, compact }: LinkPreviewCardProps) 
         )
         if (cancelled) return
         if (fetchError) {
+          console.error('LinkPreview Fehler:', fetchError)
           setError(true)
+        } else if (result?.error) {
+          console.error('LinkPreview Fehler:', result.error)
+          setData(result)
         } else {
           setData(result)
         }
-      } catch {
+      } catch (err) {
+        console.error('LinkPreview Fehler:', err)
         if (!cancelled) setError(true)
       } finally {
         if (!cancelled) setLoading(false)
@@ -107,8 +112,23 @@ export default function LinkPreviewCard({ url, compact }: LinkPreviewCardProps) 
     )
   }
 
-  // Bei Fehler oder fehlenden Daten: null (Parent rendert Plain-Link Fallback)
-  if (error || data?.error || !data?.title) return null
+  // Bei Fehler oder fehlenden Daten: klickbarer Fallback-Link
+  if (error || data?.error || !data?.title) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          color: 'var(--accent)',
+          textDecoration: 'underline',
+          wordBreak: 'break-all',
+        }}
+      >
+        {url}
+      </a>
+    )
+  }
 
   const description = data.description
     ? data.description.length > 80
