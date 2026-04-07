@@ -387,24 +387,61 @@ function ParticipantMarker({
   )
 }
 
+// --- Long-Press Konstanten für Marker ---
+const MARKER_LONG_PRESS_MS = 600
+const MARKER_MOVE_CANCEL_PX = 5
+
 // --- Hochsitz-Marker ---
 
-function StandMarker({ stand, zoom, onEdit, onTap, assignedTo }: {
+function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, editMode, isJagdleiter, onLongPress, onDragEnd }: {
   stand: StandData
   zoom: number
   onEdit?: (stand: StandData) => void
   onTap?: (stand: StandData) => void
   assignedTo?: string | null
+  editMode?: boolean
+  isJagdleiter?: boolean
+  onLongPress?: () => void
+  onDragEnd?: (standId: string, position: { lat: number; lng: number }) => void
 }) {
+  // Long-Press Detection auf dem Marker (nur Jagdleiter)
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pressStart = useRef<{ x: number; y: number } | null>(null)
+
+  const handlePointerDown = useCallback((e: L.LeafletMouseEvent) => {
+    if (!isJagdleiter || !onLongPress) return
+    pressStart.current = { x: e.originalEvent.clientX, y: e.originalEvent.clientY }
+    pressTimer.current = setTimeout(() => {
+      try { navigator.vibrate?.(50) } catch { /* nicht verfuegbar */ }
+      onLongPress()
+    }, MARKER_LONG_PRESS_MS)
+  }, [isJagdleiter, onLongPress])
+
+  const cancelPress = useCallback(() => {
+    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null }
+    pressStart.current = null
+  }, [])
+
+  const handlePointerMove = useCallback((e: L.LeafletMouseEvent) => {
+    if (!pressStart.current || !pressTimer.current) return
+    const dx = Math.abs(e.originalEvent.clientX - pressStart.current.x)
+    const dy = Math.abs(e.originalEvent.clientY - pressStart.current.y)
+    if (dx > MARKER_MOVE_CANCEL_PX || dy > MARKER_MOVE_CANCEL_PX) cancelPress()
+  }, [cancelPress])
+
+  const showBadge = isJagdleiter && !assignedTo && !editMode
+  const wiggleClass = editMode ? ' seat-wiggle' : ''
+
   const icon = useMemo(() => {
     const hp = assignedTo ? ' has-person' : ''
+    const badge = showBadge ? '<div class="seat-plus-badge">+</div>' : ''
     return L.divIcon({
       className: 'stand-marker',
-      html: `<div class="stand-icon${hp}">▲</div>`,
+      html: `<div style="position:relative;display:inline-block"><div class="stand-icon${hp}${wiggleClass}">▲</div>${badge}</div>`,
       iconSize: [24, 24],
       iconAnchor: [12, 12],
     })
-  }, [assignedTo])
+  }, [assignedTo, showBadge, wiggleClass])
 
   const TYPE_LABELS: Record<string, string> = {
     hochsitz: '🪵 Hochsitz',
@@ -427,14 +464,24 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo }: {
     <Marker
       position={[stand.position.lat, stand.position.lng]}
       icon={icon}
-      eventHandlers={onTap ? { click: () => onTap(stand) } : undefined}
+      draggable={!!editMode}
+      eventHandlers={{
+        click: editMode ? undefined : (onTap ? () => onTap(stand) : undefined),
+        mousedown: handlePointerDown,
+        mousemove: handlePointerMove,
+        mouseup: cancelPress,
+        dragend: (e) => {
+          const ll = e.target.getLatLng()
+          onDragEnd?.(stand.id, { lat: ll.lat, lng: ll.lng })
+        },
+      }}
     >
       {zoom >= 15 && (
         <Tooltip direction="top" offset={[0, -12]} permanent className="stand-tooltip">
           <span dangerouslySetInnerHTML={{ __html: labelHtml }} />
         </Tooltip>
       )}
-      {!onTap && (
+      {!onTap && !editMode && (
         <Popup className="stand-popup">
           <div className="stand-popup-content">
             <strong>{stand.name}</strong>
@@ -839,6 +886,9 @@ export default function MapContent({
   // Schnellzuweisung
   const [assignStand, setAssignStand] = useState<StandData | null>(null)
 
+  // Wiggle-Edit-Mode (nur Jagdleiter)
+  const [seatEditMode, setSeatEditMode] = useState(false)
+
   // Zeichenmodus für Reviergrenze
   const [drawingMode, setDrawingMode] = useState(false)
   const [drawPoints, setDrawPoints] = useState<{ lat: number; lng: number }[]>([])
@@ -857,13 +907,13 @@ export default function MapContent({
     setCadastreEnabled(prev => !prev)
   }, [])
 
-  // Long-Press → Temporären Marker setzen + Sheet öffnen (nur wenn NICHT im Zeichenmodus)
+  // Long-Press → Temporären Marker setzen + Sheet öffnen (nur wenn NICHT im Zeichenmodus und NICHT im Wiggle-Mode)
   const handleLongPress = useCallback((latlng: { lat: number; lng: number }) => {
-    if (drawingMode) return
+    if (drawingMode || seatEditMode) return
     setTempMarker(latlng)
     setEditStand(null)
     setSheetMode('create')
-  }, [drawingMode])
+  }, [drawingMode, seatEditMode])
 
   // Stand bearbeiten
   const handleEditStand = useCallback((stand: StandData) => {
@@ -884,6 +934,34 @@ export default function MapContent({
     setTempMarker(null)
     setEditStand(null)
   }, [])
+
+  // Stand verschoben im Wiggle-Edit-Mode → Position in DB persistieren
+  const handleStandDragEnd = useCallback((standId: string, position: { lat: number; lng: number }) => {
+    const stand = stands?.find(s => s.id === standId)
+    if (!stand) return
+
+    // Optimistisches State-Update
+    onStandsChanged?.({ ...stand, position }, undefined)
+
+    // DB-Update
+    const supabase = createClient()
+    if (stand.type === 'adhoc') {
+      // Ad-hoc: Position in hunt_seat_assignments
+      supabase
+        .from('hunt_seat_assignments')
+        .update({ position_lat: position.lat, position_lng: position.lng })
+        .eq('seat_type', 'adhoc')
+        .eq('seat_name', stand.name)
+        .then(() => { /* fire and forget */ })
+    } else {
+      // Revier-Stand: Position in map_objects (PostGIS)
+      supabase
+        .from('map_objects')
+        .update({ position: `SRID=4326;POINT(${position.lng} ${position.lat})` })
+        .eq('id', standId)
+        .then(() => { /* fire and forget */ })
+    }
+  }, [stands, onStandsChanged])
 
   // --- Zeichenmodus Callbacks ---
 
@@ -1136,6 +1214,13 @@ export default function MapContent({
         </div>
       )}
 
+      {/* Fertig-Button im Wiggle-Edit-Mode */}
+      {seatEditMode && (
+        <button className="seat-edit-done-btn" onClick={() => setSeatEditMode(false)}>
+          Fertig
+        </button>
+      )}
+
       {/* WMS Lade-Anzeige */}
       {wmsLoading && <WmsLoadingIndicator />}
 
@@ -1201,6 +1286,9 @@ export default function MapContent({
 
         {/* === Zeichenmodus: Klick-Handler === */}
         {drawingMode && <MapClickHandler onMapClick={handleDrawClick} />}
+
+        {/* === Wiggle-Edit-Mode: Tap auf Karte beendet Modus === */}
+        {seatEditMode && <MapClickHandler onMapClick={() => setSeatEditMode(false)} />}
 
         {/* === Karten-Steuerung === */}
         <MapResizer />
@@ -1317,8 +1405,12 @@ export default function MapContent({
             stand={stand}
             zoom={zoom}
             onEdit={handleEditStand}
-            onTap={isJagdleiter && huntParticipants && huntId ? () => setAssignStand(stand) : undefined}
+            onTap={isJagdleiter && huntParticipants && huntId && !seatEditMode ? () => setAssignStand(stand) : undefined}
             assignedTo={standAssignedNames?.[stand.id]}
+            editMode={seatEditMode}
+            isJagdleiter={isJagdleiter}
+            onLongPress={() => setSeatEditMode(true)}
+            onDragEnd={handleStandDragEnd}
           />
         ))}
 
