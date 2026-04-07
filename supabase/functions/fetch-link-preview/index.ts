@@ -6,7 +6,7 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const USER_AGENT = 'Mozilla/5.0 (compatible; QuickHuntBot/1.0)'
+const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 const FETCH_TIMEOUT_MS = 5000
 const MAX_BODY_BYTES = 500 * 1024 // 500 KB
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 Tage
@@ -58,11 +58,13 @@ function decodeEntities(text: string | null): string | null {
 
 /** OG/Meta-Tags aus HTML extrahieren */
 function parsePreview(html: string, url: string) {
-  // og:title → Fallback <title>
+  // og:title → Fallback <meta name="title"> → Fallback <title>
   const ogTitle = extractMeta(html, /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
     || extractMeta(html, /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)
+  const metaTitle = extractMeta(html, /<meta[^>]+name=["']title["'][^>]+content=["']([^"']+)["']/i)
+    || extractMeta(html, /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']title["']/i)
   const htmlTitle = extractMeta(html, /<title[^>]*>([^<]+)<\/title>/i)
-  const title = decodeEntities(ogTitle || htmlTitle)
+  const title = decodeEntities(ogTitle || metaTitle || htmlTitle)
 
   // og:description → Fallback meta description
   const ogDesc = extractMeta(html, /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)
@@ -162,6 +164,7 @@ Deno.serve(async (req) => {
         headers: {
           'User-Agent': USER_AGENT,
           'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8',
         },
         signal: controller.signal,
         redirect: 'follow',
