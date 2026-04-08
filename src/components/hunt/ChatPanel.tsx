@@ -7,6 +7,7 @@ import SwipeToAction from '@/components/ui/swipe-to-action'
 import { extractFirstUrl } from '@/lib/chat-utils'
 import LinkPreviewCard from '@/components/chat/LinkPreviewCard'
 import { MessageContextSheet } from '@/components/chat/MessageContextSheet'
+import { ReplyQuoteBar } from '@/components/chat/ReplyQuoteBar'
 
 // === Types ===
 
@@ -169,14 +170,23 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
   const [contextMenuMessage, setContextMenuMessage] = useState<Message | null>(null)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
 
-  // Debug-Log für Reply-State (wird in 34b-2 entfernt)
+  // Auto-Focus auf Textarea wenn Reply aktiviert wird
   useEffect(() => {
-    if (replyingTo) {
-      console.log("[34b-1] replyingTo gesetzt:", replyingTo.id, replyingTo.content?.slice(0, 50));
-    } else {
-      console.log("[34b-1] replyingTo gecleared");
+    if (replyingTo && inputRef.current) {
+      inputRef.current.focus()
     }
   }, [replyingTo])
+
+  // ESC-Taste zum Canceln der Reply (Desktop)
+  useEffect(() => {
+    if (!replyingTo) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setReplyingTo(null)
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [replyingTo])
+
   const activeSwipeCloseRef = useRef<(() => void) | null>(null)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -538,6 +548,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
       content: text,
       media_url: null,
       created_at: new Date().toISOString(),
+      reply_to_message_id: replyingTo?.id ?? null,
     }
 
     setInputText('')
@@ -550,6 +561,9 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
       id: msgId,
       type: 'text',
       content: text,
+    }
+    if (replyingTo) {
+      insertData.reply_to_message_id = replyingTo.id
     }
     if (isGroupChat) {
       insertData.group_id = groupId
@@ -564,25 +578,28 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     if (error) {
       setMessages(prev => prev.filter(m => m.id !== msgId))
       console.error('Nachricht senden fehlgeschlagen:', error)
-    } else if (userId) {
-      // 2er-Chat: Titel = Absendername, Body = nur Nachricht (wie WhatsApp)
-      // Gruppenchat: Titel = Gruppenname, Body = "Name: Nachricht"
-      const pushTitle = isDirect && mySenderName
-        ? mySenderName
-        : chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat')
-      const pushBody = isDirect
-        ? text.substring(0, 100)
-        : (mySenderName ? `${mySenderName}: ${text.substring(0, 100)}` : text.substring(0, 100))
-      sendPushNotification({
-        huntId: huntId || undefined,
-        groupId: groupId || undefined,
-        title: pushTitle,
-        body: pushBody,
-        senderUserId: userId,
-        url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
-      })
+    } else {
+      setReplyingTo(null)
+      if (userId) {
+        // 2er-Chat: Titel = Absendername, Body = nur Nachricht (wie WhatsApp)
+        // Gruppenchat: Titel = Gruppenname, Body = "Name: Nachricht"
+        const pushTitle = isDirect && mySenderName
+          ? mySenderName
+          : chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat')
+        const pushBody = isDirect
+          ? text.substring(0, 100)
+          : (mySenderName ? `${mySenderName}: ${text.substring(0, 100)}` : text.substring(0, 100))
+        sendPushNotification({
+          huntId: huntId || undefined,
+          groupId: groupId || undefined,
+          title: pushTitle,
+          body: pushBody,
+          senderUserId: userId,
+          url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
+        })
+      }
     }
-  }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase, chatName, mySenderName, isDirect])
+  }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase, chatName, mySenderName, isDirect, replyingTo])
 
   // === Foto senden ===
 
@@ -847,6 +864,19 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
           </div>
         </div>
       )}
+
+      {/* Reply Quote Bar */}
+      {replyingTo && (() => {
+        const replySenderId = isGroupChat ? replyingTo.sender_id : replyingTo.participant_id
+        const replySenderName = replySenderId ? participantMap[replySenderId]?.name || 'Unbekannt' : 'Unbekannt'
+        return (
+          <ReplyQuoteBar
+            message={replyingTo}
+            senderName={isMyMessage(replyingTo) ? 'Du' : replySenderName}
+            onCancel={() => setReplyingTo(null)}
+          />
+        )
+      })()}
 
       {/* Eingabeleiste */}
       <div className="chat-input-bar">
