@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import LogoutButton from './logout-button'
 import HomeContent from './home-content'
 import BottomTabBar from '@/components/bottom-tab-bar'
 
@@ -30,10 +29,6 @@ export default async function AppPage() {
 
   return (
     <div className="relative">
-      {/* Logout-Button (Server Component) */}
-      <div style={{ position: 'absolute', top: '0.25rem', right: '1.25rem', zIndex: 10 }}>
-        <LogoutButton />
-      </div>
       <HomeContent
         displayName={displayName}
         initialHunts={hunts}

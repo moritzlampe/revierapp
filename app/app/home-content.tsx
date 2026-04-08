@@ -8,6 +8,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { usePrefetchChats } from '@/hooks/usePrefetchChats'
 import SwipeToAction from '@/components/ui/swipe-to-action'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
+import { Search, Plus } from 'lucide-react'
 import type { ChatMember } from '@/lib/chat-utils'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
@@ -89,10 +90,45 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
-  const initialTab = searchParams.get('tab') === 'jagden' ? 'jagden' : 'chats'
-  const [activeTab, setActiveTab] = useState<'jagden' | 'chats'>(initialTab)
+
+  // Tab direkt aus URL-Parameter ableiten, localStorage als Fallback beim ersten Laden
+  const tabParam = searchParams.get('tab')
+  const activeTab: 'jagden' | 'chats' = tabParam === 'jagden' ? 'jagden' : tabParam === 'chats' ? 'chats'
+    : (typeof window !== 'undefined' && localStorage.getItem('quickhunt:lastTab') === 'jagden' ? 'jagden' : 'chats')
+
+  // Letzten Tab in localStorage speichern
+  useEffect(() => {
+    if (tabParam === 'jagden' || tabParam === 'chats') {
+      localStorage.setItem('quickhunt:lastTab', tabParam)
+    }
+  }, [tabParam])
+
+  // Beim ersten Laden ohne ?tab= → auf gespeicherten Tab redirecten
+  useEffect(() => {
+    if (!tabParam) {
+      const saved = localStorage.getItem('quickhunt:lastTab')
+      if (saved === 'jagden') {
+        router.replace('/app?tab=jagden', { scroll: false })
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [chatItems, setChatItems] = useState<ChatListItem[]>([])
   const [loadingChats, setLoadingChats] = useState(false)
+
+  // Suche + Filter
+  const [searchQuery, setSearchQuery] = useState('')
+  const [chatFilter, setChatFilter] = useState<'alle' | 'ungelesen' | 'gruppen' | 'direkt'>('alle')
+  const [jagdFilter, setJagdFilter] = useState<'alle' | 'live' | 'geplant' | 'vergangen'>('alle')
+
+  // Suche beim Tab-Wechsel zurücksetzen
+  const prevTabRef = useRef(activeTab)
+  useEffect(() => {
+    if (prevTabRef.current !== activeTab) {
+      setSearchQuery('')
+      prevTabRef.current = activeTab
+    }
+  }, [activeTab])
 
   const { showBanner: showPushBanner, subscribe: subscribePush, dismiss: dismissPush } = usePushNotifications(supabase, userId)
 
@@ -135,6 +171,48 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
 
   const activeHunts = hunts.filter(h => h.status === 'active')
   const pastHunts = hunts.filter(h => h.status === 'completed').slice(0, 3)
+
+  // Gefilterte Jagd-Liste
+  const filteredHunts = useMemo(() => {
+    let list = hunts
+    // Suche
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      list = list.filter(h => h.name.toLowerCase().includes(q))
+    } else {
+      // Filter-Pills nur wenn keine Suche aktiv
+      if (jagdFilter === 'live') list = list.filter(h => h.status === 'active')
+      else if (jagdFilter === 'geplant') list = list.filter(h => h.status === 'planned')
+      else if (jagdFilter === 'vergangen') list = list.filter(h => h.status === 'completed')
+    }
+    // Live-Jagden immer oben
+    return list.sort((a, b) => {
+      const aLive = a.status === 'active'
+      const bLive = b.status === 'active'
+      if (aLive && !bLive) return -1
+      if (!aLive && bLive) return 1
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
+  }, [hunts, searchQuery, jagdFilter])
+
+  // Gefilterte Chat-Liste
+  const filteredChats = useMemo(() => {
+    let list = chatItems
+    // Suche
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      list = list.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.lastMessage && c.lastMessage.toLowerCase().includes(q))
+      )
+    } else {
+      // Filter-Pills nur wenn keine Suche aktiv
+      if (chatFilter === 'ungelesen') list = list.filter(c => c.unreadCount > 0)
+      else if (chatFilter === 'gruppen') list = list.filter(c => !c.isDirect)
+      else if (chatFilter === 'direkt') list = list.filter(c => c.isDirect)
+    }
+    return list
+  }, [chatItems, searchQuery, chatFilter])
 
   // Schließe offene Swipe-Action wenn woanders getippt wird
   const closeActiveSwipe = useCallback(() => {
@@ -354,23 +432,21 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   return (
     <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
       {/* Header */}
-      <div style={{ padding: '0.25rem 1.25rem 0.75rem' }}>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg"
-              style={{ background: 'linear-gradient(135deg, var(--green), var(--green-dim))' }}>🌲</div>
-            <span className="text-lg font-bold tracking-tight">
-              Revier<span style={{ color: 'var(--green-bright)' }}>App</span>
-            </span>
-          </div>
-          <Link href="/app" style={{ color: 'var(--text-3)', fontSize: '0.8125rem' }}>
-            {/* LogoutButton wird separat importiert */}
-          </Link>
-        </div>
-        <h1 className="text-2xl font-bold" style={{ letterSpacing: '-0.03rem' }}>
-          Moin, <span style={{ color: 'var(--green-bright)' }}>{displayName}</span>
+      <div className="flex items-center justify-between" style={{ padding: '0.75rem 1.25rem 0.625rem' }}>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.03rem', color: 'var(--text)' }}>
+          {activeTab === 'jagden' ? 'Jagden' : 'Chats'}
         </h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>Was steht an?</p>
+        <Link
+          href={activeTab === 'jagden' ? '/app/hunt/create' : '/app/chat/create'}
+          className="flex items-center justify-center"
+          style={{
+            width: '2.5rem', height: '2.5rem', borderRadius: '50%',
+            background: 'var(--surface-2)',
+            color: 'var(--green-bright)',
+          }}
+        >
+          <Plus size={22} strokeWidth={2.5} />
+        </Link>
       </div>
 
       {/* Push-Benachrichtigungen Banner */}
@@ -395,67 +471,100 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         </div>
       )}
 
-      {/* Segmented Control */}
-      <div className="mx-5 mb-4" style={{ background: 'var(--surface-2)', borderRadius: '0.625rem', padding: '0.1875rem' }}>
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('jagden')}
-            className="flex-1 py-2 text-sm font-semibold text-center transition-all"
+      {/* Suchleiste */}
+      <div className="px-5 mb-3">
+        <div className="flex items-center gap-2" style={{
+          background: 'var(--surface-2)',
+          borderRadius: '9999px',
+          padding: '0 0.875rem',
+          height: '2.5rem',
+          border: '1px solid var(--border)',
+        }}>
+          <Search size={16} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+          <input
+            type="text"
+            placeholder="Suchen"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             style={{
-              borderRadius: '0.5rem',
-              background: activeTab === 'jagden' ? 'var(--green-dim)' : 'transparent',
-              color: activeTab === 'jagden' ? 'var(--text)' : 'var(--text-2)',
-              fontWeight: activeTab === 'jagden' ? 700 : 600,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--text)',
+              fontSize: '0.875rem',
+              width: '100%',
             }}
-          >
-            🎯 Jagden
-          </button>
-          <button
-            onClick={() => setActiveTab('chats')}
-            className="flex-1 py-2 text-sm font-semibold text-center transition-all"
-            style={{
-              borderRadius: '0.5rem',
-              background: activeTab === 'chats' ? 'var(--green-dim)' : 'transparent',
-              color: activeTab === 'chats' ? 'var(--text)' : 'var(--text-2)',
-              fontWeight: activeTab === 'chats' ? 700 : 600,
-            }}
-          >
-            💬 Chats
-          </button>
+          />
+        </div>
+      </div>
+
+      {/* Filter-Pills */}
+      <div className="px-5 mb-3" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex gap-2" style={{ minWidth: 'max-content' }}>
+          {activeTab === 'chats' ? (
+            (['alle', 'ungelesen', 'gruppen', 'direkt'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setChatFilter(f)}
+                style={{
+                  padding: '0.5rem 0.875rem',
+                  borderRadius: '9999px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  background: chatFilter === f ? 'var(--green)' : 'transparent',
+                  color: chatFilter === f ? 'white' : 'var(--text-2)',
+                  border: chatFilter === f ? 'none' : '1px solid var(--border)',
+                  opacity: searchQuery ? 0.5 : 1,
+                  pointerEvents: searchQuery ? 'none' : 'auto',
+                  minHeight: '2.25rem',
+                }}
+              >
+                {f === 'alle' ? 'Alle' : f === 'ungelesen' ? 'Ungelesen' : f === 'gruppen' ? 'Gruppen' : 'Direkt'}
+              </button>
+            ))
+          ) : (
+            (['alle', 'live', 'geplant', 'vergangen'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setJagdFilter(f)}
+                style={{
+                  padding: '0.5rem 0.875rem',
+                  borderRadius: '9999px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  background: jagdFilter === f ? 'var(--green)' : 'transparent',
+                  color: jagdFilter === f ? 'white' : 'var(--text-2)',
+                  border: jagdFilter === f ? 'none' : '1px solid var(--border)',
+                  opacity: searchQuery ? 0.5 : 1,
+                  pointerEvents: searchQuery ? 'none' : 'auto',
+                  minHeight: '2.25rem',
+                }}
+              >
+                {f === 'alle' ? 'Alle' : f === 'live' ? 'Live' : f === 'geplant' ? 'Geplant' : 'Vergangen'}
+              </button>
+            ))
+          )}
         </div>
       </div>
 
       {/* === JAGDEN TAB === */}
-      <div style={{ display: activeTab === 'jagden' ? undefined : 'none' }}>
-          {/* Quick Actions */}
-          <div className="flex gap-2.5 px-5 mb-5">
-            <Link href="/app/hunt/create" className="flex-1 flex flex-col items-center gap-2 py-4 px-3 rounded-2xl text-white"
-              style={{ background: 'linear-gradient(135deg, var(--green), #4a7a25)', boxShadow: '0 0.25rem 1.25rem rgba(107,159,58,0.25)' }}>
-              <span className="text-2xl">🎯</span>
-              <span className="text-sm font-semibold">Jagd starten</span>
-              <span className="text-xs" style={{ opacity: 0.5 }}>Gruppe erstellen</span>
-            </Link>
-            <button className="flex-1 flex flex-col items-center gap-2 py-4 px-3 rounded-2xl"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-              <span className="text-2xl">🔗</span>
-              <span className="text-sm font-semibold">Beitreten</span>
-              <span className="text-xs" style={{ opacity: 0.5 }}>Per Link</span>
-            </button>
-            <button className="flex-1 flex flex-col items-center gap-2 py-4 px-3 rounded-2xl"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-              <span className="text-2xl">🐕</span>
-              <span className="text-sm font-semibold">Nachsuche</span>
-              <span className="text-xs" style={{ opacity: 0.5 }}>Hundeführer</span>
-            </button>
-          </div>
-
-          {/* Aktive Jagden */}
-          {activeHunts.length > 0 && (
-            <div className="mb-4">
-              <p className="section-label px-5 mb-2">Aktive Jagden</p>
+      <div className="flex-1 flex flex-col" style={{ display: activeTab === 'jagden' ? undefined : 'none' }}>
+          {filteredHunts.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+              <p className="text-3xl mb-3">🌲</p>
+              <p className="font-semibold mb-1">{searchQuery ? 'Keine Treffer' : 'Noch keine Jagden'}</p>
+              <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+                {searchQuery ? 'Versuch einen anderen Suchbegriff.' : 'Starte deine erste Jagd oder tritt per Link bei.'}
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
               <div className="px-5 space-y-2.5">
-                {activeHunts.map((hunt) => {
+                {filteredHunts.map((hunt) => {
                   const isOwner = hunt.creator_id === userId
+                  const isLive = hunt.status === 'active'
                   return (
                     <div
                       key={hunt.id}
@@ -472,13 +581,26 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                         }}
                       >
                         <Link href={`/app/hunt/${hunt.id}`}
-                          className="block rounded-2xl p-3.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-base font-bold">{hunt.name}</span>
-                            <span className="badge badge-live"><span className="live-dot mr-1" /> Live</span>
+                          className="block rounded-2xl p-3.5" style={{
+                            background: isLive ? 'rgba(107,159,58,0.08)' : 'var(--surface)',
+                            border: isLive ? '1px solid rgba(107,159,58,0.25)' : '1px solid var(--border)',
+                          }}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-bold">{hunt.name}</span>
+                            {isLive ? (
+                              <span className="badge badge-live"><span className="live-dot mr-1" /> Live</span>
+                            ) : hunt.status === 'completed' ? (
+                              <span className="badge badge-done">
+                                {hunt.ended_at ? new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) : 'Beendet'}
+                              </span>
+                            ) : (
+                              <span className="badge" style={{ background: 'var(--surface-3)', color: 'var(--text-2)', fontSize: '0.6875rem', padding: '0.125rem 0.5rem', borderRadius: '9999px' }}>Geplant</span>
+                            )}
                           </div>
                           <div className="flex gap-3.5 text-xs" style={{ color: 'var(--text-2)' }}>
-                            <span>🕐 Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                            {isLive && hunt.started_at && (
+                              <span>🕐 Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                            )}
                             <span>{hunt.myRole === 'jagdleiter' ? '🎖️ Jagdleiter' : '🎯 Schütze'}</span>
                           </div>
                         </Link>
@@ -489,93 +611,25 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
               </div>
             </div>
           )}
-
-          {/* Vergangene Jagden */}
-          {pastHunts.length > 0 && (
-            <div className="mb-4">
-              <p className="section-label px-5 mb-2">Letzte Jagden</p>
-              <div className="px-5 space-y-2.5">
-                {pastHunts.map((hunt) => {
-                  const isOwner = hunt.creator_id === userId
-                  return (
-                    <div
-                      key={hunt.id}
-                      className={removingId === hunt.id ? 'swipe-removing' : ''}
-                    >
-                      <SwipeToAction
-                        actionIcon="🗑️"
-                        actionColor="var(--red)"
-                        disabled={!isOwner}
-                        onAction={() => setConfirmDialog({ type: 'delete-hunt', id: hunt.id, name: hunt.name })}
-                        onSwipeOpen={(closeFn) => {
-                          closeActiveSwipe()
-                          activeCloseRef.current = closeFn
-                        }}
-                      >
-                        <div className="rounded-2xl p-3.5"
-                          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-bold">{hunt.name}</span>
-                            <span className="badge badge-done">
-                              {hunt.ended_at ? new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) : 'Beendet'}
-                            </span>
-                          </div>
-                        </div>
-                      </SwipeToAction>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Leerer Zustand */}
-          {activeHunts.length === 0 && pastHunts.length === 0 && (
-            <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-              <p className="text-3xl mb-3">🌲</p>
-              <p className="font-semibold mb-1">Noch keine Jagden</p>
-              <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-                Starte deine erste Jagd oder tritt per Link bei.
-              </p>
-            </div>
-          )}
       </div>
 
       {/* === CHATS TAB === */}
       <div className="flex-1 flex flex-col relative" style={{ display: activeTab === 'chats' ? undefined : 'none' }}>
-          {/* Aktive-Jagd-Banner */}
-          {activeHunts.length > 0 && (
-            <Link
-              href={`/app/hunt/${activeHunts[0].id}`}
-              className="flex items-center gap-2.5 mx-5 mb-3 px-4 py-3 rounded-xl"
-              style={{
-                background: 'rgba(107,159,58,0.12)',
-                border: '1px solid rgba(107,159,58,0.25)',
-              }}
-            >
-              <span className="live-dot flex-shrink-0" />
-              <span className="flex-1 text-sm font-semibold truncate" style={{ color: 'var(--green-bright)' }}>
-                Aktive Jagd: {activeHunts[0].name}
-              </span>
-              <span style={{ color: 'var(--text-3)', fontSize: '1rem' }}>→</span>
-            </Link>
-          )}
-
           {loadingChats ? (
             <div className="flex-1 flex items-center justify-center">
               <p style={{ color: 'var(--text-3)', fontSize: '0.875rem' }}>Chats laden...</p>
             </div>
-          ) : chatItems.length === 0 ? (
+          ) : filteredChats.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
               <p className="text-3xl mb-3">💬</p>
-              <p className="font-semibold mb-1">Noch keine Chats</p>
+              <p className="font-semibold mb-1">{searchQuery || chatFilter !== 'alle' ? 'Keine Treffer' : 'Noch keine Chats'}</p>
               <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-                Erstelle eine Gruppe oder starte eine Jagd — der Chat kommt automatisch.
+                {searchQuery ? 'Versuch einen anderen Suchbegriff.' : chatFilter !== 'alle' ? 'Kein Chat passt zum Filter.' : 'Erstelle eine Gruppe oder starte eine Jagd — der Chat kommt automatisch.'}
               </p>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
-              {chatItems.map(item => {
+              {filteredChats.map(item => {
                 const isOwner = item.createdBy === userId
                 const isSwipeable = !item.isHuntChat
                 const swipeAction = isOwner ? 'delete-group' : 'leave-group'
@@ -691,21 +745,6 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
             </div>
           )}
 
-          {/* FAB: Gruppe erstellen */}
-          <Link
-            href="/app/chat/create"
-            className="flex items-center justify-center"
-            style={{
-              position: 'fixed', bottom: 'calc(3.5rem + var(--safe-bottom) + 1rem)', right: '1.5rem',
-              width: '3.5rem', height: '3.5rem', borderRadius: '50%',
-              background: 'var(--green)',
-              boxShadow: '0 0.25rem 1rem rgba(107,159,58,0.4)',
-              color: 'white', fontSize: '1.5rem', fontWeight: 700,
-              zIndex: 50,
-            }}
-          >
-            +
-          </Link>
       </div>
 
       {/* Bestätigungs-Dialog */}
