@@ -802,6 +802,13 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                       closeActiveSwipe()
                       activeSwipeCloseRef.current = closeFn
                     }}
+                    onReply={() => setReplyingTo(msg)}
+                    onDragStart={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current)
+                        longPressTimerRef.current = null
+                      }
+                    }}
                   >
                     <div style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
                       <div

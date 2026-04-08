@@ -10,6 +10,16 @@ type SwipeToActionProps = {
   children: ReactNode
   /** Wird aufgerufen wenn Swipe einrastet. Übergibt close()-Funktion damit der Parent andere Instanzen schließen kann. */
   onSwipeOpen?: (close: () => void) => void
+  /** Reply-Callback bei RIGHT-Swipe über Trigger-Schwelle */
+  onReply?: () => void
+  /** Icon für Reply-Indikator (default ↩) */
+  replyIcon?: string
+  /** Pixel nach rechts für Reply-Trigger (default 60) */
+  replyTriggerPx?: number
+  /** Maximale Pixel nach rechts (default 100) */
+  replyMaxPx?: number
+  /** Wird bei Start jeder horizontalen Geste gefeuert (z.B. Long-Press-Timer canceln) */
+  onDragStart?: () => void
 }
 
 const ACTION_WIDTH = 80 // px – Breite des aufgedeckten Bereichs
@@ -23,8 +33,14 @@ export default function SwipeToAction({
   disabled = false,
   children,
   onSwipeOpen,
+  onReply,
+  replyIcon,
+  replyTriggerPx = 60,
+  replyMaxPx = 100,
+  onDragStart,
 }: SwipeToActionProps) {
   const contentRef = useRef<HTMLDivElement>(null)
+  const replyIndicatorRef = useRef<HTMLDivElement>(null)
   const startX = useRef(0)
   const startY = useRef(0)
   const currentX = useRef(0)
@@ -43,7 +59,6 @@ export default function SwipeToAction({
   }, [])
 
   const handleStart = useCallback((clientX: number, clientY: number) => {
-    if (disabled) return
     const el = contentRef.current
     if (!el) return
     el.style.transition = 'none'
@@ -52,10 +67,10 @@ export default function SwipeToAction({
     directionLocked.current = null
     isDragging.current = true
     didSwipe.current = false
-  }, [disabled])
+  }, [])
 
   const handleMove = useCallback((clientX: number, clientY: number) => {
-    if (!isDragging.current || disabled) return
+    if (!isDragging.current) return
     const el = contentRef.current
     if (!el) return
 
@@ -66,6 +81,9 @@ export default function SwipeToAction({
     if (!directionLocked.current) {
       if (Math.abs(diffX) > DIRECTION_LOCK_DISTANCE || Math.abs(diffY) > DIRECTION_LOCK_DISTANCE) {
         directionLocked.current = Math.abs(diffX) > Math.abs(diffY) ? 'horizontal' : 'vertical'
+        if (directionLocked.current === 'horizontal') {
+          onDragStart?.()
+        }
       }
       return
     }
@@ -74,16 +92,28 @@ export default function SwipeToAction({
 
     didSwipe.current = true
 
-    // Nur nach links swipen erlauben
     const baseOffset = isOpen.current ? -ACTION_WIDTH : 0
     let offset = baseOffset + diffX
 
-    // Begrenze auf max -ACTION_WIDTH (links) und 0 (rechts)
-    offset = Math.max(-ACTION_WIDTH, Math.min(0, offset))
+    // Links: Delete (nur wenn nicht disabled)
+    // Rechts: Reply (nur wenn onReply vorhanden)
+    if (offset < 0 && !disabled) {
+      offset = Math.max(-ACTION_WIDTH, offset)
+    } else if (offset > 0 && onReply) {
+      offset = Math.min(replyMaxPx, offset)
+    } else {
+      offset = 0
+    }
 
     currentX.current = offset
     el.style.transform = `translateX(${offset}px)`
-  }, [disabled])
+
+    // Reply-Indicator Opacity aktualisieren
+    const indicator = replyIndicatorRef.current
+    if (indicator) {
+      indicator.style.opacity = String(Math.min(Math.max(offset, 0) / replyTriggerPx, 1))
+    }
+  }, [disabled, onReply, replyMaxPx, replyTriggerPx, onDragStart])
 
   const handleEnd = useCallback(() => {
     if (!isDragging.current) return
@@ -93,8 +123,19 @@ export default function SwipeToAction({
 
     el.style.transition = 'transform 0.3s ease'
 
-    // Threshold-Check: bei mehr als THRESHOLD px → einrasten, sonst zurück
-    if (currentX.current <= -THRESHOLD) {
+    // Reply: RIGHT-Swipe über Trigger-Schwelle → sofort feuern + zurücksnappen
+    if (currentX.current >= replyTriggerPx && onReply) {
+      el.style.transform = 'translateX(0)'
+      currentX.current = 0
+      navigator.vibrate?.(15)
+      onReply()
+      const indicator = replyIndicatorRef.current
+      if (indicator) indicator.style.opacity = '0'
+      return
+    }
+
+    // Delete: LEFT-Swipe über Threshold → einrasten
+    if (!disabled && currentX.current <= -THRESHOLD) {
       el.style.transform = `translateX(-${ACTION_WIDTH}px)`
       currentX.current = -ACTION_WIDTH
       if (!isOpen.current) {
@@ -106,7 +147,11 @@ export default function SwipeToAction({
       currentX.current = 0
       isOpen.current = false
     }
-  }, [onSwipeOpen, close])
+
+    // Reply-Indicator zurücksetzen
+    const indicator = replyIndicatorRef.current
+    if (indicator) indicator.style.opacity = '0'
+  }, [onSwipeOpen, close, onReply, replyTriggerPx, disabled])
 
   // Touch Events
   const onTouchStart = useCallback((e: React.TouchEvent) => {
@@ -146,53 +191,71 @@ export default function SwipeToAction({
     onAction()
   }, [onAction])
 
-  // Klick auf Content verhindern wenn geswiped wurde (damit Link nicht feuert)
-  // Wichtig: Nach einem Touch-Swipe feuert der Browser einen synthetischen Click.
-  // Wenn wir gerade geswiped haben (didSwipe=true), darf der Click NICHT close() aufrufen,
-  // sonst verschwindet der Button sofort wieder.
+  // Klick auf Content verhindern wenn geswiped wurde
   const handleContentClick = useCallback((e: React.MouseEvent) => {
     if (didSwipe.current) {
-      // Synthetischer Click nach Swipe-Geste — Link verhindern, aber NICHT schließen
       e.preventDefault()
       e.stopPropagation()
       didSwipe.current = false
       return
     }
     if (isOpen.current) {
-      // Echter Tap auf offenen Content → schließen
       e.preventDefault()
       e.stopPropagation()
       close()
     }
   }, [close])
 
-  if (disabled) {
+  // Komplett deaktiviert: kein Delete UND kein Reply möglich
+  if (disabled && !onReply) {
     return <>{children}</>
   }
 
   return (
     <div style={{ position: 'relative', overflow: 'hidden' }}>
-      {/* Action-Feld (liegt hinter dem Content) */}
-      <div
-        onClick={handleActionTap}
-        style={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: `${ACTION_WIDTH}px`,
-          background: actionColor,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '1.5rem',
-          cursor: 'pointer',
-          zIndex: 0,
-          userSelect: 'none',
-        }}
-      >
-        {actionIcon}
-      </div>
+      {/* Reply-Indicator (links, erscheint bei RIGHT-Swipe) */}
+      {onReply && (
+        <div
+          ref={replyIndicatorRef}
+          style={{
+            position: 'absolute',
+            left: '0.5rem',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            opacity: 0,
+            pointerEvents: 'none',
+            fontSize: '1.4rem',
+            color: 'var(--green)',
+            zIndex: 0,
+          }}
+        >
+          {replyIcon ?? '\u21A9'}
+        </div>
+      )}
+
+      {/* Delete-Action-Feld (liegt hinter dem Content, rechts) */}
+      {!disabled && (
+        <div
+          onClick={handleActionTap}
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: `${ACTION_WIDTH}px`,
+            background: actionColor,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.5rem',
+            cursor: 'pointer',
+            zIndex: 0,
+            userSelect: 'none',
+          }}
+        >
+          {actionIcon}
+        </div>
+      )}
 
       {/* Verschiebbarer Content */}
       <div
