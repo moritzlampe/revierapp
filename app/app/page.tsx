@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import LogoutButton from './logout-button'
 import HomeContent from './home-content'
+import BottomTabBar from '@/components/bottom-tab-bar'
 
 export default async function AppPage() {
   const supabase = await createClient()
@@ -38,6 +39,7 @@ export default async function AppPage() {
         initialHunts={hunts}
         userId={user.id}
       />
+      <BottomTabBar />
     </div>
   )
 }

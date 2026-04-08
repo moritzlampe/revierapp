@@ -352,7 +352,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   }
 
   return (
-    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
       {/* Header */}
       <div style={{ padding: '0.25rem 1.25rem 0.75rem' }}>
         <div className="flex items-center justify-between mb-4">
@@ -696,7 +696,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
             href="/app/chat/create"
             className="flex items-center justify-center"
             style={{
-              position: 'fixed', bottom: '1.5rem', right: '1.5rem',
+              position: 'fixed', bottom: 'calc(3.5rem + var(--safe-bottom) + 1rem)', right: '1.5rem',
               width: '3.5rem', height: '3.5rem', borderRadius: '50%',
               background: 'var(--green)',
               boxShadow: '0 0.25rem 1rem rgba(107,159,58,0.4)',
