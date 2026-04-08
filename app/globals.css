@@ -1310,6 +1310,17 @@ button:active {
   to { transform: translateY(0); }
 }
 
+/* Reply: Scroll-to-Original Highlight-Flash */
+@keyframes msg-highlight-flash {
+  0%   { background-color: transparent; }
+  20%  { background-color: rgba(107, 159, 58, 0.35); }
+  100% { background-color: transparent; }
+}
+.msg-highlight-flash {
+  animation: msg-highlight-flash 1.2s ease-out;
+  border-radius: 0.6rem;
+}
+
 /* ============================================================
    Karten-basierte Stand-Zuweisung (Step 2 Jagd erstellen)
    ============================================================ */

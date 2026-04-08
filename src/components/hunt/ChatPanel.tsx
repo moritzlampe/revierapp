@@ -8,6 +8,7 @@ import { extractFirstUrl } from '@/lib/chat-utils'
 import LinkPreviewCard from '@/components/chat/LinkPreviewCard'
 import { MessageContextSheet } from '@/components/chat/MessageContextSheet'
 import { ReplyQuoteBar } from '@/components/chat/ReplyQuoteBar'
+import { InlineQuoteBox } from '@/components/chat/InlineQuoteBox'
 
 // === Types ===
 
@@ -274,6 +275,21 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     const p = participants.find(p => p.id === msg.participant_id)
     return p?.user_id === userId
   }, [participants, userId, isGroupChat])
+
+  // Replied-Message im aktuellen State finden
+  const findRepliedMessage = useCallback((replyToId: string | null | undefined) => {
+    if (!replyToId) return null
+    return messages.find(m => m.id === replyToId) ?? null
+  }, [messages])
+
+  // Zu einer Nachricht scrollen + Highlight-Flash
+  const scrollToMessage = useCallback((messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('msg-highlight-flash')
+    setTimeout(() => el.classList.remove('msg-highlight-flash'), 1400)
+  }, [])
 
   // Kann diese Nachricht gelöscht werden?
   const canDeleteMessage = useCallback((msg: Message) => {
@@ -764,7 +780,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
           const showSenderName = !isMine && !isSystem && sender && memberTotal > 2 && !prevIsFromSameSender
 
           return (
-            <div key={msg.id}>
+            <div key={msg.id} id={`msg-${msg.id}`}>
               {showDateSep && (
                 <div className="chat-date-separator">
                   {formatDateSeparator(msg.created_at)}
@@ -805,6 +821,23 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                             {sender.name}
                           </div>
                         )}
+                        {msg.reply_to_message_id && (() => {
+                          const replied = findRepliedMessage(msg.reply_to_message_id)
+                          const repliedSenderId = replied
+                            ? (isGroupChat ? replied.sender_id : replied.participant_id)
+                            : null
+                          const repliedSenderName = replied
+                            ? (isMyMessage(replied) ? 'Du' : (repliedSenderId ? participantMap[repliedSenderId]?.name || 'Unbekannt' : 'Unbekannt'))
+                            : ''
+                          return (
+                            <InlineQuoteBox
+                              repliedMessage={replied}
+                              senderName={repliedSenderName}
+                              isMine={isMine}
+                              onTap={() => scrollToMessage(msg.reply_to_message_id!)}
+                            />
+                          )
+                        })()}
                         {msg.type === 'photo' && msg.media_url && (
                           <img
                             src={msg.media_url}
