@@ -56,8 +56,19 @@ const SENDER_COLORS = ['#8BC34A', '#42A5F5', '#FF8F00', '#EF5350', '#AB47BC', '#
 const PAGE_SIZE = 20
 const SCROLL_THRESHOLD = 100
 const SYSTEM_TYPES = ['signal', 'kill_report', 'tracking']
+const STACK_MAX_GAP_MS = 2 * 60 * 1000 // 2 Minuten
 
 // === Hilfsfunktionen ===
+
+function getSenderId(msg: Message, isGroupChat: boolean) {
+  return isGroupChat ? msg.sender_id : msg.participant_id
+}
+
+function canStack(a: Message, b: Message, isGroupChat: boolean) {
+  if (SYSTEM_TYPES.includes(a.type) || SYSTEM_TYPES.includes(b.type)) return false
+  if (getSenderId(a, isGroupChat) !== getSenderId(b, isGroupChat)) return false
+  return Math.abs(new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) < STACK_MAX_GAP_MS
+}
 
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
@@ -765,22 +776,54 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
 
         {messages.map((msg, i) => {
           const prevMsg = i > 0 ? messages[i - 1] : null
+          const nextMsg = i < messages.length - 1 ? messages[i + 1] : null
           const showDateSep = needsDateSeparator(msg, prevMsg)
           const isMine = isMyMessage(msg)
           const isSystem = SYSTEM_TYPES.includes(msg.type)
-          const senderId = isGroupChat ? msg.sender_id : msg.participant_id
+          const senderId = getSenderId(msg, isGroupChat)
           const sender = senderId ? participantMap[senderId] : undefined
           const deletable = !isSystem && canDeleteMessage(msg)
 
-          // Sender-Name: nur in Gruppen 3+, nicht bei aufeinanderfolgenden vom gleichen Sender
+          // Stacking-Logik: gleicher Sender + <2 Min + kein Datumswechsel
+          const stackedWithPrev = !showDateSep && prevMsg !== null && canStack(prevMsg, msg, isGroupChat)
+          const stackedWithNext = nextMsg !== null && !needsDateSeparator(nextMsg, msg) && canStack(msg, nextMsg, isGroupChat)
+          const isFirstInStack = !stackedWithPrev
+          const isLastInStack = !stackedWithNext
+
+          // Sender-Name: nur bei erster Nachricht im Stack, in Gruppen 3+, nicht bei eigenen
           const memberTotal = Object.keys(participantMap).length
-          const prevIsFromSameSender = prevMsg && !showDateSep
-            && !SYSTEM_TYPES.includes(prevMsg.type) && !isMyMessage(prevMsg)
-            && (isGroupChat ? prevMsg.sender_id : prevMsg.participant_id) === senderId
-          const showSenderName = !isMine && !isSystem && sender && memberTotal > 2 && !prevIsFromSameSender
+          const showSenderName = isFirstInStack && !isMine && !isSystem && sender && memberTotal > 2
+
+          // Timestamp: nur bei letzter Nachricht im Stack
+          const showTimestamp = isLastInStack
+
+          // Außen-Spacing: gestapelt = 0.125rem, anderer Sender = 0.5rem, erste Nachricht = 0
+          const marginTop = !prevMsg || showDateSep
+            ? '0'
+            : isSystem || SYSTEM_TYPES.includes(prevMsg.type)
+              ? '0.25rem'
+              : stackedWithPrev ? '0.125rem' : '0.5rem'
+
+          // Border-Radius dynamisch berechnen
+          const normalR = '1rem'
+          const flatR = '0.25rem'
+          let borderRadius: string
+          if (isSystem) {
+            borderRadius = '0.5rem'
+          } else if (isMine) {
+            // Eigene Nachrichten (rechts): rechte Seite abflachen bei Stacking
+            const tr = (!isFirstInStack) ? flatR : normalR
+            const br = (!isLastInStack) ? flatR : normalR
+            borderRadius = `${normalR} ${tr} ${br} ${normalR}`
+          } else {
+            // Andere Nachrichten (links): linke Seite abflachen bei Stacking
+            const tl = (!isFirstInStack) ? flatR : normalR
+            const bl = (!isLastInStack) ? flatR : normalR
+            borderRadius = `${tl} ${normalR} ${normalR} ${bl}`
+          }
 
           return (
-            <div key={msg.id} id={`msg-${msg.id}`}>
+            <div key={msg.id} id={`msg-${msg.id}`} style={{ marginTop }}>
               {showDateSep && (
                 <div className="chat-date-separator">
                   {formatDateSeparator(msg.created_at)}
@@ -813,6 +856,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                     <div style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
                       <div
                         className={`chat-msg ${isMine ? 'self' : 'other'}`}
+                        style={{ borderRadius }}
                         onTouchStart={() => {
                           longPressTimerRef.current = setTimeout(() => {
                             if (navigator.vibrate) navigator.vibrate(15)
@@ -824,8 +868,9 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                         onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
                       >
                         {showSenderName && (
-                          <div className="msg-sender" style={{ color: SENDER_COLORS[sender.colorIndex] }}>
-                            {sender.name}
+                          <div className="msg-sender" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: SENDER_COLORS[sender.colorIndex] }}>
+                            {/* Avatar-Slot: hier kann später ein Initialen-Kreis eingefügt werden */}
+                            <span>{sender.name}</span>
                           </div>
                         )}
                         {msg.reply_to_message_id && (() => {
@@ -854,7 +899,9 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                           />
                         )}
                         {msg.content && renderMessageContent(msg.content)}
-                        <div className="msg-time">{formatTime(msg.created_at)}</div>
+                        {showTimestamp && (
+                          <div className="msg-time">{formatTime(msg.created_at)}</div>
+                        )}
                       </div>
                     </div>
                   </SwipeToAction>
