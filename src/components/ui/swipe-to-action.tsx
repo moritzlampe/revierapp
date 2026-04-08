@@ -40,6 +40,7 @@ export default function SwipeToAction({
   onDragStart,
 }: SwipeToActionProps) {
   const contentRef = useRef<HTMLDivElement>(null)
+  const deleteActionRef = useRef<HTMLDivElement>(null)
   const replyIndicatorRef = useRef<HTMLDivElement>(null)
   const startX = useRef(0)
   const startY = useRef(0)
@@ -56,6 +57,8 @@ export default function SwipeToAction({
     el.style.transform = 'translateX(0)'
     currentX.current = 0
     isOpen.current = false
+    const deleteEl = deleteActionRef.current
+    if (deleteEl) deleteEl.style.opacity = '0'
   }, [])
 
   const handleStart = useCallback((clientX: number, clientY: number) => {
@@ -108,6 +111,12 @@ export default function SwipeToAction({
     currentX.current = offset
     el.style.transform = `translateX(${offset}px)`
 
+    // Delete-Action sichtbar machen bei Links-Swipe
+    const deleteEl = deleteActionRef.current
+    if (deleteEl) {
+      deleteEl.style.opacity = offset < 0 ? '1' : '0'
+    }
+
     // Reply-Indicator Opacity aktualisieren
     const indicator = replyIndicatorRef.current
     if (indicator) {
@@ -142,10 +151,16 @@ export default function SwipeToAction({
         isOpen.current = true
         onSwipeOpen?.(close)
       }
+      // Delete-Action bleibt sichtbar
+      const deleteEl = deleteActionRef.current
+      if (deleteEl) deleteEl.style.opacity = '1'
     } else {
       el.style.transform = 'translateX(0)'
       currentX.current = 0
       isOpen.current = false
+      // Delete-Action ausblenden
+      const deleteEl = deleteActionRef.current
+      if (deleteEl) deleteEl.style.opacity = '0'
     }
 
     // Reply-Indicator zurücksetzen
@@ -236,6 +251,7 @@ export default function SwipeToAction({
       {/* Delete-Action-Feld (liegt hinter dem Content, rechts) */}
       {!disabled && (
         <div
+          ref={deleteActionRef}
           onClick={handleActionTap}
           style={{
             position: 'absolute',
@@ -251,6 +267,7 @@ export default function SwipeToAction({
             cursor: 'pointer',
             zIndex: 0,
             userSelect: 'none',
+            opacity: 0,
           }}
         >
           {actionIcon}
