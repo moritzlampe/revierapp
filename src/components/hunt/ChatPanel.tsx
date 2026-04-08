@@ -20,6 +20,7 @@ type Message = {
   content: string | null
   media_url: string | null
   created_at: string
+  reply_to_message_id?: string | null
 }
 
 type Participant = {
@@ -166,6 +167,16 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
   const [removingMsgId, setRemovingMsgId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [contextMenuMessage, setContextMenuMessage] = useState<Message | null>(null)
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+
+  // Debug-Log für Reply-State (wird in 34b-2 entfernt)
+  useEffect(() => {
+    if (replyingTo) {
+      console.log("[34b-1] replyingTo gesetzt:", replyingTo.id, replyingTo.content?.slice(0, 50));
+    } else {
+      console.log("[34b-1] replyingTo gecleared");
+    }
+  }, [replyingTo])
   const activeSwipeCloseRef = useRef<(() => void) | null>(null)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -895,7 +906,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
         isOwn={contextMenuMessage ? isMyMessage(contextMenuMessage) : false}
         hasText={!!contextMenuMessage?.content}
         onReply={() => {
-          alert('Antworten kommt in Schritt 34b')
+          if (contextMenuMessage) setReplyingTo(contextMenuMessage)
           setContextMenuMessage(null)
         }}
         onForward={() => {
