@@ -9,6 +9,7 @@ import LinkPreviewCard from '@/components/chat/LinkPreviewCard'
 import { MessageContextSheet } from '@/components/chat/MessageContextSheet'
 import { ReplyQuoteBar } from '@/components/chat/ReplyQuoteBar'
 import { InlineQuoteBox } from '@/components/chat/InlineQuoteBox'
+import { Clock, Check, AlertCircle } from 'lucide-react'
 
 // === Types ===
 
@@ -23,6 +24,7 @@ type Message = {
   media_url: string | null
   created_at: string
   reply_to_message_id?: string | null
+  _status?: 'pending' | 'sent' | 'error'
 }
 
 type Participant = {
@@ -335,6 +337,38 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     setRemovingMsgId(null)
   }, [supabase, chatCache, channelId])
 
+  // Fehlgeschlagene Nachricht erneut senden
+  const retryMessage = useCallback(async (msgId: string) => {
+    const msg = messages.find(m => m.id === msgId)
+    if (!msg || msg._status !== 'error') return
+
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'pending' as const } : m))
+
+    const insertData: Record<string, unknown> = {
+      id: msg.id,
+      type: msg.type,
+    }
+    if (msg.content) insertData.content = msg.content
+    if (msg.media_url) insertData.media_url = msg.media_url
+    if (msg.reply_to_message_id) insertData.reply_to_message_id = msg.reply_to_message_id
+    if (isGroupChat) {
+      insertData.group_id = groupId
+      insertData.sender_id = userId
+    } else {
+      insertData.hunt_id = huntId
+      insertData.participant_id = myParticipantId
+    }
+
+    const { error } = await supabase.from('messages').insert(insertData)
+
+    if (error) {
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'error' as const } : m))
+      console.error('Erneutes Senden fehlgeschlagen:', error)
+    } else {
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'sent' as const } : m))
+    }
+  }, [messages, isGroupChat, groupId, userId, huntId, myParticipantId, supabase])
+
   // Scroll-Helpers
   const scrollToBottom = useCallback((smooth = true) => {
     bottomRef.current?.scrollIntoView(smooth ? { behavior: 'smooth' } : undefined)
@@ -433,8 +467,17 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
         const msg = payload.new as Message
 
         setMessages(prev => {
-          // Duplikat vermeiden (optimistisches Update)
-          if (prev.some(m => m.id === msg.id)) return prev
+          const existingIdx = prev.findIndex(m => m.id === msg.id)
+          if (existingIdx !== -1) {
+            // Optimistische Nachricht bestätigen
+            if (prev[existingIdx]._status === 'pending') {
+              const updated = [...prev]
+              updated[existingIdx] = { ...prev[existingIdx], _status: 'sent' }
+              chatCache.set(channelId, updated)
+              return updated
+            }
+            return prev
+          }
           const updated = [...prev, msg]
           chatCache.set(channelId, updated)
           return updated
@@ -565,6 +608,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     if (isGroupChat && !userId) return
 
     const msgId = crypto.randomUUID()
+    const replyToId = replyingTo?.id ?? null
     const optimistic: Message = {
       id: msgId,
       hunt_id: huntId || null,
@@ -575,13 +619,15 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
       content: text,
       media_url: null,
       created_at: new Date().toISOString(),
-      reply_to_message_id: replyingTo?.id ?? null,
+      reply_to_message_id: replyToId,
+      _status: 'pending',
     }
 
     setInputText('')
     // Textarea-Höhe zurücksetzen
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setMessages(prev => [...prev, optimistic])
+    setReplyingTo(null)
     requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
 
     const insertData: Record<string, unknown> = {
@@ -589,8 +635,8 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
       type: 'text',
       content: text,
     }
-    if (replyingTo) {
-      insertData.reply_to_message_id = replyingTo.id
+    if (replyToId) {
+      insertData.reply_to_message_id = replyToId
     }
     if (isGroupChat) {
       insertData.group_id = groupId
@@ -603,13 +649,11 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     const { error } = await supabase.from('messages').insert(insertData)
 
     if (error) {
-      setMessages(prev => prev.filter(m => m.id !== msgId))
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'error' as const } : m))
       console.error('Nachricht senden fehlgeschlagen:', error)
     } else {
-      setReplyingTo(null)
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'sent' as const } : m))
       if (userId) {
-        // 2er-Chat: Titel = Absendername, Body = nur Nachricht (wie WhatsApp)
-        // Gruppenchat: Titel = Gruppenname, Body = "Name: Nachricht"
         const pushTitle = isDirect && mySenderName
           ? mySenderName
           : chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat')
@@ -663,6 +707,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
         content: null,
         media_url: publicUrl,
         created_at: new Date().toISOString(),
+        _status: 'pending',
       }
       setMessages(prev => [...prev, optimistic])
       requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
@@ -683,9 +728,11 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
       const { error } = await supabase.from('messages').insert(insertData)
 
       if (error) {
-        setMessages(prev => prev.filter(m => m.id !== msgId))
+        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'error' as const } : m))
         console.error('Foto senden fehlgeschlagen:', error)
-      } else if (userId) {
+      } else {
+        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'sent' as const } : m))
+        if (userId) {
         const pushTitle = isDirect && mySenderName
           ? mySenderName
           : chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat')
@@ -700,6 +747,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
           senderUserId: userId,
           url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
         })
+        }
       }
     } catch (err) {
       console.error('Foto-Upload fehlgeschlagen:', err)
@@ -900,7 +948,21 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                         )}
                         {msg.content && renderMessageContent(msg.content)}
                         {showTimestamp && (
-                          <div className="msg-time">{formatTime(msg.created_at)}</div>
+                          <div className="msg-time" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem' }}>
+                            {formatTime(msg.created_at)}
+                            {isMine && (() => {
+                              const status = msg._status ?? 'sent'
+                              if (status === 'pending') return <Clock size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+                              if (status === 'sent') return <Check size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+                              return (
+                                <AlertCircle
+                                  size={14}
+                                  style={{ color: 'var(--red)', flexShrink: 0, cursor: 'pointer' }}
+                                  onClick={(e) => { e.stopPropagation(); retryMessage(msg.id) }}
+                                />
+                              )
+                            })()}
+                          </div>
                         )}
                       </div>
                     </div>
