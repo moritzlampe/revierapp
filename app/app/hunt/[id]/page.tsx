@@ -113,8 +113,13 @@ export default function HuntPage() {
       }
     }
 
+    // Dedup per ID: falls ein Stand in beiden Quellen existiert, gewinnt adhocList
+    const merged = new Map<string, StandData>()
+    for (const s of stands) merged.set(s.id, s)
+    for (const s of adhocList) merged.set(s.id, s)
+
     return {
-      allStands: [...stands, ...adhocList],
+      allStands: Array.from(merged.values()),
       allParticipantStands: pStands,
       freePositions: freePos,
       standAssignedNames: assignedNames,
@@ -302,19 +307,27 @@ export default function HuntPage() {
   const handleStandsChanged = useCallback((newStand?: StandData, deletedId?: string) => {
     // Optimistisches Update: sofort anzeigen ohne Refetch abzuwarten
     if (newStand) {
-      setStands(prev => {
-        const exists = prev.some(s => s.id === newStand.id)
-        return exists ? prev.map(s => s.id === newStand.id ? newStand : s) : [...prev, newStand]
-      })
+      if (newStand.type === 'adhoc') {
+        // Adhoc-Stände leben in seatAssignments, nicht in stands
+        setSeatAssignments(prev => prev.map(a =>
+          a.id === newStand.id
+            ? { ...a, position_lat: newStand.position.lat, position_lng: newStand.position.lng }
+            : a
+        ))
+      } else {
+        setStands(prev => {
+          const exists = prev.some(s => s.id === newStand.id)
+          return exists ? prev.map(s => s.id === newStand.id ? newStand : s) : [...prev, newStand]
+        })
+      }
     }
     if (deletedId) {
       setStands(prev => prev.filter(s => s.id !== deletedId))
     }
-    // Background-Refetch für Konsistenz
-    if (hunt?.district_id) {
-      loadMapObjects(hunt.district_id)
-    }
-  }, [hunt?.district_id, loadMapObjects])
+    // Kein loadMapObjects hier — Race-Condition: DB-Update ist noch nicht durch
+    // wenn der Refetch feuert, alter Stand überschreibt das optimistische Update.
+    // Konsistenz wird bei nächstem Seitenaufruf/Reload hergestellt.
+  }, [])
 
   const handleBoundaryChanged = useCallback(() => {
     loadHunt()
