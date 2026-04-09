@@ -24,7 +24,7 @@ function getAvatarColor(id: string): string {
 
 type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string } | null }
-type SeatAssignment = { id: string; user_id: string; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null }
+type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null }
 
 type SwitcherChat = {
   groupId: string
@@ -84,9 +84,9 @@ export default function HuntPage() {
     const assignedNames: Record<string, string> = {}
 
     for (const a of seatAssignments) {
-      const p = participants.find(pp => pp.user_id === a.user_id)
+      const p = a.user_id ? participants.find(pp => pp.user_id === a.user_id) : null
       const name = p?.profiles?.display_name || p?.guest_name || 'Unbekannt'
-      const pid = userToParticipant.get(a.user_id)
+      const pid = a.user_id ? userToParticipant.get(a.user_id) : undefined
 
       if (a.seat_type === 'assigned' && a.seat_id && pid) {
         pStands[pid] = a.seat_id
@@ -99,9 +99,11 @@ export default function HuntPage() {
           position: { lat: a.position_lat, lng: a.position_lng },
           description: null,
         })
-        if (pid) pStands[pid] = a.id
-        assignedNames[a.id] = name
-      } else if (a.seat_type === 'free_pos' && a.position_lat != null && a.position_lng != null) {
+        if (pid) {
+          pStands[pid] = a.id
+          assignedNames[a.id] = name
+        }
+      } else if (a.seat_type === 'free_pos' && a.position_lat != null && a.position_lng != null && a.user_id) {
         freePos.push({
           userId: a.user_id,
           position: { lat: a.position_lat, lng: a.position_lng },

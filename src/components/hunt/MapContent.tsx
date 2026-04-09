@@ -527,6 +527,7 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
   const userAssignments = useMemo(() => {
     const map = new Map<string, { standName: string; assignmentId: string }>()
     for (const a of seatAssignments) {
+      if (!a.user_id) continue
       if (a.seat_type === 'assigned' && a.seat_id) {
         const s = stands.find(st => st.id === a.seat_id)
         map.set(a.user_id, { standName: s?.name || '?', assignmentId: a.id })
@@ -869,9 +870,11 @@ export default function MapContent({
   }, [editStand])
 
   // Stand verschoben im Move-Mode → Position in DB persistieren
-  const handleStandDragEnd = useCallback((standId: string, position: { lat: number; lng: number }) => {
+  const handleStandDragEnd = useCallback(async (standId: string, position: { lat: number; lng: number }) => {
     const stand = stands?.find(s => s.id === standId)
     if (!stand) return
+
+    const originalPosition = { lat: stand.position.lat, lng: stand.position.lng }
 
     // Optimistisches State-Update
     onStandsChanged?.({ ...stand, position }, undefined)
@@ -879,20 +882,29 @@ export default function MapContent({
     // DB-Update
     const supabase = createClient()
     if (stand.type === 'adhoc') {
-      // Ad-hoc: Position in hunt_seat_assignments
-      supabase
+      // Ad-hoc: Position in hunt_seat_assignments (per ID, nicht Name)
+      const { data, error } = await supabase
         .from('hunt_seat_assignments')
         .update({ position_lat: position.lat, position_lng: position.lng })
-        .eq('seat_type', 'adhoc')
-        .eq('seat_name', stand.name)
-        .then(() => { /* fire and forget */ })
+        .eq('id', standId)
+        .select()
+
+      if (error || !data?.length) {
+        console.error('Drag-Update fehlgeschlagen für Adhoc-Stand', standId, error)
+        onStandsChanged?.({ ...stand, position: originalPosition }, undefined)
+      }
     } else {
       // Revier-Stand: Position in map_objects (PostGIS)
-      supabase
+      const { data, error } = await supabase
         .from('map_objects')
         .update({ position: `SRID=4326;POINT(${position.lng} ${position.lat})` })
         .eq('id', standId)
-        .then(() => { /* fire and forget */ })
+        .select()
+
+      if (error || !data?.length) {
+        console.error('Drag-Update fehlgeschlagen für Revier-Stand', standId, error)
+        onStandsChanged?.({ ...stand, position: originalPosition }, undefined)
+      }
     }
   }, [stands, onStandsChanged])
 

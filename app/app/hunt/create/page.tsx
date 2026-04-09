@@ -518,7 +518,7 @@ export default function CreateHuntPage() {
     // Karten-basierte Zuweisungen speichern
     const assignments: {
       hunt_id: string
-      user_id: string
+      user_id: string | null
       seat_id: string | null
       seat_type: string
       seat_name: string | null
@@ -541,19 +541,17 @@ export default function CreateHuntPage() {
       }
     }
 
-    // Ad-hoc Stand-Zuweisungen
+    // Ad-hoc Stand-Zuweisungen (auch unbesetzte Stände persistieren)
     for (const s of adhocStands) {
-      if (s.assignedUserId) {
-        assignments.push({
-          hunt_id: hunt.id,
-          user_id: s.assignedUserId,
-          seat_id: null,
-          seat_type: 'adhoc',
-          seat_name: s.name,
-          position_lat: s.position.lat,
-          position_lng: s.position.lng,
-        })
-      }
+      assignments.push({
+        hunt_id: hunt.id,
+        user_id: s.assignedUserId || null,
+        seat_id: null,
+        seat_type: 'adhoc',
+        seat_name: s.name,
+        position_lat: s.position.lat,
+        position_lng: s.position.lng,
+      })
     }
 
     // Freie Positionen

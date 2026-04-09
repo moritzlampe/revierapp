@@ -18,7 +18,7 @@ export interface HuntParticipantInfo {
 
 export interface SeatAssignmentData {
   id: string
-  user_id: string
+  user_id: string | null
   seat_id: string | null
   seat_type: string
   seat_name: string | null

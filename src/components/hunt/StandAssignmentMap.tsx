@@ -276,30 +276,40 @@ export default function StandAssignmentMap({
   }, [activeParticipantId, onStandAssign, onStandTapped])
 
   // Drag-End: Position persistieren
-  const handleDragEnd = useCallback((standId: string, position: { lat: number; lng: number }) => {
-    // Optimistisches Update über Callback
-    onStandMoved?.(standId, position, allStands.find(s => s.id === standId)?.type || 'hochsitz')
-
-    // DB-Update
+  const handleDragEnd = useCallback(async (standId: string, position: { lat: number; lng: number }) => {
     const stand = allStands.find(s => s.id === standId)
+    const originalPosition = stand ? { lat: stand.position.lat, lng: stand.position.lng } : null
+
+    // Optimistisches Update über Callback
+    onStandMoved?.(standId, position, stand?.type || 'hochsitz')
+
     if (!stand) return
     const supabase = createClient()
 
     if (stand.type === 'adhoc') {
-      // Ad-hoc Stände: Position in hunt_seat_assignments
-      supabase
+      // Ad-hoc Stände: Position in hunt_seat_assignments (per ID, nicht Name)
+      const { data, error } = await supabase
         .from('hunt_seat_assignments')
         .update({ position_lat: position.lat, position_lng: position.lng })
-        .eq('seat_type', 'adhoc')
-        .eq('seat_name', stand.name)
-        .then(() => { /* fire and forget */ })
+        .eq('id', standId)
+        .select()
+
+      if (error || !data?.length) {
+        console.error('Drag-Update fehlgeschlagen für Adhoc-Stand', standId, error)
+        if (originalPosition) onStandMoved?.(standId, originalPosition, stand.type)
+      }
     } else {
       // Revierstand: Position in map_objects
-      supabase
+      const { data, error } = await supabase
         .from('map_objects')
         .update({ position: `SRID=4326;POINT(${position.lng} ${position.lat})` })
         .eq('id', standId)
-        .then(() => { /* fire and forget */ })
+        .select()
+
+      if (error || !data?.length) {
+        console.error('Drag-Update fehlgeschlagen für Revier-Stand', standId, error)
+        if (originalPosition) onStandMoved?.(standId, originalPosition, stand.type)
+      }
     }
   }, [allStands, onStandMoved])
 
