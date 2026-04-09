@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Crosshair, MessageSquare, User } from 'lucide-react'
@@ -10,9 +11,29 @@ const tabs = [
   { key: 'du', label: 'Du', icon: User, href: '/app/du' },
 ] as const
 
+// Vollbild-Aktionen: Tab-Bar ausblenden
+const HIDE_ON_ROUTES = ['/app/hunt/create']
+
 export default function BottomTabBar() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
+
+  // Keyboard-Visibility via Custom Event (Chat-Inputs dispatchen diese)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const open = (e as CustomEvent).detail?.open ?? false
+      setKeyboardOpen(open)
+    }
+    window.addEventListener('quickhunt:keyboard', handler)
+    return () => window.removeEventListener('quickhunt:keyboard', handler)
+  }, [])
+
+  // Auf bestimmten Routes komplett ausblenden
+  if (HIDE_ON_ROUTES.some(r => pathname.startsWith(r))) return null
+
+  // Bei offener Tastatur ausblenden
+  if (keyboardOpen) return null
 
   // Aktiven Tab bestimmen
   let activeKey: string

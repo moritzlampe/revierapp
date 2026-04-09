@@ -1058,6 +1058,8 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
             el.style.height = Math.min(el.scrollHeight, 96) + 'px' // max ~4 Zeilen
           }}
           onKeyDown={handleKeyDown}
+          onFocus={() => window.dispatchEvent(new CustomEvent('quickhunt:keyboard', { detail: { open: true } }))}
+          onBlur={() => window.dispatchEvent(new CustomEvent('quickhunt:keyboard', { detail: { open: false } }))}
           disabled={(!isGroupChat && !myParticipantId) || (isGroupChat && !userId)}
         />
         {inputText.trim() ? (
