@@ -17,6 +17,7 @@ import BoundarySheet from './BoundarySheet'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
 import OwnPositionMarker from './OwnPositionMarker'
 import GpsStatusBadge from './GpsStatusBadge'
+import { buildPinSvg, getPinVariant, isAssignableStand } from '@/lib/markers/pin-svg'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -402,19 +403,7 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
   isJagdleiter?: boolean
   onDragEnd?: (standId: string, position: { lat: number; lng: number }) => void
 }) {
-  const showBadge = isJagdleiter && !assignedTo && !isMoving
   const wiggleClass = isMoving ? ' seat-wiggle' : ''
-
-  const icon = useMemo(() => {
-    const hp = assignedTo ? ' has-person' : ''
-    const badge = showBadge ? '<div class="seat-plus-badge">+</div>' : ''
-    return L.divIcon({
-      className: 'stand-marker',
-      html: `<div style="position:relative;display:inline-block"><div class="stand-icon${hp}${wiggleClass}">▲</div>${badge}</div>`,
-      iconSize: [24, 24],
-      iconAnchor: [12, 12],
-    })
-  }, [assignedTo, showBadge, wiggleClass])
 
   const TYPE_LABELS: Record<string, string> = {
     hochsitz: '🪵 Hochsitz',
@@ -429,8 +418,23 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
   }
   const typeLabel = TYPE_LABELS[stand.type] || stand.type
 
-  const labelHtml = assignedTo
-    ? `${stand.name}<span class="person-name">${assignedTo}</span>`
+  const icon = useMemo(() => {
+    const variant = getPinVariant(stand.type, !!assignedTo)
+    const svgHtml = buildPinSvg(variant, stand.id)
+    const wrapper = isMoving
+      ? `<div class="seat-wiggle">${svgHtml}</div>`
+      : svgHtml
+    return L.divIcon({
+      className: 'stand-marker',
+      html: wrapper,
+      iconSize: [36, 44],
+      iconAnchor: [18, 44],
+      tooltipAnchor: [0, -44],
+    })
+  }, [stand.type, stand.id, assignedTo, isMoving])
+
+  const tooltipText = assignedTo
+    ? `${stand.name} — ${assignedTo}`
     : stand.name
 
   return (
@@ -447,8 +451,8 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
       }}
     >
       {zoom >= 15 && (
-        <Tooltip direction="top" offset={[0, -12]} permanent className="stand-tooltip">
-          <span dangerouslySetInnerHTML={{ __html: labelHtml }} />
+        <Tooltip direction="top" offset={[0, 0]} permanent className="stand-tooltip">
+          {tooltipText}
         </Tooltip>
       )}
       {!onTap && !isMoving && (
@@ -477,7 +481,7 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
                   minHeight: '2rem',
                 }}
               >
-                ✏️ Bearbeiten
+                Bearbeiten
               </button>
             )}
           </div>
@@ -1349,7 +1353,7 @@ export default function MapContent({
             stand={stand}
             zoom={zoom}
             onEdit={handleEditStand}
-            onTap={isJagdleiter && huntParticipants && huntId && !isMovingActive ? () => setAssignStand(stand) : undefined}
+            onTap={isJagdleiter && huntParticipants && huntId && !isMovingActive && isAssignableStand(stand.type) ? () => setAssignStand(stand) : undefined}
             assignedTo={standAssignedNames?.[stand.id]}
             isMoving={movingStandId === stand.id}
             movingActive={isMovingActive}
