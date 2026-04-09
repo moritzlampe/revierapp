@@ -18,10 +18,14 @@ export default function BottomTabBar() {
   let activeKey: string
   if (pathname === '/app/du') {
     activeKey = 'du'
+  } else if (pathname.startsWith('/app/hunt/') || pathname.startsWith('/app/hunt')) {
+    activeKey = 'jagden'
+  } else if (pathname.startsWith('/app/chat/') || pathname.startsWith('/app/chat')) {
+    activeKey = 'chats'
   } else if (pathname === '/app') {
-    activeKey = searchParams.get('tab') === 'jagden' ? 'jagden' : 'chats'
+    activeKey = searchParams.get('tab') === 'chats' ? 'chats' : 'jagden'
   } else {
-    activeKey = 'chats' // Fallback
+    activeKey = 'jagden' // Fallback
   }
 
   return (

@@ -96,7 +96,7 @@ export default function GroupChatPage() {
   if (!group) {
     // Skeleton-Header sofort anzeigen während Daten laden
     return (
-      <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)' }}>
+      <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
         <div className="flex items-center gap-2.5 px-3 py-2.5 flex-shrink-0"
           style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
           <button onClick={() => router.back()} className="flex items-center justify-center rounded-lg"
@@ -130,7 +130,7 @@ export default function GroupChatPage() {
   }
 
   return (
-    <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
       {/* Header */}
       <div className="flex items-center gap-2.5 px-3 py-2.5 flex-shrink-0"
         style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>

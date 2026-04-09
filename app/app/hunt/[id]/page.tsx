@@ -7,8 +7,6 @@ import { useGeolocation } from '@/hooks/useGeolocation'
 import { useHuntPositions } from '@/hooks/useHuntPositions'
 import { updatePosition } from '@/lib/position-service'
 import { parsePolygonHex, parsePointHex } from '@/lib/geo-utils'
-import { getChatDisplayInfo } from '@/lib/chat-utils'
-import type { ChatMember } from '@/lib/chat-utils'
 import MapView from '@/components/hunt/MapView'
 import ChatPanel from '@/components/hunt/ChatPanel'
 import type { StandData } from '@/components/hunt/MapContent'
@@ -25,17 +23,6 @@ function getAvatarColor(id: string): string {
 type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string } | null }
 type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null; adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null }
-
-type SwitcherChat = {
-  groupId: string
-  name: string
-  emoji: string
-  isDirect: boolean
-  displayInitial: string | null
-  avatarUrl: string | null
-  unreadCount: number
-  lastMessagePreview: string | null
-}
 
 export default function HuntPage() {
   const params = useParams()
@@ -55,11 +42,6 @@ export default function HuntPage() {
   const [districtName, setDistrictName] = useState<string | null>(null)
   const [stands, setStands] = useState<StandData[]>([])
   const [chatUnread, setChatUnread] = useState(0)
-  const [switcherChats, setSwitcherChats] = useState<SwitcherChat[]>([])
-  const [switcherLoaded, setSwitcherLoaded] = useState(false)
-  const [chatSubTab, setChatSubTab] = useState<'jagd' | 'andere'>('jagd')
-  const [selectedOtherChat, setSelectedOtherChat] = useState<SwitcherChat | null>(null)
-  const [otherChatUnread, setOtherChatUnread] = useState(0)
   const [seatAssignments, setSeatAssignments] = useState<SeatAssignment[]>([])
 
   // GPS sofort starten (auch wenn anderer Tab aktiv)
@@ -210,101 +192,6 @@ export default function HuntPage() {
 
   useEffect(() => { loadHunt() }, [loadHunt])
 
-  // Chat-Switcher: User-Chats laden (lazy, beim ersten Öffnen)
-  const loadSwitcherChats = useCallback(async () => {
-    if (switcherLoaded || !userId) return
-    setSwitcherLoaded(true)
-
-    const { data: groups } = await supabase
-      .from('chat_groups')
-      .select('id, name, emoji, hunt_id, avatar_url')
-      .order('updated_at', { ascending: false })
-
-    if (!groups || groups.length === 0) return
-
-    // Jagd-eigenen Chat ausfiltern (der wird separat angezeigt)
-    const otherGroups = groups.filter(g => g.hunt_id !== params.id)
-    if (otherGroups.length === 0) return
-
-    const groupIds = otherGroups.map(g => g.id)
-
-    // Mitglieder laden (für 2er-Chat-Erkennung)
-    const { data: allMembers } = await supabase
-      .from('chat_group_members')
-      .select('group_id, user_id, last_read_at')
-      .in('group_id', groupIds)
-
-    // Profile laden
-    const allUserIds = [...new Set((allMembers || []).map(m => m.user_id))]
-    const profileMap: Record<string, string> = {}
-    if (allUserIds.length > 0) {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, display_name')
-        .in('id', allUserIds)
-      profiles?.forEach(p => { profileMap[p.id] = p.display_name })
-    }
-
-    const membersByGroup: Record<string, ChatMember[]> = {}
-    const lastReadByGroup: Record<string, string> = {}
-    allMembers?.forEach((m: any) => {
-      if (!membersByGroup[m.group_id]) membersByGroup[m.group_id] = []
-      membersByGroup[m.group_id].push({
-        user_id: m.user_id,
-        display_name: profileMap[m.user_id] || 'Unbekannt',
-      })
-      if (m.user_id === userId) {
-        lastReadByGroup[m.group_id] = m.last_read_at
-      }
-    })
-
-    const items: SwitcherChat[] = []
-    for (const group of otherGroups) {
-      const groupMembers = membersByGroup[group.id] || []
-      const displayInfo = getChatDisplayInfo(group.name, groupMembers, userId)
-
-      // Letzte Nachricht + Unread Count
-      const { data: lastMsgs } = await supabase
-        .from('messages')
-        .select('content, type')
-        .eq('group_id', group.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-
-      let preview: string | null = null
-      if (lastMsgs?.[0]) {
-        const m = lastMsgs[0]
-        preview = m.type === 'photo' ? '📷 Foto' : m.type === 'audio' ? '🎤 Sprachnachricht' : m.content
-      }
-
-      let unreadCount = 0
-      const lastReadAt = lastReadByGroup[group.id]
-      if (lastReadAt) {
-        const { count } = await supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('group_id', group.id)
-          .gt('created_at', lastReadAt)
-          .neq('sender_id', userId)
-        unreadCount = count || 0
-      }
-
-      items.push({
-        groupId: group.id,
-        name: group.hunt_id ? `🎯 ${group.name}` : displayInfo.displayName,
-        emoji: group.hunt_id ? '🎯' : group.emoji,
-        isDirect: displayInfo.isDirect,
-        displayInitial: displayInfo.displayInitial,
-        avatarUrl: group.avatar_url,
-        unreadCount,
-        lastMessagePreview: preview,
-      })
-    }
-    setSwitcherChats(items)
-    // Gesamtzahl ungelesener Nachrichten in "Andere" berechnen
-    setOtherChatUnread(items.reduce((sum, c) => sum + c.unreadCount, 0))
-  }, [supabase, userId, params.id, switcherLoaded])
-
   const handleStandsChanged = useCallback((newStand?: StandData, deletedId?: string) => {
     // Optimistisches Update: sofort anzeigen ohne Refetch abzuwarten
     if (newStand) {
@@ -366,7 +253,7 @@ export default function HuntPage() {
   ]
 
   return (
-    <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
       {/* Top Bar */}
       <div className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
         style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
@@ -430,51 +317,6 @@ export default function HuntPage() {
         ))}
       </div>
 
-      {/* Chat Sub-Toggle (nur auf Chat-Tab) */}
-      {activeTab === 'chat' && (
-        <div className="flex gap-1 px-3 py-2 flex-shrink-0"
-          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
-          <button
-            onClick={() => { setChatSubTab('jagd'); setSelectedOtherChat(null) }}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all"
-            style={{
-              background: chatSubTab === 'jagd' ? 'rgba(107,159,58,0.15)' : 'transparent',
-              border: chatSubTab === 'jagd' ? '1px solid rgba(107,159,58,0.3)' : '1px solid var(--border)',
-              color: chatSubTab === 'jagd' ? 'var(--green-bright)' : 'var(--text-3)',
-            }}>
-            <span className="live-dot" style={{ width: '0.375rem', height: '0.375rem' }} /> Jagd-Chat
-            {chatSubTab !== 'jagd' && chatUnread > 0 && (
-              <span style={{
-                minWidth: '1.125rem', height: '1.125rem', borderRadius: '0.5625rem',
-                background: 'var(--green)', color: 'white',
-                fontSize: '0.625rem', fontWeight: 700,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                padding: '0 0.25rem',
-              }}>{chatUnread > 99 ? '99+' : chatUnread}</span>
-            )}
-          </button>
-          <button
-            onClick={() => { setChatSubTab('andere'); loadSwitcherChats() }}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all"
-            style={{
-              background: chatSubTab === 'andere' ? 'rgba(107,159,58,0.15)' : 'transparent',
-              border: chatSubTab === 'andere' ? '1px solid rgba(107,159,58,0.3)' : '1px solid var(--border)',
-              color: chatSubTab === 'andere' ? 'var(--green-bright)' : 'var(--text-3)',
-            }}>
-            💬 Andere
-            {chatSubTab !== 'andere' && otherChatUnread > 0 && (
-              <span style={{
-                minWidth: '1.125rem', height: '1.125rem', borderRadius: '0.5625rem',
-                background: 'var(--green)', color: 'white',
-                fontSize: '0.625rem', fontWeight: 700,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                padding: '0 0.25rem',
-              }}>{otherChatUnread > 99 ? '99+' : otherChatUnread}</span>
-            )}
-          </button>
-        </div>
-      )}
-
       {/* Teilnehmer-Chips (nur auf Karte-Tab) */}
       {activeTab === 'karte' && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
@@ -517,7 +359,7 @@ export default function HuntPage() {
         </div>
 
         {/* Jagd-Chat — bleibt gemountet für Realtime */}
-        <div style={{ position: 'absolute', inset: 0, display: activeTab === 'chat' && chatSubTab === 'jagd' ? 'flex' : 'none', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', inset: 0, display: activeTab === 'chat' ? 'flex' : 'none', flexDirection: 'column' }}>
           <ChatPanel
             huntId={hunt.id}
             chatName={hunt.name}
@@ -525,122 +367,12 @@ export default function HuntPage() {
             userId={userId}
             myParticipantId={myParticipantId}
             supabase={supabase}
-            isActive={activeTab === 'chat' && chatSubTab === 'jagd'}
+            isActive={activeTab === 'chat'}
             onUnreadChange={setChatUnread}
             canDeleteAll={userId === hunt.creator_id}
           />
         </div>
 
-        {/* Andere Chats — Liste oder ausgewählter Chat */}
-        {activeTab === 'chat' && chatSubTab === 'andere' && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
-            {selectedOtherChat ? (
-              <>
-                {/* Header für ausgewählten Chat */}
-                <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0"
-                  style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
-                  <button onClick={() => setSelectedOtherChat(null)}
-                    className="flex items-center justify-center rounded-lg"
-                    style={{ background: 'var(--surface-2)', minWidth: '2.25rem', minHeight: '2.25rem', fontSize: '0.875rem' }}>←</button>
-                  {/* Avatar */}
-                  {selectedOtherChat.isDirect && selectedOtherChat.displayInitial ? (
-                    <div className="flex-shrink-0 flex items-center justify-center avatar av-1"
-                      style={{ width: '2rem', height: '2rem', borderRadius: '50%', fontSize: '0.75rem', fontWeight: 700 }}>
-                      {selectedOtherChat.displayInitial}
-                    </div>
-                  ) : selectedOtherChat.avatarUrl ? (
-                    <img src={selectedOtherChat.avatarUrl} alt=""
-                      style={{ width: '2rem', height: '2rem', borderRadius: '50%', objectFit: 'cover' }} />
-                  ) : (
-                    <div className="flex-shrink-0 flex items-center justify-center"
-                      style={{ width: '2rem', height: '2rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '0.875rem' }}>
-                      {selectedOtherChat.emoji}
-                    </div>
-                  )}
-                  <p className="text-sm font-semibold truncate flex-1">{selectedOtherChat.name}</p>
-                </div>
-                {/* ChatPanel für Gruppen-Chat */}
-                <div className="flex-1 flex flex-col min-h-0">
-                  <ChatPanel
-                    groupId={selectedOtherChat.groupId}
-                    chatName={selectedOtherChat.name}
-                    isDirect={selectedOtherChat.isDirect}
-                    userId={userId}
-                    supabase={supabase}
-                    isActive={true}
-                    onUnreadChange={() => {}}
-                    canDeleteAll={false}
-                  />
-                </div>
-              </>
-            ) : (
-              /* Chat-Liste */
-              <div className="flex-1 overflow-y-auto">
-                {/* Neue Gruppe mit Jagdteilnehmern */}
-                <button
-                  onClick={() => router.push(`/app/chat/create?huntId=${hunt.id}`)}
-                  className="w-full flex items-center gap-3 text-left"
-                  style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)' }}>
-                  <div className="flex-shrink-0 flex items-center justify-center"
-                    style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'rgba(107,159,58,0.12)', border: '1px solid rgba(107,159,58,0.25)' }}>
-                    <span style={{ fontSize: '1rem' }}>+</span>
-                  </div>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--green-bright)' }}>Neue Gruppe mit Jagdteilnehmern</p>
-                </button>
-
-                {switcherChats.length === 0 ? (
-                  <div className="px-4 py-8 text-center">
-                    <p className="text-sm" style={{ color: 'var(--text-3)' }}>Noch keine anderen Chats</p>
-                  </div>
-                ) : (
-                  switcherChats.map(chat => (
-                    <button
-                      key={chat.groupId}
-                      onClick={() => setSelectedOtherChat(chat)}
-                      className="w-full flex items-center gap-3 text-left"
-                      style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)' }}>
-                      {/* Avatar */}
-                      {chat.isDirect && chat.displayInitial ? (
-                        <div className="flex-shrink-0 flex items-center justify-center avatar av-1"
-                          style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', fontSize: '0.875rem', fontWeight: 700 }}>
-                          {chat.displayInitial}
-                        </div>
-                      ) : chat.avatarUrl ? (
-                        <img src={chat.avatarUrl} alt=""
-                          className="flex-shrink-0"
-                          style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', objectFit: 'cover' }} />
-                      ) : (
-                        <div className="flex-shrink-0 flex items-center justify-center"
-                          style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'var(--surface-2)', fontSize: '1.125rem' }}>
-                          {chat.emoji}
-                        </div>
-                      )}
-                      {/* Name + Vorschau */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">{chat.name}</p>
-                        {chat.lastMessagePreview && (
-                          <p className="text-xs truncate" style={{ color: 'var(--text-3)' }}>{chat.lastMessagePreview}</p>
-                        )}
-                      </div>
-                      {/* Unread Badge */}
-                      {chat.unreadCount > 0 && (
-                        <span className="flex-shrink-0 flex items-center justify-center"
-                          style={{
-                            minWidth: '1.25rem', height: '1.25rem', borderRadius: '0.625rem',
-                            background: 'var(--green)', color: 'white',
-                            fontSize: '0.6875rem', fontWeight: 700,
-                            padding: '0 0.3125rem',
-                          }}>
-                          {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-                        </span>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        )}
         {activeTab === 'nachsuche' && (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
             <div className="text-5xl mb-4">🐕</div>

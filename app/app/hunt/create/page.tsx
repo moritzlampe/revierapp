@@ -846,7 +846,7 @@ export default function CreateHuntPage() {
 
   // === STEP 1: Name, Revier, Wildarten, Kontakte ===
   return (
-    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
         <button onClick={() => router.back()} className="flex items-center justify-center rounded-lg"

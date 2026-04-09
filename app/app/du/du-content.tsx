@@ -16,8 +16,6 @@ import {
   X,
   Camera,
 } from 'lucide-react'
-import BottomTabBar from '@/components/bottom-tab-bar'
-
 type Status = 'available' | 'on_hunt' | 'do_not_disturb'
 
 const STATUS_OPTIONS: { key: Status; label: string }[] = [
@@ -357,7 +355,6 @@ export default function DuContent({
         </div>
       )}
 
-      <BottomTabBar />
     </div>
   )
 }

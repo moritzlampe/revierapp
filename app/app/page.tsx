@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import HomeContent from './home-content'
-import BottomTabBar from '@/components/bottom-tab-bar'
 
 export default async function AppPage() {
   const supabase = await createClient()
@@ -28,13 +27,10 @@ export default async function AppPage() {
     .map(p => ({ ...(p.hunts as any), myRole: p.role }))
 
   return (
-    <div className="relative">
-      <HomeContent
-        displayName={displayName}
-        initialHunts={hunts}
-        userId={user.id}
-      />
-      <BottomTabBar />
-    </div>
+    <HomeContent
+      displayName={displayName}
+      initialHunts={hunts}
+      userId={user.id}
+    />
   )
 }
