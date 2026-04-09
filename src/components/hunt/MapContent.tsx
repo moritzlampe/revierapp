@@ -61,6 +61,7 @@ export interface StandData {
   type: string
   position: { lat: number; lng: number }
   description?: string | null
+  adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null
 }
 
 export type StandsChangedCallback = (newStand?: StandData, deletedId?: string) => void
@@ -427,15 +428,13 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
     return L.divIcon({
       className: 'stand-marker',
       html: wrapper,
-      iconSize: [36, 44],
-      iconAnchor: [18, 44],
-      tooltipAnchor: [0, -44],
+      iconSize: [32, 40],
+      iconAnchor: [16, 40],
+      tooltipAnchor: [0, -40],
     })
   }, [stand.type, stand.id, assignedTo, isMoving])
 
-  const tooltipText = assignedTo
-    ? `${stand.name} — ${assignedTo}`
-    : stand.name
+  const tooltipText = assignedTo || stand.name
 
   return (
     <Marker

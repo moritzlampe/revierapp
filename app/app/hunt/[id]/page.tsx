@@ -24,7 +24,7 @@ function getAvatarColor(id: string): string {
 
 type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string } | null }
-type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null }
+type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null; adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null }
 
 type SwitcherChat = {
   groupId: string
@@ -98,6 +98,7 @@ export default function HuntPage() {
           type: 'adhoc',
           position: { lat: a.position_lat, lng: a.position_lng },
           description: null,
+          adhoc_subtype: a.adhoc_subtype ?? null,
         })
         if (pid) {
           pStands[pid] = a.id
@@ -197,7 +198,7 @@ export default function HuntPage() {
     // Seat Assignments laden (Hochsitz-Zuweisungen, Ad-hoc Stände, freie Positionen)
     const { data: assignments } = await supabase
       .from('hunt_seat_assignments')
-      .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng')
+      .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng, adhoc_subtype')
       .eq('hunt_id', params.id)
     setSeatAssignments(assignments || [])
 

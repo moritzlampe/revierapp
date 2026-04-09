@@ -25,8 +25,8 @@ function getPinColors(variant: PinVariant): PinColors {
     case 'sitzstand':
     case 'adhoc':
       return variant.occupied
-        ? { bgFill: '#FFFFFF', bgStroke: 'rgba(0,0,0,0.4)', iconColor: SURFACE_2 }
-        : { bgFill: SURFACE_2, bgStroke: '#FFFFFF', iconColor: '#FFFFFF' }
+        ? { bgFill: '#8BC34A', bgStroke: 'rgba(0,0,0,0.5)', iconColor: '#FFFFFF' }
+        : { bgFill: '#E8E2D0', bgStroke: 'rgba(0,0,0,0.35)', iconColor: '#3a4a30' }
     case 'parkplatz':
       return { bgFill: '#3B82F6', bgStroke: 'rgba(0,0,0,0.4)', iconColor: '#FFFFFF' }
     case 'kirrung':
@@ -42,22 +42,23 @@ function getPinColors(variant: PinVariant): PinColors {
 
 // --- Icon-SVGs (18x18, im <g translate(9,7)> Slot) ---
 
-function sitzstandIcon(c: string): string {
+function sitzstandIcon(c: string, occupied: boolean): string {
+  const windowFill = occupied ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)'
   return `<path d="M 9 1 L 2 6 L 16 6 Z" fill="${c}"/>
 <rect x="3" y="6" width="12" height="5" fill="${c}"/>
-<rect x="7" y="8" width="4" height="3" fill="rgba(0,0,0,0.3)"/>
+<rect x="7" y="8" width="4" height="3" fill="${windowFill}"/>
 <line x1="4" y1="11" x2="2" y2="17" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
 <line x1="14" y1="11" x2="16" y2="17" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
 <line x1="3" y1="14" x2="15" y2="14" stroke="${c}" stroke-width="1" stroke-linecap="round"/>`
 }
 
 function adhocIcon(c: string): string {
-  return `<circle cx="9" cy="9" r="7" fill="none" stroke="${c}" stroke-width="1.5"/>
+  return `<circle cx="9" cy="9" r="7" fill="none" stroke="${c}" stroke-width="1.75"/>
 <circle cx="9" cy="9" r="2" fill="${c}"/>
-<line x1="9" y1="0" x2="9" y2="3" stroke="${c}" stroke-width="1.5"/>
-<line x1="9" y1="15" x2="9" y2="18" stroke="${c}" stroke-width="1.5"/>
-<line x1="0" y1="9" x2="3" y2="9" stroke="${c}" stroke-width="1.5"/>
-<line x1="15" y1="9" x2="18" y2="9" stroke="${c}" stroke-width="1.5"/>`
+<line x1="9" y1="0" x2="9" y2="3" stroke="${c}" stroke-width="1.75"/>
+<line x1="9" y1="15" x2="9" y2="18" stroke="${c}" stroke-width="1.75"/>
+<line x1="0" y1="9" x2="3" y2="9" stroke="${c}" stroke-width="1.75"/>
+<line x1="15" y1="9" x2="18" y2="9" stroke="${c}" stroke-width="1.75"/>`
 }
 
 function parkplatzIcon(c: string): string {
@@ -91,7 +92,7 @@ function sonstigesIcon(c: string): string {
 
 function getIconSvg(variant: PinVariant, iconColor: string): string {
   switch (variant.kind) {
-    case 'sitzstand': return sitzstandIcon(iconColor)
+    case 'sitzstand': return sitzstandIcon(iconColor, variant.occupied)
     case 'adhoc': return adhocIcon(iconColor)
     case 'parkplatz': return parkplatzIcon(iconColor)
     case 'kirrung': return kirrungIcon(iconColor)
@@ -108,10 +109,10 @@ export function buildPinSvg(variant: PinVariant, uniqueId: string): string {
   const iconSvg = getIconSvg(variant, iconColor)
   const filterId = `pin-shadow-${uniqueId}`
 
-  return `<svg width="36" height="44" viewBox="0 0 36 44" xmlns="http://www.w3.org/2000/svg">
+  return `<svg width="32" height="40" viewBox="0 0 36 44" xmlns="http://www.w3.org/2000/svg">
 <defs>
 <filter id="${filterId}" x="-50%" y="-50%" width="200%" height="200%">
-<feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.6"/>
+<feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.45"/>
 </filter>
 </defs>
 <path d="M 18 42 L 6 26 Q 2 22 2 16 Q 2 2 18 2 Q 34 2 34 16 Q 34 22 30 26 Z" fill="${bgFill}" stroke="${bgStroke}" stroke-width="1.5" filter="url(#${filterId})"/>

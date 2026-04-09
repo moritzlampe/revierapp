@@ -467,14 +467,14 @@ button:active {
 
 /* Tooltip-Chip ueber dem Pin */
 .stand-tooltip.leaflet-tooltip {
-  background: rgba(20, 20, 20, 0.88);
+  background: rgba(20, 20, 20, 0.78);
   color: #FFFFFF;
   border: none;
   border-radius: 0.3125rem;
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   font-weight: 600;
-  padding: 0.1875rem 0.5rem;
+  padding: 0.125rem 0.4375rem;
   box-shadow: 0 0.0625rem 0.1875rem rgba(0,0,0,0.5);
   white-space: nowrap;
 }

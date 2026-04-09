@@ -24,6 +24,7 @@ export interface SeatAssignmentData {
   seat_name: string | null
   position_lat: number | null
   position_lng: number | null
+  adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null
 }
 
 interface MapViewProps {
