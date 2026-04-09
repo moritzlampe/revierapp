@@ -253,7 +253,7 @@ export default function HuntPage() {
   ]
 
   return (
-    <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
+    <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
       {/* Top Bar */}
       <div className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
         style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>

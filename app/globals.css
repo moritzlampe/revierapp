@@ -20,14 +20,18 @@
   --text-3: rgba(240,240,232,0.42);
   --radius: 0.875rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --keyboard-offset: 0px;
+  /* Abstand unter Content: Tab-Bar-Höhe + Safe-Area, entfällt bei Tastatur */
+  --bottom-bar-space: calc(3.5rem + var(--safe-bottom));
 }
 
 * { -webkit-tap-highlight-color: transparent; }
 
-/* Viewport-Höhe mit vh-Fallback für ältere Mobile-Browser / In-App-WebViews */
+/* Viewport-Höhe mit vh-Fallback für ältere Mobile-Browser / In-App-WebViews.
+   --keyboard-offset wird vom Visual Viewport Listener gesetzt (iOS Tastatur). */
 .h-viewport {
   height: 100vh;
-  height: 100dvh;
+  height: calc(100dvh - var(--keyboard-offset, 0px));
 }
 .min-h-viewport {
   min-height: 100vh;

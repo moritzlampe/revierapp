@@ -367,7 +367,7 @@ export default function GroupInfoPage() {
   if (!group) return null
 
   return (
-    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
+    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3 flex-shrink-0"
         style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>

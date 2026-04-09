@@ -118,7 +118,7 @@ export default function CreateChatGroupPage() {
   }
 
   return (
-    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'calc(3.5rem + var(--safe-bottom))' }}>
+    <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
         <button onClick={() => router.back()} className="flex items-center justify-center rounded-lg"
