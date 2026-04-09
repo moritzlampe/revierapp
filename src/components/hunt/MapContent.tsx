@@ -17,7 +17,8 @@ import BoundarySheet from './BoundarySheet'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
 import OwnPositionMarker from './OwnPositionMarker'
 import GpsStatusBadge from './GpsStatusBadge'
-import { buildPinSvg, getPinVariant, isAssignableStand } from '@/lib/markers/pin-svg'
+import { buildPinSvg, getPinVariant, isAssignableStand, type PinSize } from '@/lib/markers/pin-svg'
+import { buildInitials, formatDistanceLabel } from '@/lib/markers/marker-labels'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -393,7 +394,7 @@ function ParticipantMarker({
 
 // --- Hochsitz-Marker ---
 
-function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingActive, isJagdleiter, onDragEnd }: {
+function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingActive, isJagdleiter, onDragEnd, userLat, userLng }: {
   stand: StandData
   zoom: number
   onEdit?: (stand: StandData) => void
@@ -403,8 +404,10 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
   movingActive?: boolean
   isJagdleiter?: boolean
   onDragEnd?: (standId: string, position: { lat: number; lng: number }) => void
+  userLat?: number | null
+  userLng?: number | null
 }) {
-  const wiggleClass = isMoving ? ' seat-wiggle' : ''
+  const occupied = !!assignedTo
 
   const TYPE_LABELS: Record<string, string> = {
     hochsitz: '🪵 Hochsitz',
@@ -419,22 +422,45 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
   }
   const typeLabel = TYPE_LABELS[stand.type] || stand.type
 
+  // Pin-Groesse: belegt 32×40, unbesetzt 22×28 (visuell), Click-Target 28×36
+  const pinSize: PinSize = occupied ? 'normal' : 'small'
   const icon = useMemo(() => {
-    const variant = getPinVariant(stand.type, !!assignedTo)
-    const svgHtml = buildPinSvg(variant, stand.id)
+    const variant = getPinVariant(stand.type, occupied)
+    const svgHtml = buildPinSvg(variant, stand.id, pinSize)
     const wrapper = isMoving
       ? `<div class="seat-wiggle">${svgHtml}</div>`
       : svgHtml
+    if (occupied) {
+      return L.divIcon({
+        className: 'stand-marker',
+        html: wrapper,
+        iconSize: [32, 40],
+        iconAnchor: [16, 40],
+        tooltipAnchor: [0, -40],
+      })
+    }
+    // Unbesetzt: visuelles SVG 22×28, aber Click-Target 28×36 fuer Touch
     return L.divIcon({
       className: 'stand-marker',
-      html: wrapper,
-      iconSize: [32, 40],
-      iconAnchor: [16, 40],
-      tooltipAnchor: [0, -40],
+      html: `<div style="position:relative;width:1.75rem;height:2.25rem;display:flex;align-items:flex-end;justify-content:center">${svgHtml}</div>`,
+      iconSize: [28, 36],
+      iconAnchor: [14, 36],
     })
-  }, [stand.type, stand.id, assignedTo, isMoving])
+  }, [stand.type, stand.id, occupied, isMoving, pinSize])
 
-  const tooltipText = assignedTo || stand.name
+  // Zoom-abhaengige Beschriftung (nur fuer besetzte Staende)
+  const tooltipContent = useMemo(() => {
+    if (!occupied || !assignedTo) return null
+    if (zoom < 14) return null
+    if (zoom < 16) return { name: buildInitials(assignedTo), distance: null }
+    // Zoom >= 16: voller Name + optional Distanz
+    let dist: string | null = null
+    if (userLat != null && userLng != null) {
+      const m = distanceInMeters(userLat, userLng, stand.position.lat, stand.position.lng)
+      dist = formatDistanceLabel(m)
+    }
+    return { name: assignedTo, distance: dist }
+  }, [occupied, assignedTo, zoom, userLat, userLng, stand.position.lat, stand.position.lng])
 
   return (
     <Marker
@@ -449,9 +475,12 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
         },
       }}
     >
-      {zoom >= 15 && (
+      {tooltipContent && (
         <Tooltip direction="top" offset={[0, 0]} permanent className="stand-tooltip">
-          {tooltipText}
+          <span>{tooltipContent.name}</span>
+          {tooltipContent.distance && (
+            <span className="stand-tooltip-distance">{tooltipContent.distance}</span>
+          )}
         </Tooltip>
       )}
       {!onTap && !isMoving && (
@@ -1358,6 +1387,8 @@ export default function MapContent({
             movingActive={isMovingActive}
             isJagdleiter={isJagdleiter}
             onDragEnd={handleStandDragEnd}
+            userLat={geoState.position?.lat}
+            userLng={geoState.position?.lng}
           />
         ))}
 

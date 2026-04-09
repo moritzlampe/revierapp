@@ -104,15 +104,23 @@ function getIconSvg(variant: PinVariant, iconColor: string): string {
 
 // --- Hauptfunktion ---
 
-export function buildPinSvg(variant: PinVariant, uniqueId: string): string {
+export type PinSize = 'normal' | 'small'
+
+export function buildPinSvg(variant: PinVariant, uniqueId: string, size: PinSize = 'normal'): string {
   const { bgFill, bgStroke, iconColor } = getPinColors(variant)
   const iconSvg = getIconSvg(variant, iconColor)
   const filterId = `pin-shadow-${uniqueId}`
 
-  return `<svg width="32" height="40" viewBox="0 0 36 44" xmlns="http://www.w3.org/2000/svg">
+  const w = size === 'small' ? 22 : 32
+  const h = size === 'small' ? 28 : 40
+  const shadowDy = size === 'small' ? 2 : 3
+  const shadowDev = size === 'small' ? 2 : 3
+  const shadowOp = size === 'small' ? 0.4 : 0.45
+
+  return `<svg width="${w}" height="${h}" viewBox="0 0 36 44" xmlns="http://www.w3.org/2000/svg">
 <defs>
 <filter id="${filterId}" x="-50%" y="-50%" width="200%" height="200%">
-<feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.45"/>
+<feDropShadow dx="0" dy="${shadowDy}" stdDeviation="${shadowDev}" flood-color="#000" flood-opacity="${shadowOp}"/>
 </filter>
 </defs>
 <path d="M 18 42 L 6 26 Q 2 22 2 16 Q 2 2 18 2 Q 34 2 34 16 Q 34 22 30 26 Z" fill="${bgFill}" stroke="${bgStroke}" stroke-width="1.5" filter="url(#${filterId})"/>
