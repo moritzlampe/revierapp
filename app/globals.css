@@ -22,7 +22,7 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --keyboard-offset: 0px;
   /* Abstand unter Content: Tab-Bar-Höhe + Safe-Area, entfällt bei Tastatur */
-  --bottom-bar-space: calc(3.5rem + var(--safe-bottom));
+  --bottom-bar-space: calc(3.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 * { -webkit-tap-highlight-color: transparent; }

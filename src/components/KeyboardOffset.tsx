@@ -52,9 +52,11 @@ export default function KeyboardOffset() {
 
     const keyboardActive = viewportOffset > 50 || inputFocused
     if (keyboardActive) {
+      root.setProperty('--safe-bottom', '0px')
       root.setProperty('--bottom-bar-space', '0px')
     } else {
-      root.setProperty('--bottom-bar-space', 'calc(3.5rem + var(--safe-bottom))')
+      root.setProperty('--safe-bottom', 'env(safe-area-inset-bottom, 0px)')
+      root.setProperty('--bottom-bar-space', 'calc(3.5rem + env(safe-area-inset-bottom, 0px))')
     }
   }, [viewportOffset, inputFocused])
 
