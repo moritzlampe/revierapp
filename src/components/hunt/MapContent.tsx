@@ -544,6 +544,7 @@ function FreePositionMarker({ position, userName, avatarColor }: FreePositionDat
 }
 
 // --- Schnellzuweisung Sheet (Tap auf Stand → Jäger-Liste) ---
+// Umbesetzen-Fix: UPDATE user_id statt DELETE+INSERT — alter Stand bleibt erhalten
 
 function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, stands, onAssign, onClose, onEdit }: {
   stand: StandData
@@ -556,6 +557,7 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
   onEdit: (stand: StandData) => void
 }) {
   const [saving, setSaving] = useState(false)
+  const [confirmData, setConfirmData] = useState<{ userId: string; userName: string; oldStandName: string } | null>(null)
 
   // Zuordnung: welcher User ist wo zugewiesen?
   const userAssignments = useMemo(() => {
@@ -574,65 +576,107 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
     return map
   }, [seatAssignments, stands])
 
-  // Wer ist bereits diesem Stand zugewiesen?
+  // Wer ist bereits diesem Stand zugewiesen? (kann user_id = null haben)
   const currentAssignee = seatAssignments.find(a =>
     (a.seat_type === 'assigned' && a.seat_id === stand.id) ||
     (a.seat_type === 'adhoc' && a.id === stand.id)
   )
 
-  async function handleAssign(userId: string) {
-    setSaving(true)
-    const supabase = createClient()
+  async function handleAssign(userId: string, confirmed = false) {
+    const existingUserAssignment = seatAssignments.find(a => a.user_id === userId)
 
-    // Alte Zuweisung des Users löschen (falls vorhanden)
-    const existing = seatAssignments.find(a => a.user_id === userId)
-    if (existing) {
-      await supabase.from('hunt_seat_assignments').delete().eq('id', existing.id)
-    }
-
-    // Wenn User schon auf diesem Stand ist → nur entfernen (toggle)
-    if (currentAssignee && currentAssignee.user_id === userId) {
-      const updated = seatAssignments.filter(a => a.id !== currentAssignee.id)
+    // Toggle: User ist bereits auf DIESEM Stand → entfernen (UPDATE user_id = NULL)
+    if (currentAssignee?.user_id === userId) {
+      setSaving(true)
+      const supabase = createClient()
+      await supabase.from('hunt_seat_assignments').update({ user_id: null }).eq('id', currentAssignee.id)
+      const updated = seatAssignments.map(a =>
+        a.id === currentAssignee.id ? { ...a, user_id: null } : a
+      )
       onAssign(updated)
       setSaving(false)
       onClose()
       return
     }
 
-    // Alte Zuweisung dieses Stands löschen (falls jemand anders drauf war)
-    if (currentAssignee) {
-      await supabase.from('hunt_seat_assignments').delete().eq('id', currentAssignee.id)
+    // User ist woanders zugewiesen → Bestätigung nötig
+    if (existingUserAssignment && !confirmed) {
+      const participant = huntParticipants.find(p => p.user_id === userId)
+      const oldStandName = existingUserAssignment.seat_name
+        || stands.find(s => s.id === existingUserAssignment.seat_id)?.name
+        || 'Unbekannter Stand'
+      setConfirmData({
+        userId,
+        userName: pName(participant || { profiles: null, guest_name: null } as any),
+        oldStandName,
+      })
+      return
     }
 
-    // Neue Zuweisung erstellen
-    const isAdhoc = stand.type === 'adhoc'
-    const newAssignment = {
-      hunt_id: huntId,
-      user_id: userId,
-      seat_id: isAdhoc ? null : stand.id,
-      seat_type: isAdhoc ? 'adhoc' : 'assigned',
-      seat_name: isAdhoc ? stand.name : null,
-      position_lat: isAdhoc ? stand.position.lat : null,
-      position_lng: isAdhoc ? stand.position.lng : null,
+    setSaving(true)
+    const supabase = createClient()
+
+    // Schritt 1: User vom alten Stand lösen (UPDATE user_id = NULL)
+    if (existingUserAssignment) {
+      const { error } = await supabase.from('hunt_seat_assignments').update({ user_id: null }).eq('id', existingUserAssignment.id)
+      if (error) { console.error('Fehler beim Lösen der alten Zuweisung:', error); setSaving(false); return }
     }
 
-    const { data } = await supabase
-      .from('hunt_seat_assignments')
-      .insert(newAssignment)
-      .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng')
-      .single()
-
-    if (data) {
-      // Optimistisches Update
-      let updated = seatAssignments.filter(a => a.user_id !== userId)
-      if (currentAssignee && currentAssignee.user_id !== userId) {
-        updated = updated.filter(a => a.id !== currentAssignee.id)
-      }
-      updated.push(data)
-      onAssign(updated)
+    // Schritt 2: Aktuellen Besitzer dieses Stands lösen (UPDATE user_id = NULL)
+    if (currentAssignee?.user_id && currentAssignee.user_id !== userId) {
+      const { error } = await supabase.from('hunt_seat_assignments').update({ user_id: null }).eq('id', currentAssignee.id)
+      if (error) { console.error('Fehler beim Lösen des aktuellen Besitzers:', error); setSaving(false); return }
     }
 
+    // Schritt 3: User diesem Stand zuweisen
+    // Prüfe ob bereits eine Assignment-Row für diesen Stand existiert
+    const existingStandRow = seatAssignments.find(a =>
+      (a.seat_type === 'assigned' && a.seat_id === stand.id) ||
+      (a.seat_type === 'adhoc' && a.id === stand.id)
+    )
+
+    let updated: SeatAssignmentData[]
+
+    if (existingStandRow) {
+      // Row existiert → UPDATE user_id
+      const { error } = await supabase.from('hunt_seat_assignments').update({ user_id: userId }).eq('id', existingStandRow.id)
+      if (error) { console.error('Fehler beim Zuweisen:', error); setSaving(false); return }
+      updated = seatAssignments.map(a => {
+        if (a.id === existingStandRow.id) return { ...a, user_id: userId }
+        if (existingUserAssignment && a.id === existingUserAssignment.id) return { ...a, user_id: null }
+        if (currentAssignee && a.id === currentAssignee.id && a.id !== existingStandRow.id) return { ...a, user_id: null }
+        return a
+      })
+    } else {
+      // Keine Row → INSERT (für Revier-Stände ohne bisherige Zuweisung)
+      const isAdhoc = stand.type === 'adhoc'
+      const { data, error } = await supabase
+        .from('hunt_seat_assignments')
+        .insert({
+          hunt_id: huntId,
+          user_id: userId,
+          seat_id: isAdhoc ? null : stand.id,
+          seat_type: isAdhoc ? 'adhoc' : 'assigned',
+          seat_name: isAdhoc ? stand.name : null,
+          position_lat: isAdhoc ? stand.position.lat : null,
+          position_lng: isAdhoc ? stand.position.lng : null,
+        })
+        .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng')
+        .single()
+
+      if (error) { console.error('Fehler beim INSERT:', error); setSaving(false); return }
+
+      updated = seatAssignments.map(a => {
+        if (existingUserAssignment && a.id === existingUserAssignment.id) return { ...a, user_id: null }
+        if (currentAssignee && a.id === currentAssignee.id) return { ...a, user_id: null }
+        return a
+      })
+      if (data) updated.push(data)
+    }
+
+    onAssign(updated)
     setSaving(false)
+    setConfirmData(null)
     onClose()
   }
 
@@ -640,12 +684,12 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
 
   return (
     <>
-      <div className="map-object-sheet-overlay" onClick={onClose} />
+      <div className="map-object-sheet-overlay" onClick={() => { setConfirmData(null); onClose() }} />
       <div className="map-object-sheet" style={{ maxHeight: '60vh' }}>
         <div className="sheet-handle" />
         <div className="sheet-header" style={{ fontSize: '0.8125rem' }}>
           🪜 {stand.name}
-          {currentAssignee && (
+          {currentAssignee?.user_id && (
             <span style={{ color: 'var(--green-bright)', fontWeight: 400, marginLeft: '0.5rem', fontSize: '0.75rem' }}>
               → {pName(huntParticipants.find(p => p.user_id === currentAssignee.user_id) || { profiles: null, guest_name: null } as any)}
             </span>
@@ -702,6 +746,40 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
           </button>
         </div>
       </div>
+
+      {/* Bestätigungsdialog: User ist woanders zugewiesen */}
+      {confirmData && (
+        <div className="confirm-overlay">
+          <div className="confirm-dialog">
+            <p>
+              <strong>{confirmData.userName}</strong> ist bereits <strong>{confirmData.oldStandName}</strong> zugewiesen.<br />Dort entfernen und hier zuweisen?
+            </p>
+            <div className="confirm-actions">
+              <button
+                onClick={() => setConfirmData(null)}
+                style={{
+                  flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)',
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  color: 'var(--text-2)', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer',
+                }}
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={() => handleAssign(confirmData.userId, true)}
+                disabled={saving}
+                style={{
+                  flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)',
+                  background: 'var(--green)', border: 'none',
+                  color: 'white', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer',
+                }}
+              >
+                Zuweisen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -1515,9 +1593,22 @@ export default function MapContent({
             setDetailStand(null)
             handleEditStand(stand)
           }}
-          onDelete={(stand) => {
-            // Stub — wird in Schritt 3 implementiert
-            console.log('TODO: Stand löschen', stand.id)
+          onDeleted={(stand) => {
+            // Adhoc-Stand wurde in StandDetailSheet gelöscht → State aktualisieren
+            if (seatAssignments) {
+              const updated = seatAssignments.filter(a => a.id !== stand.id)
+              onSeatAssignmentsChanged?.(updated)
+            }
+            setDetailStand(null)
+          }}
+          onRenamed={(standId, newName) => {
+            // Adhoc-Stand wurde in StandDetailSheet umbenannt → State aktualisieren
+            if (seatAssignments) {
+              const updated = seatAssignments.map(a =>
+                a.id === standId ? { ...a, seat_name: newName } : a
+              )
+              onSeatAssignmentsChanged?.(updated)
+            }
             setDetailStand(null)
           }}
           onMovePosition={(stand) => {

@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import type { StandData } from './MapContent'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
 
@@ -16,9 +17,10 @@ export interface StandDetailSheetProps {
   onClose: () => void
   onAssign: (stand: StandData) => void
   onEdit: (stand: StandData) => void
-  onDelete: (stand: StandData) => void
+  onDeleted: (stand: StandData) => void
   onMovePosition: (stand: StandData) => void
   onOpenChat: (userId: string) => void
+  onRenamed: (standId: string, newName: string) => void
 }
 
 // --- Hilfsfunktionen ---
@@ -51,10 +53,23 @@ export default function StandDetailSheet({
   onClose,
   onAssign,
   onEdit,
-  onDelete,
+  onDeleted,
   onMovePosition,
   onOpenChat,
+  onRenamed,
 }: StandDetailSheetProps) {
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editNameValue, setEditNameValue] = useState(stand.name)
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [isEditing])
 
   // Wer sitzt auf diesem Stand?
   const assignee = useMemo(() => {
@@ -78,13 +93,45 @@ export default function StandDetailSheet({
   const isOccupied = !!assignee
   const isAdhoc = stand.type === 'adhoc'
 
+  // --- Adhoc-Stand löschen ---
+  async function handleDelete() {
+    setSaving(true)
+    const supabase = createClient()
+    const { error } = await supabase.from('hunt_seat_assignments').delete().eq('id', stand.id)
+    if (error) {
+      console.error('Fehler beim Löschen:', error)
+      setSaving(false)
+      setShowConfirmDelete(false)
+      return
+    }
+    onDeleted(stand)
+  }
+
+  // --- Adhoc-Stand umbenennen ---
+  async function handleRename() {
+    const newName = editNameValue.trim()
+    if (!newName || newName === stand.name) {
+      setIsEditing(false)
+      return
+    }
+    setSaving(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('hunt_seat_assignments')
+      .update({ seat_name: newName })
+      .eq('id', stand.id)
+    if (error) {
+      console.error('Fehler beim Umbenennen:', error)
+      setSaving(false)
+      return
+    }
+    onRenamed(stand.id, newName)
+  }
+
   return (
     <>
       {/* Overlay */}
-      <div
-        className="map-object-sheet-overlay"
-        onClick={onClose}
-      />
+      <div className="map-object-sheet-overlay" onClick={onClose} />
 
       {/* Sheet */}
       <div
@@ -239,77 +286,155 @@ export default function StandDetailSheet({
 
         {/* --- Jagdleiter-Aktionen --- */}
         {isJagdleiter && (
-          <>
-            <div style={{
-              margin: '0.75rem 1rem 0',
-              borderTop: '1px solid var(--border)',
-              paddingTop: '0.625rem',
+          <div style={{
+            margin: '0.75rem 1rem 0',
+            borderTop: '1px solid var(--border)',
+            paddingTop: '0.625rem',
+          }}>
+            <p style={{
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              color: 'var(--text-3)',
+              margin: '0 0 0.375rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
             }}>
-              <p style={{
-                fontSize: '0.6875rem',
-                fontWeight: 600,
-                color: 'var(--text-3)',
-                margin: '0 0 0.375rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
+              Jagdleiter
+            </p>
+
+            {/* Umbesetzen — nur wenn belegt */}
+            {isOccupied && (
+              <button onClick={() => onAssign(stand)} style={jlButtonStyle}>
+                <span style={{ width: '1.25rem', textAlign: 'center' }}>🔄</span>
+                Stand umbesetzen
+              </button>
+            )}
+
+            {/* Position wechseln — nur bei Adhoc */}
+            {isAdhoc && (
+              <button onClick={() => onMovePosition(stand)} style={jlButtonStyle}>
+                <span style={{ width: '1.25rem', textAlign: 'center' }}>📍</span>
+                Position wechseln
+              </button>
+            )}
+
+            {/* Stand bearbeiten */}
+            {isAdhoc && isEditing ? (
+              /* Inline-Edit für Adhoc-Stände */
+              <div style={{
+                display: 'flex',
+                gap: '0.5rem',
+                padding: '0.5rem 0',
+                borderBottom: '1px solid var(--border)',
               }}>
-                Jagdleiter
-              </p>
-
-              {/* Umbesetzen — nur wenn belegt */}
-              {isOccupied && (
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={editNameValue}
+                  onChange={(e) => setEditNameValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setIsEditing(false) }}
+                  disabled={saving}
+                  style={{
+                    flex: 1,
+                    padding: '0.5rem 0.625rem',
+                    borderRadius: 'var(--radius)',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text)',
+                    fontSize: '0.8125rem',
+                    outline: 'none',
+                  }}
+                />
                 <button
-                  onClick={() => onAssign(stand)}
-                  style={jlButtonStyle}
+                  onClick={handleRename}
+                  disabled={saving || !editNameValue.trim()}
+                  style={{
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: 'var(--radius)',
+                    background: 'var(--green)',
+                    border: 'none',
+                    color: 'white',
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                    opacity: saving || !editNameValue.trim() ? 0.5 : 1,
+                  }}
                 >
-                  <span style={{ width: '1.25rem', textAlign: 'center' }}>🔄</span>
-                  Stand umbesetzen
+                  ✓
                 </button>
-              )}
-
-              {/* Position wechseln — nur bei Adhoc */}
-              {isAdhoc && (
-                <button
-                  onClick={() => onMovePosition(stand)}
-                  style={jlButtonStyle}
-                >
-                  <span style={{ width: '1.25rem', textAlign: 'center' }}>📍</span>
-                  Position wechseln
-                </button>
-              )}
-
-              {/* Stand bearbeiten */}
+              </div>
+            ) : (
               <button
-                onClick={() => onEdit(stand)}
+                onClick={() => {
+                  if (isAdhoc) {
+                    setEditNameValue(stand.name)
+                    setIsEditing(true)
+                  } else {
+                    onEdit(stand)
+                  }
+                }}
                 style={jlButtonStyle}
               >
                 <span style={{ width: '1.25rem', textAlign: 'center' }}>✏️</span>
                 Stand bearbeiten
               </button>
+            )}
 
-              {/* Stand löschen — nur Adhoc */}
-              {isAdhoc ? (
-                <button
-                  onClick={() => onDelete(stand)}
-                  style={{ ...jlButtonStyle, color: 'var(--red)' }}
-                >
-                  <span style={{ width: '1.25rem', textAlign: 'center' }}>🗑️</span>
-                  Stand löschen
-                </button>
-              ) : (
-                <button
-                  disabled
-                  style={{ ...jlButtonStyle, opacity: 0.35, cursor: 'default' }}
-                  title="Permanente Hochsitze werden in den Revier-Einstellungen verwaltet"
-                >
-                  <span style={{ width: '1.25rem', textAlign: 'center' }}>🗑️</span>
-                  Stand löschen
-                </button>
-              )}
-            </div>
-          </>
+            {/* Stand löschen — nur Adhoc */}
+            {isAdhoc ? (
+              <button
+                onClick={() => setShowConfirmDelete(true)}
+                style={{ ...jlButtonStyle, color: 'var(--red)', borderBottom: 'none' }}
+              >
+                <span style={{ width: '1.25rem', textAlign: 'center' }}>🗑️</span>
+                Stand löschen
+              </button>
+            ) : (
+              <button
+                disabled
+                style={{ ...jlButtonStyle, opacity: 0.35, cursor: 'default', borderBottom: 'none' }}
+                title="Permanente Hochsitze werden in den Revier-Einstellungen verwaltet"
+              >
+                <span style={{ width: '1.25rem', textAlign: 'center' }}>🗑️</span>
+                Stand löschen
+              </button>
+            )}
+          </div>
         )}
       </div>
+
+      {/* Bestätigungsdialog: Stand löschen */}
+      {showConfirmDelete && (
+        <div className="confirm-overlay">
+          <div className="confirm-dialog">
+            <p><strong>{stand.name}</strong> wirklich löschen?</p>
+            <div className="confirm-actions">
+              <button
+                onClick={() => setShowConfirmDelete(false)}
+                style={{
+                  flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)',
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  color: 'var(--text-2)', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer',
+                }}
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={saving}
+                style={{
+                  flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)',
+                  background: 'var(--red)', border: 'none',
+                  color: 'white', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer',
+                  opacity: saving ? 0.5 : 1,
+                }}
+              >
+                🗑️ Löschen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
