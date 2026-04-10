@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import L from 'leaflet'
 import {
   MapContainer, TileLayer, WMSTileLayer,
@@ -905,6 +906,7 @@ export default function MapContent({
   onBoundaryChanged,
   onSeatAssignmentsChanged,
 }: MapContentProps) {
+  const router = useRouter()
   const hasFlown = useRef(false)
   const [mapMoved, setMapMoved] = useState(false)
   const [zoom, setZoom] = useState(DEFAULT_ZOOM)
@@ -1615,10 +1617,17 @@ export default function MapContent({
             setDetailStand(null)
             setMovingStandId(stand.id)
           }}
-          onOpenChat={(userId) => {
-            // Stub — wird in Schritt 4 implementiert
-            console.log('TODO: Chat öffnen mit', userId)
+          onOpenChat={async (userId) => {
             setDetailStand(null)
+            const supabase = createClient()
+            const { data, error } = await supabase.rpc('get_or_create_direct_chat', {
+              other_user_id: userId,
+            })
+            if (error) {
+              console.error('Direkt-Chat konnte nicht geöffnet werden:', error)
+              return
+            }
+            router.push(`/app/chat/${data}`)
           }}
         />
       )}
