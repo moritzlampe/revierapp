@@ -32,9 +32,6 @@ export default function BottomTabBar() {
   // Auf bestimmten Routes komplett ausblenden
   if (HIDE_ON_ROUTES.some(r => pathname.startsWith(r))) return null
 
-  // Bei offener Tastatur ausblenden
-  if (keyboardOpen) return null
-
   // Aktiven Tab bestimmen
   let activeKey: string
   if (pathname === '/app/du') {
@@ -60,6 +57,11 @@ export default function BottomTabBar() {
         background: 'var(--surface)',
         borderTop: '1px solid var(--border)',
         paddingBottom: 'var(--safe-bottom)',
+        ...(keyboardOpen ? {
+          visibility: 'hidden' as const,
+          pointerEvents: 'none' as const,
+          opacity: 0,
+        } : {}),
       }}
     >
       <div style={{ display: 'flex', height: '3.5rem' }}>
