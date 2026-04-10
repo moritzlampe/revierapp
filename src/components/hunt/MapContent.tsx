@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/client'
 import MapObjectSheet from './MapObjectSheet'
 import type { MapObjectData } from './MapObjectSheet'
 import BoundarySheet from './BoundarySheet'
+import StandDetailSheet from './StandDetailSheet'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
 import OwnPositionMarker from './OwnPositionMarker'
 import GpsStatusBadge from './GpsStatusBadge'
@@ -88,6 +89,7 @@ export interface MapContentProps {
   huntParticipants?: HuntParticipantInfo[]
   seatAssignments?: SeatAssignmentData[]
   isJagdleiter?: boolean
+  currentUserId?: string | null
   onStandsChanged?: StandsChangedCallback
   onBoundaryChanged?: () => void
   onSeatAssignmentsChanged?: (assignments: SeatAssignmentData[]) => void
@@ -820,6 +822,7 @@ export default function MapContent({
   huntParticipants,
   seatAssignments,
   isJagdleiter,
+  currentUserId,
   onStandsChanged,
   onBoundaryChanged,
   onSeatAssignmentsChanged,
@@ -841,6 +844,9 @@ export default function MapContent({
 
   // Schnellzuweisung
   const [assignStand, setAssignStand] = useState<StandData | null>(null)
+
+  // Stand-Detail-Sheet (neuer einheitlicher Tap-Flow)
+  const [detailStand, setDetailStand] = useState<StandData | null>(null)
 
   // Per-Marker Move-Mode (nur Jagdleiter)
   const [movingStandId, setMovingStandId] = useState<string | null>(null)
@@ -1381,7 +1387,7 @@ export default function MapContent({
             stand={stand}
             zoom={zoom}
             onEdit={handleEditStand}
-            onTap={isJagdleiter && huntParticipants && huntId && !isMovingActive && isAssignableStand(stand.type) ? () => setAssignStand(stand) : undefined}
+            onTap={huntParticipants && huntId && !isMovingActive && isAssignableStand(stand.type) ? () => setDetailStand(stand) : undefined}
             assignedTo={standAssignedNames?.[stand.id]}
             isMoving={movingStandId === stand.id}
             movingActive={isMovingActive}
@@ -1490,6 +1496,41 @@ export default function MapContent({
         onDelete={handleBoundaryDeleted}
         onClose={handleBoundarySheetClose}
       />
+
+      {/* === Stand-Detail-Sheet (neuer einheitlicher Tap-Flow) === */}
+      {detailStand && huntParticipants && huntId && seatAssignments && currentUserId && (
+        <StandDetailSheet
+          stand={detailStand}
+          huntId={huntId}
+          isJagdleiter={!!isJagdleiter}
+          currentUserId={currentUserId}
+          huntParticipants={huntParticipants}
+          seatAssignments={seatAssignments}
+          onClose={() => setDetailStand(null)}
+          onAssign={(stand) => {
+            setDetailStand(null)
+            setAssignStand(stand)
+          }}
+          onEdit={(stand) => {
+            setDetailStand(null)
+            handleEditStand(stand)
+          }}
+          onDelete={(stand) => {
+            // Stub — wird in Schritt 3 implementiert
+            console.log('TODO: Stand löschen', stand.id)
+            setDetailStand(null)
+          }}
+          onMovePosition={(stand) => {
+            setDetailStand(null)
+            setMovingStandId(stand.id)
+          }}
+          onOpenChat={(userId) => {
+            // Stub — wird in Schritt 4 implementiert
+            console.log('TODO: Chat öffnen mit', userId)
+            setDetailStand(null)
+          }}
+        />
+      )}
 
       {/* === Schnellzuweisung Sheet === */}
       {assignStand && huntParticipants && huntId && seatAssignments && (

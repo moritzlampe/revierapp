@@ -352,6 +352,7 @@ export default function HuntPage() {
             huntParticipants={participants}
             seatAssignments={seatAssignments}
             isJagdleiter={isJagdleiter}
+            currentUserId={userId}
             onStandsChanged={handleStandsChanged}
             onBoundaryChanged={handleBoundaryChanged}
             onSeatAssignmentsChanged={setSeatAssignments}
