@@ -20,10 +20,13 @@ type Props = {
   position: [number, number] // [lat, lng]
   districtId: string
   userId: string
-  initialName: string
-  initialDescription: string
+  name: string
+  description: string
+  onNameChange: (value: string) => void
+  onDescriptionChange: (value: string) => void
   onSaved: () => void
-  onCancel: () => void
+  onBack: () => void
+  onDiscard: () => void
 }
 
 export default function ObjektEditSheet({
@@ -31,13 +34,14 @@ export default function ObjektEditSheet({
   position,
   districtId,
   userId,
-  initialName,
-  initialDescription,
+  name,
+  description,
+  onNameChange,
+  onDescriptionChange,
   onSaved,
-  onCancel,
+  onBack,
+  onDiscard,
 }: Props) {
-  const [name, setName] = useState(initialName)
-  const [description, setDescription] = useState(initialDescription)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -73,10 +77,26 @@ export default function ObjektEditSheet({
 
   return (
     <>
-      <div className="map-object-sheet-overlay" onClick={onCancel} />
+      <div className="map-object-sheet-overlay" onClick={onDiscard} />
       <div className="map-object-sheet" style={{ paddingBottom: '1rem', maxHeight: '70dvh' }}>
         <div className="sheet-handle" />
-        <div className="sheet-header">Neuer {typeLabel}</div>
+        <div className="sheet-header" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            onClick={onBack}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-2)',
+              fontSize: '1.125rem',
+              cursor: 'pointer',
+              padding: '0.25rem',
+              lineHeight: 1,
+            }}
+          >
+            ←
+          </button>
+          Neuer {typeLabel}
+        </div>
         <div style={{ padding: '0.75rem 1rem', overflowY: 'auto' }}>
           {/* Name */}
           <label style={{
@@ -91,7 +111,7 @@ export default function ObjektEditSheet({
           <input
             type="text"
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={e => onNameChange(e.target.value)}
             autoFocus
             placeholder="z.B. Eicheneck"
             style={{
@@ -118,7 +138,7 @@ export default function ObjektEditSheet({
           </label>
           <textarea
             value={description}
-            onChange={e => setDescription(e.target.value)}
+            onChange={e => onDescriptionChange(e.target.value)}
             placeholder="z.B. Am Waldrand, 4m"
             rows={2}
             style={{
@@ -143,7 +163,7 @@ export default function ObjektEditSheet({
           {/* Buttons */}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
-              onClick={onCancel}
+              onClick={onDiscard}
               style={{
                 flex: 1,
                 padding: '0.75rem',

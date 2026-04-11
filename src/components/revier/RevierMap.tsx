@@ -86,14 +86,17 @@ function MapClickHandler({ onClick }: { onClick: (latlng: [number, number]) => v
   return null
 }
 
-// --- Vorschau-Pin (gedimmt, pulsierend) ---
+// --- Vorschau-Pin ---
 
-function makePreviewIcon(type: string): L.DivIcon {
+function makePreviewIcon(type: string, confirmed: boolean): L.DivIcon {
   const variant = getPinVariant(type, false)
   const svg = buildPinSvg(variant, `preview-${type}`)
+  const style = confirmed
+    ? 'opacity: 0.85'
+    : 'opacity: 0.7; filter: drop-shadow(0 0 6px var(--green-bright)); animation: preview-pulse 1.5s ease-in-out infinite'
   return L.divIcon({
     className: '',
-    html: `<div style="opacity: 0.7; filter: drop-shadow(0 0 6px var(--green-bright)); animation: preview-pulse 1.5s ease-in-out infinite">${svg}</div>`,
+    html: `<div style="${style}">${svg}</div>`,
     iconSize: [32, 40],
     iconAnchor: [16, 40],
   })
@@ -107,7 +110,7 @@ interface RevierMapProps {
   objects: MapObject[]
   boundary?: [number, number][][] | null
   onMapClick?: (latlng: [number, number]) => void
-  previewPin?: { type: ObjektType; position: [number, number] } | null
+  previewPin?: { type: ObjektType; position: [number, number]; confirmed?: boolean } | null
 }
 
 export default function RevierMap({ center, zoom = 14, objects, boundary, onMapClick, previewPin }: RevierMapProps) {
@@ -133,7 +136,7 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
       {previewPin && (
         <Marker
           position={previewPin.position}
-          icon={makePreviewIcon(previewPin.type)}
+          icon={makePreviewIcon(previewPin.type, !!previewPin.confirmed)}
           interactive={false}
         />
       )}

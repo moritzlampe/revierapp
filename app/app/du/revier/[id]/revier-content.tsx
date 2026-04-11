@@ -9,6 +9,7 @@ import type { MapObject, ObjektType } from '@/lib/types/revier'
 import CategorySheet from '@/components/revier/CategorySheet'
 import TypeSheet from '@/components/revier/TypeSheet'
 import ObjektEditSheet from '@/components/revier/ObjektEditSheet'
+import PositionConfirmBar from '@/components/revier/PositionConfirmBar'
 
 const RevierMap = dynamic(() => import('@/components/revier/RevierMap'), { ssr: false })
 
@@ -34,7 +35,8 @@ type CreationStage =
   | { stage: 'category-sheet' }
   | { stage: 'type-sheet'; category: 'stand' | 'sonstiges' }
   | { stage: 'awaiting-tap'; type: ObjektType; defaultName: string; defaultDescription: string }
-  | { stage: 'editing'; type: ObjektType; position: [number, number]; defaultName: string; defaultDescription: string }
+  | { stage: 'positioning'; type: ObjektType; position: [number, number]; defaultName: string; defaultDescription: string }
+  | { stage: 'metadata'; type: ObjektType; position: [number, number]; defaultName: string; defaultDescription: string }
 
 // --- Typ-Label für die Pille ---
 
@@ -64,6 +66,12 @@ export default function RevierContent({ district, objects: initialObjects, userI
   const [creation, setCreation] = useState<CreationStage>({ stage: 'idle' })
   const [toast, setToast] = useState<string | null>(null)
 
+  // Metadaten-Entwurf: überlebt positioning ↔ metadata Wechsel
+  const [draftMetadata, setDraftMetadata] = useState<{ name: string; description: string }>({
+    name: '',
+    description: '',
+  })
+
   const boundary = useMemo(
     () => parsePolygonHex(district.boundary),
     [district.boundary],
@@ -92,13 +100,21 @@ export default function RevierContent({ district, objects: initialObjects, userI
 
   // --- State-Übergänge ---
 
-  const goIdle = useCallback(() => setCreation({ stage: 'idle' }), [])
+  const goIdle = useCallback(() => {
+    setCreation({ stage: 'idle' })
+    setDraftMetadata({ name: '', description: '' })
+  }, [])
 
   const handleCategorySelect = useCallback((category: 'stand' | 'sonstiges') => {
     setCreation({ stage: 'type-sheet', category })
   }, [])
 
   const handleTypeSelect = useCallback((opt: { type: ObjektType; defaultName: string; defaultDescription?: string }) => {
+    // Metadaten-Entwurf mit Defaults füllen
+    setDraftMetadata({
+      name: opt.defaultName,
+      description: opt.defaultDescription || '',
+    })
     setCreation({
       stage: 'awaiting-tap',
       type: opt.type,
@@ -110,10 +126,32 @@ export default function RevierContent({ district, objects: initialObjects, userI
   const handleMapClick = useCallback((latlng: [number, number]) => {
     setCreation(prev => {
       if (prev.stage === 'awaiting-tap') {
-        return { ...prev, stage: 'editing', position: latlng }
+        return { ...prev, stage: 'positioning', position: latlng }
       }
-      if (prev.stage === 'editing') {
+      if (prev.stage === 'positioning') {
         return { ...prev, position: latlng }
+      }
+      if (prev.stage === 'metadata') {
+        // Zurück zu positioning mit aktualisierter Position
+        return { ...prev, stage: 'positioning', position: latlng }
+      }
+      return prev
+    })
+  }, [])
+
+  const handlePositionConfirm = useCallback(() => {
+    setCreation(prev => {
+      if (prev.stage === 'positioning') {
+        return { ...prev, stage: 'metadata' }
+      }
+      return prev
+    })
+  }, [])
+
+  const handleBackToPositioning = useCallback(() => {
+    setCreation(prev => {
+      if (prev.stage === 'metadata') {
+        return { ...prev, stage: 'positioning' }
       }
       return prev
     })
@@ -129,22 +167,28 @@ export default function RevierContent({ district, objects: initialObjects, userI
 
     if (data) setObjects(data as MapObject[])
     setCreation({ stage: 'idle' })
+    setDraftMetadata({ name: '', description: '' })
     showToast('Gespeichert ✓')
   }, [district.id, showToast])
 
   // --- Abgeleitete Werte ---
 
-  const isInteractive = creation.stage === 'awaiting-tap' || creation.stage === 'editing'
+  const isInteractive = creation.stage === 'awaiting-tap'
+    || creation.stage === 'positioning'
+    || creation.stage === 'metadata'
 
-  const previewPin = creation.stage === 'editing'
-    ? { type: creation.type, position: creation.position }
+  const previewPin = (creation.stage === 'positioning' || creation.stage === 'metadata')
+    ? {
+        type: creation.type,
+        position: creation.position,
+        confirmed: creation.stage === 'metadata',
+      }
     : null
 
+  // Pille nur im awaiting-tap Stage (positioning hat die ConfirmBar unten)
   const pillText = creation.stage === 'awaiting-tap'
     ? `Tippe auf die Karte um ${TYPE_LABELS[creation.type]} zu setzen`
-    : creation.stage === 'editing'
-      ? 'Position bestätigen oder neu antippen'
-      : null
+    : null
 
   return (
     <div className="fixed inset-0 flex flex-col" style={{ background: 'var(--bg)' }}>
@@ -191,7 +235,7 @@ export default function RevierContent({ district, objects: initialObjects, userI
           previewPin={previewPin}
         />
 
-        {/* Info-Pille */}
+        {/* Info-Pille (nur awaiting-tap) */}
         {pillText && (
           <div style={{
             position: 'absolute',
@@ -273,19 +317,30 @@ export default function RevierContent({ district, objects: initialObjects, userI
           />
         )}
 
-        {creation.stage === 'editing' && (
+        {creation.stage === 'metadata' && (
           <ObjektEditSheet
             type={creation.type}
             position={creation.position}
             districtId={district.id}
             userId={userId}
-            initialName={creation.defaultName}
-            initialDescription={creation.defaultDescription}
+            name={draftMetadata.name}
+            description={draftMetadata.description}
+            onNameChange={name => setDraftMetadata(prev => ({ ...prev, name }))}
+            onDescriptionChange={description => setDraftMetadata(prev => ({ ...prev, description }))}
             onSaved={handleSaved}
-            onCancel={goIdle}
+            onBack={handleBackToPositioning}
+            onDiscard={goIdle}
           />
         )}
       </div>
+
+      {/* Position-Bestätigungs-Bar (nur positioning-Stage) */}
+      {creation.stage === 'positioning' && (
+        <PositionConfirmBar
+          onConfirm={handlePositionConfirm}
+          onDiscard={goIdle}
+        />
+      )}
 
       {/* Toast */}
       {toast && (
