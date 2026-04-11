@@ -156,7 +156,7 @@ export default function HuntPage() {
       .single()
 
     if (district?.boundary) {
-      const parsed = parsePolygonHex(district.boundary as string)
+      const parsed = parsePolygonHex(district.boundary)
       if (parsed) setBoundary(parsed)
     }
     setDistrictName(district?.name ?? null)

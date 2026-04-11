@@ -95,10 +95,27 @@ function readUint32Hex(hex: string, charOffset: number, isLE: boolean): number {
 }
 
 /**
- * PostGIS hex-encoded EWKB Polygon → Array von Ringen als [lat, lng][]
- * Format: byteOrder(1) + type(4) + [srid(4)] + numRings(4) + rings[numPoints(4) + points[x(8)+y(8)]]
+ * PostGIS Polygon → Array von Ringen als [lat, lng][]
+ * Akzeptiert BEIDE Formate:
+ *   1. GeoJSON-Objekt (PostgREST liefert geometry-Spalten so aus)
+ *   2. Hex-encoded EWKB String (Fallback für andere Aufrufer)
  */
-export function parsePolygonHex(hex: string): [number, number][][] | null {
+export function parsePolygonHex(input: unknown): [number, number][][] | null {
+  // PostgREST liefert geometry-Spalten als GeoJSON-Objekt
+  if (input && typeof input === 'object' && 'type' in input && 'coordinates' in input) {
+    const geo = input as { type: string; coordinates: number[][][] }
+    if (geo.type !== 'Polygon' || !Array.isArray(geo.coordinates) || geo.coordinates.length === 0) {
+      return null
+    }
+    // GeoJSON ist [lng, lat], Leaflet will [lat, lng]
+    return geo.coordinates.map(ring => {
+      if (!Array.isArray(ring) || ring.length < 3) return []
+      return ring.map(([lng, lat]) => [lat, lng] as [number, number])
+    }).filter(ring => ring.length > 0)
+  }
+
+  // Ab hier: bisheriger Hex-Pfad, unverändert
+  const hex = typeof input === 'string' ? input : null
   if (!hex || hex.length < 26) return null
 
   try {
@@ -130,7 +147,7 @@ export function parsePolygonHex(hex: string): [number, number][][] | null {
     }
     return rings
   } catch (err) {
-    console.error('[parsePolygonHex] failed:', err, 'input[0:40]:', hex?.substring(0, 40))
+    console.error('[parsePolygonHex] failed:', err, 'inputType:', typeof input)
     return null
   }
 }
