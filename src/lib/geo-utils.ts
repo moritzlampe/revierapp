@@ -129,7 +129,8 @@ export function parsePolygonHex(hex: string): [number, number][][] | null {
       rings.push(ring)
     }
     return rings
-  } catch {
+  } catch (err) {
+    console.error('[parsePolygonHex] failed:', err, 'input[0:40]:', hex?.substring(0, 40))
     return null
   }
 }
