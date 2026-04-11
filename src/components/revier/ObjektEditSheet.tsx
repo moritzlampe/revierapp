@@ -74,10 +74,10 @@ export default function ObjektEditSheet({
   return (
     <>
       <div className="map-object-sheet-overlay" onClick={onCancel} />
-      <div className="map-object-sheet" style={{ paddingBottom: '1rem' }}>
+      <div className="map-object-sheet" style={{ paddingBottom: '1rem', maxHeight: '70dvh' }}>
         <div className="sheet-handle" />
         <div className="sheet-header">Neuer {typeLabel}</div>
-        <div style={{ padding: '0.75rem 1rem' }}>
+        <div style={{ padding: '0.75rem 1rem', overflowY: 'auto' }}>
           {/* Name */}
           <label style={{
             display: 'block',

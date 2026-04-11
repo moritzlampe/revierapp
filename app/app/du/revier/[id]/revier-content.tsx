@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { parsePolygonHex } from '@/lib/geo-utils'
@@ -73,6 +73,17 @@ export default function RevierContent({ district, objects: initialObjects, userI
     () => boundary ? centroidFromBoundary(boundary) : [53.26, 10.35],
     [boundary],
   )
+
+  // Bottom-Bar ausblenden wenn Erstellungs-Flow aktiv
+  const creationActive = creation.stage !== 'idle'
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('quickhunt:keyboard', { detail: { open: creationActive } }))
+    return () => {
+      if (creationActive) {
+        window.dispatchEvent(new CustomEvent('quickhunt:keyboard', { detail: { open: false } }))
+      }
+    }
+  }, [creationActive])
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -223,7 +234,7 @@ export default function RevierContent({ district, objects: initialObjects, userI
             onClick={() => setCreation({ stage: 'category-sheet' })}
             style={{
               position: 'absolute',
-              bottom: 'calc(env(safe-area-inset-bottom, 0px) + 1.5rem)',
+              bottom: 'calc(var(--bottom-bar-space, 3.5rem) + 1rem)',
               right: '0.75rem',
               zIndex: 1050,
               width: '3.5rem',
