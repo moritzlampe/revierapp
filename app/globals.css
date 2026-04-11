@@ -27,6 +27,8 @@
 
 * { -webkit-tap-highlight-color: transparent; }
 
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* Viewport-Höhe mit vh-Fallback für ältere Mobile-Browser / In-App-WebViews.
    --keyboard-offset wird vom Visual Viewport Listener gesetzt (iOS Tastatur). */
 .h-viewport {
