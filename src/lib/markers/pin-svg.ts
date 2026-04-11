@@ -1,9 +1,11 @@
 // Pin-SVG-Generator fuer Leaflet divIcon-Marker
 // Flat-Design Tropfen-Pin mit Typ-Icons
 
+export type AdhocSubtype = 'leiter' | 'hochsitz' | 'sitzstock' | null
+
 export type PinVariant =
   | { kind: 'sitzstand'; occupied: boolean }
-  | { kind: 'adhoc'; occupied: boolean }
+  | { kind: 'adhoc'; occupied: boolean; subtype?: AdhocSubtype }
   | { kind: 'parkplatz' }
   | { kind: 'kirrung' }
   | { kind: 'salzlecke' }
@@ -61,6 +63,24 @@ function adhocIcon(c: string): string {
 <line x1="15" y1="9" x2="18" y2="9" stroke="${c}" stroke-width="1.75"/>`
 }
 
+// Leiter: zwei vertikale Holme mit horizontalen Sprossen
+function leiterIcon(c: string): string {
+  return `<line x1="5" y1="1" x2="5" y2="17" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="13" y1="1" x2="13" y2="17" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="5" y1="4" x2="13" y2="4" stroke="${c}" stroke-width="1.25" stroke-linecap="round"/>
+<line x1="5" y1="8" x2="13" y2="8" stroke="${c}" stroke-width="1.25" stroke-linecap="round"/>
+<line x1="5" y1="12" x2="13" y2="12" stroke="${c}" stroke-width="1.25" stroke-linecap="round"/>
+<line x1="5" y1="16" x2="13" y2="16" stroke="${c}" stroke-width="1.25" stroke-linecap="round"/>`
+}
+
+// Sitzstock: Dreibein mit Sitzfläche oben
+function sitzstockIcon(c: string): string {
+  return `<line x1="9" y1="2" x2="3" y2="17" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="9" y1="2" x2="15" y2="17" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="9" y1="2" x2="9" y2="17" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
+<ellipse cx="9" cy="2.5" rx="4" ry="1.5" fill="${c}"/>`
+}
+
 function parkplatzIcon(c: string): string {
   return `<text x="9" y="14" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="${c}">P</text>`
 }
@@ -93,7 +113,11 @@ function sonstigesIcon(c: string): string {
 function getIconSvg(variant: PinVariant, iconColor: string): string {
   switch (variant.kind) {
     case 'sitzstand': return sitzstandIcon(iconColor, variant.occupied)
-    case 'adhoc': return adhocIcon(iconColor)
+    case 'adhoc':
+      if (variant.subtype === 'hochsitz') return sitzstandIcon(iconColor, variant.occupied)
+      if (variant.subtype === 'leiter') return leiterIcon(iconColor)
+      if (variant.subtype === 'sitzstock') return sitzstockIcon(iconColor)
+      return adhocIcon(iconColor)
     case 'parkplatz': return parkplatzIcon(iconColor)
     case 'kirrung': return kirrungIcon(iconColor)
     case 'salzlecke': return salzleckeIcon(iconColor)
@@ -135,9 +159,9 @@ ${iconSvg}
 const SITZSTAND_TYPES = new Set(['hochsitz', 'kanzel', 'drueckjagdstand'])
 const ASSIGNABLE_TYPES = new Set(['hochsitz', 'kanzel', 'drueckjagdstand', 'adhoc'])
 
-export function getPinVariant(type: string, occupied: boolean): PinVariant {
+export function getPinVariant(type: string, occupied: boolean, adhocSubtype?: AdhocSubtype): PinVariant {
   if (SITZSTAND_TYPES.has(type)) return { kind: 'sitzstand', occupied }
-  if (type === 'adhoc') return { kind: 'adhoc', occupied }
+  if (type === 'adhoc') return { kind: 'adhoc', occupied, subtype: adhocSubtype ?? null }
   if (type === 'parkplatz') return { kind: 'parkplatz' }
   if (type === 'kirrung') return { kind: 'kirrung' }
   if (type === 'salzlecke') return { kind: 'salzlecke' }

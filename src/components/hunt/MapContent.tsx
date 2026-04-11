@@ -428,7 +428,7 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
   // Pin-Groesse: belegt 32×40, unbesetzt 22×28 (visuell), Click-Target 28×36
   const pinSize: PinSize = occupied ? 'normal' : 'small'
   const icon = useMemo(() => {
-    const variant = getPinVariant(stand.type, occupied)
+    const variant = getPinVariant(stand.type, occupied, stand.adhoc_subtype)
     const svgHtml = buildPinSvg(variant, stand.id, pinSize)
     const wrapper = isMoving
       ? `<div class="seat-wiggle">${svgHtml}</div>`
@@ -547,7 +547,7 @@ function FreePositionMarker({ position, userName, avatarColor }: FreePositionDat
 // --- Schnellzuweisung Sheet (Tap auf Stand → Jäger-Liste) ---
 // Umbesetzen-Fix: UPDATE user_id statt DELETE+INSERT — alter Stand bleibt erhalten
 
-function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, stands, onAssign, onClose, onEdit }: {
+function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, stands, onAssign, onClose, onEdit, showSkip }: {
   stand: StandData
   huntParticipants: HuntParticipantInfo[]
   seatAssignments: SeatAssignmentData[]
@@ -556,6 +556,7 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
   onAssign: (newAssignments: SeatAssignmentData[]) => void
   onClose: () => void
   onEdit: (stand: StandData) => void
+  showSkip?: boolean
 }) {
   const [saving, setSaving] = useState(false)
   const [confirmData, setConfirmData] = useState<{ userId: string; userName: string; oldStandName: string } | null>(null)
@@ -733,11 +734,26 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
             )
           })}
         </div>
-        <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border-light)' }}>
+        <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border-light)', display: 'flex', gap: '0.5rem' }}>
+          {showSkip && (
+            <button
+              onClick={onClose}
+              className="text-center text-xs font-semibold"
+              style={{
+                flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)',
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                color: 'var(--text-2)',
+              }}
+            >
+              Überspringen
+            </button>
+          )}
           <button
             onClick={() => { onClose(); onEdit(stand) }}
-            className="w-full text-center text-xs font-semibold"
+            className={`${showSkip ? '' : 'w-full'} text-center text-xs font-semibold`}
             style={{
+              flex: showSkip ? 1 : undefined,
+              width: showSkip ? undefined : '100%',
               padding: '0.625rem', borderRadius: 'var(--radius)',
               background: 'var(--surface-2)', border: '1px solid var(--border)',
               color: 'var(--text-2)',
@@ -932,6 +948,11 @@ export default function MapContent({
   const [movingStandId, setMovingStandId] = useState<string | null>(null)
   const isMovingActive = !!movingStandId
 
+  // Live-FAB: Adhoc-Stand-Erstellung
+  const [showAdhocSubtypeSheet, setShowAdhocSubtypeSheet] = useState(false)
+  const [awaitingAdhocPlacement, setAwaitingAdhocPlacement] = useState<'leiter' | 'hochsitz' | 'sitzstock' | null>(null)
+  const [fromLiveFab, setFromLiveFab] = useState(false) // Schnellzuweisung zeigt "Überspringen"
+
   // Zeichenmodus für Reviergrenze
   const [drawingMode, setDrawingMode] = useState(false)
   const [drawPoints, setDrawPoints] = useState<{ lat: number; lng: number }[]>([])
@@ -1025,6 +1046,61 @@ export default function MapContent({
       }
     }
   }, [stands, onStandsChanged])
+
+  // --- Live-FAB: Adhoc-Stand auf Karte platzieren ---
+
+  const handleAdhocPlacement = useCallback(async (latlng: { lat: number; lng: number }) => {
+    if (!awaitingAdhocPlacement || !huntId || !seatAssignments) return
+
+    // Nächste Stand-Nummer berechnen
+    const existingNumbers = (seatAssignments || [])
+      .filter(a => a.seat_type === 'adhoc' && a.seat_name)
+      .map(a => {
+        const m = a.seat_name!.match(/^Stand\s+(\d+)$/i)
+        return m ? parseInt(m[1], 10) : 0
+      })
+    const nextNum = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1
+    const seatName = `Stand ${nextNum}`
+
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('hunt_seat_assignments')
+      .insert({
+        hunt_id: huntId,
+        user_id: null,
+        seat_id: null,
+        seat_type: 'adhoc',
+        seat_name: seatName,
+        position_lat: latlng.lat,
+        position_lng: latlng.lng,
+        adhoc_subtype: awaitingAdhocPlacement,
+      })
+      .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng, adhoc_subtype')
+      .single()
+
+    if (error || !data) {
+      console.error('Adhoc-Stand konnte nicht erstellt werden:', error)
+      setAwaitingAdhocPlacement(null)
+      return
+    }
+
+    // State aktualisieren
+    const updated = [...(seatAssignments || []), data]
+    onSeatAssignmentsChanged?.(updated)
+
+    // Tap-Modus beenden
+    setAwaitingAdhocPlacement(null)
+
+    // Schnellzuweisung öffnen für den neuen Stand
+    setFromLiveFab(true)
+    setAssignStand({
+      id: data.id,
+      name: data.seat_name || seatName,
+      type: 'adhoc',
+      position: { lat: latlng.lat, lng: latlng.lng },
+      adhoc_subtype: data.adhoc_subtype,
+    })
+  }, [awaitingAdhocPlacement, huntId, seatAssignments, onSeatAssignmentsChanged])
 
   // --- Zeichenmodus Callbacks ---
 
@@ -1345,10 +1421,13 @@ export default function MapContent({
         )}
 
         {/* === Long-Press Handler (nur aktiv wenn NICHT im Zeichenmodus) === */}
-        {!drawingMode && <MapLongPressHandler onLongPress={handleLongPress} />}
+        {!drawingMode && !awaitingAdhocPlacement && <MapLongPressHandler onLongPress={handleLongPress} />}
 
         {/* === Zeichenmodus: Klick-Handler === */}
         {drawingMode && <MapClickHandler onMapClick={handleDrawClick} />}
+
+        {/* === Adhoc-Placement: Klick-Handler === */}
+        {awaitingAdhocPlacement && <MapClickHandler onMapClick={handleAdhocPlacement} />}
 
         {/* === Move-Mode: Klicks auf Karte ignorieren === */}
 
@@ -1553,6 +1632,135 @@ export default function MapContent({
         )}
       </MapContainer>
 
+      {/* === Info-Pille: Adhoc-Placement-Modus === */}
+      {awaitingAdhocPlacement && (
+        <div style={{
+          position: 'absolute',
+          top: '0.75rem',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1050,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(8px)',
+          borderRadius: '2rem',
+          padding: '0.5rem 1rem',
+          fontSize: '0.8125rem',
+          color: 'var(--text)',
+          whiteSpace: 'nowrap',
+        }}>
+          <span>Tippe auf die Karte</span>
+          <button
+            onClick={() => setAwaitingAdhocPlacement(null)}
+            style={{
+              background: 'var(--surface-3)',
+              border: 'none',
+              borderRadius: '1rem',
+              padding: '0.25rem 0.625rem',
+              fontSize: '0.75rem',
+              color: 'var(--text-2)',
+              cursor: 'pointer',
+            }}
+          >
+            Abbrechen
+          </button>
+        </div>
+      )}
+
+      {/* === Live-FAB: Adhoc-Stand erstellen (nur Jagdleiter, freie Jagd) === */}
+      {isJagdleiter && huntId && !districtId && !isMovingActive && !drawingMode
+        && !assignStand && !detailStand && !awaitingAdhocPlacement
+        && sheetMode === 'hidden' && boundarySheetMode === 'hidden' && (
+        <button
+          onClick={() => setShowAdhocSubtypeSheet(true)}
+          style={{
+            position: 'absolute',
+            bottom: 'calc(var(--bottom-bar-space, 0rem) + 7.5rem)',
+            right: '0.75rem',
+            zIndex: 1050,
+            width: '3.5rem',
+            height: '3.5rem',
+            borderRadius: '50%',
+            background: 'var(--green-bright)',
+            border: 'none',
+            boxShadow: '0 0.25rem 0.5rem rgba(0,0,0,0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.5rem',
+            color: 'white',
+            cursor: 'pointer',
+          }}
+          title="Neuen Stand setzen"
+        >
+          +
+        </button>
+      )}
+
+      {/* === Subtype-Auswahl-Sheet === */}
+      {showAdhocSubtypeSheet && (
+        <>
+          <div className="map-object-sheet-overlay" onClick={() => setShowAdhocSubtypeSheet(false)} />
+          <div className="map-object-sheet" style={{ paddingBottom: '1rem' }}>
+            <div className="sheet-handle" />
+            <div className="sheet-header">Neuen Stand setzen</div>
+            <div style={{ padding: '0.5rem 1rem' }}>
+              {([
+                { key: 'leiter' as const, icon: '🪜', label: 'Leiter' },
+                { key: 'hochsitz' as const, icon: '🏠', label: 'Hochsitz' },
+                { key: 'sitzstock' as const, icon: '🪑', label: 'Sitzstock' },
+              ]).map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => {
+                    setShowAdhocSubtypeSheet(false)
+                    setAwaitingAdhocPlacement(opt.key)
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.75rem 0',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid var(--border)',
+                    color: 'var(--text)',
+                    fontSize: '0.9375rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ fontSize: '1.25rem', width: '1.5rem', textAlign: 'center' }}>{opt.icon}</span>
+                  {opt.label}
+                </button>
+              ))}
+              <button
+                onClick={() => setShowAdhocSubtypeSheet(false)}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  marginTop: '0.375rem',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  color: 'var(--text-2)',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* === Hochsitz Bottom Sheet === */}
       <MapObjectSheet
         mode={sheetMode}
@@ -1641,8 +1849,9 @@ export default function MapContent({
           huntId={huntId}
           stands={stands || []}
           onAssign={(updated) => onSeatAssignmentsChanged?.(updated)}
-          onClose={() => setAssignStand(null)}
+          onClose={() => { setAssignStand(null); setFromLiveFab(false) }}
           onEdit={handleEditStand}
+          showSkip={fromLiveFab}
         />
       )}
     </div>
