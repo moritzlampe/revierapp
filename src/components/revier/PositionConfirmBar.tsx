@@ -3,9 +3,11 @@
 type Props = {
   onConfirm: () => void
   onDiscard: () => void
+  confirmLabel?: string
+  discardLabel?: string
 }
 
-export default function PositionConfirmBar({ onConfirm, onDiscard }: Props) {
+export default function PositionConfirmBar({ onConfirm, onDiscard, confirmLabel, discardLabel }: Props) {
   return (
     <div style={{
       position: 'fixed',
@@ -39,7 +41,7 @@ export default function PositionConfirmBar({ onConfirm, onDiscard }: Props) {
           gap: '0.375rem',
         }}
       >
-        ✕ Verwerfen
+        {discardLabel || '✕ Verwerfen'}
       </button>
       <button
         onClick={onConfirm}
@@ -60,7 +62,7 @@ export default function PositionConfirmBar({ onConfirm, onDiscard }: Props) {
           gap: '0.375rem',
         }}
       >
-        ✓ Position bestätigen
+        {confirmLabel || '✓ Position bestätigen'}
       </button>
     </div>
   )

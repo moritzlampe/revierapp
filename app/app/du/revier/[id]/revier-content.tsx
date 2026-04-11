@@ -6,9 +6,11 @@ import dynamic from 'next/dynamic'
 import { parsePolygonHex } from '@/lib/geo-utils'
 import { createClient } from '@/lib/supabase/client'
 import type { MapObject, ObjektType } from '@/lib/types/revier'
+import { parsePointHex } from '@/lib/geo-utils'
 import CategorySheet from '@/components/revier/CategorySheet'
 import TypeSheet from '@/components/revier/TypeSheet'
 import ObjektEditSheet from '@/components/revier/ObjektEditSheet'
+import ObjektDetailSheet from '@/components/revier/ObjektDetailSheet'
 import PositionConfirmBar from '@/components/revier/PositionConfirmBar'
 
 const RevierMap = dynamic(() => import('@/components/revier/RevierMap'), { ssr: false })
@@ -35,8 +37,9 @@ type CreationStage =
   | { stage: 'category-sheet' }
   | { stage: 'type-sheet'; category: 'stand' | 'sonstiges' }
   | { stage: 'awaiting-tap'; type: ObjektType; defaultName: string; defaultDescription: string }
-  | { stage: 'positioning'; type: ObjektType; position: [number, number]; defaultName: string; defaultDescription: string }
+  | { stage: 'positioning'; type: ObjektType; position: [number, number]; defaultName: string; defaultDescription: string; existingId?: string }
   | { stage: 'metadata'; type: ObjektType; position: [number, number]; defaultName: string; defaultDescription: string }
+  | { stage: 'detail'; object: MapObject }
 
 // --- Typ-Label für die Pille ---
 
@@ -49,6 +52,22 @@ const TYPE_LABELS: Record<ObjektType, string> = {
   salzlecke: 'Salzlecke',
   wildkamera: 'Wildkamera',
   sonstiges: 'Objekt',
+}
+
+/** Position aus MapObject parsen → [lat, lng] */
+function parseObjectPosition(pos: unknown): [number, number] | null {
+  if (pos && typeof pos === 'object' && 'type' in pos && 'coordinates' in pos) {
+    const geo = pos as { type: string; coordinates: number[] }
+    if (geo.type === 'Point' && Array.isArray(geo.coordinates) && geo.coordinates.length >= 2) {
+      return [geo.coordinates[1], geo.coordinates[0]]
+    }
+    return null
+  }
+  if (typeof pos === 'string') {
+    const p = parsePointHex(pos)
+    return p ? [p.lat, p.lng] : null
+  }
+  return null
 }
 
 /** Einfacher Centroid: Durchschnitt aller Punkte des ersten Rings */
@@ -139,14 +158,66 @@ export default function RevierContent({ district, objects: initialObjects, userI
     })
   }, [])
 
-  const handlePositionConfirm = useCallback(() => {
+  // Objekte neu laden
+  const refreshObjects = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('map_objects')
+      .select('id, district_id, type, name, position, description, photo_url, created_by, created_at')
+      .eq('district_id', district.id)
+    if (data) setObjects(data as MapObject[])
+    return data as MapObject[] | null
+  }, [district.id])
+
+  const handlePositionConfirm = useCallback(async () => {
+    if (creation.stage !== 'positioning') return
+
+    // Position-Verschieben-Flow: direkt UPDATE, kein metadata-Stage
+    if (creation.existingId) {
+      const supabase = createClient()
+      const ewkt = `SRID=4326;POINT(${creation.position[1]} ${creation.position[0]})`
+      const { error } = await supabase
+        .from('map_objects')
+        .update({ position: ewkt })
+        .eq('id', creation.existingId)
+
+      if (error) {
+        console.error('Position-Update fehlgeschlagen:', error.message)
+        return
+      }
+      // Objekte neu laden und zurück zu detail mit aktualisiertem Objekt
+      const fresh = await refreshObjects()
+      const updated = fresh?.find(o => o.id === creation.existingId)
+      if (updated) {
+        setCreation({ stage: 'detail', object: updated })
+      } else {
+        setCreation({ stage: 'idle' })
+      }
+      showToast('Position aktualisiert ✓')
+      return
+    }
+
+    // Normaler Neu-Anlegen-Flow: weiter zu metadata
     setCreation(prev => {
       if (prev.stage === 'positioning') {
         return { ...prev, stage: 'metadata' }
       }
       return prev
     })
-  }, [])
+  }, [creation, refreshObjects, showToast])
+
+  // Verwerfen im positioning-Stage: zurück zu detail wenn existingId, sonst idle
+  const handlePositionDiscard = useCallback(() => {
+    if (creation.stage === 'positioning' && creation.existingId) {
+      // Zurück zu detail mit Original-Objekt aus der objects-Liste
+      const original = objects.find(o => o.id === creation.existingId)
+      if (original) {
+        setCreation({ stage: 'detail', object: original })
+        return
+      }
+    }
+    goIdle()
+  }, [creation, objects, goIdle])
 
   const handleBackToPositioning = useCallback(() => {
     setCreation(prev => {
@@ -157,19 +228,73 @@ export default function RevierContent({ district, objects: initialObjects, userI
     })
   }, [])
 
-  // Objekte neu laden nach Speichern
+  // Objekte neu laden nach Speichern (Neues Objekt)
   const handleSaved = useCallback(async () => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('map_objects')
-      .select('id, district_id, type, name, position, description, photo_url, created_by, created_at')
-      .eq('district_id', district.id)
-
-    if (data) setObjects(data as MapObject[])
+    await refreshObjects()
     setCreation({ stage: 'idle' })
     setDraftMetadata({ name: '', description: '' })
     showToast('Gespeichert ✓')
-  }, [district.id, showToast])
+  }, [refreshObjects, showToast])
+
+  // --- Detail-Sheet Handlers ---
+
+  const handleObjectClick = useCallback((obj: MapObject) => {
+    setCreation({ stage: 'detail', object: obj })
+  }, [])
+
+  const handleDetailClose = useCallback(() => {
+    setCreation({ stage: 'idle' })
+  }, [])
+
+  const handleDetailUpdate = useCallback(async (changes: Partial<MapObject>) => {
+    if (creation.stage !== 'detail') return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('map_objects')
+      .update(changes)
+      .eq('id', creation.object.id)
+
+    if (error) {
+      console.error('Update fehlgeschlagen:', error.message)
+      return
+    }
+    // Lokalen State optimistisch aktualisieren
+    const updated = { ...creation.object, ...changes }
+    setObjects(prev => prev.map(o => o.id === updated.id ? updated : o))
+    setCreation({ stage: 'detail', object: updated })
+  }, [creation])
+
+  const handleDetailPositionChange = useCallback(() => {
+    if (creation.stage !== 'detail') return
+    const obj = creation.object
+    const pos = parseObjectPosition(obj.position)
+    if (!pos) return
+    setCreation({
+      stage: 'positioning',
+      type: obj.type,
+      position: pos,
+      defaultName: obj.name,
+      defaultDescription: obj.description || '',
+      existingId: obj.id,
+    })
+  }, [creation])
+
+  const handleDetailDelete = useCallback(async () => {
+    if (creation.stage !== 'detail') return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('map_objects')
+      .delete()
+      .eq('id', creation.object.id)
+
+    if (error) {
+      console.error('Löschen fehlgeschlagen:', error.message)
+      return
+    }
+    setObjects(prev => prev.filter(o => o.id !== creation.object.id))
+    setCreation({ stage: 'idle' })
+    showToast('Gelöscht ✓')
+  }, [creation, showToast])
 
   // --- Abgeleitete Werte ---
 
@@ -183,6 +308,11 @@ export default function RevierContent({ district, objects: initialObjects, userI
         position: creation.position,
         confirmed: creation.stage === 'metadata',
       }
+    : null
+
+  // ID des Objekts das während Position-Verschieben ausgeblendet wird
+  const hiddenObjectId = (creation.stage === 'positioning' && creation.existingId)
+    ? creation.existingId
     : null
 
   // Pille nur im awaiting-tap Stage (positioning hat die ConfirmBar unten)
@@ -232,7 +362,9 @@ export default function RevierContent({ district, objects: initialObjects, userI
           objects={objects}
           boundary={boundary}
           onMapClick={isInteractive ? handleMapClick : undefined}
+          onObjectClick={creation.stage === 'idle' ? handleObjectClick : undefined}
           previewPin={previewPin}
+          hiddenObjectId={hiddenObjectId}
         />
 
         {/* Info-Pille (nur awaiting-tap) */}
@@ -332,13 +464,25 @@ export default function RevierContent({ district, objects: initialObjects, userI
             onDiscard={goIdle}
           />
         )}
+
+        {creation.stage === 'detail' && (
+          <ObjektDetailSheet
+            object={creation.object}
+            onClose={handleDetailClose}
+            onPositionChange={handleDetailPositionChange}
+            onDelete={handleDetailDelete}
+            onUpdate={handleDetailUpdate}
+          />
+        )}
       </div>
 
       {/* Position-Bestätigungs-Bar (nur positioning-Stage) */}
       {creation.stage === 'positioning' && (
         <PositionConfirmBar
           onConfirm={handlePositionConfirm}
-          onDiscard={goIdle}
+          onDiscard={handlePositionDiscard}
+          confirmLabel={creation.existingId ? '✓ Neue Position bestätigen' : undefined}
+          discardLabel={creation.existingId ? '← Zurück' : undefined}
         />
       )}
 

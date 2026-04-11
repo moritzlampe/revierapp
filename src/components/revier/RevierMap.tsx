@@ -110,10 +110,13 @@ interface RevierMapProps {
   objects: MapObject[]
   boundary?: [number, number][][] | null
   onMapClick?: (latlng: [number, number]) => void
+  onObjectClick?: (obj: MapObject) => void
   previewPin?: { type: ObjektType; position: [number, number]; confirmed?: boolean } | null
+  /** ID eines Objekts das ausgeblendet werden soll (z.B. während Position-Verschieben) */
+  hiddenObjectId?: string | null
 }
 
-export default function RevierMap({ center, zoom = 14, objects, boundary, onMapClick, previewPin }: RevierMapProps) {
+export default function RevierMap({ center, zoom = 14, objects, boundary, onMapClick, onObjectClick, previewPin, hiddenObjectId }: RevierMapProps) {
   return (
     <MapContainer
       center={center}
@@ -158,6 +161,7 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
 
       {/* Revier-Objekte */}
       {objects.map(obj => {
+        if (hiddenObjectId && obj.id === hiddenObjectId) return null
         const pos = parsePosition(obj.position)
         if (!pos) return null
         return (
@@ -165,6 +169,7 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
             key={obj.id}
             position={[pos.lat, pos.lng]}
             icon={getIcon(obj.type)}
+            eventHandlers={onObjectClick ? { click: () => onObjectClick(obj) } : undefined}
           >
             <Tooltip direction="top" offset={[0, -4]} permanent={objects.length <= 30}>
               <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{obj.name}</span>

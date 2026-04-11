@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { ObjektType } from '@/lib/types/revier'
 
@@ -44,6 +44,8 @@ export default function ObjektEditSheet({
 }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showNotiz, setShowNotiz] = useState(!!description)
+  const notizRef = useRef<HTMLTextAreaElement>(null)
 
   const handleSave = useCallback(async () => {
     if (!name.trim()) return
@@ -126,33 +128,60 @@ export default function ObjektEditSheet({
             }}
           />
 
-          {/* Beschreibung */}
-          <label style={{
-            display: 'block',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            color: 'var(--text-2)',
-            marginBottom: '0.375rem',
-          }}>
-            Beschreibung (optional)
-          </label>
-          <textarea
-            value={description}
-            onChange={e => onDescriptionChange(e.target.value)}
-            placeholder="z.B. Am Waldrand, 4m"
-            rows={2}
-            style={{
-              width: '100%',
-              padding: '0.625rem 0.75rem',
-              background: 'var(--bg)',
-              border: '1px solid var(--border)',
-              borderRadius: '0.625rem',
-              color: 'var(--text)',
-              fontSize: '0.875rem',
-              resize: 'none',
-              marginBottom: '0.75rem',
-            }}
-          />
+          {/* Notiz (optional, versteckt wenn leer) */}
+          {!showNotiz ? (
+            <button
+              onClick={() => {
+                setShowNotiz(true)
+                setTimeout(() => notizRef.current?.focus(), 50)
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '0.25rem 0',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                color: 'var(--text-3)',
+                fontSize: '0.8125rem',
+                marginBottom: '0.75rem',
+              }}
+            >
+              <span style={{ fontSize: '0.875rem' }}>+</span>
+              Notiz hinzufügen
+            </button>
+          ) : (
+            <>
+              <label style={{
+                display: 'block',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: 'var(--text-2)',
+                marginBottom: '0.375rem',
+              }}>
+                Notiz (optional)
+              </label>
+              <textarea
+                ref={notizRef}
+                value={description}
+                onChange={e => onDescriptionChange(e.target.value)}
+                placeholder="z.B. Am Waldrand, 4m"
+                rows={2}
+                style={{
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.625rem',
+                  color: 'var(--text)',
+                  fontSize: '0.875rem',
+                  resize: 'none',
+                  marginBottom: '0.75rem',
+                }}
+              />
+            </>
+          )}
 
           {error && (
             <p style={{ fontSize: '0.8125rem', color: 'var(--red)', marginBottom: '0.75rem' }}>
