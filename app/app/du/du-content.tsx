@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
   ChevronRight,
@@ -189,14 +190,23 @@ export default function DuContent({
             label="Freunde einladen"
             onClick={() => setShowInviteSheet(true)}
           />
-          <MenuItem
-            icon={<MapPin size={18} />}
-            label="Verknüpfte Reviere"
-            sublabel={districts.length > 0
-              ? districts.map(d => d.name).join(', ')
-              : 'Keine Reviere verknüpft'
-            }
-          />
+          {districts.length > 0 ? (
+            districts.map(d => (
+              <Link key={d.id} href={`/app/du/revier/${d.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <MenuItem
+                  icon={<MapPin size={18} />}
+                  label={d.name}
+                  sublabel="Revier-Einstellungen"
+                />
+              </Link>
+            ))
+          ) : (
+            <MenuItem
+              icon={<MapPin size={18} />}
+              label="Verknüpfte Reviere"
+              sublabel="Keine Reviere verknüpft"
+            />
+          )}
         </Section>
 
         {/* === Sektion: Einstellungen === */}
