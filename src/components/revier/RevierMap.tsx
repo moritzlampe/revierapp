@@ -2,11 +2,11 @@
 
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
-import { MapContainer, TileLayer, Marker, Polygon, Tooltip, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Polygon, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { buildPinSvg, getPinVariant } from '@/lib/markers/pin-svg'
 import { parsePointHex } from '@/lib/geo-utils'
-import type { MapObject } from '@/lib/types/revier'
+import type { MapObject, ObjektType } from '@/lib/types/revier'
 
 // --- Position aus PostgREST parsen (GeoJSON Point oder Hex) ---
 
@@ -75,6 +75,30 @@ function InitialView({ center, zoom, boundary }: {
   return null
 }
 
+// --- Map-Click-Handler ---
+
+function MapClickHandler({ onClick }: { onClick: (latlng: [number, number]) => void }) {
+  useMapEvents({
+    click(e) {
+      onClick([e.latlng.lat, e.latlng.lng])
+    },
+  })
+  return null
+}
+
+// --- Vorschau-Pin (gedimmt, pulsierend) ---
+
+function makePreviewIcon(type: string): L.DivIcon {
+  const variant = getPinVariant(type, false)
+  const svg = buildPinSvg(variant, `preview-${type}`)
+  return L.divIcon({
+    className: '',
+    html: `<div style="opacity: 0.7; filter: drop-shadow(0 0 6px var(--green-bright)); animation: preview-pulse 1.5s ease-in-out infinite">${svg}</div>`,
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
+  })
+}
+
 // --- Hauptkomponente ---
 
 interface RevierMapProps {
@@ -82,9 +106,11 @@ interface RevierMapProps {
   zoom?: number
   objects: MapObject[]
   boundary?: [number, number][][] | null
+  onMapClick?: (latlng: [number, number]) => void
+  previewPin?: { type: ObjektType; position: [number, number] } | null
 }
 
-export default function RevierMap({ center, zoom = 14, objects, boundary }: RevierMapProps) {
+export default function RevierMap({ center, zoom = 14, objects, boundary, onMapClick, previewPin }: RevierMapProps) {
   return (
     <MapContainer
       center={center}
@@ -100,6 +126,17 @@ export default function RevierMap({ center, zoom = 14, objects, boundary }: Revi
       />
 
       <InitialView center={center} zoom={zoom} boundary={boundary ?? null} />
+
+      {onMapClick && <MapClickHandler onClick={onMapClick} />}
+
+      {/* Vorschau-Pin */}
+      {previewPin && (
+        <Marker
+          position={previewPin.position}
+          icon={makePreviewIcon(previewPin.type)}
+          interactive={false}
+        />
+      )}
 
       {/* Reviergrenze */}
       {boundary && boundary.length > 0 && boundary[0].length >= 3 && (

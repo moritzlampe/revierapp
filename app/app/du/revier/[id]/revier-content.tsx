@@ -1,10 +1,14 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { parsePolygonHex } from '@/lib/geo-utils'
-import type { MapObject } from '@/lib/types/revier'
+import { createClient } from '@/lib/supabase/client'
+import type { MapObject, ObjektType } from '@/lib/types/revier'
+import CategorySheet from '@/components/revier/CategorySheet'
+import TypeSheet from '@/components/revier/TypeSheet'
+import ObjektEditSheet from '@/components/revier/ObjektEditSheet'
 
 const RevierMap = dynamic(() => import('@/components/revier/RevierMap'), { ssr: false })
 
@@ -23,6 +27,28 @@ type Props = {
   userId: string
 }
 
+// --- State Machine ---
+
+type CreationStage =
+  | { stage: 'idle' }
+  | { stage: 'category-sheet' }
+  | { stage: 'type-sheet'; category: 'stand' | 'sonstiges' }
+  | { stage: 'awaiting-tap'; type: ObjektType; defaultName: string; defaultDescription: string }
+  | { stage: 'editing'; type: ObjektType; position: [number, number]; defaultName: string; defaultDescription: string }
+
+// --- Typ-Label für die Pille ---
+
+const TYPE_LABELS: Record<ObjektType, string> = {
+  hochsitz: 'Hochsitz',
+  kanzel: 'Kanzel',
+  drueckjagdstand: 'Drückjagdbock',
+  parkplatz: 'Parkplatz',
+  kirrung: 'Kirrung',
+  salzlecke: 'Salzlecke',
+  wildkamera: 'Wildkamera',
+  sonstiges: 'Objekt',
+}
+
 /** Einfacher Centroid: Durchschnitt aller Punkte des ersten Rings */
 function centroidFromBoundary(rings: [number, number][][]): [number, number] {
   const ring = rings[0]
@@ -32,8 +58,11 @@ function centroidFromBoundary(rings: [number, number][][]): [number, number] {
   return [sumLat / ring.length, sumLng / ring.length]
 }
 
-export default function RevierContent({ district, objects }: Props) {
+export default function RevierContent({ district, objects: initialObjects, userId }: Props) {
   const router = useRouter()
+  const [objects, setObjects] = useState<MapObject[]>(initialObjects)
+  const [creation, setCreation] = useState<CreationStage>({ stage: 'idle' })
+  const [toast, setToast] = useState<string | null>(null)
 
   const boundary = useMemo(
     () => parsePolygonHex(district.boundary),
@@ -44,6 +73,67 @@ export default function RevierContent({ district, objects }: Props) {
     () => boundary ? centroidFromBoundary(boundary) : [53.26, 10.35],
     [boundary],
   )
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2500)
+  }, [])
+
+  // --- State-Übergänge ---
+
+  const goIdle = useCallback(() => setCreation({ stage: 'idle' }), [])
+
+  const handleCategorySelect = useCallback((category: 'stand' | 'sonstiges') => {
+    setCreation({ stage: 'type-sheet', category })
+  }, [])
+
+  const handleTypeSelect = useCallback((opt: { type: ObjektType; defaultName: string; defaultDescription?: string }) => {
+    setCreation({
+      stage: 'awaiting-tap',
+      type: opt.type,
+      defaultName: opt.defaultName,
+      defaultDescription: opt.defaultDescription || '',
+    })
+  }, [])
+
+  const handleMapClick = useCallback((latlng: [number, number]) => {
+    setCreation(prev => {
+      if (prev.stage === 'awaiting-tap') {
+        return { ...prev, stage: 'editing', position: latlng }
+      }
+      if (prev.stage === 'editing') {
+        return { ...prev, position: latlng }
+      }
+      return prev
+    })
+  }, [])
+
+  // Objekte neu laden nach Speichern
+  const handleSaved = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('map_objects')
+      .select('id, district_id, type, name, position, description, photo_url, created_by, created_at')
+      .eq('district_id', district.id)
+
+    if (data) setObjects(data as MapObject[])
+    setCreation({ stage: 'idle' })
+    showToast('Gespeichert ✓')
+  }, [district.id, showToast])
+
+  // --- Abgeleitete Werte ---
+
+  const isInteractive = creation.stage === 'awaiting-tap' || creation.stage === 'editing'
+
+  const previewPin = creation.stage === 'editing'
+    ? { type: creation.type, position: creation.position }
+    : null
+
+  const pillText = creation.stage === 'awaiting-tap'
+    ? `Tippe auf die Karte um ${TYPE_LABELS[creation.type]} zu setzen`
+    : creation.stage === 'editing'
+      ? 'Position bestätigen oder neu antippen'
+      : null
 
   return (
     <div className="fixed inset-0 flex flex-col" style={{ background: 'var(--bg)' }}>
@@ -86,8 +176,126 @@ export default function RevierContent({ district, objects }: Props) {
           zoom={14}
           objects={objects}
           boundary={boundary}
+          onMapClick={isInteractive ? handleMapClick : undefined}
+          previewPin={previewPin}
         />
+
+        {/* Info-Pille */}
+        {pillText && (
+          <div style={{
+            position: 'absolute',
+            top: '0.75rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1050,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            borderRadius: '2rem',
+            padding: '0.5rem 1rem',
+            fontSize: '0.8125rem',
+            color: 'var(--text)',
+            whiteSpace: 'nowrap',
+          }}>
+            <span>{pillText}</span>
+            <button
+              onClick={goIdle}
+              style={{
+                background: 'var(--surface-3)',
+                border: 'none',
+                borderRadius: '1rem',
+                padding: '0.25rem 0.625rem',
+                fontSize: '0.75rem',
+                color: 'var(--text-2)',
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* FAB */}
+        {creation.stage === 'idle' && (
+          <button
+            onClick={() => setCreation({ stage: 'category-sheet' })}
+            style={{
+              position: 'absolute',
+              bottom: 'calc(env(safe-area-inset-bottom, 0px) + 1.5rem)',
+              right: '0.75rem',
+              zIndex: 1050,
+              width: '3.5rem',
+              height: '3.5rem',
+              borderRadius: '50%',
+              background: 'var(--green-bright)',
+              border: 'none',
+              boxShadow: '0 0.25rem 0.5rem rgba(0,0,0,0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.5rem',
+              color: 'white',
+              cursor: 'pointer',
+            }}
+            title="Neues Objekt setzen"
+          >
+            +
+          </button>
+        )}
+
+        {/* Sheets */}
+        {creation.stage === 'category-sheet' && (
+          <CategorySheet
+            onSelect={handleCategorySelect}
+            onCancel={goIdle}
+          />
+        )}
+
+        {creation.stage === 'type-sheet' && (
+          <TypeSheet
+            category={creation.category}
+            onSelect={handleTypeSelect}
+            onBack={() => setCreation({ stage: 'category-sheet' })}
+            onCancel={goIdle}
+          />
+        )}
+
+        {creation.stage === 'editing' && (
+          <ObjektEditSheet
+            type={creation.type}
+            position={creation.position}
+            districtId={district.id}
+            userId={userId}
+            initialName={creation.defaultName}
+            initialDescription={creation.defaultDescription}
+            onSaved={handleSaved}
+            onCancel={goIdle}
+          />
+        )}
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '6rem',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'var(--surface-2)',
+          color: 'var(--text)',
+          padding: '0.625rem 1.25rem',
+          borderRadius: 'var(--radius)',
+          fontSize: '0.875rem',
+          fontWeight: 600,
+          zIndex: 2000,
+          border: '1px solid var(--border)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+        }}>
+          {toast}
+        </div>
+      )}
     </div>
   )
 }
