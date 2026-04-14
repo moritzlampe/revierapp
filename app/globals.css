@@ -40,6 +40,20 @@
   min-height: 100dvh;
 }
 
+/* Mobile-First Wrapper: 430px in Portrait, volle Breite in Landscape */
+.app-mobile-wrapper {
+  max-width: 430px;
+  border-left: 1px solid rgba(107,159,58,0.15);
+  border-right: 1px solid rgba(107,159,58,0.15);
+}
+@media (orientation: landscape) {
+  .app-mobile-wrapper {
+    max-width: none;
+    border-left: none;
+    border-right: none;
+  }
+}
+
 html, body {
   height: 100%;
   background: var(--bg);

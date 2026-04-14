@@ -8,6 +8,7 @@ import {
 } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
+import { useInvalidateOnResize } from '@/hooks/useInvalidateOnResize'
 import OwnPositionMarker, { type OwnPositionMarkerHandle } from './OwnPositionMarker'
 import CompassToggleButton from '@/components/map/CompassToggleButton'
 import { useCompassHeading, getCompassEnabled, setCompassEnabled } from '@/hooks/useCompassHeading'
@@ -119,6 +120,7 @@ function InitialViewSetter({ boundary, userPosition, hasFlown }: {
 
 function MapResizer() {
   const map = useMap()
+  useInvalidateOnResize(map)
   useEffect(() => {
     map.invalidateSize()
     const timer = setTimeout(() => map.invalidateSize(), 200)

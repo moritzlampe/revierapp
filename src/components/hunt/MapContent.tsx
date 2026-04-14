@@ -9,6 +9,7 @@ import {
 } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { GeolocationState, GeoPosition } from '@/hooks/useGeolocation'
+import { useInvalidateOnResize } from '@/hooks/useInvalidateOnResize'
 import type { ParticipantPosition } from '@/hooks/useHuntPositions'
 import { distanceInMeters, polygonAreaHectares } from '@/lib/geo-utils'
 import { createClient } from '@/lib/supabase/client'
@@ -166,9 +167,10 @@ function MapMoveTracker({ userPosition, onMoved }: {
   return null
 }
 
-/** Leaflet Container-Größe nach Mount neu berechnen (Mobile-Fix) */
+/** Leaflet Container-Größe nach Mount + bei Rotation/Resize neu berechnen */
 function MapResizer() {
   const map = useMap()
+  useInvalidateOnResize(map)
   useEffect(() => {
     map.invalidateSize()
     const timer = setTimeout(() => map.invalidateSize(), 200)

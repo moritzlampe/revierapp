@@ -7,6 +7,7 @@ import "leaflet/dist/leaflet.css";
 import type { LatLngExpression } from "leaflet";
 import { getMarkerColor, getEmoji, getTypLabel } from "@/lib/data/demo-pois";
 import type { RevierObjekt, ObjektType } from "@/lib/types/revier";
+import { useInvalidateOnResize } from "@/hooks/useInvalidateOnResize";
 import { useMapContext } from "./map-context";
 import { useRevier } from "@/lib/context/revier-context";
 import { BoundaryEditor } from "./boundary-editor";
@@ -55,6 +56,7 @@ function createPinIcon(type: ObjektType, name: string) {
 function MapController() {
   const map = useMap();
   const { registerFlyTo } = useMapContext();
+  useInvalidateOnResize(map);
 
   const flyTo = useCallback(
     (lat: number, lng: number) => {

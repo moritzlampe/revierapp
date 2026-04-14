@@ -41,12 +41,9 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <ServiceWorkerRegistration />
-        <div className="min-h-viewport" style={{
-          maxWidth: '430px',
+        <div className="min-h-viewport app-mobile-wrapper" style={{
           margin: '0 auto',
           position: 'relative',
-          borderLeft: '1px solid rgba(107,159,58,0.15)',
-          borderRight: '1px solid rgba(107,159,58,0.15)',
         }}>
           {children}
         </div>
