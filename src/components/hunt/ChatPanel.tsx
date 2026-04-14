@@ -215,7 +215,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
   const participantsRef = useRef(participants)
   const userIdRef = useRef(userId)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const lastScrollTopRef = useRef(0)
+
 
   useEffect(() => { isActiveRef.current = isActive }, [isActive])
   useEffect(() => { onUnreadChangeRef.current = onUnreadChange }, [onUnreadChange])
@@ -585,16 +585,11 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     const el = scrollRef.current
     if (!el) return
     // Keyboard schließen beim Hochscrollen
-    const scrollingUp = el.scrollTop < lastScrollTopRef.current - 10
-    lastScrollTopRef.current = el.scrollTop
     isAtBottomRef.current = checkIsAtBottom()
     if (isAtBottomRef.current) setShowNewPill(false)
     // Ältere Nachrichten laden wenn ganz oben
     if (el.scrollTop < 50 && hasMore && !loadingMore) {
       loadOlder()
-    }
-    if (scrollingUp && document.activeElement === inputRef.current) {
-      inputRef.current?.blur()
     }
   }, [checkIsAtBottom, hasMore, loadingMore, loadOlder])
 
