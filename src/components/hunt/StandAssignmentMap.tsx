@@ -8,7 +8,9 @@ import {
 } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
-import OwnPositionMarker from './OwnPositionMarker'
+import OwnPositionMarker, { type OwnPositionMarkerHandle } from './OwnPositionMarker'
+import CompassToggleButton from '@/components/map/CompassToggleButton'
+import { useCompassHeading, getCompassEnabled, setCompassEnabled } from '@/hooks/useCompassHeading'
 
 // Leaflet Icon Fix
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -250,6 +252,31 @@ export default function StandAssignmentMap({
   const hasFlown = useRef(false)
   const [activeLayer] = useState<BaseLayerKey>(getSavedLayer)
 
+  // Kompass / Heading
+  const [compassEnabled, setCompassEnabledState] = useState(getCompassEnabled)
+  const ownPositionRef = useRef<OwnPositionMarkerHandle>(null)
+  const handleHeading = useCallback((deg: number) => {
+    ownPositionRef.current?.setHeading(deg)
+  }, [])
+  const { permission: compassPermission, request: requestCompass } = useCompassHeading(handleHeading, compassEnabled)
+  const handleCompassToggle = useCallback(async () => {
+    if (compassEnabled) {
+      setCompassEnabledState(false)
+      setCompassEnabled(false)
+      ownPositionRef.current?.clearHeading()
+    } else {
+      setCompassEnabledState(true)
+      setCompassEnabled(true)
+      if (compassPermission !== 'granted') {
+        const ok = await requestCompass()
+        if (!ok) {
+          setCompassEnabledState(false)
+          setCompassEnabled(false)
+        }
+      }
+    }
+  }, [compassEnabled, compassPermission, requestCompass])
+
   const allStands = useMemo(() => [...revierStands, ...adhocStands], [revierStands, adhocStands])
   const isMovingActive = !!movingStandId
 
@@ -291,7 +318,14 @@ export default function StandAssignmentMap({
     : (activeParticipantId ? 'Tippe auf die Karte zum Platzieren' : 'Waehle einen Teilnehmer oben')
 
   return (
-    <>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {/* Kompass-Toggle (oben links) */}
+      <CompassToggleButton
+        enabled={compassEnabled}
+        permission={compassPermission}
+        onToggle={handleCompassToggle}
+      />
+
       <MapContainer
         center={BROCKWINKEL_CENTER}
         zoom={DEFAULT_ZOOM}
@@ -342,11 +376,13 @@ export default function StandAssignmentMap({
           />
         )}
 
-        {/* Eigene Position */}
+        {/* Eigene Position + Kompass-Kegel */}
         {userPosition && (
           <OwnPositionMarker
+            ref={ownPositionRef}
             position={userPosition}
             accuracy={userAccuracy ?? null}
+            compassEnabled={compassEnabled && compassPermission === 'granted'}
           />
         )}
 
@@ -384,6 +420,6 @@ export default function StandAssignmentMap({
 
       {/* Hinweis-Overlay */}
       {!isMovingActive && <div className="assign-map-hint">{hintText}</div>}
-    </>
+    </div>
   )
 }

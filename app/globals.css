@@ -201,13 +201,24 @@ button:active {
 }
 
 /* GPS pulsierender Punkt auf der Karte */
-.gps-pulse path {
+.gps-pulse path,
+.gps-pulse {
   animation: gps-pulse-ring 2s ease-out infinite;
 }
 @keyframes gps-pulse-ring {
   0% { opacity: 1; }
   70% { opacity: 0.3; }
   100% { opacity: 1; }
+}
+
+/* Eigener Standort-Marker (divIcon-Container) */
+.own-position-marker {
+  background: transparent !important;
+  border: none !important;
+}
+/* Kompass-Kegel: sanfte Rotation */
+.compass-cone {
+  transition: transform 0.15s ease-out;
 }
 
 /* GPS-Suche Spinner */

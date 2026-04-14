@@ -17,8 +17,10 @@ import type { MapObjectData } from './MapObjectSheet'
 import BoundarySheet from './BoundarySheet'
 import StandDetailSheet from './StandDetailSheet'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
-import OwnPositionMarker from './OwnPositionMarker'
+import OwnPositionMarker, { type OwnPositionMarkerHandle } from './OwnPositionMarker'
 import GpsStatusBadge from './GpsStatusBadge'
+import CompassToggleButton from '@/components/map/CompassToggleButton'
+import { useCompassHeading, getCompassEnabled, setCompassEnabled } from '@/hooks/useCompassHeading'
 import { buildPinSvg, getPinVariant, isAssignableStand, type PinSize } from '@/lib/markers/pin-svg'
 import { buildInitials, formatDistanceLabel } from '@/lib/markers/marker-labels'
 
@@ -958,6 +960,33 @@ export default function MapContent({
   const [drawPoints, setDrawPoints] = useState<{ lat: number; lng: number }[]>([])
   const [boundarySheetMode, setBoundarySheetMode] = useState<'save' | 'hidden'>('hidden')
 
+  // Kompass / Heading
+  const [compassEnabled, setCompassEnabledState] = useState(getCompassEnabled)
+  const ownPositionRef = useRef<OwnPositionMarkerHandle>(null)
+  const handleHeading = useCallback((deg: number) => {
+    ownPositionRef.current?.setHeading(deg)
+  }, [])
+  const { permission: compassPermission, request: requestCompass } = useCompassHeading(handleHeading, compassEnabled)
+  const handleCompassToggle = useCallback(async () => {
+    if (compassEnabled) {
+      // Ausschalten
+      setCompassEnabledState(false)
+      setCompassEnabled(false)
+      ownPositionRef.current?.clearHeading()
+    } else {
+      // Einschalten — ggf. Permission anfordern
+      setCompassEnabledState(true)
+      setCompassEnabled(true)
+      if (compassPermission !== 'granted') {
+        const ok = await requestCompass()
+        if (!ok) {
+          setCompassEnabledState(false)
+          setCompassEnabled(false)
+        }
+      }
+    }
+  }, [compassEnabled, compassPermission, requestCompass])
+
   const handleMapMoved = useCallback((moved: boolean) => setMapMoved(moved), [])
   const handleZoomChange = useCallback((z: number) => setZoom(z), [])
 
@@ -1280,6 +1309,13 @@ export default function MapContent({
       {/* GPS Status-Badge (oben links) */}
       <GpsStatusBadge geo={geoState} />
 
+      {/* Kompass-Toggle (oben links, unter GpsStatusBadge) */}
+      <CompassToggleButton
+        enabled={compassEnabled}
+        permission={compassPermission}
+        onToggle={handleCompassToggle}
+      />
+
       {/* Layer-Switcher (oben rechts) */}
       <LayerSwitcher
         activeLayer={activeLayer}
@@ -1570,11 +1606,13 @@ export default function MapContent({
           />
         )}
 
-        {/* === Eigene Position: Accuracy-Kreis + blauer Punkt === */}
+        {/* === Eigene Position: Accuracy-Kreis + blauer Punkt + Kompass-Kegel === */}
         {geoState.position && (
           <OwnPositionMarker
+            ref={ownPositionRef}
             position={geoState.position}
             accuracy={geoState.accuracy}
+            compassEnabled={compassEnabled && compassPermission === 'granted'}
           />
         )}
 
