@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import L from 'leaflet'
 import { MapContainer, TileLayer, Marker, Polygon, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
+import { useInvalidateOnResize } from '@/hooks/useInvalidateOnResize'
 import { buildPinSvg, getPinVariant } from '@/lib/markers/pin-svg'
 import { parsePointHex } from '@/lib/geo-utils'
 import type { MapObject, ObjektType } from '@/lib/types/revier'
@@ -77,6 +78,14 @@ function InitialView({ center, zoom, boundary }: {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  return null
+}
+
+// --- Resize/Rotation → invalidateSize ---
+
+function ResizeHandler() {
+  const map = useMap()
+  useInvalidateOnResize(map)
   return null
 }
 
@@ -174,6 +183,7 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
       />
 
       <InitialView center={center} zoom={zoom} boundary={boundary ?? null} />
+      <ResizeHandler />
 
       {onMapClick && <MapClickHandler onClick={onMapClick} />}
 
