@@ -50,6 +50,7 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
   const [photosLoading, setPhotosLoading] = useState(true)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null)
+  const fullscreenOpenRef = useRef(false)
   const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
@@ -137,6 +138,40 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
     onDelete()
   }, [onDelete])
 
+  // --- Fullscreen: History-Management (Back-Button schliesst Overlay) ---
+
+  const openFullscreen = useCallback((url: string) => {
+    setFullscreenPhoto(url)
+    fullscreenOpenRef.current = true
+    window.history.pushState({ fullscreenPhoto: true }, '')
+  }, [])
+
+  const closeFullscreen = useCallback(() => {
+    if (fullscreenOpenRef.current) {
+      fullscreenOpenRef.current = false
+      window.history.back()
+    }
+    setFullscreenPhoto(null)
+  }, [])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (fullscreenOpenRef.current) {
+        fullscreenOpenRef.current = false
+        setFullscreenPhoto(null)
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+      // Cleanup: Falls Overlay noch offen ist wenn Sheet unmountet
+      if (fullscreenOpenRef.current) {
+        fullscreenOpenRef.current = false
+        window.history.back()
+      }
+    }
+  }, [])
+
   // --- Foto Upload ---
 
   async function handlePhotoCapture(file: File) {
@@ -175,6 +210,7 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
   // --- Foto Delete ---
 
   async function handlePhotoDelete(photo: MapObjectPhoto) {
+    if (!confirm('Foto wirklich löschen?')) return
     setPhotos((prev) => prev.filter((p) => p.id !== photo.id))
     try {
       const supabase = createClient()
@@ -196,10 +232,57 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
 
   const typeLabel = TYPE_LABELS[object.type] || object.type
 
+  // --- Swipe-to-close ---
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const swipeStartY = useRef(0)
+  const swipeStartTime = useRef(0)
+  const swipeDeltaY = useRef(0)
+  const isSwiping = useRef(false)
+
+  const handleSwipeStart = useCallback((e: React.TouchEvent) => {
+    swipeStartY.current = e.touches[0].clientY
+    swipeStartTime.current = Date.now()
+    swipeDeltaY.current = 0
+    isSwiping.current = true
+    const sheet = sheetRef.current
+    if (sheet) sheet.style.transition = 'none'
+  }, [])
+
+  const handleSwipeMove = useCallback((e: React.TouchEvent) => {
+    if (!isSwiping.current) return
+    const delta = e.touches[0].clientY - swipeStartY.current
+    // Nur nach unten ziehen erlauben
+    swipeDeltaY.current = Math.max(0, delta)
+    const sheet = sheetRef.current
+    if (sheet) sheet.style.transform = `translateY(${swipeDeltaY.current}px)`
+  }, [])
+
+  const handleSwipeEnd = useCallback(() => {
+    if (!isSwiping.current) return
+    isSwiping.current = false
+    const sheet = sheetRef.current
+    if (!sheet) return
+
+    const elapsed = Date.now() - swipeStartTime.current
+    const velocity = swipeDeltaY.current / Math.max(elapsed, 1) // px/ms
+
+    if (swipeDeltaY.current > 80 || velocity > 0.5) {
+      // Raus-animieren und schliessen
+      sheet.style.transition = 'transform 0.25s ease-out'
+      sheet.style.transform = 'translateY(100%)'
+      setTimeout(onClose, 250)
+    } else {
+      // Zurueck-snappen
+      sheet.style.transition = 'transform 0.2s ease'
+      sheet.style.transform = 'translateY(0)'
+    }
+  }, [onClose])
+
   return (
     <>
       <div className="map-object-sheet-overlay" onClick={onClose} />
       <div
+        ref={sheetRef}
         className="map-object-sheet"
         style={{
           paddingBottom: '1rem',
@@ -208,7 +291,13 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
           flexDirection: 'column',
         }}
       >
-        <div className="sheet-handle" />
+        <div
+          className="sheet-handle"
+          onTouchStart={handleSwipeStart}
+          onTouchMove={handleSwipeMove}
+          onTouchEnd={handleSwipeEnd}
+          style={{ padding: '0.75rem 0', cursor: 'grab' }}
+        />
 
         <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
           <div style={{ padding: '0.75rem 1rem 0' }}>
@@ -433,7 +522,7 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
                   url={photo.url}
                   size={4.5}
                   shape="square"
-                  onTap={() => setFullscreenPhoto(photo.url)}
+                  onTap={() => openFullscreen(photo.url)}
                   onDelete={() => handlePhotoDelete(photo)}
                 />
               ))}
@@ -561,12 +650,12 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
       {fullscreenPhoto && (
         <div
           className="chat-fullscreen-overlay"
-          onClick={() => setFullscreenPhoto(null)}
+          onClick={closeFullscreen}
         >
           <img src={fullscreenPhoto} alt="" className="chat-fullscreen-img" />
           <button
             className="chat-fullscreen-close"
-            onClick={() => setFullscreenPhoto(null)}
+            onClick={closeFullscreen}
             aria-label="Schließen"
           >
             ✕

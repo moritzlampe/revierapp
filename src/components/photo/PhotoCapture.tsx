@@ -29,6 +29,8 @@ interface PhotoCaptureProps {
   onError?: (error: Error) => void
   disabled?: boolean
   children?: ReactNode // Optionaler Custom-Trigger
+  /** 'choose' = iOS-Auswahl (Kamera/Mediathek/Dateien), 'camera' = direkt Kamera */
+  mode?: 'camera' | 'choose'
 }
 
 // ============================================================
@@ -67,6 +69,7 @@ export default function PhotoCapture({
   onError,
   disabled = false,
   children,
+  mode = 'choose',
 }: PhotoCaptureProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [verarbeitet, setVerarbeitet] = useState(false)
@@ -130,7 +133,7 @@ export default function PhotoCapture({
         ref={inputRef}
         type="file"
         accept="image/*,.heic,.heif"
-        capture="environment"
+        {...(mode === 'camera' ? { capture: 'environment' } : {})}
         onChange={handleChange}
         style={{ display: 'none' }}
       />
