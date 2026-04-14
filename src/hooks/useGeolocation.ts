@@ -150,7 +150,8 @@ export function useGeolocation(options?: UseGeolocationOptions) {
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 0,
+        // 3s Position-Cache: senkt GPS-Chip-Last, irrelevant für Jagdkontext
+        maximumAge: 3000,
         timeout: 30000,
       }
     )
