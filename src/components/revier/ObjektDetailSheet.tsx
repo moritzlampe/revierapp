@@ -1,7 +1,14 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
-import type { MapObject, ObjektType } from '@/lib/types/revier'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { Plus, Loader2 } from 'lucide-react'
+import type { MapObject, ObjektType, MapObjectPhoto } from '@/lib/types/revier'
+import PhotoCapture from '@/components/photo/PhotoCapture'
+import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
+import { uploadPhoto } from '@/lib/photos/upload'
+import { deletePhoto } from '@/lib/photos/delete'
+import { listMapObjectPhotos } from '@/lib/photos/list'
+import { createClient } from '@/lib/supabase/client'
 
 const TYPE_LABELS: Record<ObjektType, string> = {
   hochsitz: 'Hochsitz',
@@ -16,13 +23,14 @@ const TYPE_LABELS: Record<ObjektType, string> = {
 
 type Props = {
   object: MapObject
+  userId: string
   onClose: () => void
   onPositionChange: () => void
   onDelete: () => void
   onUpdate: (changes: Partial<MapObject>) => Promise<void>
 }
 
-export default function ObjektDetailSheet({ object, onClose, onPositionChange, onDelete, onUpdate }: Props) {
+export default function ObjektDetailSheet({ object, userId, onClose, onPositionChange, onDelete, onUpdate }: Props) {
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState(object.name)
   const [savingName, setSavingName] = useState(false)
@@ -36,6 +44,29 @@ export default function ObjektDetailSheet({ object, onClose, onPositionChange, o
 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // --- Fotos ---
+  const [photos, setPhotos] = useState<MapObjectPhoto[]>([])
+  const [photosLoading, setPhotosLoading] = useState(true)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setPhotosLoading(true)
+    listMapObjectPhotos(object.id)
+      .then((data) => {
+        if (!cancelled) setPhotos(data)
+      })
+      .catch((err) => {
+        if (!cancelled) setPhotoError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setPhotosLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [object.id])
 
   // --- Name inline-edit ---
 
@@ -106,127 +137,108 @@ export default function ObjektDetailSheet({ object, onClose, onPositionChange, o
     onDelete()
   }, [onDelete])
 
+  // --- Foto Upload ---
+
+  async function handlePhotoCapture(file: File) {
+    setUploading(true)
+    setPhotoError(null)
+    try {
+      const { url, path } = await uploadPhoto({
+        file,
+        userId,
+        entityType: 'map_object',
+        entityId: object.id,
+      })
+
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('map_object_photos')
+        .insert({
+          map_object_id: object.id,
+          url,
+          storage_path: path,
+          uploaded_by: userId,
+        })
+        .select()
+        .single()
+
+      if (error) throw new Error(error.message)
+
+      setPhotos((prev) => [data as MapObjectPhoto, ...prev])
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Upload fehlgeschlagen')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // --- Foto Delete ---
+
+  async function handlePhotoDelete(photo: MapObjectPhoto) {
+    setPhotos((prev) => prev.filter((p) => p.id !== photo.id))
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('map_object_photos')
+        .delete()
+        .eq('id', photo.id)
+
+      if (error) throw new Error(error.message)
+
+      await deletePhoto(photo.storage_path)
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen')
+      setPhotos((prev) => [photo, ...prev].sort(
+        (a, b) => (a.created_at < b.created_at ? 1 : -1)
+      ))
+    }
+  }
+
   const typeLabel = TYPE_LABELS[object.type] || object.type
 
   return (
     <>
       <div className="map-object-sheet-overlay" onClick={onClose} />
-      <div className="map-object-sheet" style={{ paddingBottom: '1rem', maxHeight: '70dvh' }}>
+      <div
+        className="map-object-sheet"
+        style={{
+          paddingBottom: '1rem',
+          maxHeight: '70dvh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         <div className="sheet-handle" />
 
-        <div style={{ padding: '0.75rem 1rem 0' }}>
-          {/* Name — Inline-Edit */}
-          {editingName ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <input
-                ref={nameInputRef}
-                type="text"
-                value={nameValue}
-                onChange={e => setNameValue(e.target.value)}
-                onBlur={saveName}
-                onKeyDown={handleNameKeyDown}
-                disabled={savingName}
-                style={{
-                  flex: 1,
-                  padding: '0.375rem 0.5rem',
-                  background: 'var(--bg)',
-                  border: '1px solid var(--green)',
-                  borderRadius: '0.5rem',
-                  color: 'var(--text)',
-                  fontSize: '1.25rem',
-                  fontWeight: 700,
-                }}
-              />
-              <span style={{ color: 'var(--green)', fontSize: '1.125rem' }}>✓</span>
-            </div>
-          ) : (
-            <button
-              onClick={startNameEdit}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                textAlign: 'left',
-                width: '100%',
-              }}
-            >
-              <h2 style={{
-                fontSize: '1.25rem',
-                fontWeight: 700,
-                color: 'var(--text)',
-                margin: 0,
-                lineHeight: 1.3,
-              }}>
-                {object.name}
-              </h2>
-            </button>
-          )}
-
-          {/* Typ-Label */}
-          <p style={{
-            fontSize: '0.8125rem',
-            color: 'var(--text-3)',
-            margin: '0.25rem 0 0',
-          }}>
-            {typeLabel}
-          </p>
-        </div>
-
-        {/* Notiz-Bereich */}
-        <div style={{ padding: '0.75rem 1rem 0' }}>
-          {!showNotiz ? (
-            <button
-              onClick={startNotizEdit}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: '0.25rem 0',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                color: 'var(--text-3)',
-                fontSize: '0.8125rem',
-              }}
-            >
-              <span style={{ fontSize: '0.875rem' }}>+</span>
-              Notiz hinzufügen
-            </button>
-          ) : editingNotiz ? (
-            <div>
-              <textarea
-                ref={notizRef}
-                value={notizValue}
-                onChange={e => setNotizValue(e.target.value)}
-                onBlur={saveNotiz}
-                disabled={savingNotiz}
-                placeholder="Notiz eingeben…"
-                rows={3}
-                style={{
-                  width: '100%',
-                  padding: '0.625rem 0.75rem',
-                  background: 'var(--bg)',
-                  border: '1px solid var(--green)',
-                  borderRadius: '0.625rem',
-                  color: 'var(--text)',
-                  fontSize: '0.875rem',
-                  resize: 'none',
-                }}
-              />
-            </div>
-          ) : (
-            <div style={{
-              position: 'relative',
-              background: 'var(--surface-2)',
-              borderRadius: '0.625rem',
-              padding: '0.625rem 0.75rem',
-            }}>
+        <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+          <div style={{ padding: '0.75rem 1rem 0' }}>
+            {/* Name — Inline-Edit */}
+            {editingName ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  value={nameValue}
+                  onChange={e => setNameValue(e.target.value)}
+                  onBlur={saveName}
+                  onKeyDown={handleNameKeyDown}
+                  disabled={savingName}
+                  style={{
+                    flex: 1,
+                    padding: '0.375rem 0.5rem',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--green)',
+                    borderRadius: '0.5rem',
+                    color: 'var(--text)',
+                    fontSize: '1.25rem',
+                    fontWeight: 700,
+                  }}
+                />
+                <span style={{ color: 'var(--green)', fontSize: '1.125rem' }}>✓</span>
+              </div>
+            ) : (
               <button
-                onClick={() => {
-                  setEditingNotiz(true)
-                  setTimeout(() => notizRef.current?.focus(), 50)
-                }}
+                onClick={startNameEdit}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -234,145 +246,333 @@ export default function ObjektDetailSheet({ object, onClose, onPositionChange, o
                   cursor: 'pointer',
                   textAlign: 'left',
                   width: '100%',
-                  color: 'var(--text-2)',
-                  fontSize: '0.875rem',
-                  lineHeight: 1.5,
                 }}
               >
-                {notizValue}
+                <h2 style={{
+                  fontSize: '1.25rem',
+                  fontWeight: 700,
+                  color: 'var(--text)',
+                  margin: 0,
+                  lineHeight: 1.3,
+                }}>
+                  {object.name}
+                </h2>
               </button>
+            )}
+
+            {/* Typ-Label */}
+            <p style={{
+              fontSize: '0.8125rem',
+              color: 'var(--text-3)',
+              margin: '0.25rem 0 0',
+            }}>
+              {typeLabel}
+            </p>
+          </div>
+
+          {/* Notiz-Bereich */}
+          <div style={{ padding: '0.75rem 1rem 0' }}>
+            {!showNotiz ? (
               <button
-                onClick={clearNotiz}
-                disabled={savingNotiz}
+                onClick={startNotizEdit}
                 style={{
-                  position: 'absolute',
-                  top: '0.375rem',
-                  right: '0.375rem',
                   background: 'none',
                   border: 'none',
+                  padding: '0.25rem 0',
                   cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
                   color: 'var(--text-3)',
-                  fontSize: '0.75rem',
-                  padding: '0.25rem',
-                  lineHeight: 1,
+                  fontSize: '0.8125rem',
                 }}
-                title="Notiz entfernen"
               >
-                ✕
+                <span style={{ fontSize: '0.875rem' }}>+</span>
+                Notiz hinzufügen
               </button>
+            ) : editingNotiz ? (
+              <div>
+                <textarea
+                  ref={notizRef}
+                  value={notizValue}
+                  onChange={e => setNotizValue(e.target.value)}
+                  onBlur={saveNotiz}
+                  disabled={savingNotiz}
+                  placeholder="Notiz eingeben…"
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '0.625rem 0.75rem',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--green)',
+                    borderRadius: '0.625rem',
+                    color: 'var(--text)',
+                    fontSize: '0.875rem',
+                    resize: 'none',
+                  }}
+                />
+              </div>
+            ) : (
+              <div style={{
+                position: 'relative',
+                background: 'var(--surface-2)',
+                borderRadius: '0.625rem',
+                padding: '0.625rem 0.75rem',
+              }}>
+                <button
+                  onClick={() => {
+                    setEditingNotiz(true)
+                    setTimeout(() => notizRef.current?.focus(), 50)
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    width: '100%',
+                    color: 'var(--text-2)',
+                    fontSize: '0.875rem',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {notizValue}
+                </button>
+                <button
+                  onClick={clearNotiz}
+                  disabled={savingNotiz}
+                  style={{
+                    position: 'absolute',
+                    top: '0.375rem',
+                    right: '0.375rem',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-3)',
+                    fontSize: '0.75rem',
+                    padding: '0.25rem',
+                    lineHeight: 1,
+                  }}
+                  title="Notiz entfernen"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Foto-Section */}
+          <div style={{ padding: '0.75rem 1rem' }}>
+            <div
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--text-2)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: '0.5rem',
+              }}
+            >
+              Fotos
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                gap: '0.5rem',
+                overflowX: 'auto',
+                paddingBottom: '0.25rem',
+                WebkitOverflowScrolling: 'touch',
+              }}
+            >
+              {/* Plus-Kachel */}
+              <PhotoCapture
+                quality="documentation"
+                onCapture={handlePhotoCapture}
+                disabled={uploading}
+                onError={(e) => setPhotoError(e.message)}
+              >
+                <button
+                  type="button"
+                  aria-label="Foto hinzufügen"
+                  style={{
+                    flex: '0 0 auto',
+                    width: '4.5rem',
+                    height: '4.5rem',
+                    border: '2px dashed var(--border)',
+                    borderRadius: '0.5rem',
+                    background: 'transparent',
+                    color: 'var(--text-2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: uploading ? 'wait' : 'pointer',
+                    opacity: uploading ? 0.5 : 1,
+                  }}
+                >
+                  {uploading ? <Loader2 size={20} className="animate-spin" /> : <Plus size={24} />}
+                </button>
+              </PhotoCapture>
+
+              {/* Loading-Placeholder */}
+              {photosLoading && photos.length === 0 && (
+                <div
+                  style={{
+                    flex: '0 0 auto',
+                    width: '4.5rem',
+                    height: '4.5rem',
+                    borderRadius: '0.5rem',
+                    background: 'var(--surface-2)',
+                  }}
+                />
+              )}
+
+              {/* Bestehende Fotos */}
+              {photos.map((photo) => (
+                <PhotoThumbnail
+                  key={photo.id}
+                  url={photo.url}
+                  size={4.5}
+                  shape="square"
+                  onTap={() => setFullscreenPhoto(photo.url)}
+                  onDelete={() => handlePhotoDelete(photo)}
+                />
+              ))}
+            </div>
+
+            {photoError && (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--red)' }}>
+                {photoError}
+              </div>
+            )}
+          </div>
+
+          {/* Trennlinie */}
+          <div style={{
+            margin: '0 1rem',
+            height: '1px',
+            background: 'var(--border)',
+          }} />
+
+          {/* Aktions-Liste */}
+          <div style={{ padding: '0 1rem' }}>
+            <button
+              onClick={onPositionChange}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.875rem 0.25rem',
+                background: 'none',
+                border: 'none',
+                borderBottom: '1px solid var(--border)',
+                cursor: 'pointer',
+                color: 'var(--text)',
+                fontSize: '0.9375rem',
+                minHeight: '2.75rem',
+              }}
+            >
+              <span style={{ fontSize: '1.125rem' }}>📍</span>
+              Position ändern
+            </button>
+
+            <button
+              onClick={() => setConfirmDelete(true)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.875rem 0.25rem',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--red)',
+                fontSize: '0.9375rem',
+                minHeight: '2.75rem',
+              }}
+            >
+              <span style={{ fontSize: '1.125rem' }}>🗑</span>
+              Löschen
+            </button>
+          </div>
+
+          {/* Lösch-Bestätigung (Stufe 2) */}
+          {confirmDelete && (
+            <div style={{
+              margin: '0.5rem 1rem 0',
+              padding: '0.75rem',
+              background: 'rgba(239, 83, 80, 0.1)',
+              borderRadius: 'var(--radius)',
+              border: '1px solid rgba(239, 83, 80, 0.25)',
+            }}>
+              <p style={{
+                fontSize: '0.8125rem',
+                color: 'var(--text-2)',
+                margin: '0 0 0.625rem',
+                lineHeight: 1.4,
+              }}>
+                Wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.
+              </p>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  style={{
+                    flex: 1,
+                    padding: '0.625rem',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius)',
+                    color: 'var(--text-2)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    minHeight: '2.75rem',
+                  }}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  style={{
+                    flex: 1,
+                    padding: '0.625rem',
+                    background: 'var(--red)',
+                    border: 'none',
+                    borderRadius: 'var(--radius)',
+                    color: 'white',
+                    fontSize: '0.8125rem',
+                    fontWeight: 700,
+                    cursor: deleting ? 'default' : 'pointer',
+                    opacity: deleting ? 0.6 : 1,
+                    minHeight: '2.75rem',
+                  }}
+                >
+                  {deleting ? 'Lösche…' : 'Endgültig löschen'}
+                </button>
+              </div>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Trennlinie */}
-        <div style={{
-          margin: '0.75rem 1rem',
-          height: '1px',
-          background: 'var(--border)',
-        }} />
-
-        {/* Aktions-Liste */}
-        <div style={{ padding: '0 1rem' }}>
+      {/* Fullscreen Foto-Overlay */}
+      {fullscreenPhoto && (
+        <div
+          className="chat-fullscreen-overlay"
+          onClick={() => setFullscreenPhoto(null)}
+        >
+          <img src={fullscreenPhoto} alt="" className="chat-fullscreen-img" />
           <button
-            onClick={onPositionChange}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              padding: '0.875rem 0.25rem',
-              background: 'none',
-              border: 'none',
-              borderBottom: '1px solid var(--border)',
-              cursor: 'pointer',
-              color: 'var(--text)',
-              fontSize: '0.9375rem',
-              minHeight: '2.75rem',
-            }}
+            className="chat-fullscreen-close"
+            onClick={() => setFullscreenPhoto(null)}
+            aria-label="Schließen"
           >
-            <span style={{ fontSize: '1.125rem' }}>📍</span>
-            Position ändern
-          </button>
-
-          <button
-            onClick={() => setConfirmDelete(true)}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              padding: '0.875rem 0.25rem',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--red)',
-              fontSize: '0.9375rem',
-              minHeight: '2.75rem',
-            }}
-          >
-            <span style={{ fontSize: '1.125rem' }}>🗑</span>
-            Löschen
+            ✕
           </button>
         </div>
-
-        {/* Lösch-Bestätigung (Stufe 2) */}
-        {confirmDelete && (
-          <div style={{
-            margin: '0.5rem 1rem 0',
-            padding: '0.75rem',
-            background: 'rgba(239, 83, 80, 0.1)',
-            borderRadius: 'var(--radius)',
-            border: '1px solid rgba(239, 83, 80, 0.25)',
-          }}>
-            <p style={{
-              fontSize: '0.8125rem',
-              color: 'var(--text-2)',
-              margin: '0 0 0.625rem',
-              lineHeight: 1.4,
-            }}>
-              Wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.
-            </p>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                style={{
-                  flex: 1,
-                  padding: '0.625rem',
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--text-2)',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  minHeight: '2.75rem',
-                }}
-              >
-                Abbrechen
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                style={{
-                  flex: 1,
-                  padding: '0.625rem',
-                  background: 'var(--red)',
-                  border: 'none',
-                  borderRadius: 'var(--radius)',
-                  color: 'white',
-                  fontSize: '0.8125rem',
-                  fontWeight: 700,
-                  cursor: deleting ? 'default' : 'pointer',
-                  opacity: deleting ? 0.6 : 1,
-                  minHeight: '2.75rem',
-                }}
-              >
-                {deleting ? 'Lösche…' : 'Endgültig löschen'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </>
   )
 }

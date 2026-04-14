@@ -34,6 +34,16 @@ export type RevierObjekt = {
   created_at: string;
 };
 
+/** map_object_photos Zeile */
+export type MapObjectPhoto = {
+  id: string;
+  map_object_id: string;
+  url: string;
+  storage_path: string;
+  uploaded_by: string | null;
+  created_at: string;
+};
+
 /** map_objects Zeile wie von PostgREST geliefert (position = GeoJSON oder Hex) */
 export type MapObject = {
   id: string;

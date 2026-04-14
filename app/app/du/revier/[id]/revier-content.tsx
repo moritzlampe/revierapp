@@ -468,6 +468,7 @@ export default function RevierContent({ district, objects: initialObjects, userI
         {creation.stage === 'detail' && (
           <ObjektDetailSheet
             object={creation.object}
+            userId={userId}
             onClose={handleDetailClose}
             onPositionChange={handleDetailPositionChange}
             onDelete={handleDetailDelete}
