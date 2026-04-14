@@ -22,10 +22,14 @@ export interface GeolocationState {
 }
 
 interface UseGeolocationOptions {
+  /** Wenn false: kein watchPosition, State auf Initialwert. Default true. */
+  enabled?: boolean
   onPositionChange?: (position: GeoPosition) => void
 }
 
 export function useGeolocation(options?: UseGeolocationOptions) {
+  const enabled = options?.enabled ?? true
+
   const [state, setState] = useState<GeolocationState>({
     position: null,
     accuracy: null,
@@ -67,6 +71,16 @@ export function useGeolocation(options?: UseGeolocationOptions) {
   }, [reportPosition])
 
   useEffect(() => {
+    if (!enabled) {
+      setState({
+        position: null, accuracy: null, isLocked: false,
+        mode: 'searching', error: null, lastUpdate: null,
+      })
+      lockedPosition.current = null
+      bestMeasurement.current = null
+      return
+    }
+
     if (!navigator.geolocation) {
       setState(prev => ({ ...prev, error: 'GPS wird von diesem Browser nicht unterstützt.' }))
       return
@@ -149,7 +163,7 @@ export function useGeolocation(options?: UseGeolocationOptions) {
         clearTimeout(fallbackTimer.current)
       }
     }
-  }, [reportPosition, useFallback])
+  }, [enabled, reportPosition, useFallback])
 
   return state
 }

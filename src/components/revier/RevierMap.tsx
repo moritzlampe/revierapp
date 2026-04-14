@@ -1,12 +1,17 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import L from 'leaflet'
 import { MapContainer, TileLayer, Marker, Polygon, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { buildPinSvg, getPinVariant } from '@/lib/markers/pin-svg'
 import { parsePointHex } from '@/lib/geo-utils'
 import type { MapObject, ObjektType } from '@/lib/types/revier'
+import OwnPositionMarker, { type OwnPositionMarkerHandle } from '@/components/hunt/OwnPositionMarker'
+import CompassToggleButton from '@/components/map/CompassToggleButton'
+import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
+import { useCompassHeading } from '@/hooks/useCompassHeading'
+import { useGeolocation } from '@/hooks/useGeolocation'
 
 // --- Position aus PostgREST parsen (GeoJSON Point oder Hex) ---
 
@@ -117,8 +122,45 @@ interface RevierMapProps {
 }
 
 export default function RevierMap({ center, zoom = 14, objects, boundary, onMapClick, onObjectClick, previewPin, hiddenObjectId }: RevierMapProps) {
+  // --- Orientierungs-Overlay (GPS + Kompass, on-demand) ---
+  const [orientationActive, setOrientationActive] = useState(false)
+  const ownPositionRef = useRef<OwnPositionMarkerHandle>(null)
+
+  const geoState = useGeolocation({ enabled: orientationActive })
+
+  const handleHeading = useCallback((deg: number) => {
+    ownPositionRef.current?.setHeading(deg)
+  }, [])
+  const { permission: compassPermission, request: requestCompass } = useCompassHeading(handleHeading, orientationActive)
+
+  const handleOrientationToggle = useCallback(async () => {
+    if (orientationActive) {
+      setOrientationActive(false)
+      ownPositionRef.current?.clearHeading()
+    } else {
+      setOrientationActive(true)
+      if (compassPermission !== 'granted') {
+        const ok = await requestCompass()
+        if (!ok) {
+          setOrientationActive(false)
+        }
+      }
+    }
+  }, [orientationActive, compassPermission, requestCompass])
+
   return (
-    <MapContainer
+    <div style={{ position: 'relative', height: '100%', width: '100%' }}>
+      {/* GPS-Badge (nur wenn Orientierung aktiv) */}
+      {orientationActive && <GpsStatusBadge geo={geoState} />}
+
+      {/* Kompass-Button (immer sichtbar als Einstiegspunkt) */}
+      <CompassToggleButton
+        enabled={orientationActive}
+        permission={compassPermission}
+        onToggle={handleOrientationToggle}
+      />
+
+      <MapContainer
       center={center}
       zoom={zoom}
       style={{ width: '100%', height: '100%' }}
@@ -177,6 +219,17 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
           </Marker>
         )
       })}
+
+      {/* Eigene Position + Kompass-Kegel (nur wenn aktiv + GPS-Fix) */}
+      {orientationActive && geoState.position && (
+        <OwnPositionMarker
+          ref={ownPositionRef}
+          position={geoState.position}
+          accuracy={geoState.accuracy}
+          compassEnabled={orientationActive}
+        />
+      )}
     </MapContainer>
+    </div>
   )
 }
