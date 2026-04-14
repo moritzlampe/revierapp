@@ -1213,7 +1213,7 @@ button:active {
 }
 .chat-fullscreen-close {
   position: absolute;
-  top: 1rem;
+  top: calc(env(safe-area-inset-top) + 0.75rem);
   right: 1rem;
   width: 2.75rem;
   height: 2.75rem;

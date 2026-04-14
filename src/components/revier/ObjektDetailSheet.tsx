@@ -292,12 +292,13 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
         }}
       >
         <div
-          className="sheet-handle"
           onTouchStart={handleSwipeStart}
           onTouchMove={handleSwipeMove}
           onTouchEnd={handleSwipeEnd}
-          style={{ padding: '0.75rem 0', cursor: 'grab' }}
-        />
+          style={{ width: '100%', padding: '0.75rem 0', cursor: 'grab', touchAction: 'none' }}
+        >
+          <div className="sheet-handle" />
+        </div>
 
         <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
           <div style={{ padding: '0.75rem 1rem 0' }}>
