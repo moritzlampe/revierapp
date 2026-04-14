@@ -97,7 +97,6 @@ export default function PhotoThumbnail({
         <img
           src={url}
           alt={alt}
-          loading="lazy"
           decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
