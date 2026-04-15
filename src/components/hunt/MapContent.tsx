@@ -875,7 +875,6 @@ export default function MapContent({
 
   // Live-FAB: Adhoc-Stand-Erstellung
   const [awaitingAdhocPlacement, setAwaitingAdhocPlacement] = useState(false)
-  const [fromLiveFab, setFromLiveFab] = useState(false) // Schnellzuweisung zeigt "Überspringen"
 
   // Zeichenmodus für Reviergrenze
   const [drawingMode, setDrawingMode] = useState(false)
@@ -1031,18 +1030,8 @@ export default function MapContent({
     const updated = [...(seatAssignments || []), data]
     onSeatAssignmentsChanged?.(updated)
 
-    // Tap-Modus beenden
+    // Tap-Modus beenden — kein Sheet öffnen, Zuweisung passiert per Tap auf den Stand
     setAwaitingAdhocPlacement(false)
-
-    // Schnellzuweisung öffnen für den neuen Stand
-    setFromLiveFab(true)
-    setAssignStand({
-      id: data.id,
-      name: data.seat_name || seatName,
-      type: 'adhoc',
-      position: { lat: latlng.lat, lng: latlng.lng },
-      adhoc_subtype: data.adhoc_subtype,
-    })
   }, [awaitingAdhocPlacement, huntId, seatAssignments, onSeatAssignmentsChanged])
 
   // --- Zeichenmodus Callbacks ---
@@ -1755,9 +1744,8 @@ export default function MapContent({
           huntId={huntId}
           stands={stands || []}
           onAssign={(updated) => onSeatAssignmentsChanged?.(updated)}
-          onClose={() => { setAssignStand(null); setFromLiveFab(false) }}
+          onClose={() => setAssignStand(null)}
           onEdit={handleEditStand}
-          showSkip={fromLiveFab}
         />
       )}
     </div>
