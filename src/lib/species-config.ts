@@ -7,8 +7,10 @@ export type WildArt =
   | 'schmalreh' | 'rehwild_unspez'
   | 'keiler' | 'bache' | 'ueberlaeufer' | 'frischling'
   | 'schwarzwild_unspez'
-  | 'rothirsch' | 'rottier' | 'rotkalb' | 'rotwild_unspez'
-  | 'damhirsch' | 'damtier' | 'damkalb' | 'damwild_unspez'
+  | 'rothirsch' | 'rottier' | 'rotkalb' | 'schmaltier_rot' | 'spiesser_rot'
+  | 'rotwild_unspez'
+  | 'damhirsch' | 'damtier' | 'damkalb' | 'schmaltier_dam' | 'spiesser_dam'
+  | 'damwild_unspez'
   | 'fuchs' | 'dachs' | 'waschbaer' | 'marderhund'
   | 'hase' | 'wildkaninchen'
   | 'fasan' | 'taube' | 'kraehe' | 'gans' | 'ente'
@@ -24,8 +26,8 @@ export type Geschlecht = 'maennlich' | 'weiblich' | 'unbekannt'
 export const WILD_GROUPS: Record<WildGroup, WildArt[]> = {
   rehwild: ['rehbock', 'ricke', 'rehkitz', 'bockkitz', 'schmalbock', 'schmalreh', 'rehwild_unspez'],
   schwarzwild: ['keiler', 'bache', 'ueberlaeufer', 'frischling', 'schwarzwild_unspez'],
-  rotwild: ['rothirsch', 'rottier', 'rotkalb', 'rotwild_unspez'],
-  damwild: ['damhirsch', 'damtier', 'damkalb', 'damwild_unspez'],
+  rotwild: ['rothirsch', 'rottier', 'rotkalb', 'schmaltier_rot', 'spiesser_rot', 'rotwild_unspez'],
+  damwild: ['damhirsch', 'damtier', 'damkalb', 'schmaltier_dam', 'spiesser_dam', 'damwild_unspez'],
   raubwild: ['fuchs', 'dachs', 'waschbaer', 'marderhund'],
   hasenartig: ['hase', 'wildkaninchen'],
   federwild: ['fasan', 'taube', 'kraehe', 'gans', 'ente'],
@@ -71,11 +73,17 @@ export interface GeschlechtOption {
   label: string
 }
 
+export type ImpliedGeschlecht = 'maennlich' | 'weiblich' | null
+
+export interface AltersklasseEntry {
+  value: WildArt
+  label: string
+  impliedGeschlecht: ImpliedGeschlecht
+}
+
 export interface WildGroupDetailConfig {
-  geschlechter?: GeschlechtOption[]
-  altersklassen_maennlich?: DetailOption[]
-  altersklassen_weiblich?: DetailOption[]
-  altersklassen_unbekannt?: DetailOption[]
+  geschlechter: GeschlechtOption[]
+  altersklassen: AltersklasseEntry[]
 }
 
 export const WILD_GROUP_DETAILS: Partial<Record<WildGroup, WildGroupDetailConfig>> = {
@@ -84,16 +92,13 @@ export const WILD_GROUP_DETAILS: Partial<Record<WildGroup, WildGroupDetailConfig
       { value: 'maennlich', label: 'Männlich' },
       { value: 'weiblich', label: 'Weiblich' },
     ],
-    altersklassen_maennlich: [
-      { value: 'rehkitz', label: 'Kitz' },
-      { value: 'bockkitz', label: 'Bockkitz' },
-      { value: 'schmalbock', label: 'Schmalbock' },
-      { value: 'rehbock', label: 'Bock' },
-    ],
-    altersklassen_weiblich: [
-      { value: 'rehkitz', label: 'Kitz' },
-      { value: 'schmalreh', label: 'Schmalreh' },
-      { value: 'ricke', label: 'Ricke' },
+    altersklassen: [
+      { value: 'rehkitz',   label: 'Kitz',      impliedGeschlecht: null },
+      { value: 'bockkitz',  label: 'Bockkitz',   impliedGeschlecht: 'maennlich' },
+      { value: 'schmalreh', label: 'Schmalreh',  impliedGeschlecht: 'weiblich' },
+      { value: 'ricke',     label: 'Ricke',      impliedGeschlecht: 'weiblich' },
+      { value: 'rehbock',   label: 'Bock',       impliedGeschlecht: 'maennlich' },
+      // schmalbock vorerst ausgeblendet, bleibt im Enum für späteres Edit-Feature
     ],
   },
   schwarzwild: {
@@ -101,15 +106,11 @@ export const WILD_GROUP_DETAILS: Partial<Record<WildGroup, WildGroupDetailConfig
       { value: 'maennlich', label: 'Männlich' },
       { value: 'weiblich', label: 'Weiblich' },
     ],
-    altersklassen_maennlich: [
-      { value: 'frischling', label: 'Frischling' },
-      { value: 'ueberlaeufer', label: 'Überläufer' },
-      { value: 'keiler', label: 'Keiler' },
-    ],
-    altersklassen_weiblich: [
-      { value: 'frischling', label: 'Frischling' },
-      { value: 'ueberlaeufer', label: 'Überläufer' },
-      { value: 'bache', label: 'Bache' },
+    altersklassen: [
+      { value: 'frischling',  label: 'Frischling',  impliedGeschlecht: null },
+      { value: 'ueberlaeufer', label: 'Überläufer', impliedGeschlecht: null },
+      { value: 'bache',       label: 'Bache',       impliedGeschlecht: 'weiblich' },
+      { value: 'keiler',      label: 'Keiler',      impliedGeschlecht: 'maennlich' },
     ],
   },
   rotwild: {
@@ -117,13 +118,12 @@ export const WILD_GROUP_DETAILS: Partial<Record<WildGroup, WildGroupDetailConfig
       { value: 'maennlich', label: 'Männlich' },
       { value: 'weiblich', label: 'Weiblich' },
     ],
-    altersklassen_maennlich: [
-      { value: 'rotkalb', label: 'Kalb' },
-      { value: 'rothirsch', label: 'Hirsch' },
-    ],
-    altersklassen_weiblich: [
-      { value: 'rotkalb', label: 'Kalb' },
-      { value: 'rottier', label: 'Tier' },
+    altersklassen: [
+      { value: 'rotkalb',       label: 'Kalb',       impliedGeschlecht: null },
+      { value: 'schmaltier_rot', label: 'Schmaltier', impliedGeschlecht: 'weiblich' },
+      { value: 'rottier',       label: 'Tier',        impliedGeschlecht: 'weiblich' },
+      { value: 'spiesser_rot',  label: 'Spießer',    impliedGeschlecht: 'maennlich' },
+      { value: 'rothirsch',     label: 'Hirsch',      impliedGeschlecht: 'maennlich' },
     ],
   },
   damwild: {
@@ -131,13 +131,12 @@ export const WILD_GROUP_DETAILS: Partial<Record<WildGroup, WildGroupDetailConfig
       { value: 'maennlich', label: 'Männlich' },
       { value: 'weiblich', label: 'Weiblich' },
     ],
-    altersklassen_maennlich: [
-      { value: 'damkalb', label: 'Kalb' },
-      { value: 'damhirsch', label: 'Hirsch' },
-    ],
-    altersklassen_weiblich: [
-      { value: 'damkalb', label: 'Kalb' },
-      { value: 'damtier', label: 'Tier' },
+    altersklassen: [
+      { value: 'damkalb',        label: 'Kalb',       impliedGeschlecht: null },
+      { value: 'schmaltier_dam', label: 'Schmaltier', impliedGeschlecht: 'weiblich' },
+      { value: 'damtier',        label: 'Tier',        impliedGeschlecht: 'weiblich' },
+      { value: 'spiesser_dam',   label: 'Spießer',    impliedGeschlecht: 'maennlich' },
+      { value: 'damhirsch',      label: 'Hirsch',      impliedGeschlecht: 'maennlich' },
     ],
   },
   // raubwild / hasenartig / federwild / sonstiges: keine Stufen,
