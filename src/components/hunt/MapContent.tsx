@@ -24,6 +24,7 @@ import CompassToggleButton from '@/components/map/CompassToggleButton'
 import { useCompassHeading, getCompassEnabled, setCompassEnabled } from '@/hooks/useCompassHeading'
 import { buildPinSvg, getPinVariant, isAssignableStand, type PinSize } from '@/lib/markers/pin-svg'
 import { buildInitials, formatDistanceLabel } from '@/lib/markers/marker-labels'
+import { WildartPicker } from '@/components/erlegung/WildartPicker'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -206,6 +207,104 @@ function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; l
     map.on('click', handleClick)
     return () => { map.off('click', handleClick) }
   }, [map, onMapClick])
+
+  return null
+}
+
+// --- Long-Press auf Karte: Erlegung melden ---
+
+function MapLongPressHandler({ onLongPress, disabled }: {
+  onLongPress: (latlng: { lat: number; lng: number }) => void
+  disabled?: boolean
+}) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (disabled) return
+
+    const container = map.getContainer()
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let startPos: { x: number; y: number } | null = null
+    let isTouching = false
+    let fired = false
+    const HOLD_MS = 500
+    const MOVE_THRESHOLD = 10
+
+    function clearTimer() {
+      if (timer) { clearTimeout(timer); timer = null }
+      startPos = null
+    }
+
+    // Touch: eigener Timer für 500ms
+    function handleTouchStart(e: TouchEvent) {
+      if (e.touches.length !== 1) { clearTimer(); return }
+      isTouching = true
+      fired = false
+      const touch = e.touches[0]
+      startPos = { x: touch.clientX, y: touch.clientY }
+
+      timer = setTimeout(() => {
+        if (!startPos) return
+        fired = true
+        const rect = container.getBoundingClientRect()
+        const point = map.containerPointToLatLng(
+          L.point(startPos.x - rect.left, startPos.y - rect.top)
+        )
+        onLongPress({ lat: point.lat, lng: point.lng })
+        if (navigator.vibrate) navigator.vibrate(50)
+        clearTimer()
+      }, HOLD_MS)
+    }
+
+    function handleTouchMove(e: TouchEvent) {
+      if (!timer || !startPos || e.touches.length !== 1) { clearTimer(); return }
+      const touch = e.touches[0]
+      const dx = touch.clientX - startPos.x
+      const dy = touch.clientY - startPos.y
+      if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
+        clearTimer()
+      }
+    }
+
+    function handleTouchEnd() {
+      clearTimer()
+      setTimeout(() => { isTouching = false }, 500)
+    }
+
+    function handleTouchCancel() {
+      clearTimer()
+      isTouching = false
+    }
+
+    // Desktop: Rechtsklick
+    function handleContextMenu(e: L.LeafletMouseEvent) {
+      e.originalEvent.preventDefault()
+      if (isTouching || fired) { fired = false; return }
+      onLongPress({ lat: e.latlng.lat, lng: e.latlng.lng })
+    }
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchmove', handleTouchMove, { passive: true })
+    container.addEventListener('touchend', handleTouchEnd, { passive: true })
+    container.addEventListener('touchcancel', handleTouchCancel, { passive: true })
+    map.on('contextmenu', handleContextMenu)
+
+    // System-Context-Menü unterdrücken (iOS Safari)
+    const suppress = (e: Event) => e.preventDefault()
+    container.addEventListener('contextmenu', suppress)
+    container.style.setProperty('-webkit-touch-callout', 'none')
+
+    return () => {
+      clearTimer()
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchmove', handleTouchMove)
+      container.removeEventListener('touchend', handleTouchEnd)
+      container.removeEventListener('touchcancel', handleTouchCancel)
+      map.off('contextmenu', handleContextMenu)
+      container.removeEventListener('contextmenu', suppress)
+      container.style.removeProperty('-webkit-touch-callout')
+    }
+  }, [map, onLongPress, disabled])
 
   return null
 }
@@ -863,6 +962,10 @@ export default function MapContent({
   const [sheetMode, setSheetMode] = useState<'create' | 'edit' | 'hidden'>('hidden')
   const [editStand, setEditStand] = useState<MapObjectData | null>(null)
 
+  // Long-Press → Erlegung melden
+  const [erlegungPickerOpen, setErlegungPickerOpen] = useState(false)
+  const [erlegungLongPressPos, setErlegungLongPressPos] = useState<{ lat: number; lng: number } | null>(null)
+
   // Schnellzuweisung
   const [assignStand, setAssignStand] = useState<StandData | null>(null)
 
@@ -1033,6 +1136,16 @@ export default function MapContent({
     // Tap-Modus beenden — kein Sheet öffnen, Zuweisung passiert per Tap auf den Stand
     setAwaitingAdhocPlacement(false)
   }, [awaitingAdhocPlacement, huntId, seatAssignments, onSeatAssignmentsChanged])
+
+  // --- Long-Press → Erlegung melden ---
+
+  const handleErlegungLongPress = useCallback((latlng: { lat: number; lng: number }) => {
+    setErlegungLongPressPos(latlng)
+    setErlegungPickerOpen(true)
+  }, [])
+
+  const erlegungLongPressDisabled = drawingMode || awaitingAdhocPlacement
+    || isMovingActive || erlegungPickerOpen || sheetMode !== 'hidden'
 
   // --- Zeichenmodus Callbacks ---
 
@@ -1383,6 +1496,12 @@ export default function MapContent({
 
         {/* === Adhoc-Placement: Klick-Handler === */}
         {awaitingAdhocPlacement && <MapClickHandler onMapClick={handleAdhocPlacement} />}
+
+        {/* === Long-Press → Erlegung melden === */}
+        <MapLongPressHandler
+          onLongPress={handleErlegungLongPress}
+          disabled={erlegungLongPressDisabled}
+        />
 
         {/* === Move-Mode: Klicks auf Karte ignorieren === */}
 
@@ -1748,6 +1867,17 @@ export default function MapContent({
           onEdit={handleEditStand}
         />
       )}
+
+      {/* === Long-Press Erlegung Picker === */}
+      <WildartPicker
+        open={erlegungPickerOpen}
+        onOpenChange={(o) => {
+          setErlegungPickerOpen(o)
+          if (!o) setErlegungLongPressPos(null)
+        }}
+        position={erlegungLongPressPos}
+        huntId={huntId}
+      />
     </div>
   )
 }

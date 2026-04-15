@@ -1,6 +1,7 @@
 'use client'
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useState, useEffect } from 'react'
+import { WildartPicker } from './WildartPicker'
 import { useActiveHunt } from '@/hooks/useActiveHunt'
 
 interface ErlegungSheetProps {
@@ -10,26 +11,38 @@ interface ErlegungSheetProps {
 
 export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
   const { activeHunt, loading } = useActiveHunt()
+  const [gpsPosition, setGpsPosition] = useState<{ lat: number; lng: number } | null>(null)
+  const [gpsLoading, setGpsLoading] = useState(false)
+
+  // GPS-Position beim Öffnen holen
+  useEffect(() => {
+    if (!open) {
+      setGpsPosition(null)
+      setGpsLoading(false)
+      return
+    }
+    setGpsLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setGpsLoading(false)
+      },
+      () => {
+        setGpsPosition(null)
+        setGpsLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+    )
+  }, [open])
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" showCloseButton={false}>
-        <SheetHeader>
-          <SheetTitle>Erlegung melden</SheetTitle>
-        </SheetHeader>
-        <div style={{ padding: '1rem', textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-2)' }}>
-            Wildart-Picker kommt mit 58.1d.
-          </p>
-          <p style={{ color: 'var(--text-3)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-            {loading
-              ? 'Lade...'
-              : activeHunt
-                ? `Aktive Jagd: ${activeHunt.name}`
-                : 'Keine aktive Jagd'}
-          </p>
-        </div>
-      </SheetContent>
-    </Sheet>
+    <WildartPicker
+      open={open}
+      onOpenChange={onOpenChange}
+      position={gpsPosition}
+      huntId={activeHunt?.id ?? null}
+      gpsLoading={gpsLoading}
+      noHuntHint={!loading && !activeHunt}
+    />
   )
 }

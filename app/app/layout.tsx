@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { ChatCacheProvider } from '@/contexts/ChatCacheContext'
 import BottomTabBar from '@/components/bottom-tab-bar'
 import KeyboardOffset from '@/components/KeyboardOffset'
+import { GlobalToast } from '@/components/erlegung/GlobalToast'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -11,6 +12,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <BottomTabBar />
       </Suspense>
+      <GlobalToast />
     </ChatCacheProvider>
   )
 }
