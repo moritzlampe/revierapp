@@ -41,6 +41,7 @@ interface MapViewProps {
   huntParticipants?: HuntParticipantInfo[]
   seatAssignments?: SeatAssignmentData[]
   isJagdleiter?: boolean
+  isGruppenleiter?: boolean
   currentUserId?: string | null
   onStandsChanged?: StandsChangedCallback
   onBoundaryChanged?: () => void
@@ -61,6 +62,7 @@ export default function MapView({
   huntParticipants,
   seatAssignments,
   isJagdleiter,
+  isGruppenleiter,
   currentUserId,
   onStandsChanged,
   onBoundaryChanged,
@@ -87,6 +89,7 @@ export default function MapView({
         huntParticipants={huntParticipants}
         seatAssignments={seatAssignments}
         isJagdleiter={isJagdleiter}
+        isGruppenleiter={isGruppenleiter}
         currentUserId={currentUserId}
         onStandsChanged={onStandsChanged}
         onBoundaryChanged={onBoundaryChanged}

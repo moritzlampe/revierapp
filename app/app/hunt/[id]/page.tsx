@@ -38,6 +38,7 @@ export default function HuntPage() {
   const initialTab = (searchParams.get('tab') as 'karte' | 'chat' | 'nachsuche' | 'strecke') || 'karte'
   const [activeTab, setActiveTab] = useState<'karte' | 'chat' | 'nachsuche' | 'strecke'>(initialTab)
   const [isJagdleiter, setIsJagdleiter] = useState(false)
+  const [isGruppenleiter, setIsGruppenleiter] = useState(false)
   const [boundary, setBoundary] = useState<[number, number][][] | null>(null)
   const [districtName, setDistrictName] = useState<string | null>(null)
   const [stands, setStands] = useState<StandData[]>([])
@@ -175,6 +176,7 @@ export default function HuntPage() {
     setParticipants(parts || [])
     setUserId(user?.id ?? null)
     setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter') || false)
+    setIsGruppenleiter(parts?.some(p => p.user_id === user?.id && p.tags?.includes('👥')) || false)
     setLoading(false)
 
     // Seat Assignments laden (Hochsitz-Zuweisungen, Ad-hoc Stände, freie Positionen)
@@ -356,6 +358,7 @@ export default function HuntPage() {
             huntParticipants={participants}
             seatAssignments={seatAssignments}
             isJagdleiter={isJagdleiter}
+            isGruppenleiter={isGruppenleiter}
             currentUserId={userId}
             onStandsChanged={handleStandsChanged}
             onBoundaryChanged={handleBoundaryChanged}

@@ -93,6 +93,7 @@ export interface MapContentProps {
   huntParticipants?: HuntParticipantInfo[]
   seatAssignments?: SeatAssignmentData[]
   isJagdleiter?: boolean
+  isGruppenleiter?: boolean
   currentUserId?: string | null
   onStandsChanged?: StandsChangedCallback
   onBoundaryChanged?: () => void
@@ -189,87 +190,6 @@ function ZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void })
     map.on('zoomend', handleZoom)
     return () => { map.off('zoomend', handleZoom) }
   }, [map, onZoomChange])
-
-  return null
-}
-
-// --- Long-Press Handler ---
-
-const LONG_PRESS_MS = 500
-const PAN_CANCEL_PX = 10
-
-function MapLongPressHandler({ onLongPress }: {
-  onLongPress: (latlng: { lat: number; lng: number }) => void
-}) {
-  const map = useMap()
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const startPos = useRef<{ x: number; y: number } | null>(null)
-
-  useEffect(() => {
-    const container = map.getContainer()
-
-    function cancel() {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-      startPos.current = null
-    }
-
-    function handleTouchStart(e: TouchEvent) {
-      if (e.touches.length !== 1) { cancel(); return }
-      const touch = e.touches[0]
-      startPos.current = { x: touch.clientX, y: touch.clientY }
-
-      timerRef.current = setTimeout(() => {
-        if (!startPos.current) return
-        // Koordinaten aus Container-Position berechnen
-        const rect = container.getBoundingClientRect()
-        const point = L.point(
-          startPos.current.x - rect.left,
-          startPos.current.y - rect.top,
-        )
-        const latlng = map.containerPointToLatLng(point)
-        // Vibration-Feedback
-        try { navigator.vibrate?.(50) } catch { /* nicht verfügbar */ }
-        onLongPress({ lat: latlng.lat, lng: latlng.lng })
-        cancel()
-      }, LONG_PRESS_MS)
-    }
-
-    function handleTouchMove(e: TouchEvent) {
-      if (!startPos.current || !timerRef.current) return
-      const touch = e.touches[0]
-      const dx = Math.abs(touch.clientX - startPos.current.x)
-      const dy = Math.abs(touch.clientY - startPos.current.y)
-      if (dx > PAN_CANCEL_PX || dy > PAN_CANCEL_PX) cancel()
-    }
-
-    function handleTouchEnd() { cancel() }
-
-    function handleContextMenu(e: MouseEvent) {
-      e.preventDefault()
-      const rect = container.getBoundingClientRect()
-      const point = L.point(e.clientX - rect.left, e.clientY - rect.top)
-      const latlng = map.containerPointToLatLng(point)
-      onLongPress({ lat: latlng.lat, lng: latlng.lng })
-    }
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: true })
-    container.addEventListener('touchmove', handleTouchMove, { passive: true })
-    container.addEventListener('touchend', handleTouchEnd)
-    container.addEventListener('touchcancel', handleTouchEnd)
-    container.addEventListener('contextmenu', handleContextMenu)
-
-    return () => {
-      cancel()
-      container.removeEventListener('touchstart', handleTouchStart)
-      container.removeEventListener('touchmove', handleTouchMove)
-      container.removeEventListener('touchend', handleTouchEnd)
-      container.removeEventListener('touchcancel', handleTouchEnd)
-      container.removeEventListener('contextmenu', handleContextMenu)
-    }
-  }, [map, onLongPress])
 
   return null
 }
@@ -921,6 +841,7 @@ export default function MapContent({
   huntParticipants,
   seatAssignments,
   isJagdleiter,
+  isGruppenleiter,
   currentUserId,
   onStandsChanged,
   onBoundaryChanged,
@@ -953,8 +874,7 @@ export default function MapContent({
   const isMovingActive = !!movingStandId
 
   // Live-FAB: Adhoc-Stand-Erstellung
-  const [showAdhocSubtypeSheet, setShowAdhocSubtypeSheet] = useState(false)
-  const [awaitingAdhocPlacement, setAwaitingAdhocPlacement] = useState<'leiter' | 'hochsitz' | 'sitzstock' | null>(null)
+  const [awaitingAdhocPlacement, setAwaitingAdhocPlacement] = useState(false)
   const [fromLiveFab, setFromLiveFab] = useState(false) // Schnellzuweisung zeigt "Überspringen"
 
   // Zeichenmodus für Reviergrenze
@@ -1001,14 +921,6 @@ export default function MapContent({
   const handleCadastreToggle = useCallback(() => {
     setCadastreEnabled(prev => !prev)
   }, [])
-
-  // Long-Press → Temporären Marker setzen + Sheet öffnen (nur wenn NICHT im Zeichenmodus und NICHT im Move-Mode)
-  const handleLongPress = useCallback((latlng: { lat: number; lng: number }) => {
-    if (drawingMode || isMovingActive) return
-    setTempMarker(latlng)
-    setEditStand(null)
-    setSheetMode('create')
-  }, [drawingMode, isMovingActive])
 
   // Stand bearbeiten
   const handleEditStand = useCallback((stand: StandData) => {
@@ -1104,14 +1016,14 @@ export default function MapContent({
         seat_name: seatName,
         position_lat: latlng.lat,
         position_lng: latlng.lng,
-        adhoc_subtype: awaitingAdhocPlacement,
+        adhoc_subtype: null,
       })
       .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng, adhoc_subtype')
       .single()
 
     if (error || !data) {
       console.error('Adhoc-Stand konnte nicht erstellt werden:', error)
-      setAwaitingAdhocPlacement(null)
+      setAwaitingAdhocPlacement(false)
       return
     }
 
@@ -1120,7 +1032,7 @@ export default function MapContent({
     onSeatAssignmentsChanged?.(updated)
 
     // Tap-Modus beenden
-    setAwaitingAdhocPlacement(null)
+    setAwaitingAdhocPlacement(false)
 
     // Schnellzuweisung öffnen für den neuen Stand
     setFromLiveFab(true)
@@ -1477,9 +1389,6 @@ export default function MapContent({
           />
         )}
 
-        {/* === Long-Press Handler (nur aktiv wenn NICHT im Zeichenmodus) === */}
-        {!drawingMode && !awaitingAdhocPlacement && <MapLongPressHandler onLongPress={handleLongPress} />}
-
         {/* === Zeichenmodus: Klick-Handler === */}
         {drawingMode && <MapClickHandler onMapClick={handleDrawClick} />}
 
@@ -1712,7 +1621,7 @@ export default function MapContent({
         }}>
           <span>Tippe auf die Karte</span>
           <button
-            onClick={() => setAwaitingAdhocPlacement(null)}
+            onClick={() => setAwaitingAdhocPlacement(false)}
             style={{
               background: 'var(--surface-3)',
               border: 'none',
@@ -1728,12 +1637,12 @@ export default function MapContent({
         </div>
       )}
 
-      {/* === Live-FAB: Adhoc-Stand erstellen (nur Jagdleiter, freie Jagd) === */}
-      {isJagdleiter && huntId && !districtId && !isMovingActive && !drawingMode
+      {/* === Live-FAB: Adhoc-Stand erstellen (Jagdleiter oder Gruppenleiter, freie Jagd) === */}
+      {(isJagdleiter || isGruppenleiter) && huntId && !districtId && !isMovingActive && !drawingMode
         && !assignStand && !detailStand && !awaitingAdhocPlacement
         && sheetMode === 'hidden' && boundarySheetMode === 'hidden' && (
         <button
-          onClick={() => setShowAdhocSubtypeSheet(true)}
+          onClick={() => setAwaitingAdhocPlacement(true)}
           style={{
             position: 'absolute',
             bottom: 'calc(var(--bottom-bar-space, 0rem) + 7.5rem)',
@@ -1756,68 +1665,6 @@ export default function MapContent({
         >
           +
         </button>
-      )}
-
-      {/* === Subtype-Auswahl-Sheet === */}
-      {showAdhocSubtypeSheet && (
-        <>
-          <div className="map-object-sheet-overlay" onClick={() => setShowAdhocSubtypeSheet(false)} />
-          <div className="map-object-sheet" style={{ paddingBottom: '1rem' }}>
-            <div className="sheet-handle" />
-            <div className="sheet-header">Neuen Stand setzen</div>
-            <div style={{ padding: '0.5rem 1rem' }}>
-              {([
-                { key: 'leiter' as const, icon: '🪜', label: 'Leiter' },
-                { key: 'hochsitz' as const, icon: '🏠', label: 'Hochsitz' },
-                { key: 'sitzstock' as const, icon: '🪑', label: 'Sitzstock' },
-              ]).map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={() => {
-                    setShowAdhocSubtypeSheet(false)
-                    setAwaitingAdhocPlacement(opt.key)
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    padding: '0.75rem 0',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: '1px solid var(--border)',
-                    color: 'var(--text)',
-                    fontSize: '0.9375rem',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  <span style={{ fontSize: '1.25rem', width: '1.5rem', textAlign: 'center' }}>{opt.icon}</span>
-                  {opt.label}
-                </button>
-              ))}
-              <button
-                onClick={() => setShowAdhocSubtypeSheet(false)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  marginTop: '0.375rem',
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--text-2)',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  textAlign: 'center',
-                }}
-              >
-                Abbrechen
-              </button>
-            </div>
-          </div>
-        </>
       )}
 
       {/* === Hochsitz Bottom Sheet === */}
