@@ -51,3 +51,7 @@ scripts/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Recon reports & session artifacts
+BERICHT_*.md
+docs/recon/
