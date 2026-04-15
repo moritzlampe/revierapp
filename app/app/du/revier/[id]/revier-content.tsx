@@ -7,6 +7,7 @@ import { parsePolygonHex } from '@/lib/geo-utils'
 import { createClient } from '@/lib/supabase/client'
 import type { MapObject, ObjektType } from '@/lib/types/revier'
 import { parsePointHex } from '@/lib/geo-utils'
+import { useBoundaryEditor } from '@/hooks/useBoundaryEditor'
 import CategorySheet from '@/components/revier/CategorySheet'
 import TypeSheet from '@/components/revier/TypeSheet'
 import ObjektEditSheet from '@/components/revier/ObjektEditSheet'
@@ -91,9 +92,12 @@ export default function RevierContent({ district, objects: initialObjects, userI
     description: '',
   })
 
+  // Live-Boundary aus DB (aktualisiert sich nach Speichern)
+  const [boundaryRaw, setBoundaryRaw] = useState<unknown>(district.boundary)
+
   const boundary = useMemo(
-    () => parsePolygonHex(district.boundary),
-    [district.boundary],
+    () => parsePolygonHex(boundaryRaw),
+    [boundaryRaw],
   )
 
   const center = useMemo<[number, number]>(
@@ -101,8 +105,12 @@ export default function RevierContent({ district, objects: initialObjects, userI
     [boundary],
   )
 
-  // Bottom-Bar ausblenden wenn Erstellungs-Flow aktiv
-  const creationActive = creation.stage !== 'idle'
+  // --- Boundary-Editor ---
+  const bEditor = useBoundaryEditor()
+  const isOwner = userId === district.owner_id
+
+  // Bottom-Bar ausblenden wenn Erstellungs-Flow oder Boundary-Edit aktiv
+  const creationActive = creation.stage !== 'idle' || bEditor.editMode
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('quickhunt:keyboard', { detail: { open: creationActive } }))
     return () => {
@@ -116,6 +124,70 @@ export default function RevierContent({ district, objects: initialObjects, userI
     setToast(msg)
     setTimeout(() => setToast(null), 2500)
   }, [])
+
+  const handleBoundaryStart = useCallback(() => {
+    if (creation.stage !== 'idle') return
+    bEditor.startEditing(boundary)
+  }, [boundary, creation.stage, bEditor])
+
+  const handleBoundaryFinish = useCallback(async () => {
+    const points = bEditor.drawPoints
+    // Leeres Polygon → boundary NULL setzen
+    if (points.length === 0) {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('districts')
+        .update({ boundary: null, area_ha: null })
+        .eq('id', district.id)
+      if (error) {
+        console.error('Boundary-Löschen fehlgeschlagen:', error.message)
+      } else {
+        setBoundaryRaw(null)
+        showToast('Grenze entfernt')
+      }
+      bEditor.stopEditing()
+      bEditor.reset()
+      return
+    }
+    // Weniger als 3 Punkte → ignorieren, Edit-Mode beenden
+    if (points.length < 3) {
+      bEditor.stopEditing()
+      bEditor.reset()
+      return
+    }
+    // Polygon schliessen und als EWKT speichern
+    const closed = [...points, points[0]]
+    const wkt = closed.map(p => `${p.lng} ${p.lat}`).join(', ')
+    const ewkt = `SRID=4326;POLYGON((${wkt}))`
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('districts')
+      .update({ boundary: ewkt })
+      .eq('id', district.id)
+
+    if (error) {
+      console.error('Boundary-Update fehlgeschlagen:', error.message)
+    } else {
+      // Boundary aus DB neu laden (damit Hex-Encoding korrekt ist)
+      const { data } = await supabase
+        .from('districts')
+        .select('boundary, area_ha')
+        .eq('id', district.id)
+        .single()
+      if (data) {
+        setBoundaryRaw(data.boundary)
+      }
+      showToast('Grenze gespeichert')
+    }
+    bEditor.stopEditing()
+    bEditor.reset()
+  }, [bEditor, district.id, showToast])
+
+  const handleBoundaryCancel = useCallback(() => {
+    bEditor.stopEditing()
+    bEditor.reset()
+  }, [bEditor])
 
   // --- State-Übergänge ---
 
@@ -361,10 +433,24 @@ export default function RevierContent({ district, objects: initialObjects, userI
           zoom={14}
           objects={objects}
           boundary={boundary}
-          onMapClick={isInteractive ? handleMapClick : undefined}
-          onObjectClick={creation.stage === 'idle' ? handleObjectClick : undefined}
+          onMapClick={isInteractive && !bEditor.editMode ? handleMapClick : undefined}
+          onObjectClick={creation.stage === 'idle' && !bEditor.editMode ? handleObjectClick : undefined}
           previewPin={previewPin}
           hiddenObjectId={hiddenObjectId}
+          isOwner={isOwner}
+          boundaryEdit={{
+            editMode: bEditor.editMode,
+            drawPoints: bEditor.drawPoints,
+            onStart: handleBoundaryStart,
+            onFinish: handleBoundaryFinish,
+            onCancel: handleBoundaryCancel,
+            onDrawClick: bEditor.addPoint,
+            onVertexDrag: bEditor.dragVertex,
+            onVertexDelete: bEditor.deleteVertex,
+            onMidpointInsert: bEditor.insertMidpoint,
+            onUndo: bEditor.undo,
+            onClearAll: bEditor.clearAll,
+          }}
         />
 
         {/* Info-Pille (nur awaiting-tap) */}
@@ -404,8 +490,8 @@ export default function RevierContent({ district, objects: initialObjects, userI
           </div>
         )}
 
-        {/* FAB */}
-        {creation.stage === 'idle' && (
+        {/* FAB (nicht im Boundary-Edit-Mode) */}
+        {creation.stage === 'idle' && !bEditor.editMode && (
           <button
             onClick={() => setCreation({ stage: 'category-sheet' })}
             style={{

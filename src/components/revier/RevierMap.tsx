@@ -7,10 +7,13 @@ import 'leaflet/dist/leaflet.css'
 import { useInvalidateOnResize } from '@/hooks/useInvalidateOnResize'
 import { buildPinSvg, getPinVariant } from '@/lib/markers/pin-svg'
 import { parsePointHex } from '@/lib/geo-utils'
+import { polygonAreaHectares } from '@/lib/geo-utils'
 import type { MapObject, ObjektType } from '@/lib/types/revier'
+import type { DrawPoint } from '@/hooks/useBoundaryEditor'
 import OwnPositionMarker, { type OwnPositionMarkerHandle } from '@/components/hunt/OwnPositionMarker'
 import CompassToggleButton from '@/components/map/CompassToggleButton'
 import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
+import BoundaryDrawLayer from '@/components/map/BoundaryDrawLayer'
 import { useCompassHeading } from '@/hooks/useCompassHeading'
 import { useGeolocation } from '@/hooks/useGeolocation'
 
@@ -116,6 +119,22 @@ function makePreviewIcon(type: string, confirmed: boolean): L.DivIcon {
   })
 }
 
+// --- Boundary-Edit Props ---
+
+export interface BoundaryEditProps {
+  editMode: boolean
+  drawPoints: DrawPoint[]
+  onStart: () => void
+  onFinish: () => void
+  onCancel: () => void
+  onDrawClick: (latlng: DrawPoint) => void
+  onVertexDrag: (index: number, latlng: DrawPoint) => void
+  onVertexDelete: (index: number) => void
+  onMidpointInsert: (afterIndex: number, latlng: DrawPoint) => void
+  onUndo: () => void
+  onClearAll: () => void
+}
+
 // --- Hauptkomponente ---
 
 interface RevierMapProps {
@@ -128,9 +147,24 @@ interface RevierMapProps {
   previewPin?: { type: ObjektType; position: [number, number]; confirmed?: boolean } | null
   /** ID eines Objekts das ausgeblendet werden soll (z.B. während Position-Verschieben) */
   hiddenObjectId?: string | null
+  /** Eigentümer sieht den Grenze-bearbeiten-Button */
+  isOwner?: boolean
+  /** Boundary-Editor Props (nur wenn isOwner) */
+  boundaryEdit?: BoundaryEditProps
 }
 
-export default function RevierMap({ center, zoom = 14, objects, boundary, onMapClick, onObjectClick, previewPin, hiddenObjectId }: RevierMapProps) {
+export default function RevierMap({
+  center,
+  zoom = 14,
+  objects,
+  boundary,
+  onMapClick,
+  onObjectClick,
+  previewPin,
+  hiddenObjectId,
+  isOwner,
+  boundaryEdit,
+}: RevierMapProps) {
   // --- Orientierungs-Overlay (GPS + Kompass, on-demand) ---
   const [orientationActive, setOrientationActive] = useState(false)
   const ownPositionRef = useRef<OwnPositionMarkerHandle>(null)
@@ -157,6 +191,18 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
     }
   }, [orientationActive, compassPermission, requestCompass])
 
+  const isEditing = boundaryEdit?.editMode ?? false
+
+  // Button-Toggle: Start oder Fertig
+  const handleBoundaryButtonClick = useCallback(() => {
+    if (!boundaryEdit) return
+    if (isEditing) {
+      boundaryEdit.onFinish()
+    } else {
+      boundaryEdit.onStart()
+    }
+  }, [boundaryEdit, isEditing])
+
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       {/* GPS-Badge (nur wenn Orientierung aktiv) */}
@@ -168,6 +214,89 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
         permission={compassPermission}
         onToggle={handleOrientationToggle}
       />
+
+      {/* Grenze-bearbeiten-Button (nur für Eigentümer, nicht während Objekt-Erstellung) */}
+      {isOwner && boundaryEdit && (
+        <button
+          className="map-btn"
+          style={{
+            top: '6rem',
+            left: '0.75rem',
+            opacity: isEditing ? 1 : 0.5,
+            transition: 'opacity 0.2s',
+          }}
+          onClick={handleBoundaryButtonClick}
+          title={isEditing ? 'Grenze speichern' : (boundary && boundary.length > 0 ? 'Grenze bearbeiten' : 'Grenze zeichnen')}
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={isEditing ? 'var(--green-bright)' : 'var(--text)'}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {/* Pentagon (5-Eck → Polygon-Symbol) */}
+            <path d="M12 2l9.09 6.61-3.47 10.69H6.38L2.91 8.61z" />
+          </svg>
+        </button>
+      )}
+
+      {/* Hinweis im Zeichenmodus */}
+      {isEditing && boundaryEdit && boundaryEdit.drawPoints.length === 0 && (
+        <div className="draw-hint" style={{ top: '0.75rem' }}>
+          Tippe Punkte auf die Karte
+        </div>
+      )}
+
+      {/* Flächen-Anzeige im Zeichenmodus */}
+      {isEditing && boundaryEdit && boundaryEdit.drawPoints.length >= 3 && (
+        <div style={{
+          position: 'absolute', top: '0.75rem', right: '0.75rem', zIndex: 1000,
+          display: 'flex', alignItems: 'center', gap: '0.375rem',
+          background: 'rgba(255,143,0,0.15)', backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(255,143,0,0.3)', borderRadius: 'var(--radius)',
+          padding: '0.375rem 0.75rem', fontSize: '0.75rem', fontWeight: 600,
+          color: 'var(--orange)', pointerEvents: 'none',
+        }}>
+          {polygonAreaHectares(boundaryEdit.drawPoints).toFixed(0)} ha
+        </div>
+      )}
+
+      {/* Zeichen-Toolbar */}
+      {isEditing && boundaryEdit && (
+        <div className="draw-toolbar">
+          <button
+            className="draw-toolbar-btn cancel-btn"
+            onClick={boundaryEdit.onCancel}
+          >
+            Abbrechen
+          </button>
+          <button
+            className="draw-toolbar-btn"
+            onClick={boundaryEdit.onUndo}
+            disabled={boundaryEdit.drawPoints.length === 0}
+          >
+            Rückgängig
+          </button>
+          <button
+            className="draw-toolbar-btn danger"
+            onClick={boundaryEdit.onClearAll}
+            disabled={boundaryEdit.drawPoints.length === 0}
+          >
+            Löschen
+          </button>
+          <button
+            className="draw-toolbar-btn primary"
+            onClick={boundaryEdit.onFinish}
+            disabled={boundaryEdit.drawPoints.length > 0 && boundaryEdit.drawPoints.length < 3}
+          >
+            Fertig
+          </button>
+        </div>
+      )}
 
       <MapContainer
       center={center}
@@ -185,7 +314,19 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
       <InitialView center={center} zoom={zoom} boundary={boundary ?? null} />
       <ResizeHandler />
 
-      {onMapClick && <MapClickHandler onClick={onMapClick} />}
+      {/* Objekt-Karten-Klick (nur wenn NICHT im Boundary-Edit-Mode) */}
+      {onMapClick && !isEditing && <MapClickHandler onClick={onMapClick} />}
+
+      {/* Boundary-Draw-Layer (im Edit-Mode) */}
+      {isEditing && boundaryEdit && (
+        <BoundaryDrawLayer
+          drawPoints={boundaryEdit.drawPoints}
+          onMapClick={boundaryEdit.onDrawClick}
+          onVertexDrag={boundaryEdit.onVertexDrag}
+          onVertexDelete={boundaryEdit.onVertexDelete}
+          onMidpointInsert={boundaryEdit.onMidpointInsert}
+        />
+      )}
 
       {/* Vorschau-Pin */}
       {previewPin && (
@@ -196,8 +337,8 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
         />
       )}
 
-      {/* Reviergrenze */}
-      {boundary && boundary.length > 0 && boundary[0].length >= 3 && (
+      {/* Reviergrenze (read-only, nur wenn NICHT im Edit-Mode) */}
+      {!isEditing && boundary && boundary.length > 0 && boundary[0].length >= 3 && (
         <Polygon
           positions={boundary[0] as L.LatLngExpression[]}
           pathOptions={{
@@ -211,7 +352,7 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
         />
       )}
 
-      {/* Revier-Objekte */}
+      {/* Revier-Objekte (Klick nur wenn NICHT im Edit-Mode) */}
       {objects.map(obj => {
         if (hiddenObjectId && obj.id === hiddenObjectId) return null
         const pos = parsePosition(obj.position)
@@ -221,7 +362,7 @@ export default function RevierMap({ center, zoom = 14, objects, boundary, onMapC
             key={obj.id}
             position={[pos.lat, pos.lng]}
             icon={getIcon(obj.type)}
-            eventHandlers={onObjectClick ? { click: () => onObjectClick(obj) } : undefined}
+            eventHandlers={onObjectClick && !isEditing ? { click: () => onObjectClick(obj) } : undefined}
           >
             <Tooltip direction="top" offset={[0, -4]} permanent={objects.length <= 30}>
               <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{obj.name}</span>
