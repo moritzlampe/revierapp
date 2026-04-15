@@ -20,7 +20,7 @@ function getAvatarColor(id: string): string {
   return SEAT_AVATAR_COLORS[Math.abs(hash) % SEAT_AVATAR_COLORS.length]
 }
 
-type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string }
+type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string } | null }
 type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null; adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null }
 
@@ -187,6 +187,10 @@ export default function HuntPage() {
     // Revier-Daten laden (Grenze + Hochsitze)
     if (hunt.district_id) {
       loadDistrictData(hunt.district_id)
+    } else if (hunt.boundary) {
+      // Freie Jagd: Boundary direkt aus hunts laden
+      const parsed = parsePolygonHex(hunt.boundary)
+      if (parsed) setBoundary(parsed)
     }
   }, [supabase, params.id, router, loadDistrictData])
 

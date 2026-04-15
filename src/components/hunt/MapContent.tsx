@@ -1169,10 +1169,29 @@ export default function MapContent({
     setDrawPoints([])
   }, [])
 
-  const handleDrawFinish = useCallback(() => {
-    if (drawPoints.length < 3) return
-    setBoundarySheetMode('save')
-  }, [drawPoints.length])
+  const handleDrawFinish = useCallback(async () => {
+    if (drawPoints.length < 3 || !huntId) return
+
+    // Freie Jagd: direkt in hunts.boundary speichern
+    const closed = [...drawPoints, drawPoints[0]]
+    const wkt = closed.map(p => `${p.lng} ${p.lat}`).join(', ')
+    const ewkt = `SRID=4326;POLYGON((${wkt}))`
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('hunts')
+      .update({ boundary: ewkt })
+      .eq('id', huntId)
+
+    if (error) {
+      console.error('Jagd-Grenze speichern fehlgeschlagen:', error)
+      return
+    }
+
+    setDrawingMode(false)
+    setDrawPoints([])
+    onBoundaryChanged?.()
+  }, [drawPoints, huntId, onBoundaryChanged])
 
   const handleDrawVertexDrag = useCallback((index: number, latlng: { lat: number; lng: number }) => {
     setDrawPoints(prev => {
@@ -1327,13 +1346,13 @@ export default function MapContent({
         cadastreAvailable={cadastreAvailable}
       />
 
-      {/* Grenze zeichnen / bearbeiten Button */}
-      {!drawingMode && (
+      {/* Grenze zeichnen / bearbeiten Button — nur Jagdleiter bei freier Jagd */}
+      {isJagdleiter && !districtId && !drawingMode && (
         <button className="draw-boundary-btn" onClick={startDrawing}>
           ✏️ {boundary && boundary.length > 0 ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
         </button>
       )}
-      {drawingMode && (
+      {isJagdleiter && !districtId && drawingMode && (
         <button className="draw-boundary-btn active" onClick={cancelDrawing}>
           ✏️ Zeichenmodus
         </button>
