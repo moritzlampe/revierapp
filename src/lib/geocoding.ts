@@ -27,7 +27,7 @@ type NominatimResponse = {
 }
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse'
-const USER_AGENT = 'QuickHunt/1.0 (https://quickhunt.de; contact@quickhunt.de)'
+const USER_AGENT = 'QuickHunt/1.0 (https://quickhunt.de; support@quickhunt.de)'
 
 export async function reverseGeocode(
   lng: number,
