@@ -17,6 +17,13 @@ import {
 import { insertKillBatch } from '@/lib/erlegung/insertKill'
 import { showToast } from '@/lib/erlegung/toast'
 
+const noSelectStyle: React.CSSProperties = {
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  WebkitTouchCallout: 'none',
+  WebkitTapHighlightColor: 'transparent',
+}
+
 function getWildArtLabel(wildArt: WildArt): string {
   for (const details of Object.values(WILD_GROUP_DETAILS)) {
     if (!details) continue
@@ -382,6 +389,7 @@ export function WildartPicker({
                     onPointerCancel={handleLongPressEnd}
                     onPointerLeave={handleLongPressEnd}
                     style={{
+                      ...noSelectStyle,
                       position: 'relative',
                       display: 'flex',
                       flexDirection: 'column',
@@ -395,8 +403,6 @@ export function WildartPicker({
                       cursor: 'pointer',
                       minHeight: '4.5rem',
                       minWidth: '2.75rem',
-                      WebkitTapHighlightColor: 'transparent',
-                      userSelect: 'none',
                       touchAction: 'manipulation',
                       opacity: submitting ? 0.5 : 1,
                     }}
@@ -464,6 +470,7 @@ export function WildartPicker({
                         onPointerCancel={handleLongPressEnd}
                         onPointerLeave={handleLongPressEnd}
                         style={{
+                          ...noSelectStyle,
                           position: 'relative',
                           padding: '0.5rem 1rem',
                           borderRadius: 'var(--radius)',
@@ -481,8 +488,6 @@ export function WildartPicker({
                           fontWeight: selectedWildArt === a.value ? 600 : 400,
                           minHeight: '2.75rem',
                           transition: 'all 0.15s',
-                          WebkitTapHighlightColor: 'transparent',
-                          userSelect: 'none',
                           touchAction: 'manipulation',
                         }}
                       >
@@ -575,6 +580,7 @@ export function WildartPicker({
                     onPointerCancel={handleLongPressEnd}
                     onPointerLeave={handleLongPressEnd}
                     style={{
+                      ...noSelectStyle,
                       position: 'relative',
                       display: 'flex',
                       alignItems: 'center',
@@ -585,8 +591,6 @@ export function WildartPicker({
                       borderRadius: 'var(--radius)',
                       cursor: 'pointer',
                       minHeight: '2.75rem',
-                      WebkitTapHighlightColor: 'transparent',
-                      userSelect: 'none',
                       touchAction: 'manipulation',
                       opacity: submitting ? 0.5 : 1,
                       fontSize: '0.875rem',
