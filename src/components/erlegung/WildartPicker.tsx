@@ -79,7 +79,7 @@ interface WildartPickerProps {
   position?: { lat: number; lng: number; accuracy?: number; captured_at?: string } | null
   huntId?: string | null
   onSuccess?: (killId: string) => void
-  onKillSuccess?: () => void
+  onKillSuccess?: (killIds: string[]) => void
   gpsLoading?: boolean
   noHuntHint?: boolean
 }
@@ -263,7 +263,7 @@ export function WildartPicker({
     setSubmitting(true)
 
     try {
-      await insertKillBatch({
+      const killIds = await insertKillBatch({
         items: pendingKills.map(pk => ({
           wild_art: pk.wild_art,
           geschlecht: pk.geschlecht,
@@ -289,8 +289,11 @@ export function WildartPicker({
         subtext,
       )
 
-      onKillSuccess?.()
-      handleClose()
+      if (onKillSuccess) {
+        onKillSuccess(killIds)
+      } else {
+        handleClose()
+      }
     } catch (err) {
       console.error('[WildartPicker] batch insert failed', err)
       showToast('Fehler beim Melden', 'warning', err instanceof Error ? err.message : 'Unbekannter Fehler')

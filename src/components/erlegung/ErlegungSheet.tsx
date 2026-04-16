@@ -11,6 +11,7 @@ import { waitForAccurateGpsFix } from '@/lib/geo/wait-for-gps-fix'
 import { findDistrictsAtPoint } from '@/lib/supabase/districts'
 import { reverseGeocode } from '@/lib/geocoding'
 import { createSoloHunt } from '@/lib/supabase/hunts'
+import { showToast } from '@/lib/erlegung/toast'
 import type { Revier } from '@/lib/types/revier'
 
 interface ErlegungSheetProps {
@@ -18,13 +19,7 @@ interface ErlegungSheetProps {
   onOpenChange: (open: boolean) => void
 }
 
-type AutoSoloState =
-  | { phase: 'idle' }
-  | { phase: 'waiting-gps' }
-  | { phase: 'looking-up' }
-  | { phase: 'picking-district'; districts: Revier[]; lng: number; lat: number }
-  | { phase: 'creating' }
-  | { phase: 'error'; message: string }
+type Phase = 'wildart' | 'solo-creating' | 'picking-district'
 
 function composeHuntName(
   district: Revier | null,
@@ -43,20 +38,33 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
   const { activeHunt, loading } = useActiveHunt()
   const router = useRouter()
 
+  const [phase, setPhase] = useState<Phase>('wildart')
+
   // GPS-Position via watchPosition solange Sheet offen (für WildartPicker)
   const [gpsPosition, setGpsPosition] = useState<{
     lat: number; lng: number; accuracy: number; captured_at: string
   } | null>(null)
   const [gpsLoading, setGpsLoading] = useState(false)
 
-  // Auto-Solo-Flow
-  const [autoSoloState, setAutoSoloState] = useState<AutoSoloState>({ phase: 'idle' })
-  const [soloHuntId, setSoloHuntId] = useState<string | null>(null)
-  const autoSoloStarted = useRef(false)
+  // Solo-Hunt-ID Ref — überlebt Sheet open/close innerhalb derselben Page
+  const soloHuntIdRef = useRef<string | null>(null)
 
-  const effectiveHuntId = activeHunt?.id ?? soloHuntId
+  // Revier-Picker (Promise-basiert)
+  const [districtPickerState, setDistrictPickerState] = useState<{
+    districts: Revier[]
+    resolve: (d: Revier | null) => void
+  } | null>(null)
 
-  // GPS-Watch für Kill-Position (bestehendes Verhalten)
+  const effectiveHuntId = activeHunt?.id ?? soloHuntIdRef.current
+
+  // Ref freigeben sobald useActiveHunt die Hunt findet
+  useEffect(() => {
+    if (activeHunt) {
+      soloHuntIdRef.current = null
+    }
+  }, [activeHunt])
+
+  // GPS-Watch für Kill-Position
   useEffect(() => {
     if (!open) {
       setGpsPosition(null)
@@ -87,305 +95,211 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
     return () => navigator.geolocation.clearWatch(watchId)
   }, [open])
 
-  // Reset bei Sheet-Close
+  // Reset bei Sheet-Close + offenen District-Picker auflösen
   useEffect(() => {
     if (!open) {
-      setAutoSoloState({ phase: 'idle' })
-      setSoloHuntId(null)
-      autoSoloStarted.current = false
+      if (districtPickerState) {
+        districtPickerState.resolve(null)
+        setDistrictPickerState(null)
+      }
+      setPhase('wildart')
     }
+    // districtPickerState bewusst nicht in deps — nur auf open-Change reagieren
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // Auto-Solo-Flow wird NICHT mehr automatisch gestartet.
-  // Stattdessen zeigt der Gate-Screen einen Button (siehe unten).
+  async function handleKillSuccess(killIds: string[]) {
+    // Fall 1: Hunt existiert (aktive Hunt oder soloHuntIdRef von vorherigem Kill)
+    const existingHuntId = activeHunt?.id ?? soloHuntIdRef.current
+    if (existingHuntId) {
+      const isSolo = soloHuntIdRef.current || activeHunt?.kind === 'solo'
+      onOpenChange(false)
+      if (isSolo) {
+        router.push(`/app/hunt/${existingHuntId}?afterKill=1`)
+      }
+      return
+    }
 
-  async function startAutoSoloFlow() {
-    setAutoSoloState({ phase: 'waiting-gps' })
+    // Fall 2: Keine aktive Hunt → Solo-Hunt im Hintergrund erstellen
+    setPhase('solo-creating')
 
-    let position: { lng: number; lat: number; accuracy: number }
+    // 2a: GPS-Fix holen
+    let position: { lng: number; lat: number } | null = null
     try {
-      position = await waitForAccurateGpsFix(10_000, 15)
+      const fix = await waitForAccurateGpsFix(10_000, 15)
+      position = { lng: fix.lng, lat: fix.lat }
     } catch {
-      setAutoSoloState({
-        phase: 'error',
-        message: 'GPS-Position konnte nicht bestimmt werden. Bitte ins Freie gehen und nochmal versuchen.',
-      })
-      return
+      // GPS-Fehler: Hunt wird trotzdem erstellt, ohne Revier
     }
 
-    await handleGpsFix(position)
-  }
+    // 2b: Revier-Lookup (nur wenn GPS valide)
+    let districts: Revier[] = []
+    let placeName: string | null = null
 
-  async function handleGpsFix(position: { lng: number; lat: number }) {
-    setAutoSoloState({ phase: 'looking-up' })
+    if (position) {
+      try {
+        districts = await findDistrictsAtPoint(position.lng, position.lat)
+      } catch {
+        // Fehler beim Revier-Lookup: weiter ohne Revier
+      }
 
-    let districts: Revier[]
+      if (districts.length === 0) {
+        try {
+          placeName = (await reverseGeocode(position.lng, position.lat)).name
+        } catch {
+          // Fehler beim Geocoding: weiter ohne Ortsname
+        }
+      }
+    }
+
+    // 2c: Revier bestimmen
+    let selectedDistrict: Revier | null = null
+
+    if (districts.length === 1) {
+      selectedDistrict = districts[0]
+    } else if (districts.length > 1) {
+      // Überlappende Reviere: User wählen lassen
+      setPhase('picking-district')
+      selectedDistrict = await new Promise<Revier | null>((resolve) => {
+        setDistrictPickerState({ districts, resolve })
+      })
+      setDistrictPickerState(null)
+      setPhase('solo-creating')
+    }
+
+    // 2d: Hunt-Name
+    const name = composeHuntName(selectedDistrict, placeName)
+
+    // 2e: Solo-Hunt erstellen
     try {
-      districts = await findDistrictsAtPoint(position.lng, position.lat)
-    } catch {
-      setAutoSoloState({
-        phase: 'error',
-        message: 'Reviere konnten nicht geladen werden. Bitte nochmal versuchen.',
-      })
-      return
-    }
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Nicht eingeloggt')
 
-    if (districts.length === 0) {
-      const { name } = await reverseGeocode(position.lng, position.lat)
-      await createAndSetHunt(null, name)
-    } else if (districts.length === 1) {
-      await createAndSetHunt(districts[0], null)
-    } else {
-      setAutoSoloState({
-        phase: 'picking-district',
-        districts,
-        lng: position.lng,
-        lat: position.lat,
-      })
-    }
-  }
-
-  async function createAndSetHunt(district: Revier | null, placeName: string | null) {
-    setAutoSoloState({ phase: 'creating' })
-
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      setAutoSoloState({ phase: 'error', message: 'Nicht eingeloggt.' })
-      return
-    }
-
-    const name = composeHuntName(district, placeName)
-
-    try {
-      const { id } = await createSoloHunt({
+      const { id: huntId } = await createSoloHunt({
         userId: user.id,
-        districtId: district?.id ?? null,
+        districtId: selectedDistrict?.id ?? null,
         name,
       })
-      setSoloHuntId(id)
-      setAutoSoloState({ phase: 'idle' })
-    } catch (err) {
-      console.error('[ErlegungSheet] createSoloHunt failed:', err)
-      setAutoSoloState({
-        phase: 'error',
-        message: 'Jagd konnte nicht erstellt werden. Bitte nochmal versuchen.',
-      })
-    }
-  }
 
-  function handleRetry() {
-    autoSoloStarted.current = false
-    setAutoSoloState({ phase: 'idle' })
-  }
+      // 2f: Kills der neuen Hunt zuordnen
+      await supabase
+        .from('kills')
+        .update({ hunt_id: huntId })
+        .in('id', killIds)
 
-  function handleKillSuccess() {
-    // Redirect bei Solo-Hunt (egal ob gerade erstellt oder schon aktiv)
-    const huntId = soloHuntId ?? activeHunt?.id
-    const isSolo = soloHuntId || activeHunt?.kind === 'solo'
-    if (huntId && isSolo) {
+      // 2g: Ref setzen + Sheet schließen + Redirect
+      soloHuntIdRef.current = huntId
+      onOpenChange(false)
       router.push(`/app/hunt/${huntId}?afterKill=1`)
+
+    } catch (err) {
+      console.error('[handleKillSuccess] Solo-Hunt-Erstellung fehlgeschlagen:', err)
+      // Kills bleiben mit hunt_id: null — User kann sie später zuordnen
+      onOpenChange(false)
+      showToast('Erlegung gespeichert, aber Einzeljagd konnte nicht erstellt werden.', 'warning')
     }
   }
 
-  // Gate-Screen: Keine aktive Hunt → Intro mit Button
-  if (!effectiveHuntId && !loading && autoSoloState.phase === 'idle') {
+  // --- RENDER ---
+
+  // Phase: WildartPicker (Normalzustand)
+  if (phase === 'wildart') {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" showCloseButton className="max-h-[85vh] gap-0">
-          <SheetHeader>
-            <SheetTitle>Erlegung melden</SheetTitle>
-          </SheetHeader>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '1rem',
-            padding: '3rem 1.5rem',
-            minHeight: '40vh',
-          }}>
-            <p style={{
-              fontSize: '1.125rem',
-              fontWeight: 600,
-              color: 'var(--text)',
-              textAlign: 'center',
-            }}>
-              Keine aktive Jagd
-            </p>
-            <p style={{
-              fontSize: '0.875rem',
-              color: 'var(--text-2)',
-              textAlign: 'center',
-              lineHeight: 1.5,
-            }}>
-              Du kannst eine Einzeljagd starten, um Erlegungen zu melden.
-            </p>
-            <button
-              onClick={() => {
-                if (autoSoloStarted.current) return
-                autoSoloStarted.current = true
-                startAutoSoloFlow()
-              }}
-              style={{
-                marginTop: '0.5rem',
-                padding: '0.875rem 1.5rem',
-                borderRadius: 'var(--radius)',
-                background: 'var(--green)',
-                color: '#fff',
-                border: 'none',
-                fontSize: '0.9375rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                minHeight: '2.75rem',
-              }}
-            >
-              Einzeljagd starten
-            </button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      <WildartPicker
+        open={open}
+        onOpenChange={onOpenChange}
+        position={gpsPosition}
+        huntId={effectiveHuntId}
+        gpsLoading={gpsLoading}
+        noHuntHint={!loading && !effectiveHuntId}
+        onKillSuccess={handleKillSuccess}
+      />
     )
   }
 
-  // Auto-Solo-UI (GPS-Wait, District-Picker, Creating, Error)
-  if (autoSoloState.phase !== 'idle' && !effectiveHuntId) {
-    return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" showCloseButton className="max-h-[85vh] gap-0">
-          <SheetHeader>
-            <SheetTitle>Einzeljagd starten</SheetTitle>
-          </SheetHeader>
+  // Phase: Solo-Creating oder Picking-District
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="bottom" showCloseButton className="max-h-[85vh] gap-0">
+        <SheetHeader>
+          <SheetTitle>
+            {phase === 'picking-district' ? 'Welches Revier?' : 'Einzeljagd wird erstellt …'}
+          </SheetTitle>
+        </SheetHeader>
 
-          <div style={{ padding: '0 1rem 1rem', minHeight: '10rem' }}>
-            {/* Loading: GPS oder Erstellen */}
-            {(autoSoloState.phase === 'waiting-gps' ||
-              autoSoloState.phase === 'looking-up' ||
-              autoSoloState.phase === 'creating') && (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.75rem',
-                padding: '3rem 0',
+        <div style={{ padding: '0 1rem 1rem' }}>
+          {/* Spinner während GPS/Revier-Lookup/Hunt-Erstellung */}
+          {phase === 'solo-creating' && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.75rem',
+              padding: '3rem 0',
+            }}>
+              <Loader2
+                size={32}
+                style={{ color: 'var(--green)', animation: 'spin 1s linear infinite' }}
+              />
+              <p style={{ color: 'var(--text-2)', fontSize: '0.875rem' }}>
+                Einzeljagd wird gestartet …
+              </p>
+            </div>
+          )}
+
+          {/* Revier-Picker bei überlappenden Revieren */}
+          {phase === 'picking-district' && districtPickerState && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <p style={{
+                fontSize: '0.875rem',
+                color: 'var(--text-2)',
+                marginBottom: '0.25rem',
+                lineHeight: 1.5,
               }}>
-                <Loader2
-                  size={32}
-                  style={{ color: 'var(--green)', animation: 'spin 1s linear infinite' }}
-                />
-                <p style={{ color: 'var(--text-2)', fontSize: '0.875rem' }}>
-                  {autoSoloState.phase === 'waiting-gps' && 'GPS wird bestimmt …'}
-                  {autoSoloState.phase === 'looking-up' && 'Revier wird gesucht …'}
-                  {autoSoloState.phase === 'creating' && 'Einzeljagd wird gestartet …'}
-                </p>
-              </div>
-            )}
-
-            {/* Revier-Auswahl */}
-            {autoSoloState.phase === 'picking-district' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', marginBottom: '0.25rem' }}>
-                  Du bist in {autoSoloState.districts.length} überlappenden Revieren.
-                  Wähle das passende aus.
-                </p>
-                {autoSoloState.districts.map((d) => (
-                  <button
-                    key={d.id}
-                    onClick={() => createAndSetHunt(d, null)}
-                    style={{
-                      padding: '0.875rem 1rem',
-                      borderRadius: 'var(--radius)',
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)',
-                      fontSize: '0.9375rem',
-                      fontWeight: 500,
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      minHeight: '2.75rem',
-                    }}
-                  >
-                    {d.name}
-                  </button>
-                ))}
+                Erlegung gespeichert. Wähle ein Revier für die Einzeljagd.
+              </p>
+              {districtPickerState.districts.map((d) => (
                 <button
-                  onClick={async () => {
-                    const { name } = await reverseGeocode(
-                      autoSoloState.lng,
-                      autoSoloState.lat,
-                    )
-                    await createAndSetHunt(null, name)
-                  }}
+                  key={d.id}
+                  onClick={() => districtPickerState.resolve(d)}
                   style={{
-                    padding: '0.75rem 1rem',
+                    padding: '0.875rem 1rem',
                     borderRadius: 'var(--radius)',
-                    background: 'transparent',
+                    background: 'var(--surface-2)',
                     border: '1px solid var(--border)',
-                    color: 'var(--text-3)',
-                    fontSize: '0.8125rem',
+                    color: 'var(--text)',
+                    fontSize: '0.9375rem',
+                    fontWeight: 500,
                     textAlign: 'left',
                     cursor: 'pointer',
                     minHeight: '2.75rem',
                   }}
                 >
-                  Keins davon — Auswärtsjagd
+                  {d.name}
                 </button>
-              </div>
-            )}
-
-            {/* Fehler */}
-            {autoSoloState.phase === 'error' && (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.75rem',
-                padding: '2rem 0',
-              }}>
-                <p style={{
-                  color: 'var(--text-2)',
-                  fontSize: '0.875rem',
-                  textAlign: 'center',
-                  lineHeight: 1.5,
-                }}>
-                  {autoSoloState.message}
-                </p>
-                <button
-                  onClick={handleRetry}
-                  style={{
-                    padding: '0.75rem 1.5rem',
-                    borderRadius: 'var(--radius)',
-                    background: 'var(--green)',
-                    color: '#fff',
-                    border: 'none',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    minHeight: '2.75rem',
-                  }}
-                >
-                  Nochmal versuchen
-                </button>
-              </div>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
-    )
-  }
-
-  // Normal: WildartPicker (mit aktiver Hunt oder gerade erstellter Solo-Hunt)
-  return (
-    <WildartPicker
-      open={open}
-      onOpenChange={onOpenChange}
-      position={gpsPosition}
-      huntId={effectiveHuntId}
-      gpsLoading={gpsLoading}
-      noHuntHint={!loading && !effectiveHuntId}
-      onKillSuccess={handleKillSuccess}
-    />
+              ))}
+              <button
+                onClick={() => districtPickerState.resolve(null)}
+                style={{
+                  padding: '0.75rem 1rem',
+                  borderRadius: 'var(--radius)',
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-3)',
+                  fontSize: '0.8125rem',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  minHeight: '2.75rem',
+                }}
+              >
+                Keins davon — Auswärtsjagd
+              </button>
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   )
 }
