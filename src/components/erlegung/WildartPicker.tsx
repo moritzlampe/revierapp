@@ -474,12 +474,15 @@ export function WildartPicker({
                           position: 'relative',
                           padding: '0.5rem 1rem',
                           borderRadius: 'var(--radius)',
-                          border: selectedWildArt === a.value
-                            ? '2px solid var(--green)'
-                            : '1px solid var(--border)',
+                          border: '2px solid ' + (selectedWildArt === a.value
+                            ? 'var(--green)'
+                            : 'transparent'),
                           background: selectedWildArt === a.value
                             ? 'var(--surface-3)'
                             : 'var(--surface-2)',
+                          boxShadow: selectedWildArt === a.value
+                            ? 'none'
+                            : 'inset 0 0 0 1px var(--border)',
                           color: selectedWildArt === a.value
                             ? 'var(--text)'
                             : 'var(--text-2)',
@@ -537,12 +540,15 @@ export function WildartPicker({
                               flex: 1,
                               padding: '0.625rem',
                               borderRadius: 'var(--radius)',
-                              border: isActive
-                                ? '2px solid var(--green)'
-                                : '1px solid var(--border)',
+                              border: '2px solid ' + (isActive
+                                ? 'var(--green)'
+                                : 'transparent'),
                               background: isActive
                                 ? 'var(--surface-3)'
                                 : 'var(--surface-2)',
+                              boxShadow: isActive
+                                ? 'none'
+                                : 'inset 0 0 0 1px var(--border)',
                               color: isActive
                                 ? 'var(--text)'
                                 : 'var(--text-2)',
@@ -621,15 +627,15 @@ export function WildartPicker({
           )}
         </div>
 
-        {/* === Sticky Bottom Bar === */}
-        {totalCount > 0 && (
-          <div style={{
-            borderTop: '1px solid var(--border)',
-            padding: '0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom))',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-          }}>
+        {/* === Sticky Bottom Bar — immer gerendert, visibility steuert Sichtbarkeit === */}
+        <div style={{
+          borderTop: totalCount > 0 ? '1px solid var(--border)' : '1px solid transparent',
+          padding: '0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom))',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          visibility: totalCount > 0 ? 'visible' : 'hidden',
+        }}>
             {/* Krank-Toggle */}
             <button
               onClick={() => setKrankMode(m => !m)}
@@ -685,7 +691,6 @@ export function WildartPicker({
               {submitting ? 'Melde…' : `${totalCount} Stück ${krankMode ? 'krank ' : ''}melden`}
             </button>
           </div>
-        )}
       </SheetContent>
     </Sheet>
   )
