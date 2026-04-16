@@ -5,13 +5,7 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Crosshair, Target, MessageSquare, User } from 'lucide-react'
 import { ErlegungSheet } from '@/components/erlegung/ErlegungSheet'
-
-const linkTabs = [
-  { key: 'jagd', label: 'Jagd', icon: Crosshair, href: '/app?tab=jagden' },
-  // Erlegung wird separat gerendert (Action-Button, kein Link)
-  { key: 'chat', label: 'Chat', icon: MessageSquare, href: '/app?tab=chats' },
-  { key: 'du', label: 'Du', icon: User, href: '/app/du' },
-] as const
+import { useActiveHunt } from '@/hooks/useActiveHunt'
 
 // Vollbild-Aktionen: Tab-Bar ausblenden
 const HIDE_ON_ROUTES = ['/app/hunt/create']
@@ -21,6 +15,16 @@ export default function BottomTabBar() {
   const searchParams = useSearchParams()
   const [keyboardOpen, setKeyboardOpen] = useState(false)
   const [erlegungOpen, setErlegungOpen] = useState(false)
+  const { activeHunt } = useActiveHunt()
+
+  // Jagd-Tab: aktive Hunt → direkt dorthin, sonst Jagd-Liste
+  const jagdHref = activeHunt ? `/app/hunt/${activeHunt.id}` : '/app?tab=jagden'
+
+  const linkTabs = [
+    { key: 'jagd', label: 'Jagd', icon: Crosshair, href: jagdHref },
+    { key: 'chat', label: 'Chat', icon: MessageSquare, href: '/app?tab=chats' },
+    { key: 'du', label: 'Du', icon: User, href: '/app/du' },
+  ] as const
 
   // Keyboard-Visibility via Custom Event (Chat-Inputs dispatchen diese)
   useEffect(() => {

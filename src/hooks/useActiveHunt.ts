@@ -38,6 +38,7 @@ export function useActiveHunt() {
         .select('id, name, type, kind, district_id, started_at, last_activity_at, hunt_participants!inner(user_id)')
         .eq('status', 'active')
         .eq('hunt_participants.user_id', user.id)
+        .eq('hunt_participants.status', 'joined')
         .order('started_at', { ascending: false })
         .limit(1)
         .maybeSingle()

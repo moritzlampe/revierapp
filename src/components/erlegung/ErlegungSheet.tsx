@@ -96,13 +96,8 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
     }
   }, [open])
 
-  // Auto-Solo-Flow starten wenn kein aktiver Hunt
-  useEffect(() => {
-    if (!open || loading || effectiveHuntId) return
-    if (autoSoloStarted.current) return
-    autoSoloStarted.current = true
-    startAutoSoloFlow()
-  }, [open, loading, effectiveHuntId])
+  // Auto-Solo-Flow wird NICHT mehr automatisch gestartet.
+  // Stattdessen zeigt der Gate-Screen einen Button (siehe unten).
 
   async function startAutoSoloFlow() {
     setAutoSoloState({ phase: 'waiting-gps' })
@@ -185,9 +180,72 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
   }
 
   function handleKillSuccess() {
-    if (soloHuntId) {
-      router.push(`/app/hunt/${soloHuntId}?afterKill=1`)
+    // Redirect bei Solo-Hunt (egal ob gerade erstellt oder schon aktiv)
+    const huntId = soloHuntId ?? activeHunt?.id
+    const isSolo = soloHuntId || activeHunt?.kind === 'solo'
+    if (huntId && isSolo) {
+      router.push(`/app/hunt/${huntId}?afterKill=1`)
     }
+  }
+
+  // Gate-Screen: Keine aktive Hunt → Intro mit Button
+  if (!effectiveHuntId && !loading && autoSoloState.phase === 'idle') {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="bottom" showCloseButton className="max-h-[85vh] gap-0">
+          <SheetHeader>
+            <SheetTitle>Erlegung melden</SheetTitle>
+          </SheetHeader>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '1rem',
+            padding: '3rem 1.5rem',
+            minHeight: '40vh',
+          }}>
+            <p style={{
+              fontSize: '1.125rem',
+              fontWeight: 600,
+              color: 'var(--text)',
+              textAlign: 'center',
+            }}>
+              Keine aktive Jagd
+            </p>
+            <p style={{
+              fontSize: '0.875rem',
+              color: 'var(--text-2)',
+              textAlign: 'center',
+              lineHeight: 1.5,
+            }}>
+              Du kannst eine Einzeljagd starten, um Erlegungen zu melden.
+            </p>
+            <button
+              onClick={() => {
+                if (autoSoloStarted.current) return
+                autoSoloStarted.current = true
+                startAutoSoloFlow()
+              }}
+              style={{
+                marginTop: '0.5rem',
+                padding: '0.875rem 1.5rem',
+                borderRadius: 'var(--radius)',
+                background: 'var(--green)',
+                color: '#fff',
+                border: 'none',
+                fontSize: '0.9375rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                minHeight: '2.75rem',
+              }}
+            >
+              Einzeljagd starten
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
+    )
   }
 
   // Auto-Solo-UI (GPS-Wait, District-Picker, Creating, Error)

@@ -9,6 +9,7 @@ import { updatePosition } from '@/lib/position-service'
 import { parsePolygonHex, parsePointHex } from '@/lib/geo-utils'
 import MapView from '@/components/hunt/MapView'
 import ChatPanel from '@/components/hunt/ChatPanel'
+import { HuntActionsMenu } from '@/components/hunt/HuntActionsMenu'
 import type { StandData } from '@/components/hunt/MapContent'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
@@ -252,9 +253,21 @@ export default function HuntPage() {
 
   async function endHunt(skipConfirm = false) {
     if (!hunt) return
-    if (!skipConfirm && !confirm('Jagd wirklich beenden?')) return
+    const label = hunt.kind === 'solo' ? 'Einzeljagd beenden?' : 'Jagd für alle beenden?'
+    if (!skipConfirm && !confirm(label)) return
     await supabase.from('hunts').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', hunt.id)
-    router.push('/app?tab=jagden')
+    router.push('/app')
+  }
+
+  async function leaveHunt() {
+    if (!hunt || !userId) return
+    if (!confirm('Jagd verlassen?')) return
+    await supabase
+      .from('hunt_participants')
+      .update({ status: 'left', left_at: new Date().toISOString() })
+      .eq('hunt_id', hunt.id)
+      .eq('user_id', userId)
+    router.push('/app')
   }
 
   if (loading) return <div className="min-h-dvh flex items-center justify-center" style={{ background: 'var(--bg)' }}><p style={{ color: 'var(--text-3)' }}>Lädt...</p></div>
@@ -297,6 +310,12 @@ export default function HuntPage() {
           style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem' }}>{copied ? '✓' : '🔗'}</button>
         <button onClick={shareWhatsApp} className="flex items-center justify-center rounded-lg text-sm"
           style={{ background: 'rgba(37,211,102,0.1)', border: '1px solid rgba(37,211,102,0.2)', minWidth: '2.75rem', minHeight: '2.75rem' }}>💬</button>
+        <HuntActionsMenu
+          huntKind={hunt.kind}
+          isCreator={userId === hunt.creator_id}
+          onEndHunt={() => endHunt()}
+          onLeaveHunt={leaveHunt}
+        />
         {isJagdleiter && (
           <button onClick={() => setShowJLBar(!showJLBar)} className="px-2 flex items-center justify-center rounded-lg text-xs font-bold"
             style={{ background: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)', color: 'var(--gold)', minHeight: '2.75rem' }}>🎖️</button>

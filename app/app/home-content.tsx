@@ -222,18 +222,43 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     }
   }, [])
 
-  // Jagd löschen
+  // Jagd löschen oder beenden (je nach Kill-Abhängigkeiten)
   const handleDeleteHunt = useCallback(async (huntId: string) => {
     setConfirmDialog(null)
     setRemovingId(huntId)
-    // Warte auf Remove-Animation
     await new Promise(r => setTimeout(r, 300))
-    const { error } = await supabase.from('hunts').delete().eq('id', huntId)
-    if (!error) {
-      setHunts(prev => prev.filter(h => h.id !== huntId))
+
+    // Kill-Count prüfen um FK-Crash zu vermeiden
+    const { count } = await supabase
+      .from('kills')
+      .select('id', { count: 'exact', head: true })
+      .eq('hunt_id', huntId)
+
+    const hasKills = (count ?? 0) > 0
+
+    if (hasKills) {
+      // Hunt mit Kills → nur beenden (Daten bleiben erhalten)
+      const hunt = hunts.find(h => h.id === huntId)
+      if (hunt?.status === 'completed') {
+        setRemovingId(null)
+        return
+      }
+      const { error } = await supabase
+        .from('hunts')
+        .update({ status: 'completed', ended_at: new Date().toISOString() })
+        .eq('id', huntId)
+      if (!error) {
+        setHunts(prev => prev.map(h => h.id === huntId ? { ...h, status: 'completed', ended_at: new Date().toISOString() } : h))
+      }
+    } else {
+      // Hunt ohne Kills → komplett löschen
+      const { error } = await supabase.from('hunts').delete().eq('id', huntId)
+      if (!error) {
+        setHunts(prev => prev.filter(h => h.id !== huntId))
+      }
     }
     setRemovingId(null)
-  }, [supabase])
+  }, [supabase, hunts])
 
   // Chat-Gruppe löschen
   const handleDeleteGroup = useCallback(async (groupId: string) => {
@@ -769,13 +794,13 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
             }}
           >
             <p className="text-base font-bold mb-1">
-              {confirmDialog.type === 'leave-group' ? 'Gruppe verlassen?' : 'Löschen?'}
+              {confirmDialog.type === 'leave-group' ? 'Gruppe verlassen?' : confirmDialog.type === 'delete-hunt' ? 'Jagd entfernen?' : 'Löschen?'}
             </p>
             <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
               {confirmDialog.type === 'leave-group'
                 ? `„${confirmDialog.name}" verlassen? Du kannst erneut eingeladen werden.`
                 : confirmDialog.type === 'delete-hunt'
-                  ? `Jagd „${confirmDialog.name}" unwiderruflich löschen? Der Jagd-Chat wird ebenfalls gelöscht.`
+                  ? `Jagd „${confirmDialog.name}" entfernen? Wenn Erlegungen vorliegen wird die Jagd beendet, sonst gelöscht.`
                   : `Gruppe „${confirmDialog.name}" unwiderruflich löschen? Alle Nachrichten gehen verloren.`
               }
             </p>
@@ -799,7 +824,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                   color: 'white',
                 }}
               >
-                {confirmDialog.type === 'leave-group' ? 'Verlassen' : 'Löschen'}
+                {confirmDialog.type === 'leave-group' ? 'Verlassen' : confirmDialog.type === 'delete-hunt' ? 'Entfernen' : 'Löschen'}
               </button>
             </div>
           </div>
