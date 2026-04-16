@@ -43,7 +43,7 @@ RETURNS SETOF districts
 LANGUAGE sql
 STABLE
 SECURITY INVOKER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
   SELECT d.*
   FROM districts d
