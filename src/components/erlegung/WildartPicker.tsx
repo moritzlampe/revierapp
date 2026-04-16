@@ -506,56 +506,63 @@ export function WildartPicker({
                 </div>
               )}
 
-              {/* Geschlecht */}
-              {groupDetails.geschlechter && (
-                <div>
+              {/* Geschlecht — immer sichtbar, gedämpft wenn keine Altersklasse gewählt */}
+              {groupDetails.geschlechter && (() => {
+                const isDimmed = selectedWildArt === null
+                return (
                   <div style={{
-                    fontSize: '0.6875rem',
-                    color: 'var(--text-3)',
-                    marginBottom: '0.375rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
+                    opacity: isDimmed ? 0.4 : 1,
+                    transition: 'opacity 0.15s ease',
+                    pointerEvents: isDimmed ? 'none' : 'auto',
                   }}>
-                    Geschlecht
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {groupDetails.geschlechter.map(g => {
-                      const isLocked = impliedForSelected !== null && impliedForSelected !== g.value
-                      const isActive = selectedGeschlecht === g.value
+                    <div style={{
+                      fontSize: '0.6875rem',
+                      color: 'var(--text-3)',
+                      marginBottom: '0.375rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      Geschlecht
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      {groupDetails.geschlechter.map(g => {
+                        const isLocked = !isDimmed && impliedForSelected !== null && impliedForSelected !== g.value
+                        const isActive = !isDimmed && selectedGeschlecht === g.value
 
-                      return (
-                        <button
-                          key={g.value}
-                          onClick={() => { if (!isLocked) handleGeschlechtSelect(g.value) }}
-                          style={{
-                            flex: 1,
-                            padding: '0.625rem',
-                            borderRadius: 'var(--radius)',
-                            border: isActive
-                              ? '2px solid var(--green)'
-                              : '1px solid var(--border)',
-                            background: isActive
-                              ? 'var(--surface-3)'
-                              : 'var(--surface-2)',
-                            color: isActive
-                              ? 'var(--text)'
-                              : 'var(--text-2)',
-                            cursor: isLocked ? 'not-allowed' : 'pointer',
-                            fontSize: '0.875rem',
-                            fontWeight: isActive ? 600 : 400,
-                            minHeight: '2.75rem',
-                            transition: 'all 0.15s',
-                            opacity: isLocked ? 0.35 : 1,
-                            pointerEvents: isLocked ? 'none' : 'auto',
-                          }}
-                        >
-                          {g.label}
-                        </button>
-                      )
-                    })}
+                        return (
+                          <button
+                            key={g.value}
+                            onClick={() => { if (!isLocked) handleGeschlechtSelect(g.value) }}
+                            style={{
+                              flex: 1,
+                              padding: '0.625rem',
+                              borderRadius: 'var(--radius)',
+                              border: isActive
+                                ? '2px solid var(--green)'
+                                : '1px solid var(--border)',
+                              background: isActive
+                                ? 'var(--surface-3)'
+                                : 'var(--surface-2)',
+                              color: isActive
+                                ? 'var(--text)'
+                                : 'var(--text-2)',
+                              cursor: isLocked ? 'not-allowed' : 'pointer',
+                              fontSize: '0.875rem',
+                              fontWeight: isActive ? 600 : 400,
+                              minHeight: '2.75rem',
+                              transition: 'all 0.15s',
+                              opacity: isLocked ? 0.35 : 1,
+                              pointerEvents: isLocked ? 'none' : 'auto',
+                            }}
+                          >
+                            {g.label}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
             </div>
           )}
 
