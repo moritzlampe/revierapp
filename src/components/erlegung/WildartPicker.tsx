@@ -79,6 +79,7 @@ interface WildartPickerProps {
   position?: { lat: number; lng: number; accuracy?: number; captured_at?: string } | null
   huntId?: string | null
   onSuccess?: (killId: string) => void
+  onKillSuccess?: () => void
   gpsLoading?: boolean
   noHuntHint?: boolean
 }
@@ -88,6 +89,7 @@ export function WildartPicker({
   onOpenChange,
   position = null,
   huntId = null,
+  onKillSuccess,
   gpsLoading,
   noHuntHint,
 }: WildartPickerProps) {
@@ -287,6 +289,7 @@ export function WildartPicker({
         subtext,
       )
 
+      onKillSuccess?.()
       handleClose()
     } catch (err) {
       console.error('[WildartPicker] batch insert failed', err)

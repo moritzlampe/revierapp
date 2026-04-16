@@ -7,8 +7,10 @@ export interface ActiveHunt {
   id: string
   name: string
   type: string
+  kind: 'group' | 'solo'
   district_id: string | null
   started_at: string
+  last_activity_at: string | null
 }
 
 /**
@@ -33,7 +35,7 @@ export function useActiveHunt() {
 
       const { data } = await supabase
         .from('hunts')
-        .select('id, name, type, district_id, started_at, hunt_participants!inner(user_id)')
+        .select('id, name, type, kind, district_id, started_at, last_activity_at, hunt_participants!inner(user_id)')
         .eq('status', 'active')
         .eq('hunt_participants.user_id', user.id)
         .order('started_at', { ascending: false })
@@ -45,8 +47,10 @@ export function useActiveHunt() {
           id: data.id,
           name: data.name,
           type: data.type,
+          kind: (data.kind as 'group' | 'solo') ?? 'group',
           district_id: data.district_id,
           started_at: data.started_at,
+          last_activity_at: data.last_activity_at ?? null,
         } : null)
         setLoading(false)
       }

@@ -20,7 +20,7 @@ function getAvatarColor(id: string): string {
   return SEAT_AVATAR_COLORS[Math.abs(hash) % SEAT_AVATAR_COLORS.length]
 }
 
-type Hunt = { id: string; name: string; type: string; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
+type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string } | null }
 type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null; adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null }
 
@@ -44,6 +44,7 @@ export default function HuntPage() {
   const [stands, setStands] = useState<StandData[]>([])
   const [chatUnread, setChatUnread] = useState(0)
   const [seatAssignments, setSeatAssignments] = useState<SeatAssignment[]>([])
+  const [showEndHuntPrompt, setShowEndHuntPrompt] = useState(false)
 
   // GPS sofort starten (auch wenn anderer Tab aktiv)
   const geoState = useGeolocation()
@@ -179,6 +180,16 @@ export default function HuntPage() {
     setIsGruppenleiter(parts?.some(p => p.user_id === user?.id && p.tags?.includes('👥')) || false)
     setLoading(false)
 
+    // Solo-Hunt: Chat-Tab nicht erlaubt → auf Karte fallbacken
+    if (hunt.kind === 'solo') {
+      setActiveTab(prev => prev === 'chat' ? 'karte' : prev)
+    }
+
+    // Nach Kill in Solo-Hunt: "Jagd beenden?"-Prompt zeigen
+    if (hunt.kind === 'solo' && searchParams.get('afterKill') === '1') {
+      setShowEndHuntPrompt(true)
+    }
+
     // Seat Assignments laden (Hochsitz-Zuweisungen, Ad-hoc Stände, freie Positionen)
     const { data: assignments } = await supabase
       .from('hunt_seat_assignments')
@@ -239,8 +250,9 @@ export default function HuntPage() {
     window.open(`https://wa.me/?text=${encodeURIComponent(`Jagd "${hunt.name}" — komm dazu: ${link}`)}`, '_blank')
   }
 
-  async function endHunt() {
-    if (!hunt || !confirm('Jagd wirklich beenden?')) return
+  async function endHunt(skipConfirm = false) {
+    if (!hunt) return
+    if (!skipConfirm && !confirm('Jagd wirklich beenden?')) return
     await supabase.from('hunts').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', hunt.id)
     router.push('/app?tab=jagden')
   }
@@ -251,12 +263,20 @@ export default function HuntPage() {
   const pName = (p: Participant) => p.profiles?.display_name || p.guest_name || 'Unbekannt'
   const joinedParticipants = participants.filter(p => p.status === 'joined')
 
-  const TABS = [
-    { key: 'karte' as const, label: 'Karte', icon: '🗺️' },
-    { key: 'chat' as const, label: 'Chat', icon: '💬' },
-    { key: 'nachsuche' as const, label: 'Nachsuche', icon: '🔴' },
-    { key: 'strecke' as const, label: 'Strecke', icon: '🦌' },
-  ]
+  const isSolo = hunt.kind === 'solo'
+
+  const TABS = isSolo
+    ? [
+        { key: 'karte' as const, label: 'Karte', icon: '🗺️' },
+        { key: 'nachsuche' as const, label: 'Nachsuche', icon: '🔴' },
+        { key: 'strecke' as const, label: 'Strecke', icon: '🦌' },
+      ]
+    : [
+        { key: 'karte' as const, label: 'Karte', icon: '🗺️' },
+        { key: 'chat' as const, label: 'Chat', icon: '💬' },
+        { key: 'nachsuche' as const, label: 'Nachsuche', icon: '🔴' },
+        { key: 'strecke' as const, label: 'Strecke', icon: '🦌' },
+      ]
 
   return (
     <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
@@ -291,7 +311,7 @@ export default function HuntPage() {
             style={{ border: '1px solid rgba(107,159,58,0.3)', background: 'rgba(107,159,58,0.1)', color: 'var(--green-bright)', minHeight: '2.75rem' }}>
             📢 Treiben!
           </button>
-          <button onClick={endHunt} className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button onClick={() => endHunt()} className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid rgba(239,83,80,0.3)', background: 'rgba(239,83,80,0.1)', color: 'var(--red)', minHeight: '2.75rem' }}>
             🔴 Hahn in Ruh
           </button>
@@ -366,20 +386,22 @@ export default function HuntPage() {
           />
         </div>
 
-        {/* Jagd-Chat — bleibt gemountet für Realtime */}
-        <div style={{ position: 'absolute', inset: 0, display: activeTab === 'chat' ? 'flex' : 'none', flexDirection: 'column' }}>
-          <ChatPanel
-            huntId={hunt.id}
-            chatName={hunt.name}
-            participants={participants}
-            userId={userId}
-            myParticipantId={myParticipantId}
-            supabase={supabase}
-            isActive={activeTab === 'chat'}
-            onUnreadChange={setChatUnread}
-            canDeleteAll={userId === hunt.creator_id}
-          />
-        </div>
+        {/* Jagd-Chat — bleibt gemountet für Realtime, bei Solo nicht rendern */}
+        {!isSolo && (
+          <div style={{ position: 'absolute', inset: 0, display: activeTab === 'chat' ? 'flex' : 'none', flexDirection: 'column' }}>
+            <ChatPanel
+              huntId={hunt.id}
+              chatName={hunt.name}
+              participants={participants}
+              userId={userId}
+              myParticipantId={myParticipantId}
+              supabase={supabase}
+              isActive={activeTab === 'chat'}
+              onUnreadChange={setChatUnread}
+              canDeleteAll={userId === hunt.creator_id}
+            />
+          </div>
+        )}
 
         {activeTab === 'nachsuche' && (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
@@ -396,6 +418,71 @@ export default function HuntPage() {
           </div>
         )}
       </div>
+
+      {/* "Jagd beenden?"-Prompt nach Kill in Solo-Hunt */}
+      {showEndHuntPrompt && (
+        <div style={{
+          position: 'fixed',
+          bottom: 'var(--bottom-bar-space, 5rem)',
+          left: 0,
+          right: 0,
+          padding: '1rem',
+          background: 'var(--surface-2)',
+          borderTop: '1px solid var(--border)',
+          boxShadow: '0 -4px 16px rgba(0,0,0,0.3)',
+          zIndex: 50,
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <p style={{
+              textAlign: 'center',
+              fontSize: '0.9375rem',
+              fontWeight: 600,
+              color: 'var(--text)',
+            }}>
+              Jagd beenden?
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={() => setShowEndHuntPrompt(false)}
+                style={{
+                  flex: 1,
+                  padding: '0.875rem',
+                  borderRadius: 'var(--radius)',
+                  background: 'var(--surface-3)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  minHeight: '2.75rem',
+                }}
+              >
+                Weitermachen
+              </button>
+              <button
+                onClick={() => {
+                  setShowEndHuntPrompt(false)
+                  endHunt(true)
+                }}
+                style={{
+                  flex: 1,
+                  padding: '0.875rem',
+                  borderRadius: 'var(--radius)',
+                  background: 'var(--green)',
+                  border: 'none',
+                  color: '#fff',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  minHeight: '2.75rem',
+                }}
+              >
+                Beenden
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
