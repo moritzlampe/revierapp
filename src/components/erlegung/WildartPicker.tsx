@@ -16,6 +16,10 @@ import {
 } from '@/lib/species-config'
 import { insertKillBatch } from '@/lib/erlegung/insertKill'
 import { showToast } from '@/lib/erlegung/toast'
+import PhotoCapture from '@/components/photo/PhotoCapture'
+import { uploadPhoto } from '@/lib/photos/upload'
+import { insertHuntPhoto } from '@/lib/photos/hunt-photos'
+import { createClient } from '@/lib/supabase/client'
 
 const noSelectStyle: React.CSSProperties = {
   userSelect: 'none',
@@ -98,9 +102,23 @@ export function WildartPicker({
   const [submitting, setSubmitting] = useState(false)
   const [krankMode, setKrankMode] = useState(false)
   const [pendingKills, setPendingKills] = useState<PendingKill[]>([])
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressFired = useRef(false)
+
+  // User-ID einmalig laden (für Foto-Upload)
+  useEffect(() => {
+    let mounted = true
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      if (mounted) setUserId(data.user?.id ?? null)
+    })
+    return () => { mounted = false }
+  }, [])
 
   // Zurücksetzen beim Öffnen
   useEffect(() => {
@@ -112,6 +130,9 @@ export function WildartPicker({
       setSubmitting(false)
       setKrankMode(false)
       setPendingKills([])
+      setPendingPhotos([])
+      setPhotoUploading(false)
+      setUploadProgress(null)
     }
   }, [open])
 
@@ -255,6 +276,19 @@ export function WildartPicker({
     setSelectedWildArt(null)
   }, [])
 
+  // --- Photo-Buffer Handlers ---
+  const handlePhotoBuffer = useCallback((file: File) => {
+    setPendingPhotos(prev => {
+      const next = [...prev, file]
+      showToast('Foto hinzugefügt', 'success', `${next.length} Foto${next.length === 1 ? '' : 's'} bereit`)
+      return next
+    })
+  }, [])
+
+  const handlePhotoError = useCallback((err: Error) => {
+    showToast('Foto-Fehler', 'warning', err.message)
+  }, [])
+
   // --- Batch Confirm ---
   const handleConfirmBatch = useCallback(async () => {
     if (pendingKills.length === 0 || submitting) return
@@ -272,6 +306,40 @@ export function WildartPicker({
         status: krankMode ? 'wounded' : 'harvested',
       })
 
+      // Foto-Upload (nur wenn huntId + userId + Fotos vorhanden)
+      let uploadedCount = 0
+      let failedCount = 0
+      if (pendingPhotos.length > 0 && huntId && userId) {
+        for (let i = 0; i < pendingPhotos.length; i++) {
+          setUploadProgress({ current: i + 1, total: pendingPhotos.length })
+          try {
+            const { url, path } = await uploadPhoto({
+              file: pendingPhotos[i],
+              userId,
+              entityType: 'hunt',
+              entityId: huntId,
+            })
+            await insertHuntPhoto({
+              huntId,
+              killIds,
+              storagePath: path,
+              url,
+              uploadedBy: userId,
+            })
+            uploadedCount++
+          } catch (photoErr) {
+            console.error(`[WildartPicker] photo ${i + 1} upload failed`, photoErr)
+            failedCount++
+            showToast(
+              `Foto ${i + 1} von ${pendingPhotos.length} fehlgeschlagen`,
+              'warning',
+              photoErr instanceof Error ? photoErr.message : 'Unbekannter Fehler',
+            )
+          }
+        }
+        setUploadProgress(null)
+      }
+
       const total = pendingKills.length
       const uniqueArten = [...new Set(pendingKills.map(pk => pk.wild_art))]
       let subtext: string
@@ -281,11 +349,16 @@ export function WildartPicker({
       } else {
         subtext = `${total} Stück`
       }
+      if (uploadedCount > 0) {
+        subtext = `${subtext} · +${uploadedCount} Foto${uploadedCount === 1 ? '' : 's'}`
+      }
       showToast(
         krankMode ? '🩹 Nachsuche gemeldet' : '🎯 Waidmannsheil!',
-        'success',
+        failedCount > 0 ? 'warning' : 'success',
         subtext,
       )
+
+      setPendingPhotos([])
 
       if (onKillSuccess) {
         onKillSuccess(killIds)
@@ -296,8 +369,9 @@ export function WildartPicker({
       console.error('[WildartPicker] batch insert failed', err)
       showToast('Fehler beim Melden', 'warning', err instanceof Error ? err.message : 'Unbekannter Fehler')
       setSubmitting(false)
+      setUploadProgress(null)
     }
-  }, [pendingKills, submitting, huntId, krankMode, handleClose])
+  }, [pendingKills, pendingPhotos, submitting, huntId, userId, krankMode, handleClose, onKillSuccess])
 
   // --- Abgeleitete Werte ---
   const groupConfig = selectedGroup
@@ -647,7 +721,7 @@ export function WildartPicker({
 
             {/* Reset */}
             <button
-              onClick={() => setPendingKills([])}
+              onClick={() => { setPendingKills([]); setPendingPhotos([]) }}
               aria-label="Alle Counter zurücksetzen"
               style={{
                 padding: '0.5rem 0.75rem',
@@ -660,6 +734,38 @@ export function WildartPicker({
                 WebkitTapHighlightColor: 'transparent',
               }}
             >↻</button>
+
+            {/* Foto — nur wenn huntId vorhanden (Auto-Solo-Hunt-Flow: TODO separater Sprint) */}
+            {huntId && (
+              <PhotoCapture
+                quality="documentation"
+                mode="camera"
+                disabled={photoUploading || submitting}
+                onCapture={handlePhotoBuffer}
+                onError={handlePhotoError}
+              >
+                <button
+                  type="button"
+                  aria-label="Foto hinzufügen"
+                  disabled={photoUploading || submitting}
+                  style={{
+                    padding: '0.5rem 0.75rem',
+                    background: pendingPhotos.length > 0 ? 'rgba(107,159,58,0.15)' : 'transparent',
+                    color: pendingPhotos.length > 0 ? 'var(--green)' : 'var(--text-2)',
+                    border: `1px solid ${pendingPhotos.length > 0 ? 'var(--green)' : 'var(--border)'}`,
+                    borderRadius: '0.5rem',
+                    fontSize: '0.875rem',
+                    fontWeight: 500,
+                    minHeight: '2.75rem',
+                    opacity: (photoUploading || submitting) ? 0.5 : 1,
+                    WebkitTapHighlightColor: 'transparent',
+                    cursor: (photoUploading || submitting) ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  📸{pendingPhotos.length > 0 ? ` (${pendingPhotos.length})` : ''}
+                </button>
+              </PhotoCapture>
+            )}
 
             {/* Melden — dominant */}
             <button
@@ -679,7 +785,11 @@ export function WildartPicker({
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              {submitting ? 'Melde…' : `${totalCount} Stück ${krankMode ? 'krank ' : ''}melden`}
+              {submitting
+                ? (uploadProgress
+                    ? `Lade Foto ${uploadProgress.current}/${uploadProgress.total}…`
+                    : 'Melde…')
+                : `${totalCount} Stück ${krankMode ? 'krank ' : ''}melden`}
             </button>
           </div>
       </SheetContent>
