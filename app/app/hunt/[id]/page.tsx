@@ -9,6 +9,7 @@ import { updatePosition } from '@/lib/position-service'
 import { parsePolygonHex, parsePointHex } from '@/lib/geo-utils'
 import MapView from '@/components/hunt/MapView'
 import ChatPanel from '@/components/hunt/ChatPanel'
+import HuntStreckeTab from '@/components/hunt/HuntStreckeTab'
 import { HuntActionsMenu } from '@/components/hunt/HuntActionsMenu'
 import type { StandData } from '@/components/hunt/MapContent'
 
@@ -430,11 +431,12 @@ export default function HuntPage() {
           </div>
         )}
         {activeTab === 'strecke' && (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            <div className="text-5xl mb-4">🎯</div>
-            <p className="text-lg font-bold mb-1">Strecke</p>
-            <p className="text-sm" style={{ color: 'var(--text-3)' }}>Schnellmeldung + Teilnehmer-Filter.</p>
-          </div>
+          <HuntStreckeTab
+            huntId={hunt.id}
+            participants={participants}
+            userId={userId}
+            isJagdleiter={isJagdleiter}
+          />
         )}
       </div>
 

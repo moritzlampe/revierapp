@@ -51,6 +51,18 @@ export interface Kill {
   updated_at: string
 }
 
+// Client-seitig gruppierte Erlegungen (Multi-Tap-Batch)
+// Heuristik: gleicher reporter_id + created_at-Differenz <2s.
+// Gruppierung passiert im Client (Option B — siehe Recon §2.2),
+// keine DB-Spalte batch_id nötig.
+export interface KillBatch {
+  id: string              // Erste Kill-ID des Batches als stabiler React-Key
+  reporter_id: string
+  first_at: string        // created_at des ersten Kills (ISO)
+  last_at: string         // created_at des letzten Kills (ISO) — für Streaming-Updates
+  kills: Kill[]           // Sortiert ASC nach created_at
+}
+
 // Für INSERT — nur Pflichtfelder required, Rest optional
 export interface KillInsert {
   hunt_id?: string | null
