@@ -35,7 +35,7 @@ function composeHuntName(
 }
 
 export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
-  const { activeHunt, loading } = useActiveHunt()
+  const { activeHunt } = useActiveHunt()
   const router = useRouter()
 
   const [phase, setPhase] = useState<Phase>('wildart')
@@ -212,7 +212,6 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
         position={gpsPosition}
         huntId={effectiveHuntId}
         gpsLoading={gpsLoading}
-        noHuntHint={!loading && !effectiveHuntId}
         onKillSuccess={handleKillSuccess}
       />
     )

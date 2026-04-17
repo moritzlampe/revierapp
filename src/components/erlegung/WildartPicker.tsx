@@ -81,7 +81,6 @@ interface WildartPickerProps {
   onSuccess?: (killId: string) => void
   onKillSuccess?: (killIds: string[]) => void
   gpsLoading?: boolean
-  noHuntHint?: boolean
 }
 
 export function WildartPicker({
@@ -91,7 +90,6 @@ export function WildartPicker({
   huntId = null,
   onKillSuccess,
   gpsLoading,
-  noHuntHint,
 }: WildartPickerProps) {
   const [step, setStep] = useState<'group' | 'detail' | 'flat'>('group')
   const [selectedGroup, setSelectedGroup] = useState<WildGroup | null>(null)
@@ -349,19 +347,6 @@ export function WildartPicker({
 
         {/* Scrollable Content */}
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '0 1rem 1rem' }}>
-          {/* Info-Banner */}
-          {noHuntHint && step === 'group' && (
-            <div style={{
-              fontSize: '0.75rem',
-              color: 'var(--orange)',
-              background: 'rgba(255,143,0,0.1)',
-              borderRadius: 'var(--radius)',
-              padding: '0.5rem 0.75rem',
-              marginBottom: '0.75rem',
-            }}>
-              Ohne aktive Jagd — Erlegung wird ohne Hunt-Bezug gespeichert.
-            </div>
-          )}
           {gpsLoading && step === 'group' && (
             <div style={{
               fontSize: '0.75rem',
