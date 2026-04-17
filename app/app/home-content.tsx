@@ -43,12 +43,15 @@ type Hunt = {
   id: string
   name: string
   type: string
+  kind: 'group' | 'solo'
   status: string
   invite_code: string
   started_at: string
   ended_at: string | null
   created_at: string
   creator_id: string
+  district_id: string | null
+  district_name: string | null
   myRole: string
 }
 
@@ -121,6 +124,34 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   const [chatFilter, setChatFilter] = useState<'alle' | 'ungelesen' | 'gruppen' | 'direkt'>('alle')
   const [jagdFilter, setJagdFilter] = useState<'alle' | 'live' | 'geplant' | 'vergangen'>('alle')
 
+  // Kind- und Revier-Filter — initial aus URL-Parametern (?kind=, ?revier=)
+  const [jagdKindFilter, setJagdKindFilter] = useState<'alle' | 'group' | 'solo'>(() => {
+    const k = searchParams.get('kind')
+    return k === 'group' || k === 'solo' ? k : 'alle'
+  })
+  const [jagdRevierFilter, setJagdRevierFilter] = useState<string | null>(() => {
+    const r = searchParams.get('revier')
+    return r && r.length > 0 ? r : null
+  })
+
+  // URL-Sync: nur non-default-Werte in die URL schreiben. Beim ersten Mount überspringen,
+  // damit die bestehende localStorage-Tab-Redirect-Logik nicht gestört wird. tab-Param bleibt erhalten.
+  const filterUrlMountedRef = useRef(false)
+  useEffect(() => {
+    if (!filterUrlMountedRef.current) {
+      filterUrlMountedRef.current = true
+      return
+    }
+    const params = new URLSearchParams()
+    if (tabParam === 'jagden' || tabParam === 'chats') params.set('tab', tabParam)
+    if (jagdKindFilter !== 'alle') params.set('kind', jagdKindFilter)
+    if (jagdRevierFilter) params.set('revier', jagdRevierFilter)
+    const qs = params.toString()
+    router.replace(qs ? `/app?${qs}` : '/app', { scroll: false })
+    // tabParam absichtlich nicht in deps — Tab-Wechsel steuert eigene Navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jagdKindFilter, jagdRevierFilter])
+
   // Suche beim Tab-Wechsel zurücksetzen
   const prevTabRef = useRef(activeTab)
   useEffect(() => {
@@ -147,22 +178,30 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   const activeCloseRef = useRef<(() => void) | null>(null)
 
   // Client-seitiges Nachladen der Jagden (Server-Cache kann veraltet sein)
+  // Filter (Kind/Revier) benötigt vollständige Hunt-Liste; bei >200 Hunts später Pagination.
   const loadHunts = useCallback(async () => {
     const { data: myParticipations } = await supabase
       .from('hunt_participants')
       .select(`
         hunt_id, role,
-        hunts (id, name, type, status, invite_code, started_at, ended_at, created_at, creator_id)
+        hunts (
+          id, name, type, kind, status, invite_code, started_at, ended_at, created_at, creator_id, district_id,
+          districts (id, name)
+        )
       `)
       .eq('user_id', userId)
       .eq('status', 'joined')
       .order('created_at', { ascending: false })
-      .limit(10)
+      .limit(200)
 
     if (myParticipations) {
       const freshHunts = myParticipations
         .filter((p: any) => p.hunts)
-        .map((p: any) => ({ ...p.hunts, myRole: p.role }))
+        .map((p: any) => ({
+          ...p.hunts,
+          myRole: p.role,
+          district_name: p.hunts?.districts?.name ?? null,
+        }))
       setHunts(freshHunts)
     }
   }, [supabase, userId])
@@ -180,10 +219,21 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       const q = searchQuery.toLowerCase()
       list = list.filter(h => h.name.toLowerCase().includes(q))
     } else {
-      // Filter-Pills nur wenn keine Suche aktiv
+      // Filter nur wenn keine Suche aktiv
       if (jagdFilter === 'live') list = list.filter(h => h.status === 'active')
       else if (jagdFilter === 'geplant') list = list.filter(h => h.status === 'planned')
       else if (jagdFilter === 'vergangen') list = list.filter(h => h.status === 'completed')
+
+      if (jagdKindFilter !== 'alle') {
+        list = list.filter(h => h.kind === jagdKindFilter)
+      }
+      if (jagdRevierFilter) {
+        if (jagdRevierFilter === 'ohne_revier') {
+          list = list.filter(h => !h.district_id)
+        } else {
+          list = list.filter(h => h.district_id === jagdRevierFilter)
+        }
+      }
     }
     // Live-Jagden immer oben
     return list.sort((a, b) => {
@@ -193,7 +243,26 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       if (!aLive && bLive) return 1
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
-  }, [hunts, searchQuery, jagdFilter])
+  }, [hunts, searchQuery, jagdFilter, jagdKindFilter, jagdRevierFilter])
+
+  // Revier-Optionen für Dropdown: Top 5 nach Häufigkeit, dann Divider, dann Rest alphabetisch.
+  // "Ohne Revier" ist eine normale Option (value: 'ohne_revier'), konkurriert mit Revieren um Top 5.
+  const revierOptions = useMemo(() => {
+    const freq: Record<string, { label: string; value: string; count: number }> = {}
+    hunts.forEach(h => {
+      const key = h.district_id ?? 'ohne_revier'
+      const label = h.district_id ? (h.district_name || 'Unbekanntes Revier') : 'Ohne Revier'
+      if (!freq[key]) freq[key] = { label, value: key, count: 0 }
+      freq[key].count++
+    })
+    const all = Object.values(freq)
+    const byFreq = [...all].sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label, 'de'))
+    const top5 = byFreq.slice(0, 5)
+    const restAlpha = byFreq.slice(5).sort((a, b) => a.label.localeCompare(b.label, 'de'))
+    return { top5, rest: restAlpha }
+  }, [hunts])
+
+  const filtersActive = jagdFilter !== 'alle' || jagdKindFilter !== 'alle' || jagdRevierFilter !== null
 
   // Gefilterte Chat-Liste
   const filteredChats = useMemo(() => {
@@ -574,14 +643,98 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         </div>
       </div>
 
+      {/* Kind-Segmented-Control + Revier-Dropdown (nur Jagden-Tab) */}
+      {activeTab === 'jagden' && (
+        <div className="px-5 mb-3 flex items-center gap-2" style={{
+          opacity: searchQuery ? 0.5 : 1,
+          pointerEvents: searchQuery ? 'none' : 'auto',
+        }}>
+          {/* iOS-Segmented-Control: dunkelgrauer Container, aktive Pill hervorgehoben.
+              Unterscheidet sich visuell klar von den Status-Pills darüber (Typ- vs. Status-Filter). */}
+          <div style={{
+            display: 'inline-flex',
+            background: 'var(--surface-2)',
+            borderRadius: '9999px',
+            padding: '0.1875rem',
+            border: '1px solid var(--border)',
+          }}>
+            {(['alle', 'group', 'solo'] as const).map(k => (
+              <button
+                key={k}
+                onClick={() => setJagdKindFilter(k)}
+                style={{
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: '9999px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  background: jagdKindFilter === k ? 'var(--green)' : 'transparent',
+                  color: jagdKindFilter === k ? 'white' : 'var(--text-2)',
+                  border: 'none',
+                  minHeight: '1.875rem',
+                  transition: 'background 0.15s',
+                }}
+              >
+                {k === 'alle' ? 'Alle' : k === 'group' ? 'Gruppe' : 'Einzel'}
+              </button>
+            ))}
+          </div>
+
+          {/* Revier-Dropdown — native <select> triggert auf iOS den nativen Picker. */}
+          <select
+            value={jagdRevierFilter ?? ''}
+            onChange={(e) => setJagdRevierFilter(e.target.value || null)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              borderRadius: '9999px',
+              padding: '0 0.875rem',
+              height: '2.25rem',
+              color: 'var(--text)',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              appearance: 'none',
+              WebkitAppearance: 'none',
+              backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(240,240,232,0.5)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 0.75rem center',
+              paddingRight: '2rem',
+            }}
+          >
+            <option value="">Alle Reviere</option>
+            {revierOptions.top5.map(o => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+            {revierOptions.rest.length > 0 && (
+              <option disabled>──────────</option>
+            )}
+            {revierOptions.rest.map(o => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* === JAGDEN TAB === */}
       <div className="flex-1 flex flex-col" style={{ display: activeTab === 'jagden' ? undefined : 'none' }}>
           {filteredHunts.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
               <p className="text-3xl mb-3">🌲</p>
-              <p className="font-semibold mb-1">{searchQuery ? 'Keine Treffer' : 'Noch keine Jagden'}</p>
+              <p className="font-semibold mb-1">
+                {searchQuery ? 'Keine Treffer' : filtersActive ? 'Keine Treffer' : 'Noch keine Jagden'}
+              </p>
               <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-                {searchQuery ? 'Versuch einen anderen Suchbegriff.' : 'Starte deine erste Jagd oder tritt per Link bei.'}
+                {searchQuery
+                  ? 'Versuch einen anderen Suchbegriff.'
+                  : filtersActive
+                    ? 'Keine Jagden mit diesen Filtern.'
+                    : 'Starte deine erste Jagd oder tritt per Link bei.'}
               </p>
             </div>
           ) : (
