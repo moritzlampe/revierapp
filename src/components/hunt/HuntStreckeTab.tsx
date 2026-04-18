@@ -96,8 +96,14 @@ export default function HuntStreckeTab({ huntId, participants }: HuntStreckeTabP
 
   return (
     <div
-      className="flex-1 overflow-y-auto"
-      style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
+      className="flex-1 min-h-0 overflow-y-auto"
+      style={{
+        padding: '0.75rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.75rem',
+        WebkitOverflowScrolling: 'touch',
+      }}
     >
       {batches.map(batch => (
         <BatchCard
@@ -164,13 +170,19 @@ function KillRow({ kill }: { kill: Kill }) {
     >
       <span style={{ color: 'var(--text-3)' }}>•</span>
       <span style={{ color: 'var(--text)' }}>{label}</span>
+      {kill.status === 'wounded' && (
+        <span
+          aria-label="Krankschuss"
+          title="Krankgeschossen"
+          style={{ fontSize: '0.875rem', color: 'var(--orange)' }}
+        >
+          🩹
+        </span>
+      )}
       {extras.length > 0 && (
         <span style={{ color: 'var(--text-3)', fontSize: '0.8125rem' }}>
           ({extras.join(', ')})
         </span>
-      )}
-      {kill.status === 'wounded' && (
-        <span style={{ marginLeft: 'auto' }} title="Krankgeschossen">🩹</span>
       )}
     </li>
   )
