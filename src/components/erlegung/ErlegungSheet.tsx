@@ -12,6 +12,7 @@ import { findDistrictsAtPoint } from '@/lib/supabase/districts'
 import { reverseGeocode } from '@/lib/geocoding'
 import { createSoloHunt } from '@/lib/supabase/hunts'
 import { showToast } from '@/lib/erlegung/toast'
+import { uploadPendingPhotosForHunt } from '@/lib/photos/upload-batch'
 import type { Revier } from '@/lib/types/revier'
 
 interface ErlegungSheetProps {
@@ -54,6 +55,11 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
     districts: Revier[]
     resolve: (d: Revier | null) => void
   } | null>(null)
+
+  // Foto-Upload-Fortschritt während Auto-Solo-Hunt-Flow
+  const [photoProgress, setPhotoProgress] = useState<
+    { current: number; total: number } | null
+  >(null)
 
   const effectiveHuntId = activeHunt?.id ?? soloHuntIdRef.current
 
@@ -103,12 +109,13 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
         setDistrictPickerState(null)
       }
       setPhase('wildart')
+      setPhotoProgress(null)
     }
     // districtPickerState bewusst nicht in deps — nur auf open-Change reagieren
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  async function handleKillSuccess(killIds: string[]) {
+  async function handleKillSuccess(killIds: string[], pendingPhotos: File[]) {
     // Fall 1: Hunt existiert (aktive Hunt oder soloHuntIdRef von vorherigem Kill)
     const existingHuntId = activeHunt?.id ?? soloHuntIdRef.current
     if (existingHuntId) {
@@ -188,16 +195,48 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
         .update({ hunt_id: huntId })
         .in('id', killIds)
 
-      // 2g: Ref setzen + Sheet schließen + Redirect
+      // 2g: Fotos hochladen (falls welche gepuffert sind).
+      // Sheet bleibt offen, Text wechselt auf „Lade Foto X/Y …" —
+      // der erste onProgress-Call setzt den Zustand vor dem ersten await.
+      if (pendingPhotos.length > 0) {
+        try {
+          const { uploaded, failed } = await uploadPendingPhotosForHunt({
+            huntId,
+            killIds,
+            photos: pendingPhotos,
+            userId: user.id,
+            onProgress: (current, total) => setPhotoProgress({ current, total }),
+          })
+
+          if (failed > 0 && uploaded === 0) {
+            showToast('Fotos konnten nicht hochgeladen werden', 'warning')
+          } else if (failed > 0) {
+            showToast(
+              `${uploaded} von ${pendingPhotos.length} Fotos hochgeladen`,
+              'warning',
+            )
+          }
+        } finally {
+          setPhotoProgress(null)
+        }
+      }
+
+      // 2h: Ref setzen + Sheet schließen + Redirect
       soloHuntIdRef.current = huntId
       onOpenChange(false)
       router.push(`/app/hunt/${huntId}?afterKill=1`)
 
     } catch (err) {
       console.error('[handleKillSuccess] Solo-Hunt-Erstellung fehlgeschlagen:', err)
-      // Kills bleiben mit hunt_id: null — User kann sie später zuordnen
+      // Kills bleiben mit hunt_id: null — User kann sie später zuordnen.
+      // Gepufferte Fotos gehen verloren (kein Retry-UI, Scope-Out).
       onOpenChange(false)
-      showToast('Erlegung gespeichert, aber Einzeljagd konnte nicht erstellt werden.', 'warning')
+      showToast(
+        pendingPhotos.length > 0
+          ? 'Erlegung gespeichert, aber Einzeljagd konnte nicht erstellt werden. Fotos wurden nicht gespeichert.'
+          : 'Erlegung gespeichert, aber Einzeljagd konnte nicht erstellt werden.',
+        'warning',
+      )
     }
   }
 
@@ -243,7 +282,9 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
                 style={{ color: 'var(--green)', animation: 'spin 1s linear infinite' }}
               />
               <p style={{ color: 'var(--text-2)', fontSize: '0.875rem' }}>
-                Einzeljagd wird gestartet …
+                {photoProgress
+                  ? `Lade Foto ${photoProgress.current}/${photoProgress.total} …`
+                  : 'Einzeljagd wird gestartet …'}
               </p>
             </div>
           )}

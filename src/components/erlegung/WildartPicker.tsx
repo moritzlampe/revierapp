@@ -17,8 +17,7 @@ import {
 import { insertKillBatch } from '@/lib/erlegung/insertKill'
 import { showToast } from '@/lib/erlegung/toast'
 import PhotoCapture from '@/components/photo/PhotoCapture'
-import { uploadPhoto } from '@/lib/photos/upload'
-import { insertHuntPhoto } from '@/lib/photos/hunt-photos'
+import { uploadPendingPhotosForHunt } from '@/lib/photos/upload-batch'
 import { createClient } from '@/lib/supabase/client'
 
 const noSelectStyle: React.CSSProperties = {
@@ -83,7 +82,7 @@ interface WildartPickerProps {
   position?: { lat: number; lng: number; accuracy?: number; captured_at?: string } | null
   huntId?: string | null
   onSuccess?: (killId: string) => void
-  onKillSuccess?: (killIds: string[]) => void
+  onKillSuccess?: (killIds: string[], pendingPhotos: File[]) => void
   gpsLoading?: boolean
 }
 
@@ -306,37 +305,28 @@ export function WildartPicker({
         status: krankMode ? 'wounded' : 'harvested',
       })
 
-      // Foto-Upload (nur wenn huntId + userId + Fotos vorhanden)
+      // Foto-Upload (nur wenn huntId + userId + Fotos vorhanden).
+      // Im Auto-Solo-Hunt-Flow ist huntId hier null — die Fotos werden
+      // dann vom ErlegungSheet nach createSoloHunt hochgeladen.
       let uploadedCount = 0
       let failedCount = 0
       if (pendingPhotos.length > 0 && huntId && userId) {
-        for (let i = 0; i < pendingPhotos.length; i++) {
-          setUploadProgress({ current: i + 1, total: pendingPhotos.length })
-          try {
-            const { url, path } = await uploadPhoto({
-              file: pendingPhotos[i],
-              userId,
-              entityType: 'hunt',
-              entityId: huntId,
-            })
-            await insertHuntPhoto({
-              huntId,
-              killIds,
-              storagePath: path,
-              url,
-              uploadedBy: userId,
-            })
-            uploadedCount++
-          } catch (photoErr) {
-            console.error(`[WildartPicker] photo ${i + 1} upload failed`, photoErr)
-            failedCount++
+        const { uploaded, failed } = await uploadPendingPhotosForHunt({
+          huntId,
+          killIds,
+          photos: pendingPhotos,
+          userId,
+          onProgress: (current, total) => setUploadProgress({ current, total }),
+          onItemError: (i, total, err) => {
             showToast(
-              `Foto ${i + 1} von ${pendingPhotos.length} fehlgeschlagen`,
+              `Foto ${i + 1} von ${total} fehlgeschlagen`,
               'warning',
-              photoErr instanceof Error ? photoErr.message : 'Unbekannter Fehler',
+              err instanceof Error ? err.message : 'Unbekannter Fehler',
             )
-          }
-        }
+          },
+        })
+        uploadedCount = uploaded
+        failedCount = failed
         setUploadProgress(null)
       }
 
@@ -358,10 +348,14 @@ export function WildartPicker({
         subtext,
       )
 
+      // Fotos, die der Parent ggf. noch hochladen muss (Auto-Solo-Hunt-Flow).
+      // Im Gruppen-Flow (huntId vorhanden) wurden sie oben bereits hochgeladen
+      // und wir reichen ein leeres Array weiter.
+      const photosForParent = huntId ? [] : pendingPhotos
       setPendingPhotos([])
 
       if (onKillSuccess) {
-        onKillSuccess(killIds)
+        onKillSuccess(killIds, photosForParent)
       } else {
         handleClose()
       }
@@ -735,37 +729,36 @@ export function WildartPicker({
               }}
             >↻</button>
 
-            {/* Foto — nur wenn huntId vorhanden (Auto-Solo-Hunt-Flow: TODO separater Sprint) */}
-            {huntId && (
-              <PhotoCapture
-                quality="documentation"
-                mode="camera"
+            {/* Foto — im Auto-Solo-Hunt-Flow (huntId === null) übernimmt
+                ErlegungSheet den Upload nach createSoloHunt. */}
+            <PhotoCapture
+              quality="documentation"
+              mode="camera"
+              disabled={photoUploading || submitting}
+              onCapture={handlePhotoBuffer}
+              onError={handlePhotoError}
+            >
+              <button
+                type="button"
+                aria-label="Foto hinzufügen"
                 disabled={photoUploading || submitting}
-                onCapture={handlePhotoBuffer}
-                onError={handlePhotoError}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  background: pendingPhotos.length > 0 ? 'rgba(107,159,58,0.15)' : 'transparent',
+                  color: pendingPhotos.length > 0 ? 'var(--green)' : 'var(--text-2)',
+                  border: `1px solid ${pendingPhotos.length > 0 ? 'var(--green)' : 'var(--border)'}`,
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  minHeight: '2.75rem',
+                  opacity: (photoUploading || submitting) ? 0.5 : 1,
+                  WebkitTapHighlightColor: 'transparent',
+                  cursor: (photoUploading || submitting) ? 'not-allowed' : 'pointer',
+                }}
               >
-                <button
-                  type="button"
-                  aria-label="Foto hinzufügen"
-                  disabled={photoUploading || submitting}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    background: pendingPhotos.length > 0 ? 'rgba(107,159,58,0.15)' : 'transparent',
-                    color: pendingPhotos.length > 0 ? 'var(--green)' : 'var(--text-2)',
-                    border: `1px solid ${pendingPhotos.length > 0 ? 'var(--green)' : 'var(--border)'}`,
-                    borderRadius: '0.5rem',
-                    fontSize: '0.875rem',
-                    fontWeight: 500,
-                    minHeight: '2.75rem',
-                    opacity: (photoUploading || submitting) ? 0.5 : 1,
-                    WebkitTapHighlightColor: 'transparent',
-                    cursor: (photoUploading || submitting) ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  📸{pendingPhotos.length > 0 ? ` (${pendingPhotos.length})` : ''}
-                </button>
-              </PhotoCapture>
-            )}
+                📸{pendingPhotos.length > 0 ? ` (${pendingPhotos.length})` : ''}
+              </button>
+            </PhotoCapture>
 
             {/* Melden — dominant */}
             <button
