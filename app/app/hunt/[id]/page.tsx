@@ -23,7 +23,7 @@ function getAvatarColor(id: string): string {
 }
 
 type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
-type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string } | null }
+type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string; anonymize_kills: boolean } | null }
 type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null; adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null }
 
 export default function HuntPage() {
@@ -172,7 +172,7 @@ export default function HuntPage() {
     const { data: hunt } = await supabase.from('hunts').select('*').eq('id', params.id).single()
     if (!hunt) { router.push('/app?tab=jagden'); return }
 
-    const { data: parts } = await supabase.from('hunt_participants').select('*, profiles(display_name)').eq('hunt_id', params.id)
+    const { data: parts } = await supabase.from('hunt_participants').select('*, profiles(display_name, anonymize_kills)').eq('hunt_id', params.id)
     const { data: { user } } = await supabase.auth.getUser()
 
     setHunt(hunt)
