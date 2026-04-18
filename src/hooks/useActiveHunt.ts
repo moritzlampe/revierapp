@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export interface ActiveHunt {
@@ -17,19 +18,26 @@ export interface ActiveHunt {
  * Liefert die aktuell aktive Hunt des eingeloggten Users (status='active'),
  * oder null wenn keine aktiv.
  * Bei mehreren aktiven Hunts: jüngste gewinnt.
+ *
+ * Re-fetch bei Route-Wechsel (z.B. nach endHunt → router.push('/app'))
+ * und wenn der Tab wieder sichtbar wird, damit `activeHunt` nicht auf
+ * einer beendeten Jagd stehen bleibt, solange das Layout gemountet ist.
  */
 export function useActiveHunt() {
   const [activeHunt, setActiveHunt] = useState<ActiveHunt | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
+  const pathname = usePathname()
 
   useEffect(() => {
-    let mounted = true
+    let cancelled = false
+    const supabase = createClient()
 
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
+      if (cancelled) return
       if (!user) {
-        if (mounted) { setActiveHunt(null); setLoading(false) }
+        setActiveHunt(null)
+        setLoading(false)
         return
       }
 
@@ -43,23 +51,31 @@ export function useActiveHunt() {
         .limit(1)
         .maybeSingle()
 
-      if (mounted) {
-        setActiveHunt(data ? {
-          id: data.id,
-          name: data.name,
-          type: data.type,
-          kind: (data.kind as 'group' | 'solo') ?? 'group',
-          district_id: data.district_id,
-          started_at: data.started_at,
-          last_activity_at: data.last_activity_at ?? null,
-        } : null)
-        setLoading(false)
-      }
+      if (cancelled) return
+      setActiveHunt(data ? {
+        id: data.id,
+        name: data.name,
+        type: data.type,
+        kind: (data.kind as 'group' | 'solo') ?? 'group',
+        district_id: data.district_id,
+        started_at: data.started_at,
+        last_activity_at: data.last_activity_at ?? null,
+      } : null)
+      setLoading(false)
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') load()
     }
 
     load()
-    return () => { mounted = false }
-  }, [])
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [pathname])
 
   return { activeHunt, loading }
 }
