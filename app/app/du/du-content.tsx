@@ -16,6 +16,7 @@ import {
   LogOut,
   X,
   Camera,
+  Eye,
 } from 'lucide-react'
 type Status = 'available' | 'on_hunt' | 'do_not_disturb'
 
@@ -211,6 +212,13 @@ export default function DuContent({
 
         {/* === Sektion: Einstellungen === */}
         <Section title="Einstellungen">
+          <Link href="/app/du/jagdeinstellungen" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <MenuItem
+              icon={<Eye size={18} />}
+              label="Jagdeinstellungen"
+              sublabel="Privatsphäre, Standardwerte"
+            />
+          </Link>
           <MenuItem
             icon={<Bell size={18} />}
             label="Benachrichtigungen"
