@@ -8,6 +8,7 @@ import type { AssignStand, AssignParticipant, FreePosition } from '@/components/
 import { useGeolocation } from '@/hooks/useGeolocation'
 import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
 import { parsePointHex } from '@/lib/geo-utils'
+import { createSoloHunt } from '@/lib/supabase/hunts'
 
 const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
 const AVATAR_HEX = ['#2E7D32', '#1565C0', '#E65100', '#6A1B9A', '#00838F', '#C62828']
@@ -55,6 +56,7 @@ function getInitials(name: string) {
 export default function CreateHuntPage() {
   const router = useRouter()
   const [step, setStep] = useState<1 | 2>(1)
+  const [huntKind, setHuntKind] = useState<'group' | 'solo'>('group')
   const [name, setName] = useState('')
   const [type, setType] = useState('ansitz')
   const [wildPresets, setWildPresets] = useState<string[]>(['schwarzwild', 'rehwild', 'fuchs'])
@@ -222,9 +224,41 @@ export default function CreateHuntPage() {
   )
   const selectedCount = contacts.filter(c => c.selected).length
 
+  // Einzeljagd direkt erstellen (ohne Step 2 / Stand-Zuweisung)
+  async function handleCreateSolo(e: React.FormEvent) {
+    e.preventDefault()
+    if (!currentUser) return
+    setLoading(true)
+    setError(null)
+
+    const dateStr = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+    const finalName = name.trim() || `Einzeljagd · ${dateStr}`
+
+    if (selectedDistrictId) {
+      localStorage.setItem('last_selected_revier_id', selectedDistrictId)
+    } else {
+      localStorage.removeItem('last_selected_revier_id')
+    }
+
+    try {
+      const { id } = await createSoloHunt({
+        userId: currentUser.id,
+        districtId: selectedDistrictId || null,
+        name: finalName,
+      })
+      router.push(`/app/hunt/${id}`)
+    } catch (err: any) {
+      setError(err?.message ?? 'Einzeljagd konnte nicht erstellt werden.')
+      setLoading(false)
+    }
+  }
+
   // Hochsitze + Grenze laden und zu Step 2 wechseln
   async function handleContinue(e: React.FormEvent) {
     e.preventDefault()
+    if (huntKind === 'solo') {
+      return handleCreateSolo(e)
+    }
     setLoadingSeats(true)
 
     const supabase = createClient()
@@ -853,17 +887,63 @@ export default function CreateHuntPage() {
           style={{ color: 'var(--text-2)', background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
         <div>
           <h1 className="text-lg font-bold">🎯 Jagd starten</h1>
-          <p className="text-xs" style={{ color: 'var(--text-3)' }}>Wie bei WhatsApp — wer die App hat wird direkt hinzugefügt.</p>
+          <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+            {huntKind === 'solo'
+              ? 'Allein ansitzen — GPS, Karte, Wildbeobachtung.'
+              : 'Wie bei WhatsApp — wer die App hat wird direkt hinzugefügt.'}
+          </p>
         </div>
       </div>
 
       <form onSubmit={handleContinue} className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+        {/* Jagd-Typ Toggle */}
+        <div>
+          <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Typ</label>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem',
+            padding: '0.25rem', borderRadius: 'var(--radius)',
+            background: 'var(--surface-2)', border: '1px solid var(--border)',
+          }}>
+            <button
+              type="button"
+              onClick={() => setHuntKind('group')}
+              style={{
+                height: '2.75rem', borderRadius: 'calc(var(--radius) - 4px)',
+                fontSize: '0.9375rem', fontWeight: 600,
+                background: huntKind === 'group' ? 'var(--green)' : 'transparent',
+                color: huntKind === 'group' ? '#fff' : 'var(--text-2)',
+                transition: 'background 120ms, color 120ms',
+              }}
+            >
+              👥 Gruppenjagd
+            </button>
+            <button
+              type="button"
+              onClick={() => setHuntKind('solo')}
+              style={{
+                height: '2.75rem', borderRadius: 'calc(var(--radius) - 4px)',
+                fontSize: '0.9375rem', fontWeight: 600,
+                background: huntKind === 'solo' ? 'var(--green)' : 'transparent',
+                color: huntKind === 'solo' ? '#fff' : 'var(--text-2)',
+                transition: 'background 120ms, color 120ms',
+              }}
+            >
+              🎯 Einzeljagd
+            </button>
+          </div>
+        </div>
+
         {/* Name */}
         <div>
           <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>
             Name <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>optional</span>
           </label>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="z.B. Abendansitz Brockwinkel" />
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={huntKind === 'solo' ? 'z.B. Einzeljagd · 18.04.' : 'z.B. Abendansitz Brockwinkel'}
+          />
         </div>
 
         {/* Revier */}
@@ -920,6 +1000,7 @@ export default function CreateHuntPage() {
         </div>
 
         {/* Teilnehmer */}
+        {huntKind === 'group' && (
         <div>
           <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Jäger einladen</label>
 
@@ -996,6 +1077,7 @@ export default function CreateHuntPage() {
             </div>
           </div>
         </div>
+        )}
 
         {error && <p className="text-sm" style={{ color: 'var(--red)' }}>{error}</p>}
 
@@ -1003,11 +1085,13 @@ export default function CreateHuntPage() {
         <button type="submit" disabled={loading || loadingSeats}
           className="w-full font-bold text-base text-white transition disabled:opacity-50"
           style={{ height: '3.5rem', borderRadius: 'var(--radius)', background: 'var(--green)', fontSize: '1rem' }}>
-          {loadingSeats
-            ? 'Lade Hochsitze...'
-            : loading
-              ? 'Wird erstellt...'
-              : `Weiter: Stände zuweisen →`
+          {loading
+            ? 'Wird erstellt...'
+            : loadingSeats
+              ? 'Lade Hochsitze...'
+              : huntKind === 'solo'
+                ? '🎯 Einzeljagd starten'
+                : 'Weiter: Stände zuweisen →'
           }
         </button>
       </form>
