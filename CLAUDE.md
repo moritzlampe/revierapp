@@ -52,7 +52,7 @@ Ziel: Kommerzielle SaaS-Lösung für Jagdpächter, Jagdleiter, Berufsjäger.
 
 ### Supabase-Regeln
 
-11. **Realtime nur auf 5 Tabellen:** positions_current, messages, kills, tracking_requests, hunts.
+11. **Realtime-Publication `supabase_realtime` enthält folgende Tabellen:** positions_current, messages, kills, tracking_requests, hunts, chat_groups, chat_group_members, hunt_photos. Weitere Tabellen nur nach expliziter Entscheidung hinzufügen.
 12. **positions_current ist UPSERT**, positions ist Append-Log. Nicht verwechseln.
 13. **Trichinen-Trigger ist automatisch** — bei Schwarzwild wird `trichinen_pflicht = true` gesetzt.
 14. **Gast-Beitritt:** hunt_participants hat CHECK (user_id OR guest_name). Nie beide NULL.
