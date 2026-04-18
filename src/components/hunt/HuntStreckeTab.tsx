@@ -246,6 +246,7 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
             borderRadius: 'var(--radius)',
             padding: '0.875rem',
             marginTop: '0.75rem',
+            flexShrink: 0,
           }}
         >
           <h3
@@ -307,6 +308,7 @@ function BatchCard({
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius)',
         overflow: 'hidden',
+        flexShrink: 0,
       }}
     >
       <div
