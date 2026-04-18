@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo } from 'react'
-import { useHuntKills } from '@/hooks/useHuntKills'
+import { useCallback, useMemo } from 'react'
+import { Camera } from 'lucide-react'
+import { useHuntStrecke } from '@/hooks/useHuntStrecke'
 import type { Geschlecht, WildArt } from '@/lib/species-config'
 import {
   WILD_GROUP_CONFIG,
@@ -15,6 +16,10 @@ import {
   type ViewerContext,
 } from '@/lib/strecke/visibility'
 import { groupKillsByBatch } from '@/lib/erlegung/groupByBatch'
+import { getMoodPhotos, getPhotosForBatch } from '@/lib/strecke/photo-matching'
+import { deleteHuntPhoto } from '@/lib/photos/hunt-photos'
+import type { HuntPhoto } from '@/lib/types/hunt-photo'
+import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
 
 interface Participant {
   id: string
@@ -70,7 +75,7 @@ function formatTime(iso: string): string {
 }
 
 export default function HuntStreckeTab({ huntId, participants, userId }: HuntStreckeTabProps) {
-  const { kills, loading, error } = useHuntKills(huntId)
+  const { kills, photos, loading, error } = useHuntStrecke(huntId)
 
   // Viewer-Kontext: eigene Rolle + Anonymisierungswunsch.
   const viewer = useMemo<ViewerContext>(() => {
@@ -130,6 +135,54 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     [visibleKills],
   )
 
+  // Foto-Visibility: ein Kill-Foto ist nur sichtbar, wenn mindestens
+  // ein referenzierter Kill sichtbar ist. Mood-Fotos (ohne kill_ids)
+  // sind für alle Teilnehmer sichtbar — RLS genügt.
+  const visibleKillIds = useMemo(
+    () => new Set(visibleKills.map(k => k.id)),
+    [visibleKills],
+  )
+
+  const visiblePhotos = useMemo(
+    () =>
+      photos.filter(p => {
+        if (!p.kill_ids || p.kill_ids.length === 0) return true
+        return p.kill_ids.some(kid => visibleKillIds.has(kid))
+      }),
+    [photos, visibleKillIds],
+  )
+
+  const moodPhotos = useMemo(() => getMoodPhotos(visiblePhotos), [visiblePhotos])
+
+  // Pre-computed Set für O(1)-Lookup im KillRow-Indicator.
+  const killIdsWithPhotos = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of visiblePhotos) {
+      if (p.kill_ids) for (const kid of p.kill_ids) set.add(kid)
+    }
+    return set
+  }, [visiblePhotos])
+
+  const canDeletePhoto = useCallback(
+    (photo: HuntPhoto): boolean => {
+      if (!userId) return false
+      if (photo.uploaded_by === userId) return true
+      if (viewer.role === 'jagdleiter') return true
+      return false
+    },
+    [userId, viewer.role],
+  )
+
+  const handleDeletePhoto = useCallback(async (photo: HuntPhoto) => {
+    if (!confirm('Foto löschen?')) return
+    try {
+      await deleteHuntPhoto(photo.id, photo.storage_path)
+      // Realtime-Event propagiert Update automatisch
+    } catch (err) {
+      console.error('Foto-Lösch-Fehler', err)
+    }
+  }, [])
+
   if (loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
@@ -147,7 +200,7 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     )
   }
 
-  if (visibleBatches.length === 0) {
+  if (visibleBatches.length === 0 && moodPhotos.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
         <div className="text-5xl mb-4">🦌</div>
@@ -170,14 +223,78 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
         WebkitOverflowScrolling: 'touch',
       }}
     >
-      {visibleBatches.map(batch => (
-        <BatchCard key={batch.id} batch={batch} />
-      ))}
+      {visibleBatches.map(batch => {
+        const batchKillIds = batch.kills.map(k => k.id)
+        const batchPhotos = getPhotosForBatch(batchKillIds, visiblePhotos)
+        return (
+          <BatchCard
+            key={batch.id}
+            batch={batch}
+            photos={batchPhotos}
+            killIdsWithPhotos={killIdsWithPhotos}
+            canDeletePhoto={canDeletePhoto}
+            onDeletePhoto={handleDeletePhoto}
+          />
+        )
+      })}
+
+      {moodPhotos.length > 0 && (
+        <section
+          style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            padding: '0.875rem',
+            marginTop: '0.75rem',
+          }}
+        >
+          <h3
+            style={{
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'var(--text-2)',
+              marginBottom: '0.75rem',
+            }}
+          >
+            Stimmung & Strecke
+          </h3>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(6rem, 1fr))',
+              gap: '0.5rem',
+            }}
+          >
+            {moodPhotos.map(photo => (
+              <PhotoThumbnail
+                key={photo.id}
+                url={photo.url}
+                size={6}
+                onDelete={canDeletePhoto(photo) ? () => handleDeletePhoto(photo) : undefined}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
 
-function BatchCard({ batch }: { batch: DisplayKillBatch }) {
+interface BatchCardProps {
+  batch: DisplayKillBatch
+  photos: HuntPhoto[]
+  killIdsWithPhotos: Set<string>
+  canDeletePhoto: (photo: HuntPhoto) => boolean
+  onDeletePhoto: (photo: HuntPhoto) => void
+}
+
+function BatchCard({
+  batch,
+  photos,
+  killIdsWithPhotos,
+  canDeletePhoto,
+  onDeletePhoto,
+}: BatchCardProps) {
   // Alle Kills im Batch haben denselben reporter_id, also auch denselben
   // maskierten display_name und is_anonymized-Flag.
   const reporterName = batch.kills[0].display_name
@@ -213,14 +330,34 @@ function BatchCard({ batch }: { batch: DisplayKillBatch }) {
       </div>
       <ul style={{ listStyle: 'none', margin: 0, padding: '0.25rem 0' }}>
         {batch.kills.map(k => (
-          <KillRow key={k.id} kill={k} />
+          <KillRow key={k.id} kill={k} hasPhoto={killIdsWithPhotos.has(k.id)} />
         ))}
       </ul>
+      {photos.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.5rem',
+            overflowX: 'auto',
+            padding: '0.5rem 0.875rem 0.625rem',
+            borderTop: '1px solid var(--border-light)',
+          }}
+        >
+          {photos.map(photo => (
+            <PhotoThumbnail
+              key={photo.id}
+              url={photo.url}
+              size={4.5}
+              onDelete={canDeletePhoto(photo) ? () => onDeletePhoto(photo) : undefined}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function KillRow({ kill }: { kill: DisplayKill }) {
+function KillRow({ kill, hasPhoto }: { kill: DisplayKill; hasPhoto: boolean }) {
   const label = getWildArtLabel(kill.wild_art)
   const geschlecht = getGeschlechtLabel(kill.geschlecht)
   const extras: string[] = []
@@ -239,6 +376,13 @@ function KillRow({ kill }: { kill: DisplayKill }) {
     >
       <span style={{ color: 'var(--text-3)' }}>•</span>
       <span style={{ color: 'var(--text)' }}>{label}</span>
+      {hasPhoto && (
+        <Camera
+          size={14}
+          aria-label="Foto vorhanden"
+          style={{ color: 'var(--text-3)', flexShrink: 0 }}
+        />
+      )}
       {kill.status === 'wounded' && (
         <span
           aria-label="Krankschuss"
