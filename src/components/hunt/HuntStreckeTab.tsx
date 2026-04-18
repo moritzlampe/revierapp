@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Camera } from 'lucide-react'
 import { useHuntStrecke } from '@/hooks/useHuntStrecke'
+import StreckePhotoSheet from '@/components/hunt/StreckePhotoSheet'
 import type { Geschlecht, WildArt } from '@/lib/species-config'
 import {
   WILD_GROUP_CONFIG,
@@ -76,6 +77,7 @@ function formatTime(iso: string): string {
 
 export default function HuntStreckeTab({ huntId, participants, userId }: HuntStreckeTabProps) {
   const { kills, photos, loading, error } = useHuntStrecke(huntId)
+  const [photoSheetOpen, setPhotoSheetOpen] = useState(false)
 
   // Viewer-Kontext: eigene Rolle + Anonymisierungswunsch.
   const viewer = useMemo<ViewerContext>(() => {
@@ -202,13 +204,47 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
 
   if (visibleBatches.length === 0 && moodPhotos.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <div className="text-5xl mb-4">🦌</div>
-        <p className="text-lg font-bold mb-1">Noch keine Erlegungen</p>
-        <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-          Meldungen erscheinen hier automatisch.
-        </p>
-      </div>
+      <>
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <div className="text-5xl mb-4">🦌</div>
+          <p className="text-lg font-bold mb-1">Noch keine Erlegungen</p>
+          <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+            Meldungen erscheinen hier automatisch.
+          </p>
+          {userId && (
+            <button
+              type="button"
+              onClick={() => setPhotoSheetOpen(true)}
+              style={{
+                marginTop: '1.25rem',
+                padding: '0.75rem 1.25rem',
+                background: 'transparent',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
+                borderRadius: '0.75rem',
+                fontSize: '0.9375rem',
+                fontWeight: 500,
+                minHeight: '2.75rem',
+                cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              📷 Foto hinzufügen
+            </button>
+          )}
+        </div>
+        {userId && (
+          <StreckePhotoSheet
+            open={photoSheetOpen}
+            onOpenChange={setPhotoSheetOpen}
+            huntId={huntId}
+            userId={userId}
+            kills={kills}
+            participants={participants}
+            viewer={viewer}
+          />
+        )}
+      </>
     )
   }
 
@@ -216,13 +252,57 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     <div
       className="flex-1 min-h-0 overflow-y-auto"
       style={{
-        padding: '0.75rem',
         display: 'flex',
         flexDirection: 'column',
-        gap: '0.75rem',
         WebkitOverflowScrolling: 'touch',
       }}
     >
+      {userId && (
+        <div
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 2,
+            background: 'var(--bg)',
+            borderBottom: '1px solid var(--border)',
+            padding: '0.5rem 0.75rem',
+            flexShrink: 0,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setPhotoSheetOpen(true)}
+            style={{
+              width: '100%',
+              padding: '0.625rem 0.875rem',
+              background: 'var(--surface)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+              borderRadius: '0.75rem',
+              fontSize: '0.9375rem',
+              fontWeight: 500,
+              minHeight: '2.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              cursor: 'pointer',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <span aria-hidden="true">📷</span>
+            <span>+ Foto zur Strecke</span>
+          </button>
+        </div>
+      )}
+      <div
+        style={{
+          padding: '0.75rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.75rem',
+        }}
+      >
       {visibleBatches.map(batch => {
         const batchKillIds = batch.kills.map(k => k.id)
         const batchPhotos = getPhotosForBatch(batchKillIds, visiblePhotos)
@@ -276,6 +356,18 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
             ))}
           </div>
         </section>
+      )}
+      </div>
+      {userId && (
+        <StreckePhotoSheet
+          open={photoSheetOpen}
+          onOpenChange={setPhotoSheetOpen}
+          huntId={huntId}
+          userId={userId}
+          kills={kills}
+          participants={participants}
+          viewer={viewer}
+        />
       )}
     </div>
   )
