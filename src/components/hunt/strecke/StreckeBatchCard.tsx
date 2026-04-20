@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Camera } from 'lucide-react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import type { HuntPhoto } from '@/lib/types/hunt-photo'
@@ -12,6 +13,9 @@ import {
   type WildArt,
 } from '@/lib/species-config'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
+import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
+import { deleteHuntPhoto } from '@/lib/photos/hunt-photos'
+import { showToast } from '@/lib/erlegung/toast'
 
 interface DisplayKillBatch {
   id: string
@@ -27,6 +31,8 @@ interface StreckeBatchCardProps {
   killIdsWithPhotos: Set<string>
   killPhotoCounts: Map<string, number>
   isOwnBatch: boolean
+  /** User-ID des Viewers. Nötig um Foto-Delete-Overlay freizuschalten. */
+  viewerUserId: string | null
   onKillTap?: (kill: DisplayKill) => void
 }
 
@@ -92,8 +98,23 @@ export default function StreckeBatchCard({
   killIdsWithPhotos,
   killPhotoCounts,
   isOwnBatch,
+  viewerUserId,
   onKillTap,
 }: StreckeBatchCardProps) {
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleDeletePhoto = async (photo: HuntPhoto) => {
+    if (!viewerUserId || photo.uploaded_by !== viewerUserId) return
+    if (!window.confirm('Foto wirklich löschen?')) return
+    setDeletingId(photo.id)
+    try {
+      await deleteHuntPhoto(photo.id, photo.storage_path)
+    } catch (err) {
+      console.error('[BatchCard] Foto-Delete fehlgeschlagen', err)
+      showToast('Löschen fehlgeschlagen', 'warning')
+      setDeletingId(null)
+    }
+  }
   const reporterName = batch.kills[0].display_name
   const isAnonymized = batch.kills[0].is_anonymized
   const avatarSeed = isAnonymized ? reporterName : batch.reporter_id
@@ -233,20 +254,19 @@ export default function StreckeBatchCard({
             borderTop: '1px solid var(--border-default)',
           }}
         >
-          {photos.map(photo => (
-            <img
-              key={photo.id}
-              src={photo.url}
-              alt=""
-              style={{
-                width: '4.5rem',
-                height: '4.5rem',
-                objectFit: 'cover',
-                borderRadius: '8px',
-                flexShrink: 0,
-              }}
-            />
-          ))}
+          {photos.map(photo => {
+            const canDelete = Boolean(viewerUserId) && photo.uploaded_by === viewerUserId
+            const isDeleting = deletingId === photo.id
+            return (
+              <PhotoThumbnail
+                key={photo.id}
+                url={photo.url}
+                size={4.5}
+                shape="square"
+                onDelete={canDelete && !isDeleting ? () => handleDeletePhoto(photo) : undefined}
+              />
+            )
+          })}
         </div>
       )}
     </div>

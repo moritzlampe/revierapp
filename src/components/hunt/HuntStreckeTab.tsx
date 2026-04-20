@@ -342,6 +342,7 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
                 killIdsWithPhotos={killIdsWithPhotos}
                 killPhotoCounts={killPhotoCounts}
                 isOwnBatch={userId !== null && batch.reporter_id === userId}
+                viewerUserId={userId}
                 onKillTap={kill => openDetail(kill, 'strecke')}
               />
             )
