@@ -186,10 +186,13 @@ export default function StandDetailSheet({
                 }}>
                   {assignee.name}
                   {assignee.role === 'jagdleiter' && (
-                    <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem', color: 'var(--gold)' }}>🎖️</span>
+                    <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem', color: 'var(--accent-gold)' }}>🎖️</span>
+                  )}
+                  {assignee.tags?.includes('gruppenleiter') && (
+                    <span style={{ marginLeft: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>👥</span>
                   )}
                   {assignee.tags?.includes('hundefuehrer') && (
-                    <span style={{ marginLeft: '0.25rem', fontSize: '0.75rem', color: 'var(--orange)' }}>🐕</span>
+                    <span style={{ marginLeft: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>🐕</span>
                   )}
                 </p>
                 <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', margin: 0 }}>
