@@ -12,7 +12,14 @@ export type PinVariant =
   | { kind: 'wildkamera' }
   | { kind: 'sonstiges' }
 
-// --- Farbtabelle ---
+// --- Farbtabelle (Theme A "Moos auf Papier") ---
+//
+// Werte sind statisch gehaltene Theme-A-Hex-Zuweisungen, damit die
+// SVG-Strings ohne getComputedStyle() gebaut werden können. Muss bei
+// späteren Themes (B/C) um einen Token-Resolver ergänzt werden.
+//
+// Jede Kategorie wurde so gewählt, dass sie sowohl auf Paper-BG als
+// auch auf BKG-TopPlusOpen-Kacheln lesbar bleibt und semantisch passt.
 
 interface PinColors {
   bgFill: string
@@ -20,25 +27,27 @@ interface PinColors {
   iconColor: string
 }
 
-const SURFACE_2 = '#1c2818'
+const STROKE = 'rgba(0,0,0,0.4)'
+const ICON_ON_DARK = '#FFFFFF'
+const ICON_ON_PAPER = '#1F2618' // entspricht --text-primary
 
 function getPinColors(variant: PinVariant): PinColors {
   switch (variant.kind) {
     case 'sitzstand':
     case 'adhoc':
       return variant.occupied
-        ? { bgFill: '#8BC34A', bgStroke: 'rgba(0,0,0,0.5)', iconColor: '#FFFFFF' }
-        : { bgFill: '#E8E2D0', bgStroke: 'rgba(0,0,0,0.35)', iconColor: '#3a4a30' }
+        ? { bgFill: '#4A5A2A', bgStroke: STROKE, iconColor: ICON_ON_DARK }       // accent-primary (tiefgrün)
+        : { bgFill: '#D8D2BE', bgStroke: STROKE, iconColor: ICON_ON_PAPER }      // bg-elevated (Papier)
     case 'parkplatz':
-      return { bgFill: '#3B82F6', bgStroke: 'rgba(0,0,0,0.4)', iconColor: '#FFFFFF' }
+      return { bgFill: '#1F2618', bgStroke: STROKE, iconColor: ICON_ON_DARK }    // text-primary (fast schwarz — auffällige Ortsmarke)
     case 'kirrung':
-      return { bgFill: '#D97706', bgStroke: 'rgba(0,0,0,0.4)', iconColor: '#FFFFFF' }
+      return { bgFill: '#8C6A2E', bgStroke: STROKE, iconColor: ICON_ON_DARK }    // accent-gold (Futter-/Lockplatz, warm)
     case 'salzlecke':
-      return { bgFill: '#9CA3AF', bgStroke: 'rgba(0,0,0,0.4)', iconColor: '#FFFFFF' }
+      return { bgFill: '#5C644F', bgStroke: STROKE, iconColor: ICON_ON_DARK }    // text-secondary (mineralisch grau-grün)
     case 'wildkamera':
-      return { bgFill: '#A78BFA', bgStroke: 'rgba(0,0,0,0.4)', iconColor: '#FFFFFF' }
+      return { bgFill: '#5E6F38', bgStroke: STROKE, iconColor: ICON_ON_DARK }    // accent-primary-hover (optisch verwandt mit Sitzstand)
     case 'sonstiges':
-      return { bgFill: '#6B7280', bgStroke: 'rgba(0,0,0,0.4)', iconColor: '#FFFFFF' }
+      return { bgFill: '#8E8874', bgStroke: STROKE, iconColor: ICON_ON_DARK }    // border-strong (neutral Braun-Grau)
   }
 }
 
