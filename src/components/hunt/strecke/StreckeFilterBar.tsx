@@ -153,6 +153,7 @@ export default function StreckeFilterBar({
             type="button"
             onClick={onPhotoClick}
             aria-label="Foto hinzufügen"
+            className="tap-ripple"
             style={{
               width: '2.5rem',
               height: '2.5rem',
@@ -166,6 +167,7 @@ export default function StreckeFilterBar({
               borderRadius: '999px',
               cursor: 'pointer',
               WebkitTapHighlightColor: 'transparent',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)',
             }}
           >
             <Camera size={18} />
