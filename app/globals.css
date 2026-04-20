@@ -731,6 +731,41 @@ button:active {
 }
 
 /* ============================================================
+   Micro-Interactions (58.1h.e)
+   ============================================================ */
+
+/* Tap-Feedback: kurz dunkler beim Drücken.
+   Gilt für alle Elemente mit .tap-ripple. */
+.tap-ripple {
+  transition: filter 100ms ease-out, transform 100ms ease-out;
+}
+.tap-ripple:active {
+  filter: brightness(0.92);
+}
+
+/* Primary-Button Tap: BG-Wechsel auf hover-Ton. */
+.btn-primary-tap {
+  transition: background-color 100ms ease-out, filter 100ms ease-out;
+}
+.btn-primary-tap:active {
+  background: var(--accent-primary-hover) !important;
+}
+
+/* Filter-Pill: scale+color-Transition zusammen.
+   Implementierung via inline-style im Component für Active-Zustand. */
+.filter-pill:active {
+  filter: brightness(0.95);
+}
+
+/* Generischer Chevron-Rotate-Helper — auf SVG anwenden. */
+.chevron-rotate {
+  transition: transform 250ms ease;
+}
+.chevron-rotate[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+/* ============================================================
    Map Object Bottom Sheet
    ============================================================ */
 
@@ -739,11 +774,13 @@ button:active {
   inset: 0;
   z-index: 1100;
   background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   animation: sheet-fade-in 0.2s ease-out;
 }
 @keyframes sheet-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; backdrop-filter: blur(0); }
+  to { opacity: 1; backdrop-filter: blur(3px); }
 }
 
 .map-object-sheet {
@@ -755,7 +792,7 @@ button:active {
   background: var(--surface);
   border-top-left-radius: 1rem;
   border-top-right-radius: 1rem;
-  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.5);
+  box-shadow: 0 -0.25rem 1rem rgba(0, 0, 0, 0.2);
   animation: sheet-slide-up 0.3s ease-out;
   max-height: 80%;
   overflow-y: auto;

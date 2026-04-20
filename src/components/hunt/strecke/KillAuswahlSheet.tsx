@@ -348,6 +348,7 @@ function KillRow({
       type="button"
       onClick={onTap}
       disabled={disabled}
+      className={disabled ? undefined : 'tap-ripple'}
       style={{
         all: 'unset',
         display: 'flex',

@@ -774,6 +774,7 @@ export function WildartPicker({
             <button
               onClick={handleConfirmBatch}
               disabled={submitting}
+              className="btn-primary-tap"
               style={{
                 flex: 1,
                 padding: '0.875rem 1rem',

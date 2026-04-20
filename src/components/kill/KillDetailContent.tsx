@@ -470,6 +470,7 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
+      className="tap-ripple"
       style={{
         all: 'unset',
         flex: 1,
