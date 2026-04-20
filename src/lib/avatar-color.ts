@@ -8,9 +8,8 @@
  * Primär-Input: `user.id`. Fallback: `display_name`. Lowercase + trim, damit
  * kleine Tipp-Unterschiede ("Moritz " vs. "moritz") dieselbe Farbe ergeben.
  *
- * Diese Utility wird in Sprint 58.1h.c die vier parallelen Paletten
- * (`.av-1…6`, `AVATAR_COLORS`, `SEAT_AVATAR_COLORS`, `AVATAR_HEX`,
- * `SENDER_COLORS`) ablösen. In 58.1h.b existiert sie nur als Foundation.
+ * Seit Sprint 58.1h.c zentraler Helper — löst die vorherigen Paletten
+ * (`.av-1…6`, `SEAT_AVATAR_COLORS`, `AVATAR_HEX`, `SENDER_COLORS`) ab.
  */
 
 export const AVATAR_COLORS = [

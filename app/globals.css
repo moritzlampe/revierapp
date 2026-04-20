@@ -236,12 +236,6 @@ button:active {
 }
 .avatar-sm { width: 1.625rem; height: 1.625rem; font-size: 0.625rem; }
 .avatar-xs { width: 1.375rem; height: 1.375rem; font-size: 0.5625rem; }
-.av-1 { background: #2E7D32; color: white; }
-.av-2 { background: #1565C0; color: white; }
-.av-3 { background: #E65100; color: white; }
-.av-4 { background: #6A1B9A; color: white; }
-.av-5 { background: #00838F; color: white; }
-.av-6 { background: #C62828; color: white; }
 .av-muted { background: var(--surface-3); color: var(--text-3); }
 
 /* Badges */

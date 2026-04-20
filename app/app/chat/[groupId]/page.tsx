@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import ChatPanel from '@/components/hunt/ChatPanel'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
 import type { ChatMember } from '@/lib/chat-utils'
+import { getAvatarColor } from '@/lib/avatar-color'
 
 type ChatGroup = {
   id: string
@@ -140,8 +141,8 @@ export default function GroupChatPage() {
           onClick={() => router.push(`/app/chat/${group.id}/info`)}>
           {/* Avatar: 2er-Chat → Initial, Gruppen-Avatar → Bild, sonst Emoji */}
           {isDirect && displayInitial ? (
-            <div className="flex items-center justify-center flex-shrink-0 avatar av-1"
-              style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', fontSize: '0.875rem', fontWeight: 700 }}>
+            <div className="flex items-center justify-center flex-shrink-0 avatar"
+              style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', fontSize: '0.875rem', fontWeight: 700, background: getAvatarColor(group.id), color: '#fff' }}>
               {displayInitial}
             </div>
           ) : group.avatar_url ? (

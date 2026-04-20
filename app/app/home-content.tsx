@@ -10,8 +10,7 @@ import SwipeToAction from '@/components/ui/swipe-to-action'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
 import { Search, Plus } from 'lucide-react'
 import type { ChatMember } from '@/lib/chat-utils'
-
-const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
+import { getAvatarColor } from '@/lib/avatar-color'
 
 function getInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
@@ -832,10 +831,11 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                   >
                     {/* Avatar: 2er-Chat → Initial, Gruppen-Avatar → Bild, sonst Emoji */}
                     {item.isDirect && item.displayInitial ? (
-                      <div className="flex-shrink-0 flex items-center justify-center avatar av-1"
+                      <div className="flex-shrink-0 flex items-center justify-center avatar"
                         style={{
                           width: '2.625rem', height: '2.625rem', borderRadius: '50%',
                           fontSize: '0.9375rem', fontWeight: 700,
+                          background: getAvatarColor(item.id), color: '#fff',
                         }}>
                         {item.displayInitial}
                       </div>

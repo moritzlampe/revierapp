@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parsePointHex } from '@/lib/geo-utils'
+import { getAvatarColor } from '@/lib/avatar-color'
 
 export interface ParticipantPosition {
   participantId: string
@@ -33,16 +34,6 @@ interface RawPosition {
   accuracy: number | null
   isLocked: boolean
   updatedAt: Date
-}
-
-const AVATAR_COLORS = ['#2E7D32', '#1565C0', '#E65100', '#6A1B9A', '#00838F', '#C62828']
-
-function getAvatarColor(id: string): string {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) {
-    hash = ((hash << 5) - hash) + id.charCodeAt(i)
-  }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
 }
 
 function getName(p: HuntParticipant): string {

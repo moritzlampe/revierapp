@@ -5,8 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
 import type { ChatMember } from '@/lib/chat-utils'
-
-const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
+import { getAvatarColor } from '@/lib/avatar-color'
 
 function getInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
@@ -396,10 +395,11 @@ export default function GroupInfoPage() {
                 }}
               />
             ) : isDirect ? (
-              <div className="flex items-center justify-center avatar av-1"
+              <div className="flex items-center justify-center avatar"
                 style={{
                   width: '5rem', height: '5rem', borderRadius: '50%',
                   fontSize: '2rem', fontWeight: 700,
+                  background: getAvatarColor(group.id), color: '#fff',
                 }}>
                 {displayName.charAt(0).toUpperCase()}
               </div>
@@ -679,7 +679,7 @@ export default function GroupInfoPage() {
                     className="w-full flex items-center gap-2.5 rounded-xl"
                     style={{ padding: '0.5rem', background: 'var(--bg)' }}
                   >
-                    <div className={`avatar ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
+                    <div className="avatar" style={{ background: getAvatarColor(c.id), color: '#fff' }}>
                       {getInitials(c.display_name)}
                     </div>
                     <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{c.display_name}</span>
@@ -701,8 +701,8 @@ export default function GroupInfoPage() {
                 className="flex items-center gap-3"
                 style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border-light)' }}
               >
-                <div className={`avatar ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}
-                  style={{ width: '2.625rem', height: '2.625rem', fontSize: '0.875rem' }}>
+                <div className="avatar"
+                  style={{ width: '2.625rem', height: '2.625rem', fontSize: '0.875rem', background: getAvatarColor(m.user_id), color: '#fff' }}>
                   {getInitials(m.display_name)}
                 </div>
                 <div className="flex-1 min-w-0">

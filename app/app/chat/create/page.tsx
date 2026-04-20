@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
+import { getAvatarColor } from '@/lib/avatar-color'
+
 const EMOJI_OPTIONS = ['💬', '🌲', '🐗', '🦌', '🏠', '🔫', '👥', '🐕']
 
 function getInitials(name: string) {
@@ -208,7 +209,7 @@ export default function CreateChatGroupPage() {
                   border: `1.5px solid ${c.selected ? 'var(--green)' : 'var(--border)'}`,
                 }}
               >
-                <div className={`avatar ${AVATAR_COLORS[(i + 1) % AVATAR_COLORS.length]}`}>
+                <div className="avatar" style={{ background: getAvatarColor(c.id), color: '#fff' }}>
                   {getInitials(c.display_name)}
                 </div>
                 <span className="flex-1 text-left text-sm font-semibold">{c.display_name}</span>

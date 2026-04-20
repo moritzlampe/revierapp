@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { StandData } from './MapContent'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
+import { getAvatarColor } from '@/lib/avatar-color'
 
 // --- Types ---
 
@@ -25,16 +26,8 @@ export interface StandDetailSheetProps {
 
 // --- Hilfsfunktionen ---
 
-const AVATAR_COLORS = ['#2E7D32', '#1565C0', '#E65100', '#6A1B9A', '#00838F', '#C62828']
-
 function getInitials(name: string): string {
   return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-}
-
-function getAvatarColor(id: string): string {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) { hash = ((hash << 5) - hash) + id.charCodeAt(i) }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
 }
 
 function pName(p: HuntParticipantInfo): string {

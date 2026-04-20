@@ -9,9 +9,7 @@ import { useGeolocation } from '@/hooks/useGeolocation'
 import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
 import { parsePointHex } from '@/lib/geo-utils'
 import { createSoloHunt } from '@/lib/supabase/hunts'
-
-const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
-const AVATAR_HEX = ['#2E7D32', '#1565C0', '#E65100', '#6A1B9A', '#00838F', '#C62828']
+import { getAvatarColor } from '@/lib/avatar-color'
 
 const BUNDESLAENDER = [
   'Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen',
@@ -107,12 +105,12 @@ export default function CreateHuntPage() {
     ...(currentUser ? [{
       userId: currentUser.id,
       userName: currentUser.name,
-      avatarColor: AVATAR_HEX[0],
+      avatarColor: getAvatarColor(currentUser.id),
     }] : []),
-    ...contacts.filter(c => c.selected).map((c, i) => ({
+    ...contacts.filter(c => c.selected).map((c) => ({
       userId: c.id,
       userName: c.display_name,
-      avatarColor: AVATAR_HEX[(i + 1) % AVATAR_HEX.length],
+      avatarColor: getAvatarColor(c.id),
     })),
   ]
 
@@ -641,7 +639,7 @@ export default function CreateHuntPage() {
                 className={`assign-chip${placed ? ' placed' : ''}${active ? ' active' : ''}`}
                 onClick={() => toggleParticipant(p.userId)}
               >
-                <div className={`avatar ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
+                <div className="avatar" style={{ background: getAvatarColor(p.userId), color: '#fff' }}>
                   {getInitials(p.userName)}
                 </div>
                 {p.userName.split(' ')[0]}
@@ -773,7 +771,7 @@ export default function CreateHuntPage() {
                         background: isOnThisStand ? 'rgba(107,159,58,0.08)' : 'transparent',
                       }}
                     >
-                      <div className={`avatar-xs ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`} style={{ flexShrink: 0 }}>
+                      <div className="avatar-xs" style={{ flexShrink: 0, background: getAvatarColor(p.userId), color: '#fff' }}>
                         {getInitials(p.userName)}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1008,7 +1006,7 @@ export default function CreateHuntPage() {
           {currentUser && (
             <div className="flex items-center gap-2.5 p-2.5 rounded-xl mb-2.5"
               style={{ background: 'var(--bg)', border: '1.5px solid var(--green)' }}>
-              <div className={`avatar ${AVATAR_COLORS[0]}`}>{getInitials(currentUser.name)}</div>
+              <div className="avatar" style={{ background: getAvatarColor(currentUser.id), color: '#fff' }}>{getInitials(currentUser.name)}</div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-bold" style={{ color: 'var(--green-bright)' }}>Du ({currentUser.name})</div>
                 <div className="text-xs" style={{ color: 'var(--text-3)' }}>🎯 Schütze</div>
@@ -1036,7 +1034,7 @@ export default function CreateHuntPage() {
                   background: 'var(--bg)',
                   border: `1.5px solid ${c.selected ? 'var(--green)' : 'var(--border)'}`,
                 }}>
-                <div className={`avatar ${AVATAR_COLORS[(i + 1) % AVATAR_COLORS.length]}`}>
+                <div className="avatar" style={{ background: getAvatarColor(c.id), color: '#fff' }}>
                   {getInitials(c.display_name)}
                 </div>
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleContact(c.id)}>
