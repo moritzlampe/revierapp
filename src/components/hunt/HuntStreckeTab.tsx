@@ -5,8 +5,10 @@ import { Camera } from 'lucide-react'
 import { useHuntStrecke } from '@/hooks/useHuntStrecke'
 import StreckePhotoSheet from '@/components/hunt/StreckePhotoSheet'
 import StreckeHero from '@/components/hunt/strecke/StreckeHero'
-import type { Geschlecht, WildArt } from '@/lib/species-config'
+import StreckeFilterBar, { type StreckeFilter } from '@/components/hunt/strecke/StreckeFilterBar'
+import type { Geschlecht, WildArt, WildGroup } from '@/lib/species-config'
 import {
+  WILD_ART_TO_GROUP,
   WILD_GROUP_CONFIG,
   WILD_GROUP_DETAILS,
   FLAT_GROUP_TIERE,
@@ -79,6 +81,8 @@ function formatTime(iso: string): string {
 export default function HuntStreckeTab({ huntId, participants, userId }: HuntStreckeTabProps) {
   const { kills, photos, loading, error } = useHuntStrecke(huntId)
   const [photoSheetOpen, setPhotoSheetOpen] = useState(false)
+  const [filter, setFilter] = useState<StreckeFilter>({ kind: 'all' })
+  const [pinnedGroup, setPinnedGroup] = useState<WildGroup | null>(null)
   const nachsucheSectionRef = useRef<HTMLElement | null>(null)
 
   // Viewer-Kontext: eigene Rolle + Anonymisierungswunsch.
@@ -151,6 +155,18 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     if (viewer.tags.includes('hundefuehrer')) return true
     return woundedKills.length > 0
   }, [viewer.role, viewer.tags, woundedKills.length])
+
+  const ownHarvestedCount = useMemo(
+    () => harvestedKills.filter(k => k.reporter_id === userId).length,
+    [harvestedKills, userId],
+  )
+
+  const pinnedGroupCount = useMemo(() => {
+    if (!pinnedGroup) return 0
+    return harvestedKills.filter(
+      k => WILD_ART_TO_GROUP[k.wild_art as WildArt] === pinnedGroup,
+    ).length
+  }, [harvestedKills, pinnedGroup])
 
   // Batching erst NACH Filter — sonst könnten gemischte Batches entstehen,
   // bei denen der sichtbare Anteil vorne/hinten auseinanderbricht.
@@ -288,42 +304,25 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
           harvestedKills={harvestedKills}
           woundedCount={woundedKills.length}
           showNachsucheWarning={canSeeNachsuche}
+          activeGroupFilter={filter.kind === 'group' ? filter.group : null}
           onNachsucheTap={scrollToNachsuche}
         />
       </div>
-      {userId && (
-        <div
-          style={{
-            padding: '0.75rem 0.75rem 0',
-            flexShrink: 0,
+      <div style={{ padding: '1rem 0 0', flexShrink: 0 }}>
+        <StreckeFilterBar
+          active={filter}
+          onChange={setFilter}
+          counts={{
+            all: harvestedKills.length,
+            own: ownHarvestedCount,
+            nachsuche: woundedKills.length,
+            group: pinnedGroup ? { group: pinnedGroup, count: pinnedGroupCount } : undefined,
           }}
-        >
-          <button
-            type="button"
-            onClick={() => setPhotoSheetOpen(true)}
-            style={{
-              width: '100%',
-              padding: '0.625rem 0.875rem',
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-default)',
-              borderRadius: '0.75rem',
-              fontSize: '0.9375rem',
-              fontWeight: 500,
-              minHeight: '2.75rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              cursor: 'pointer',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            <span aria-hidden="true">📷</span>
-            <span>+ Foto zur Strecke</span>
-          </button>
-        </div>
-      )}
+          showNachsuchePill={canSeeNachsuche}
+          canUploadPhoto={Boolean(userId)}
+          onPhotoClick={() => setPhotoSheetOpen(true)}
+        />
+      </div>
       <div
         style={{
           padding: '0.75rem',
