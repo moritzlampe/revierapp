@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Camera } from 'lucide-react'
 import { useHuntStrecke } from '@/hooks/useHuntStrecke'
 import StreckePhotoSheet from '@/components/hunt/StreckePhotoSheet'
+import StreckeHero from '@/components/hunt/strecke/StreckeHero'
 import type { Geschlecht, WildArt } from '@/lib/species-config'
 import {
   WILD_GROUP_CONFIG,
@@ -78,6 +79,7 @@ function formatTime(iso: string): string {
 export default function HuntStreckeTab({ huntId, participants, userId }: HuntStreckeTabProps) {
   const { kills, photos, loading, error } = useHuntStrecke(huntId)
   const [photoSheetOpen, setPhotoSheetOpen] = useState(false)
+  const nachsucheSectionRef = useRef<HTMLElement | null>(null)
 
   // Viewer-Kontext: eigene Rolle + Anonymisierungswunsch.
   const viewer = useMemo<ViewerContext>(() => {
@@ -130,12 +132,36 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     [kills, profileMap, viewer],
   )
 
+  // Offizielle Strecke (harvested) vs. Nachsuche (wounded).
+  // Hero-Count ignoriert wounded — laut Design-Brief zählen sie jagdrechtlich
+  // erst ab Freigabe-Update zur Strecke.
+  const harvestedKills = useMemo(
+    () => visibleKills.filter(k => k.status === 'harvested'),
+    [visibleKills],
+  )
+  const woundedKills = useMemo(
+    () => visibleKills.filter(k => k.status === 'wounded'),
+    [visibleKills],
+  )
+
+  // Nachsuche-Sichtbarkeit: Jagdleiter sehen alles, Schützen sehen eigene Wounded-Kills
+  // (die landen bereits durch maskKillForViewer in visibleKills), Hundeführer sehen alles.
+  const canSeeNachsuche = useMemo(() => {
+    if (viewer.role === 'jagdleiter') return true
+    if (viewer.tags.includes('hundefuehrer')) return true
+    return woundedKills.length > 0
+  }, [viewer.role, viewer.tags, woundedKills.length])
+
   // Batching erst NACH Filter — sonst könnten gemischte Batches entstehen,
   // bei denen der sichtbare Anteil vorne/hinten auseinanderbricht.
   const visibleBatches = useMemo<DisplayKillBatch[]>(
     () => groupKillsByBatch(visibleKills).slice().reverse() as DisplayKillBatch[],
     [visibleKills],
   )
+
+  const scrollToNachsuche = useCallback(() => {
+    nachsucheSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
 
   // Foto-Visibility: ein Kill-Foto ist nur sichtbar, wenn mindestens
   // ein referenzierter Kill sichtbar ist. Mood-Fotos (ohne kill_ids)
@@ -257,15 +283,18 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
         WebkitOverflowScrolling: 'touch',
       }}
     >
+      <div style={{ padding: '1rem 0.75rem 0' }}>
+        <StreckeHero
+          harvestedKills={harvestedKills}
+          woundedCount={woundedKills.length}
+          showNachsucheWarning={canSeeNachsuche}
+          onNachsucheTap={scrollToNachsuche}
+        />
+      </div>
       {userId && (
         <div
           style={{
-            position: 'sticky',
-            top: 0,
-            zIndex: 2,
-            background: 'var(--bg)',
-            borderBottom: '1px solid var(--border)',
-            padding: '0.5rem 0.75rem',
+            padding: '0.75rem 0.75rem 0',
             flexShrink: 0,
           }}
         >
@@ -275,9 +304,9 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
             style={{
               width: '100%',
               padding: '0.625rem 0.875rem',
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-default)',
               borderRadius: '0.75rem',
               fontSize: '0.9375rem',
               fontWeight: 500,
