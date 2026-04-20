@@ -7,6 +7,7 @@ import StreckeHero from '@/components/hunt/strecke/StreckeHero'
 import StreckeFilterBar, { type StreckeFilter } from '@/components/hunt/strecke/StreckeFilterBar'
 import StreckeBatchCard from '@/components/hunt/strecke/StreckeBatchCard'
 import StreckeNachsucheSection from '@/components/hunt/strecke/StreckeNachsucheSection'
+import StreckeEmptyState, { type StreckeEmptyRole } from '@/components/hunt/strecke/StreckeEmptyState'
 import type { WildArt, WildGroup } from '@/lib/species-config'
 import { WILD_ART_TO_GROUP } from '@/lib/species-config'
 import {
@@ -204,48 +205,20 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
   }
 
   if (visibleBatches.length === 0 && moodPhotos.length === 0) {
+    const emptyRole: StreckeEmptyRole = !userId
+      ? 'gast'
+      : viewer.role === 'jagdleiter'
+        ? 'jagdleiter'
+        : 'schuetze'
     return (
-      <>
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <div className="text-5xl mb-4">🦌</div>
-          <p className="text-lg font-bold mb-1">Noch keine Erlegungen</p>
-          <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-            Meldungen erscheinen hier automatisch.
-          </p>
-          {userId && (
-            <button
-              type="button"
-              onClick={() => setPhotoSheetOpen(true)}
-              style={{
-                marginTop: '1.25rem',
-                padding: '0.75rem 1.25rem',
-                background: 'transparent',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '0.75rem',
-                fontSize: '0.9375rem',
-                fontWeight: 500,
-                minHeight: '2.75rem',
-                cursor: 'pointer',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              📷 Foto hinzufügen
-            </button>
-          )}
-        </div>
-        {userId && (
-          <StreckePhotoSheet
-            open={photoSheetOpen}
-            onOpenChange={setPhotoSheetOpen}
-            huntId={huntId}
-            userId={userId}
-            kills={kills}
-            participants={participants}
-            viewer={viewer}
-          />
-        )}
-      </>
+      <StreckeEmptyState
+        role={emptyRole}
+        onStartErlegung={
+          emptyRole === 'gast'
+            ? undefined
+            : () => window.dispatchEvent(new Event('quickhunt:open-erlegung'))
+        }
+      />
     )
   }
 

@@ -36,6 +36,13 @@ export default function BottomTabBar() {
     return () => window.removeEventListener('quickhunt:keyboard', handler)
   }, [])
 
+  // Erlegung-Sheet von anderen Screens öffnen (Strecke-Tab-Empty-State).
+  useEffect(() => {
+    const handler = () => setErlegungOpen(true)
+    window.addEventListener('quickhunt:open-erlegung', handler)
+    return () => window.removeEventListener('quickhunt:open-erlegung', handler)
+  }, [])
+
   // Auf bestimmten Routes komplett ausblenden
   if (HIDE_ON_ROUTES.some(r => pathname.startsWith(r))) return null
 
