@@ -17,9 +17,6 @@ import {
 } from '@/lib/strecke/visibility'
 import { groupKillsByBatch } from '@/lib/erlegung/groupByBatch'
 import { getMoodPhotos, getPhotosForBatch } from '@/lib/strecke/photo-matching'
-import { deleteHuntPhoto } from '@/lib/photos/hunt-photos'
-import type { HuntPhoto } from '@/lib/types/hunt-photo'
-import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
 
 interface Participant {
   id: string
@@ -189,26 +186,6 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     return map
   }, [visiblePhotos])
 
-  const canDeletePhoto = useCallback(
-    (photo: HuntPhoto): boolean => {
-      if (!userId) return false
-      if (photo.uploaded_by === userId) return true
-      if (viewer.role === 'jagdleiter') return true
-      return false
-    },
-    [userId, viewer.role],
-  )
-
-  const handleDeletePhoto = useCallback(async (photo: HuntPhoto) => {
-    if (!confirm('Foto löschen?')) return
-    try {
-      await deleteHuntPhoto(photo.id, photo.storage_path)
-      // Realtime-Event propagiert Update automatisch
-    } catch (err) {
-      console.error('Foto-Lösch-Fehler', err)
-    }
-  }, [])
-
   if (loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
@@ -333,43 +310,51 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
       )}
 
       {moodPhotos.length > 0 && (
-        <section
+        <button
+          type="button"
+          onClick={() => {
+            // Hunt-Photo-Gallery existiert noch nicht als eigene Komponente.
+            // Platzhalter bis zur dedizierten Gallery-Seite.
+            console.log('[Strecke] Mood-Gallery öffnen — noch nicht implementiert', moodPhotos.length)
+          }}
           style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            padding: '0.875rem',
-            marginTop: '0.75rem',
-            flexShrink: 0,
+            all: 'unset',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.75rem 1rem',
+            marginTop: '0.25rem',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-default)',
+            borderRadius: '12px',
+            cursor: 'pointer',
+            WebkitTapHighlightColor: 'transparent',
+            boxSizing: 'border-box',
+            minHeight: '2.75rem',
           }}
         >
-          <h3
+          <span aria-hidden="true" style={{ fontSize: '1rem' }}>🌅</span>
+          <span
             style={{
+              flex: 1,
               fontSize: '0.8125rem',
-              fontWeight: 600,
-              color: 'var(--text-2)',
-              marginBottom: '0.75rem',
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
+              letterSpacing: '0.01em',
             }}
           >
-            Stimmung & Strecke
-          </h3>
-          <div
+            {moodPhotos.length} {moodPhotos.length === 1 ? 'Stimmungsfoto' : 'Stimmungsfotos'}
+          </span>
+          <span
+            aria-hidden="true"
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(6rem, 1fr))',
-              gap: '0.5rem',
+              color: 'var(--text-secondary)',
+              fontSize: '1rem',
             }}
           >
-            {moodPhotos.map(photo => (
-              <PhotoThumbnail
-                key={photo.id}
-                url={photo.url}
-                size={6}
-                onDelete={canDeletePhoto(photo) ? () => handleDeletePhoto(photo) : undefined}
-              />
-            ))}
-          </div>
-        </section>
+            ›
+          </span>
+        </button>
       )}
       </div>
       {userId && (
