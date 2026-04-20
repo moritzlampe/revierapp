@@ -320,21 +320,21 @@ export default function HuntPage() {
       {/* Jagdleiter Command Bar */}
       {showJLBar && isJagdleiter && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg, #2a2008, #1f1a06)', borderBottom: '1px solid rgba(255,215,0,0.15)' }}>
+          style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
           <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid rgba(107,159,58,0.3)', background: 'rgba(107,159,58,0.1)', color: 'var(--green-bright)', minHeight: '2.75rem' }}>
+            style={{ border: '1px solid var(--accent-primary)', background: 'var(--accent-primary)', color: '#fff', minHeight: '2.75rem' }}>
             📢 Treiben!
           </button>
           <button onClick={() => endHunt()} className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid rgba(239,83,80,0.3)', background: 'rgba(239,83,80,0.1)', color: 'var(--red)', minHeight: '2.75rem' }}>
+            style={{ border: '1px solid var(--alert-border)', background: 'var(--alert-bg)', color: 'var(--alert-text)', minHeight: '2.75rem' }}>
             🔴 Hahn in Ruh
           </button>
           <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-2)', minHeight: '2.75rem' }}>
+            style={{ border: '1px solid var(--border-default)', background: 'var(--bg-sunken)', color: 'var(--text-primary)', minHeight: '2.75rem' }}>
             👥 Rollen
           </button>
           <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid rgba(255,143,0,0.3)', background: 'rgba(255,143,0,0.08)', color: 'var(--orange)', minHeight: '2.75rem' }}>
+            style={{ border: '1px solid var(--accent-gold)', background: 'var(--bg-sunken)', color: 'var(--accent-gold)', minHeight: '2.75rem' }}>
             🐕 +Nachsuche
           </button>
         </div>
