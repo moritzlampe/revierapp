@@ -8,21 +8,21 @@
      Werte umgebogen.
      ============================================================ */
   --theme-a-bg-base: #E7DDC7;
-  --theme-a-bg-elevated: #D8D2BE;
-  --theme-a-bg-sunken: #CFC7B0;
+  --theme-a-bg-elevated: #CEC5A8;
+  --theme-a-bg-sunken: #BEB39A;
   --theme-a-surface-hero: #A4AF8D;
   --theme-a-accent-primary: #4A5A2A;
   --theme-a-accent-primary-hover: #5E6F38;
   --theme-a-accent-success: #3F6B3A;
   --theme-a-accent-gold: #8C6A2E;
   --theme-a-text-primary: #1F2618;
-  --theme-a-text-secondary: #5C644F;
+  --theme-a-text-secondary: #4E543F;
   --theme-a-text-muted: #5D634F;
-  --theme-a-border-default: #B8B29E;
+  --theme-a-border-default: #9F9782;
   --theme-a-border-strong: #8E8874;
-  --theme-a-alert-text: #6B2C2C;
-  --theme-a-alert-bg: #E3C4C4;
-  --theme-a-alert-border: #6B2C2C;
+  --theme-a-alert-text: #5A1F1F;
+  --theme-a-alert-bg: #D4B3AE;
+  --theme-a-alert-border: #5A1F1F;
   --theme-a-danger: #8A3E3E;
 
   /* ============================================================
