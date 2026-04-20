@@ -340,10 +340,12 @@ button:active {
   100% { opacity: 1; }
 }
 
-/* Eigener Standort-Marker (divIcon-Container) */
+/* Eigener Standort-Marker (divIcon-Container).
+   SVG nutzt currentColor → Farbe kommt aus color. */
 .own-position-marker {
   background: transparent !important;
   border: none !important;
+  color: var(--accent-primary);
 }
 /* Kompass-Kegel: sanfte Rotation */
 .compass-cone {
