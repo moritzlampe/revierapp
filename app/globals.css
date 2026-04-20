@@ -179,7 +179,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -390,7 +390,7 @@ button:active {
   font-size: 0.625rem;
   font-weight: 700;
   line-height: 1;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
 .marker-badge {
   position: absolute;
@@ -424,7 +424,7 @@ button:active {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   font-size: 0.75rem;
   font-weight: 600;
   padding: 0.25rem 0.5rem;
@@ -607,7 +607,7 @@ button:active {
   border-radius: var(--radius);
   background: var(--green);
   color: #fff;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   font-size: 0.8125rem;
   font-weight: 700;
   border: none;
@@ -623,7 +623,7 @@ button:active {
   color: #FFFFFF;
   border: none;
   border-radius: 0.3125rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   font-size: 0.625rem;
   font-weight: 600;
   padding: 0.125rem 0.4375rem;
@@ -669,7 +669,7 @@ button:active {
   flex-direction: column;
   gap: 0.125rem;
   padding: 0.5rem 0.625rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
 .participant-popup-content strong {
   color: var(--text);
@@ -693,7 +693,7 @@ button:active {
   flex-direction: column;
   gap: 0.125rem;
   padding: 0.375rem 0.5rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
 .stand-popup-content strong {
   color: var(--text);
@@ -811,7 +811,7 @@ button:active {
   padding: 0.625rem 0.75rem;
   color: var(--text);
   font-size: 0.875rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   outline: none;
   transition: border-color 0.15s;
 }
@@ -839,7 +839,7 @@ button:active {
   color: var(--text-2);
   font-size: 0.8125rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   transition: all 0.15s;
   min-height: 2.75rem;
@@ -865,7 +865,7 @@ button:active {
   color: var(--text-3);
   font-size: 0.8125rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
 }
@@ -893,7 +893,7 @@ button:active {
   color: var(--green-bright);
   font-size: 0.75rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
 }
@@ -912,7 +912,7 @@ button:active {
   color: var(--text);
   font-size: 0.875rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
   text-align: center;
@@ -934,7 +934,7 @@ button:active {
   color: var(--text-2);
   font-size: 0.875rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
 }
@@ -947,7 +947,7 @@ button:active {
   color: #fff;
   font-size: 0.875rem;
   font-weight: 700;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
   transition: opacity 0.15s;
@@ -964,7 +964,7 @@ button:active {
   color: var(--red);
   font-size: 0.875rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
 }
@@ -1014,7 +1014,7 @@ button:active {
   color: var(--text-2);
   font-size: 0.75rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
   transition: all 0.15s;
@@ -1077,7 +1077,7 @@ button:active {
   color: var(--text-2);
   font-size: 0.75rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
   transition: all 0.15s;
@@ -1329,7 +1329,7 @@ button:active {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--green-bright);
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   z-index: 10;
   cursor: pointer;
   box-shadow: 0 0.125rem 0.5rem rgba(0,0,0,0.3);
