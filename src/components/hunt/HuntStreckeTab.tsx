@@ -65,6 +65,27 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     setDetailMode(mode)
   }, [])
 
+  // Hero-Chevron-Tap: pinnt die Wildart-Pill und aktiviert den Filter.
+  // Zweiter Tap (auf dieselbe Gruppe oder auf den Pill 'Alle') löst die Pin.
+  const handleGroupTap = useCallback((group: WildGroup) => {
+    setFilter(current => {
+      if (current.kind === 'group' && current.group === group) {
+        setPinnedGroup(null)
+        return { kind: 'all' }
+      }
+      setPinnedGroup(group)
+      return { kind: 'group', group }
+    })
+  }, [])
+
+  // Wenn der Filter nicht mehr auf 'group' steht, darf der Wildart-Pill
+  // trotzdem sichtbar bleiben (als schneller Re-Toggle). Aber wenn der User
+  // explizit 'Alle' wählt, räumen wir die gepinnte Gruppe ab.
+  const handleFilterChange = useCallback((next: StreckeFilter) => {
+    setFilter(next)
+    if (next.kind === 'all') setPinnedGroup(null)
+  }, [])
+
   const handleFotoZielSelect = useCallback((ziel: FotoZiel) => {
     setFotoZielOpen(false)
     if (ziel === 'erlegung') {
@@ -160,13 +181,33 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     ).length
   }, [harvestedKills, pinnedGroup])
 
+  // Filter wirken vor dem Batching. Nachsuche-Filter blendet die
+  // Chrono-Liste komplett aus — nur die dedizierte Nachsuche-Sektion
+  // bleibt dann sichtbar.
+  const filteredKills = useMemo<DisplayKill[]>(() => {
+    switch (filter.kind) {
+      case 'nachsuche':
+        return []
+      case 'own':
+        return visibleKills.filter(k => k.reporter_id === userId)
+      case 'group':
+        return visibleKills.filter(
+          k => WILD_ART_TO_GROUP[k.wild_art as WildArt] === filter.group,
+        )
+      case 'all':
+      default:
+        return visibleKills
+    }
+  }, [filter, visibleKills, userId])
+
   // Chronologische Reihenfolge: älteste zuerst (Logbuch-Gedanke —
-  // Tagesablauf rekonstruieren). groupKillsByBatch liefert ASC, wir
-  // lassen die Reihenfolge wie sie kommt.
+  // Tagesablauf rekonstruieren). groupKillsByBatch liefert ASC.
   const visibleBatches = useMemo<DisplayKillBatch[]>(
-    () => groupKillsByBatch(visibleKills) as DisplayKillBatch[],
-    [visibleKills],
+    () => groupKillsByBatch(filteredKills) as DisplayKillBatch[],
+    [filteredKills],
   )
+
+  const showChronoList = filter.kind !== 'nachsuche'
 
   const scrollToNachsuche = useCallback(() => {
     nachsucheSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -259,15 +300,16 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
         <StreckeHero
           harvestedKills={harvestedKills}
           woundedCount={woundedKills.length}
-          showNachsucheWarning={canSeeNachsuche}
+          showNachsucheWarning={canSeeNachsuche && filter.kind !== 'nachsuche'}
           activeGroupFilter={filter.kind === 'group' ? filter.group : null}
+          onGroupTap={handleGroupTap}
           onNachsucheTap={scrollToNachsuche}
         />
       </div>
       <div style={{ padding: '1rem 0 0', flexShrink: 0 }}>
         <StreckeFilterBar
           active={filter}
-          onChange={setFilter}
+          onChange={handleFilterChange}
           counts={{
             all: harvestedKills.length,
             own: ownHarvestedCount,
@@ -287,21 +329,50 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
           gap: '0.75rem',
         }}
       >
-      {visibleBatches.map(batch => {
-        const batchKillIds = batch.kills.map(k => k.id)
-        const batchPhotos = getPhotosForBatch(batchKillIds, visiblePhotos)
-        return (
-          <StreckeBatchCard
-            key={batch.id}
-            batch={batch}
-            photos={batchPhotos}
-            killIdsWithPhotos={killIdsWithPhotos}
-            killPhotoCounts={killPhotoCounts}
-            isOwnBatch={userId !== null && batch.reporter_id === userId}
-            onKillTap={kill => openDetail(kill, 'strecke')}
-          />
+      {showChronoList ? (
+        visibleBatches.length > 0 ? (
+          visibleBatches.map(batch => {
+            const batchKillIds = batch.kills.map(k => k.id)
+            const batchPhotos = getPhotosForBatch(batchKillIds, visiblePhotos)
+            return (
+              <StreckeBatchCard
+                key={batch.id}
+                batch={batch}
+                photos={batchPhotos}
+                killIdsWithPhotos={killIdsWithPhotos}
+                killPhotoCounts={killPhotoCounts}
+                isOwnBatch={userId !== null && batch.reporter_id === userId}
+                onKillTap={kill => openDetail(kill, 'strecke')}
+              />
+            )
+          })
+        ) : (
+          <p
+            style={{
+              margin: '0.5rem 0',
+              textAlign: 'center',
+              fontSize: '0.875rem',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            {filter.kind === 'own'
+              ? 'Noch keine eigenen Meldungen.'
+              : 'Keine Einträge für diesen Filter.'}
+          </p>
         )
-      })}
+      ) : (
+        <p
+          style={{
+            margin: 0,
+            padding: '0.5rem 0.25rem',
+            fontSize: '0.8125rem',
+            color: 'var(--text-secondary)',
+            letterSpacing: '0.01em',
+          }}
+        >
+          Weitere Einträge werden ausgeblendet, solange „Nachsuche" aktiv ist.
+        </p>
+      )}
 
       {canSeeNachsuche && woundedKills.length > 0 && (
         <StreckeNachsucheSection
