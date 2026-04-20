@@ -107,6 +107,45 @@
   --bottom-bar-space: calc(3.5rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* ============================================================
+   Tailwind v4 — Bindung der semantischen shadcn-Tokens an
+   unsere Active-Tokens. Ohne diesen Block rendern bg-popover /
+   bg-primary / bg-muted gegen v4-Light-Defaults, was in Sheets
+   (ErlegungSheet, WildartPicker, StreckePhotoSheet) zu hellen
+   Blitzern führt. "inline" sorgt dafür, dass die var()-Referenzen
+   zur Laufzeit aufgelöst werden (sonst friert Tailwind die Werte
+   beim Build ein).
+   ============================================================ */
+@theme inline {
+  --color-background: var(--bg-base);
+  --color-foreground: var(--text-primary);
+
+  --color-card: var(--bg-elevated);
+  --color-card-foreground: var(--text-primary);
+
+  --color-popover: var(--bg-elevated);
+  --color-popover-foreground: var(--text-primary);
+
+  --color-primary: var(--accent-primary);
+  --color-primary-foreground: var(--text-primary);
+
+  --color-secondary: var(--bg-sunken);
+  --color-secondary-foreground: var(--text-primary);
+
+  --color-muted: var(--bg-sunken);
+  --color-muted-foreground: var(--text-secondary);
+
+  --color-accent: var(--accent-primary);
+  --color-accent-foreground: var(--text-primary);
+
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--text-primary);
+
+  --color-border: var(--border-default);
+  --color-input: var(--bg-sunken);
+  --color-ring: var(--accent-primary);
+}
+
 * { -webkit-tap-highlight-color: transparent; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
