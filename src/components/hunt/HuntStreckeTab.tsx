@@ -8,6 +8,7 @@ import StreckeFilterBar, { type StreckeFilter } from '@/components/hunt/strecke/
 import StreckeBatchCard from '@/components/hunt/strecke/StreckeBatchCard'
 import StreckeNachsucheSection from '@/components/hunt/strecke/StreckeNachsucheSection'
 import StreckeEmptyState, { type StreckeEmptyRole } from '@/components/hunt/strecke/StreckeEmptyState'
+import FotoZielSheet, { type FotoZiel } from '@/components/hunt/strecke/FotoZielSheet'
 import type { WildArt, WildGroup } from '@/lib/species-config'
 import { WILD_ART_TO_GROUP } from '@/lib/species-config'
 import {
@@ -49,9 +50,24 @@ interface DisplayKillBatch {
 export default function HuntStreckeTab({ huntId, participants, userId }: HuntStreckeTabProps) {
   const { kills, photos, loading, error } = useHuntStrecke(huntId)
   const [photoSheetOpen, setPhotoSheetOpen] = useState(false)
+  const [fotoZielOpen, setFotoZielOpen] = useState(false)
   const [filter, setFilter] = useState<StreckeFilter>({ kind: 'all' })
   const [pinnedGroup, setPinnedGroup] = useState<WildGroup | null>(null)
   const nachsucheSectionRef = useRef<HTMLElement | null>(null)
+
+  const handleFotoZielSelect = useCallback((ziel: FotoZiel) => {
+    setFotoZielOpen(false)
+    if (ziel === 'erlegung') {
+      // KillAuswahlSheet wird in Commit 8 verdrahtet — bis dahin fällt der
+      // Flow auf den bestehenden StreckePhotoSheet (inkl. Kill-Auswahl) zurück.
+      setPhotoSheetOpen(true)
+      return
+    }
+    // Streckenfoto & Stimmung → hunt-gebundenes Foto ohne Kill-Referenz.
+    // Aktueller StreckePhotoSheet erlaubt bereits 'ohne Kill' (Kill-Auswahl
+    // kann leer bleiben).
+    setPhotoSheetOpen(true)
+  }, [])
 
   // Viewer-Kontext: eigene Rolle + Anonymisierungswunsch.
   const viewer = useMemo<ViewerContext>(() => {
@@ -252,7 +268,7 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
           }}
           showNachsuchePill={canSeeNachsuche}
           canUploadPhoto={Boolean(userId)}
-          onPhotoClick={() => setPhotoSheetOpen(true)}
+          onPhotoClick={() => setFotoZielOpen(true)}
         />
       </div>
       <div
@@ -331,15 +347,22 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
       )}
       </div>
       {userId && (
-        <StreckePhotoSheet
-          open={photoSheetOpen}
-          onOpenChange={setPhotoSheetOpen}
-          huntId={huntId}
-          userId={userId}
-          kills={kills}
-          participants={participants}
-          viewer={viewer}
-        />
+        <>
+          <FotoZielSheet
+            open={fotoZielOpen}
+            onClose={() => setFotoZielOpen(false)}
+            onSelect={handleFotoZielSelect}
+          />
+          <StreckePhotoSheet
+            open={photoSheetOpen}
+            onOpenChange={setPhotoSheetOpen}
+            huntId={huntId}
+            userId={userId}
+            kills={kills}
+            participants={participants}
+            viewer={viewer}
+          />
+        </>
       )}
     </div>
   )
