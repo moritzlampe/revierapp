@@ -6,6 +6,7 @@ import StreckePhotoSheet from '@/components/hunt/StreckePhotoSheet'
 import StreckeHero from '@/components/hunt/strecke/StreckeHero'
 import StreckeFilterBar, { type StreckeFilter } from '@/components/hunt/strecke/StreckeFilterBar'
 import StreckeBatchCard from '@/components/hunt/strecke/StreckeBatchCard'
+import StreckeNachsucheSection from '@/components/hunt/strecke/StreckeNachsucheSection'
 import type { WildArt, WildGroup } from '@/lib/species-config'
 import { WILD_ART_TO_GROUP } from '@/lib/species-config'
 import {
@@ -326,6 +327,10 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
           />
         )
       })}
+
+      {canSeeNachsuche && woundedKills.length > 0 && (
+        <StreckeNachsucheSection ref={nachsucheSectionRef} kills={woundedKills} />
+      )}
 
       {moodPhotos.length > 0 && (
         <section
