@@ -999,7 +999,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                 onClick={() => handleDeleteMessage(confirmDeleteId)}
                 style={{
                   flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)', border: 'none',
-                  background: 'var(--red)', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
+                  background: 'var(--danger)', color: 'var(--text)', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
                 }}
               >
                 Löschen
