@@ -9,6 +9,7 @@ import StreckeBatchCard from '@/components/hunt/strecke/StreckeBatchCard'
 import StreckeNachsucheSection from '@/components/hunt/strecke/StreckeNachsucheSection'
 import StreckeEmptyState, { type StreckeEmptyRole } from '@/components/hunt/strecke/StreckeEmptyState'
 import FotoZielSheet, { type FotoZiel } from '@/components/hunt/strecke/FotoZielSheet'
+import KillAuswahlSheet from '@/components/hunt/strecke/KillAuswahlSheet'
 import type { WildArt, WildGroup } from '@/lib/species-config'
 import { WILD_ART_TO_GROUP } from '@/lib/species-config'
 import {
@@ -51,6 +52,7 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
   const { kills, photos, loading, error } = useHuntStrecke(huntId)
   const [photoSheetOpen, setPhotoSheetOpen] = useState(false)
   const [fotoZielOpen, setFotoZielOpen] = useState(false)
+  const [killAuswahlOpen, setKillAuswahlOpen] = useState(false)
   const [filter, setFilter] = useState<StreckeFilter>({ kind: 'all' })
   const [pinnedGroup, setPinnedGroup] = useState<WildGroup | null>(null)
   const nachsucheSectionRef = useRef<HTMLElement | null>(null)
@@ -58,14 +60,12 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
   const handleFotoZielSelect = useCallback((ziel: FotoZiel) => {
     setFotoZielOpen(false)
     if (ziel === 'erlegung') {
-      // KillAuswahlSheet wird in Commit 8 verdrahtet — bis dahin fällt der
-      // Flow auf den bestehenden StreckePhotoSheet (inkl. Kill-Auswahl) zurück.
-      setPhotoSheetOpen(true)
+      setKillAuswahlOpen(true)
       return
     }
     // Streckenfoto & Stimmung → hunt-gebundenes Foto ohne Kill-Referenz.
-    // Aktueller StreckePhotoSheet erlaubt bereits 'ohne Kill' (Kill-Auswahl
-    // kann leer bleiben).
+    // Bestehender StreckePhotoSheet fängt den Flow (Capture + optionale
+    // Kill-Auswahl kann leer bleiben).
     setPhotoSheetOpen(true)
   }, [])
 
@@ -352,6 +352,14 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
             open={fotoZielOpen}
             onClose={() => setFotoZielOpen(false)}
             onSelect={handleFotoZielSelect}
+          />
+          <KillAuswahlSheet
+            open={killAuswahlOpen}
+            onClose={() => setKillAuswahlOpen(false)}
+            kills={visibleKills}
+            userId={userId}
+            huntId={huntId}
+            killPhotoCounts={killPhotoCounts}
           />
           <StreckePhotoSheet
             open={photoSheetOpen}
