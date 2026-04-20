@@ -45,8 +45,8 @@ Alle Hex-Werte sind final nach ChatGPT-Review. Kontrastwerte sind exakt berechne
 | Token | Hex | Verwendung |
 |-------|-----|------------|
 | `--bg-base` | `#E7DDC7` | Haupt-Hintergrund der App |
-| `--bg-elevated` | `#D8D2BE` | Karten, leicht abgehoben (Batch-Cards) |
-| `--bg-sunken` | `#CFC7B0` | eingelassene Sektionen (Filter-Bar) |
+| `--bg-elevated` | `#CEC5A8` | Karten, leicht abgehoben (Batch-Cards) |
+| `--bg-sunken` | `#BEB39A` | eingelassene Sektionen (Filter-Bar) |
 | `--surface-hero` | `#A4AF8D` | Hero-Block (Display-Zahl + Species-Pills) |
 
 **Wichtig zu `--surface-hero`:** Dieser Wert wurde im Review von `#C7CFB4` auf `#A4AF8D` verschärft, um ausreichenden Flächenkontrast zum Base-Hintergrund herzustellen (1.71:1 statt zuvor 1.20:1). Nur so hebt sich der Hero-Bereich visuell klar vom Rest ab.
@@ -56,7 +56,7 @@ Alle Hex-Werte sind final nach ChatGPT-Review. Kontrastwerte sind exakt berechne
 | Token | Hex | Kontrast auf `--bg-base` | Verwendung |
 |-------|-----|--------------------------|------------|
 | `--text-primary` | `#1F2618` | 13:1 (AAA) | Haupttext, Überschriften, Display-Zahlen |
-| `--text-secondary` | `#5C644F` | 4.59:1 (AA, knapp) | Meta-Infos, Subtitles, Captions |
+| `--text-secondary` | `#4E543F` | 6.1:1 (AA) | Meta-Infos, Subtitles, Captions |
 | `--text-muted` | `#5D634F` | 4.63:1 (AA) | Disabled-artige Labels, Skeleton-States, dekorative Mikrotexte |
 
 **Wichtig zu `--text-muted`:** Diese Farbe wurde ursprünglich als "Tertiary" (`#8A907C`) geführt, der Wert war aber mit 2.45:1 klar unter AA. Nach Review:
@@ -83,24 +83,24 @@ Primary ist **ausschließlich Akzent- und Fill-Farbe** für Buttons, aktive Tabs
 
 | Token | Hex | Verwendung |
 |-------|-----|------------|
-| `--border-default` | `#B8B29E` | Subtile Trennlinien, Card-Outlines |
+| `--border-default` | `#9F9782` | Subtile Trennlinien, Card-Outlines |
 | `--border-strong` | `#8E8874` | Aktive States, stärkere Trennungen, aktive Tab-Underlines |
 
 ### 2.5 Nachsuche (Alert)
 
 | Token | Hex | Verwendung |
 |-------|-----|------------|
-| `--alert-text` | `#6B2C2C` | Nachsuche-Text, Alert-Icons |
-| `--alert-bg` | `#E3C4C4` | Nachsuche-Karten-Hintergrund |
-| `--alert-border` | `#6B2C2C` | Nachsuche-Karten-Rahmen (1px) |
+| `--alert-text` | `#5A1F1F` | Nachsuche-Text, Alert-Icons |
+| `--alert-bg` | `#D4B3AE` | Nachsuche-Karten-Hintergrund |
+| `--alert-border` | `#5A1F1F` | Nachsuche-Karten-Rahmen (1px) |
 
-**Anmerkung zum Alert-BG:** Auf warmer Basis kann `#E3C4C4` leicht rosa wirken. Beim ersten Real-World-Test prüfen, ob ein erdigerer Ton (z.B. `#D4B5B0` mit mehr Braun-Einschlag) besser passt.
+**Anmerkung zum Alert-BG:** Der ursprüngliche Wert `#E3C4C4` wirkte im iPhone-Live-Test leicht rosa auf der warmen Basis. In v1.1 auf `#D4B3AE` verschoben (mehr Braun-Einschlag, erdiger).
 
 ### 2.6 Mood-Foto-Chip (Stimmungsfoto-Akzent)
 
 | Token | Hex | Verwendung |
 |-------|-----|------------|
-| `--mood-chip-bg` | `#D8D2BE` | Hintergrund des Mood-Chip am Listen-Ende (Sonnenauf-/untergang-Symbol) |
+| `--mood-chip-bg` | `#CEC5A8` | Hintergrund des Mood-Chip am Listen-Ende (Sonnenauf-/untergang-Symbol) |
 | `--mood-chip-text` | `--text-secondary` | Text "🌅 N Stimmungsfotos" |
 
 ---
@@ -543,6 +543,12 @@ Diese Dokumentation landet im Repo unter `docs/outdoor-tests/` als Teil des Chan
 ---
 
 ## 13. Versionshinweise
+
+**v1.1 — Empirische Anpassung nach iPhone-Live-Test (Sprint 58.1h.d-fix):
+bg-elevated, bg-sunken, text-secondary, border-default, alert-bg, alert-text
+empirisch verschärft. Flächenkontrast zwischen bg-base und bg-elevated von
+1.12:1 auf 1.28:1 erhöht. Alert-BG weniger rosa, erdiger. Alle neuen Werte
+WCAG-AA-verifiziert.**
 
 **v1.0 — Initial (April 2026)**
 
