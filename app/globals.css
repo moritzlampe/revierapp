@@ -1,23 +1,105 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0a0f08;
-  --surface: #141c10;
-  --surface-2: #1c2818;
-  --surface-3: #243220;
-  --border: rgba(107,159,58,0.12);
-  --border-light: rgba(255,255,255,0.06);
-  --green: #6B9F3A;
-  --green-bright: #8BC34A;
-  --green-dim: #3d5e22;
-  --green-900: #1a3409;
-  --orange: #FF8F00;
-  --red: #EF5350;
-  --blue: #42A5F5;
-  --gold: #FFD700;
-  --text: #f0f0e8;
-  --text-2: rgba(240,240,232,0.72);
-  --text-3: rgba(240,240,232,0.42);
+  /* ============================================================
+     Theme A — "Moos auf Papier" (Tag, Ziel in Sprint 58.1h.c)
+     Diese Werte werden hier deklariert, aber noch nicht aktiv
+     verwendet. In 58.1h.c werden die Active-Tokens auf diese
+     Werte umgebogen.
+     ============================================================ */
+  --theme-a-bg-base: #E7DDC7;
+  --theme-a-bg-elevated: #D8D2BE;
+  --theme-a-bg-sunken: #CFC7B0;
+  --theme-a-surface-hero: #A4AF8D;
+  --theme-a-accent-primary: #4A5A2A;
+  --theme-a-accent-primary-hover: #5E6F38;
+  --theme-a-accent-success: #3F6B3A;
+  --theme-a-accent-gold: #8C6A2E;
+  --theme-a-text-primary: #1F2618;
+  --theme-a-text-secondary: #5C644F;
+  --theme-a-text-muted: #5D634F;
+  --theme-a-border-default: #B8B29E;
+  --theme-a-border-strong: #8E8874;
+  --theme-a-alert-text: #6B2C2C;
+  --theme-a-alert-bg: #E3C4C4;
+  --theme-a-alert-border: #6B2C2C;
+  --theme-a-danger: #8A3E3E;
+
+  /* ============================================================
+     Legacy — aktuelle Dark-Werte.
+     Referenzwerte für die heutige Optik. Komponenten sollen
+     NICHT direkt auf --legacy-* zugreifen, sondern auf die
+     Active-Tokens bzw. deren Legacy-Aliases darunter.
+     ============================================================ */
+  --legacy-bg: #0a0f08;
+  --legacy-surface: #141c10;
+  --legacy-surface-2: #1c2818;
+  --legacy-surface-3: #243220;
+  --legacy-border: rgba(107,159,58,0.12);
+  --legacy-border-light: rgba(255,255,255,0.06);
+  --legacy-green: #6B9F3A;
+  --legacy-green-bright: #8BC34A;
+  --legacy-green-dim: #3d5e22;
+  --legacy-green-900: #1a3409;
+  --legacy-orange: #FF8F00;
+  --legacy-red: #EF5350;
+  --legacy-blue: #42A5F5;
+  --legacy-gold: #FFD700;
+  --legacy-text: #f0f0e8;
+  --legacy-text-2: rgba(240,240,232,0.72);
+  --legacy-text-3: rgba(240,240,232,0.42);
+
+  /* ============================================================
+     Active Tokens — das Interface für alle Komponenten.
+     Zeigen in Sprint 58.1h.b noch auf Legacy-Werte. In 58.1h.c
+     werden diese Zuweisungen auf --theme-a-* umgebogen, und alle
+     Legacy-Aliases (weiter unten) schlagen automatisch durch.
+     ============================================================ */
+  --bg-base: var(--legacy-bg);
+  --bg-elevated: var(--legacy-surface);
+  --bg-sunken: var(--legacy-surface-3);
+  --surface-hero: var(--legacy-surface-2);
+  --accent-primary: var(--legacy-green);
+  --accent-primary-hover: var(--legacy-green-bright);
+  --accent-success: var(--legacy-green);
+  --accent-gold: var(--legacy-gold);
+  --text-primary: var(--legacy-text);
+  --text-secondary: var(--legacy-text-2);
+  --text-muted: var(--legacy-text-3);
+  --border-default: var(--legacy-border);
+  --border-strong: var(--legacy-border);
+  /* Nachsuche-Semantik (nur für Tracking-Requests) */
+  --alert-text: var(--legacy-red);
+  --alert-bg: rgba(239,83,80,0.15);
+  --alert-border: var(--legacy-red);
+  /* Fehler-/Delete-/Live-Dot-Semantik (ersetzt langfristig --red) */
+  --danger: var(--legacy-red);
+
+  /* ============================================================
+     Legacy-Aliases — alte Token-Namen zeigen auf Active-Tokens.
+     Dadurch schlägt der Flip in 58.1h.c automatisch in den
+     bestehenden Komponenten durch, ohne dass alle var(--bg)-
+     Aufrufe umbenannt werden müssen.
+     ============================================================ */
+  --bg: var(--bg-base);
+  --surface: var(--bg-elevated);
+  --surface-2: var(--legacy-surface-2);
+  --surface-3: var(--bg-sunken);
+  --border: var(--border-default);
+  --border-light: var(--legacy-border-light);
+  --green: var(--accent-primary);
+  --green-bright: var(--accent-primary-hover);
+  --green-dim: var(--legacy-green-dim);
+  --green-900: var(--legacy-green-900);
+  --orange: var(--legacy-orange);
+  --red: var(--danger);
+  --blue: var(--legacy-blue);
+  --gold: var(--legacy-gold);
+  --text: var(--text-primary);
+  --text-2: var(--text-secondary);
+  --text-3: var(--text-muted);
+
+  /* Layout */
   --radius: 0.875rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --keyboard-offset: 0px;
