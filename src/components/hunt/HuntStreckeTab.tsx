@@ -10,6 +10,7 @@ import StreckeNachsucheSection from '@/components/hunt/strecke/StreckeNachsucheS
 import StreckeEmptyState, { type StreckeEmptyRole } from '@/components/hunt/strecke/StreckeEmptyState'
 import FotoZielSheet, { type FotoZiel } from '@/components/hunt/strecke/FotoZielSheet'
 import KillAuswahlSheet from '@/components/hunt/strecke/KillAuswahlSheet'
+import KillDetailSheet from '@/components/kill/KillDetailSheet'
 import type { WildArt, WildGroup } from '@/lib/species-config'
 import { WILD_ART_TO_GROUP } from '@/lib/species-config'
 import {
@@ -53,9 +54,16 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
   const [photoSheetOpen, setPhotoSheetOpen] = useState(false)
   const [fotoZielOpen, setFotoZielOpen] = useState(false)
   const [killAuswahlOpen, setKillAuswahlOpen] = useState(false)
+  const [detailKill, setDetailKill] = useState<DisplayKill | null>(null)
+  const [detailMode, setDetailMode] = useState<'strecke' | 'nachsuche'>('strecke')
   const [filter, setFilter] = useState<StreckeFilter>({ kind: 'all' })
   const [pinnedGroup, setPinnedGroup] = useState<WildGroup | null>(null)
   const nachsucheSectionRef = useRef<HTMLElement | null>(null)
+
+  const openDetail = useCallback((kill: DisplayKill, mode: 'strecke' | 'nachsuche' = 'strecke') => {
+    setDetailKill(kill)
+    setDetailMode(mode)
+  }, [])
 
   const handleFotoZielSelect = useCallback((ziel: FotoZiel) => {
     setFotoZielOpen(false)
@@ -290,12 +298,17 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
             killIdsWithPhotos={killIdsWithPhotos}
             killPhotoCounts={killPhotoCounts}
             isOwnBatch={userId !== null && batch.reporter_id === userId}
+            onKillTap={kill => openDetail(kill, 'strecke')}
           />
         )
       })}
 
       {canSeeNachsuche && woundedKills.length > 0 && (
-        <StreckeNachsucheSection ref={nachsucheSectionRef} kills={woundedKills} />
+        <StreckeNachsucheSection
+          ref={nachsucheSectionRef}
+          kills={woundedKills}
+          onKillTap={kill => openDetail(kill, 'nachsuche')}
+        />
       )}
 
       {moodPhotos.length > 0 && (
@@ -372,6 +385,26 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
           />
         </>
       )}
+      <KillDetailSheet
+        open={detailKill !== null}
+        kill={detailKill}
+        mode={detailMode}
+        heroPhotoUrl={
+          detailKill
+            ? visiblePhotos.find(p => p.kill_ids?.includes(detailKill.id))?.url ?? null
+            : null
+        }
+        photoCount={detailKill ? killPhotoCounts.get(detailKill.id) ?? 0 : 0}
+        canEdit={
+          detailKill !== null &&
+          (viewer.role === 'jagdleiter' || detailKill.reporter_id === userId)
+        }
+        canDelete={
+          detailKill !== null &&
+          (viewer.role === 'jagdleiter' || detailKill.reporter_id === userId)
+        }
+        onClose={() => setDetailKill(null)}
+      />
     </div>
   )
 }
