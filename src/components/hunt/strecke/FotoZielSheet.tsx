@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useRef } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Target, Sunrise } from 'lucide-react'
+import { RehwildIcon } from '@/components/icons/SpeciesIcons'
 
 export type FotoZiel = 'streckenfoto' | 'stimmung' | 'erlegung'
 
@@ -13,7 +14,7 @@ interface FotoZielSheetProps {
 
 interface OptionSpec {
   id: FotoZiel
-  emoji: string
+  icon: React.ReactNode
   title: string
   subtext: string
 }
@@ -21,19 +22,19 @@ interface OptionSpec {
 const OPTIONS: OptionSpec[] = [
   {
     id: 'streckenfoto',
-    emoji: '🎯',
+    icon: <Target size={26} />,
     title: 'Streckenfoto',
     subtext: 'Gruppenbild der gelegten Strecke.',
   },
   {
     id: 'stimmung',
-    emoji: '🌅',
+    icon: <Sunrise size={26} />,
     title: 'Jagd-Stimmung',
     subtext: 'Landschaft, Hund, Sonnenaufgang — das Drumherum.',
   },
   {
     id: 'erlegung',
-    emoji: '🦌',
+    icon: <RehwildIcon size={28} />,
     title: 'Zu einer Erlegung',
     subtext: 'Foto einem Stück zuordnen.',
   },
@@ -149,6 +150,7 @@ function OptionRow({ option, onClick }: { option: OptionSpec; onClick: () => voi
     <button
       type="button"
       onClick={onClick}
+      className="tap-ripple"
       style={{
         all: 'unset',
         display: 'flex',
@@ -167,14 +169,15 @@ function OptionRow({ option, onClick }: { option: OptionSpec; onClick: () => voi
       <span
         aria-hidden="true"
         style={{
-          fontSize: '1.75rem',
-          lineHeight: 1,
           width: '2.25rem',
-          textAlign: 'center',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--accent-primary)',
           flexShrink: 0,
         }}
       >
-        {option.emoji}
+        {option.icon}
       </span>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
         <span

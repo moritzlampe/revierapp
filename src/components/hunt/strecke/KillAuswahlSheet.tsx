@@ -8,12 +8,12 @@ import { insertHuntPhoto } from '@/lib/photos/hunt-photos'
 import { showToast } from '@/lib/erlegung/toast'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
-  WILD_ART_TO_GROUP,
   WILD_GROUP_CONFIG,
   WILD_GROUP_DETAILS,
   FLAT_GROUP_TIERE,
   type WildArt,
 } from '@/lib/species-config'
+import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 
 interface KillAuswahlSheetProps {
   open: boolean
@@ -44,12 +44,6 @@ function wildArtLabel(wildArt: string): string {
   const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === (wildArt as WildArt))
   if (group) return group.label
   return wildArt
-}
-
-function wildEmoji(wildArt: string): string {
-  const group = WILD_ART_TO_GROUP[wildArt as WildArt]
-  if (!group) return '•'
-  return WILD_GROUP_CONFIG.find(c => c.group === group)?.emoji ?? '•'
 }
 
 function isHeic(file: File): boolean {
@@ -382,18 +376,20 @@ function KillRow({
       >
         {formatTime(kill.created_at)}
       </span>
-      <span
-        aria-hidden="true"
-        style={{
-          fontSize: '1.25rem',
-          lineHeight: 1,
-          width: '1.5rem',
-          textAlign: 'center',
-          flexShrink: 0,
-        }}
-      >
-        {wildEmoji(kill.wild_art)}
-      </span>
+      {(() => {
+        const Icon = getSpeciesIcon(kill.wild_art)
+        return (
+          <Icon
+            size={20}
+            style={{
+              color: 'var(--text-primary)',
+              flexShrink: 0,
+              width: '1.5rem',
+              height: '1.5rem',
+            }}
+          />
+        )
+      })()}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
         <span
           style={{

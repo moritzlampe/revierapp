@@ -11,6 +11,7 @@ import {
   type Geschlecht,
   type WildArt,
 } from '@/lib/species-config'
+import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 
 export type KillDetailMode = 'strecke' | 'nachsuche'
 
@@ -68,12 +69,6 @@ function wildGroupLabel(wildArt: string): string {
   const group = WILD_ART_TO_GROUP[wildArt as WildArt]
   if (!group) return ''
   return WILD_GROUP_CONFIG.find(c => c.group === group)?.label ?? ''
-}
-
-function wildEmoji(wildArt: string): string {
-  const group = WILD_ART_TO_GROUP[wildArt as WildArt]
-  if (!group) return '•'
-  return WILD_GROUP_CONFIG.find(c => c.group === group)?.emoji ?? '•'
 }
 
 function geschlechtLabel(g: Geschlecht | null | undefined): string | null {
@@ -366,6 +361,7 @@ function Hero({
       </div>
     )
   }
+  const Icon = getSpeciesIcon(wildArt)
   return (
     <div
       style={{
@@ -376,12 +372,11 @@ function Hero({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '5rem',
-        lineHeight: 1,
         marginTop: '0.25rem',
+        color: 'var(--accent-primary)',
       }}
     >
-      <span aria-hidden="true">{wildEmoji(wildArt)}</span>
+      <Icon size={120} />
     </div>
   )
 }

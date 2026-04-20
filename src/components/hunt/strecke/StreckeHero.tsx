@@ -1,9 +1,11 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ChevronRight, AlertTriangle } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { WILD_ART_TO_GROUP, WILD_GROUP_CONFIG, type WildArt, type WildGroup } from '@/lib/species-config'
 import type { DisplayKill } from '@/lib/strecke/visibility'
+import { getGroupIcon } from '@/components/icons/SpeciesIcons'
+import AlertTriangleIcon from '@/components/icons/AlertTriangleIcon'
 
 // Jagdliche Streckenlegungs-Konvention
 const WILD_GROUP_ORDER: WildGroup[] = [
@@ -23,7 +25,6 @@ const FULL_HERO_THRESHOLD = 5
 interface GroupAggregate {
   group: WildGroup
   label: string
-  emoji: string
   count: number
 }
 
@@ -40,7 +41,7 @@ function aggregateByGroup(kills: DisplayKill[]): GroupAggregate[] {
     if (count === 0) continue
     const config = WILD_GROUP_CONFIG.find(c => c.group === group)
     if (!config) continue
-    result.push({ group, label: config.label, emoji: config.emoji, count })
+    result.push({ group, label: config.label, count })
   }
   return result
 }
@@ -119,21 +120,24 @@ function CompactHero({ total, aggregates }: { total: number; aggregates: GroupAg
         <>
           <span style={{ color: 'var(--text-secondary)' }}>·</span>
           <div style={{ display: 'flex', gap: '0.625rem', flexWrap: 'wrap' }}>
-            {aggregates.map(agg => (
-              <span
-                key={agg.group}
-                style={{
-                  fontSize: '0.9375rem',
-                  color: 'var(--text-primary)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                }}
-              >
-                <span aria-hidden="true">{agg.emoji}</span>
-                <span>×{agg.count}</span>
-              </span>
-            ))}
+            {aggregates.map(agg => {
+              const Icon = getGroupIcon(agg.group)
+              return (
+                <span
+                  key={agg.group}
+                  style={{
+                    fontSize: '0.9375rem',
+                    color: 'var(--text-primary)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.375rem',
+                  }}
+                >
+                  <Icon size={20} />
+                  <span>×{agg.count}</span>
+                </span>
+              )
+            })}
           </div>
         </>
       )}
@@ -205,32 +209,38 @@ function FullHero({
             const hasChevron = agg.count >= CHEVRON_THRESHOLD
             const isActive = activeGroupFilter === agg.group
             const tappable = hasChevron && Boolean(onGroupTap)
+            const Icon = getGroupIcon(agg.group)
             return (
               <button
                 key={agg.group}
                 type="button"
                 disabled={!tappable}
                 onClick={tappable ? () => onGroupTap?.(agg.group) : undefined}
+                className={tappable ? 'tap-ripple' : undefined}
                 style={{
                   all: 'unset',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.75rem',
-                  padding: '0.5rem 0',
+                  padding: '0.5rem 0.25rem',
                   cursor: tappable ? 'pointer' : 'default',
-                  borderRadius: 0,
+                  borderRadius: '8px',
                   WebkitTapHighlightColor: 'transparent',
                   minHeight: '2.75rem',
                   boxSizing: 'border-box',
                   opacity: activeGroupFilter && !isActive ? 0.55 : 1,
+                  transition: 'opacity 150ms ease, background-color 100ms ease-out',
                 }}
               >
-                <span
-                  aria-hidden="true"
-                  style={{ fontSize: '1.25rem', lineHeight: 1, width: '1.5rem', textAlign: 'center' }}
-                >
-                  {agg.emoji}
-                </span>
+                <Icon
+                  size={20}
+                  style={{
+                    color: isActive ? 'var(--accent-primary)' : 'var(--text-primary)',
+                    flexShrink: 0,
+                    width: '1.5rem',
+                    height: '1.5rem',
+                  }}
+                />
                 <span
                   style={{
                     fontSize: '1rem',
@@ -259,6 +269,8 @@ function FullHero({
                     style={{
                       color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
                       flexShrink: 0,
+                      transform: isActive ? 'rotate(90deg)' : 'rotate(0deg)',
+                      transition: 'transform 250ms ease, color 150ms ease',
                     }}
                   />
                 )}
@@ -291,7 +303,7 @@ function NachsucheWarningStripe({ count, onTap }: { count: number; onTap?: () =>
         boxSizing: 'border-box',
       }}
     >
-      <AlertTriangle size={18} style={{ color: 'var(--alert-text)', flexShrink: 0 }} />
+      <AlertTriangleIcon size={18} style={{ color: 'var(--alert-text)', flexShrink: 0 }} />
       <span
         style={{
           flex: 1,

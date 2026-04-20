@@ -1,15 +1,16 @@
 'use client'
 
 import { forwardRef } from 'react'
-import { ChevronRight, AlertTriangle, MapPin } from 'lucide-react'
+import { ChevronRight, MapPin } from 'lucide-react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
-  WILD_ART_TO_GROUP,
   WILD_GROUP_CONFIG,
   WILD_GROUP_DETAILS,
   FLAT_GROUP_TIERE,
   type WildArt,
 } from '@/lib/species-config'
+import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
+import AlertTriangleIcon from '@/components/icons/AlertTriangleIcon'
 
 interface StreckeNachsucheSectionProps {
   kills: DisplayKill[]
@@ -30,12 +31,6 @@ function wildArtLabel(wildArt: string): string {
   const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === (wildArt as WildArt))
   if (group) return group.label
   return wildArt
-}
-
-function wildEmoji(wildArt: string): string {
-  const group = WILD_ART_TO_GROUP[wildArt as WildArt]
-  if (!group) return '•'
-  return WILD_GROUP_CONFIG.find(c => c.group === group)?.emoji ?? '•'
 }
 
 function formatDuration(fromIso: string, now: number): string {
@@ -73,7 +68,7 @@ const StreckeNachsucheSection = forwardRef<HTMLElement, StreckeNachsucheSectionP
             paddingLeft: '0.25rem',
           }}
         >
-          <AlertTriangle size={14} style={{ color: 'var(--alert-text)' }} />
+          <AlertTriangleIcon size={14} style={{ color: 'var(--alert-text)' }} />
           <h2
             style={{
               margin: 0,
@@ -110,7 +105,7 @@ function NachsucheCard({
   durationLabel: string
   onTap?: () => void
 }) {
-  const emoji = wildEmoji(kill.wild_art)
+  const Icon = getSpeciesIcon(kill.wild_art)
   const label = wildArtLabel(kill.wild_art)
   const hasPosition = Boolean(kill.position)
 
@@ -118,6 +113,7 @@ function NachsucheCard({
     <button
       type="button"
       onClick={onTap}
+      className={onTap ? 'tap-ripple' : undefined}
       style={{
         all: 'unset',
         display: 'flex',
@@ -132,18 +128,15 @@ function NachsucheCard({
         boxSizing: 'border-box',
       }}
     >
-      <span
-        aria-hidden="true"
+      <Icon
+        size={28}
         style={{
-          fontSize: '1.5rem',
-          lineHeight: 1,
-          width: '1.75rem',
-          textAlign: 'center',
+          color: 'var(--alert-text)',
           flexShrink: 0,
+          width: '1.75rem',
+          height: '1.75rem',
         }}
-      >
-        {emoji}
-      </span>
+      />
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
         <div
           style={{

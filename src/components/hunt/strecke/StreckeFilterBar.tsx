@@ -2,6 +2,7 @@
 
 import { Camera } from 'lucide-react'
 import { WILD_GROUP_CONFIG, type WildGroup } from '@/lib/species-config'
+import { getGroupIcon } from '@/components/icons/SpeciesIcons'
 
 export type StreckeFilter =
   | { kind: 'all' }
@@ -14,6 +15,7 @@ interface PillSpec {
   label: string
   count: number
   filter: StreckeFilter
+  group?: WildGroup
 }
 
 interface StreckeFilterBarProps {
@@ -62,9 +64,10 @@ export default function StreckeFilterBar({
     if (groupConfig) {
       pills.push({
         id: `group-${counts.group.group}`,
-        label: `${groupConfig.emoji} ${groupConfig.label}`,
+        label: groupConfig.label,
         count: counts.group.count,
         filter: { kind: 'group', group: counts.group.group },
+        group: counts.group.group,
       })
     }
   }
@@ -92,11 +95,14 @@ export default function StreckeFilterBar({
       >
         {pills.map(pill => {
           const isActive = filtersEqual(pill.filter, active)
+          const Icon = pill.group ? getGroupIcon(pill.group) : null
           return (
             <button
               key={pill.id}
               type="button"
               onClick={() => onChange(pill.filter)}
+              className="filter-pill"
+              data-active={isActive ? 'true' : 'false'}
               style={{
                 flexShrink: 0,
                 padding: '0.5rem 0.75rem',
@@ -114,9 +120,11 @@ export default function StreckeFilterBar({
                 alignItems: 'center',
                 gap: '0.375rem',
                 whiteSpace: 'nowrap',
-                transition: 'background-color 100ms ease-out',
+                transition: 'background-color 150ms ease, color 150ms ease, transform 150ms ease',
+                transform: isActive ? 'scale(1.02)' : 'scale(1)',
               }}
             >
+              {Icon && <Icon size={16} />}
               <span>{pill.label}</span>
               <span
                 style={{

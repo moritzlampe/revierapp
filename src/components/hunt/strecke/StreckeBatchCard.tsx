@@ -5,13 +5,13 @@ import type { DisplayKill } from '@/lib/strecke/visibility'
 import type { HuntPhoto } from '@/lib/types/hunt-photo'
 import { getAvatarColor } from '@/lib/avatar-color'
 import {
-  WILD_ART_TO_GROUP,
   WILD_GROUP_CONFIG,
   WILD_GROUP_DETAILS,
   FLAT_GROUP_TIERE,
   type Geschlecht,
   type WildArt,
 } from '@/lib/species-config'
+import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 
 interface DisplayKillBatch {
   id: string
@@ -55,12 +55,6 @@ function wildArtLabel(wildArt: string): string {
   const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === (wildArt as WildArt))
   if (group) return group.label
   return wildArt
-}
-
-function wildGroupEmoji(wildArt: string): string {
-  const group = WILD_ART_TO_GROUP[wildArt as WildArt]
-  if (!group) return '•'
-  return WILD_GROUP_CONFIG.find(c => c.group === group)?.emoji ?? '•'
 }
 
 function geschlechtLabel(g: Geschlecht | null | undefined): string | null {
@@ -272,13 +266,14 @@ function KillSubItem({
   onTap?: () => void
   isLast: boolean
 }) {
-  const emoji = wildGroupEmoji(kill.wild_art)
+  const Icon = getSpeciesIcon(kill.wild_art)
   const label = wildArtLabel(kill.wild_art)
   const details = detailsFor(kill)
   const isWounded = kill.status === 'wounded'
 
   return (
     <li
+      className={onTap ? 'tap-ripple' : undefined}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -293,18 +288,15 @@ function KillSubItem({
       role={onTap ? 'button' : undefined}
       tabIndex={onTap ? 0 : undefined}
     >
-      <span
-        aria-hidden="true"
+      <Icon
+        size={24}
         style={{
-          fontSize: '1.25rem',
-          lineHeight: 1,
-          width: '1.5rem',
-          textAlign: 'center',
+          color: 'var(--text-primary)',
           flexShrink: 0,
+          width: '1.5rem',
+          height: '1.5rem',
         }}
-      >
-        {emoji}
-      </span>
+      />
       <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: '0.375rem', flexWrap: 'wrap' }}>
         <span
           style={{
