@@ -107,30 +107,46 @@ Primary ist **ausschließlich Akzent- und Fill-Farbe** für Buttons, aktive Tabs
 
 ## 3. Typografie
 
-**Font:** iOS SF Pro (Systemfont) als Primary, Fallback `-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`.
+**Drei-Stimmen-Stack (Ledergebunden-Editorial, Stand Sprint 58.1k.2):**
 
-Begründung: native Rendering-Qualität, respektiert iOS-Textgröße-Einstellung automatisch, optimal lesbar outdoor.
+| Variable | Font | Rolle |
+|---|---|---|
+| *(default)* | iOS SF Pro (System) → `-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif` | Body + UI — alles unter Headline-Ebene |
+| `--font-display` | Fraunces (Google Fonts, Weights 500+600) | Editorial-Headlines, Hero-Display, Page- und Card-Titel |
+| `--font-mono` | IBM Plex Mono (Google Fonts, Weights 400+500) | Technische Werte: Koordinaten, Uhrzeiten, GPS-Accuracy-Zahlen |
+
+Begründung Default-System-Font: native Rendering-Qualität, respektiert iOS-Textgröße-Einstellung automatisch, optimal lesbar outdoor. Fraunces trägt das Editorial-Gesicht (warm-serif, nicht antiquarisch). IBM Plex Mono ist Pendant zur Plex-Familie und trägt numerische Daten tabellarisch.
+
+**Mindestgröße Fraunces:** 1rem. Unter 1rem verliert Fraunces Charakter und kippt auf Mobile in verwaschenes Rendering. Caption- oder Overline-Größen (0.75rem) bleiben SF Pro.
+
+**Mindestgröße IBM Plex Mono:** 0.6875rem (funktional, z.B. Chat-Zeitstempel). Nicht als Body einsetzen — Monospace als Prosa kippt in Terminal-Kitsch.
 
 **Basis:** 16px = 1rem
 
 ### 3.1 Typo-Skala
 
-| Rolle | Size | Weight | Line-height | Letter-spacing | Verwendung |
-|-------|------|--------|-------------|----------------|------------|
-| Display | 4.5rem (72px) | 600 | 1.05 | -0.02em | Hero-Zahl "12 Stücke" |
-| H1 | 1.5rem (24px) | 600 | 1.3 | -0.01em | Page-Titel ("Jagd am 18.4.2026") |
-| H2 | 1.125rem (18px) | 600 | 1.3 | 0 | Sektions-Überschriften ("IN NACHSUCHE") |
-| Body-Large | 1rem (16px) | 500 | 1.4 | 0 | Batch-Card-Name ("Andreas Berg") |
-| Body | 0.9375rem (15px) | 400 | 1.5 | 0 | Standard-Text, Kill-Details |
-| Caption | 0.8125rem (13px) | 400 | 1.4 | 0.01em | Meta-Info ("09:42 · 3 Stücke") |
-| Overline | 0.75rem (12px) | 600 | 1.2 | 0.08em | Kleine Labels ("HEUTIGE STRECKE"), UPPERCASE |
-| Badge | 0.75rem (12px) | 600 | 1.2 | 0.04em | Kurz-Labels ("DU", "KAPITAL", "NACHSUCHE") |
+| Rolle | Size | Weight | Line-height | Letter-spacing | Font | Verwendung |
+|-------|------|--------|-------------|----------------|------|------------|
+| Display | 4.5rem (72px) | 500–600 | 1.05 | -0.02em | Fraunces | Hero-Zahl "12 Stücke" |
+| Editorial-H1 | 1.75–2rem | 500 | 1.2 | -0.02em | Fraunces | Kill-Detail-Headline, Jagden-Top-Title |
+| H2 (Editorial) | 1.125rem (18px) | 500 | 1.3 | -0.01em | Fraunces | Settings-Section-Header |
+| H2 (Overline) | 0.75rem (12px) | 600 | 1.2 | 0.08em | SF Pro | Small-Caps-Section-Header ("IN NACHSUCHE") |
+| Card-Title | 1rem (16px) | 500 | 1.3 | -0.01em | Fraunces | Hunt-Card-Name, Chat-Gruppen-Name, Hunt-Topbar-Name |
+| Body-Large | 1rem (16px) | 500 | 1.4 | 0 | SF Pro | Batch-Card-Name ("Andreas Berg") |
+| Body | 0.9375rem (15px) | 400 | 1.5 | 0 | SF Pro | Standard-Text, Kill-Details |
+| Caption | 0.8125rem (13px) | 400 | 1.4 | 0.01em | SF Pro | Meta-Info ("09:42 · 3 Stücke") |
+| Overline | 0.75rem (12px) | 600 | 1.2 | 0.08em | SF Pro | Kleine Labels ("HEUTIGE STRECKE"), UPPERCASE |
+| Badge | 0.75rem (12px) | 600 | 1.2 | 0.04em | SF Pro | Kurz-Labels ("DU", "KAPITAL", "NACHSUCHE") |
+| Data-Mono | 0.6875–0.8125rem | 400 | 1.3 | 0 | IBM Plex Mono | Koordinaten, Uhrzeiten, GPS-Accuracy |
 
 ### 3.2 Regeln
 
 - **Overline/Caption immer mit `--text-secondary`**, nie mit `--text-muted`, weil informationstragend
 - **Display ausschließlich im Hero** — nicht als generelle "große Zahl"-Lösung recyceln
 - **Badge-Text auf farbigem BG** immer weiß oder `--text-primary`, nie `--accent-primary`
+- **Fraunces nur ab 1rem aufwärts.** Unter 1rem bleibt SF Pro — Charakter verliert sich sonst auf iPhone-Rendering.
+- **IBM Plex Mono nur für funktionale Zahlen-Daten** (Koordinaten, Uhrzeiten, Accuracy-Meter). Nicht für Prosa, nicht für Headlines.
+- **Editorial-Kicker-Pattern (Small-Caps-Kicker + Fraunces-H1 + Meta-Pills)** ist in Kill-Detail-Sheet kanonisiert; Hunt-Card und Settings adoptieren das Muster (siehe §5.13).
 
 ---
 

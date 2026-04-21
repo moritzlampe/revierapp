@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Fraunces } from 'next/font/google'
+import { Fraunces, IBM_Plex_Mono } from 'next/font/google'
 import './globals.css'
 import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration'
 
@@ -8,6 +8,14 @@ const fraunces = Fraunces({
   weight: ['500', '600'],
   style: ['normal'],
   variable: '--font-display',
+  display: 'swap',
+})
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  style: ['normal'],
+  variable: '--font-mono',
   display: 'swap',
 })
 
@@ -41,7 +49,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="de" className={fraunces.variable}>
+    <html lang="de" className={`${fraunces.variable} ${plexMono.variable}`}>
       <body className="antialiased">
         <ServiceWorkerRegistration />
         <div className="min-h-viewport app-mobile-wrapper" style={{
