@@ -768,27 +768,43 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             background: isLive ? 'rgba(107,159,58,0.08)' : 'var(--surface)',
                             border: isLive ? '1px solid rgba(107,159,58,0.25)' : '1px solid var(--border)',
                           }}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span style={{
-                              fontFamily: 'var(--font-display)',
-                              fontSize: '1rem',
-                              fontWeight: 500,
-                              letterSpacing: '-0.01em',
-                              color: 'var(--text)',
-                            }}>{hunt.name}</span>
-                            {isLive ? (
-                              <span className="badge badge-live"><span className="live-dot mr-1" /> Live</span>
-                            ) : hunt.status === 'completed' ? (
-                              <span className="badge badge-done">
-                                {hunt.ended_at ? new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) : 'Beendet'}
-                              </span>
-                            ) : (
-                              <span className="badge" style={{ background: 'var(--surface-3)', color: 'var(--text-2)', fontSize: '0.6875rem', padding: '0.125rem 0.5rem', borderRadius: '9999px' }}>Geplant</span>
-                            )}
+                          {/* Kicker: Status als Small-Caps */}
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.375rem',
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            color: isLive
+                              ? 'var(--accent-primary)'
+                              : hunt.status === 'completed'
+                                ? 'var(--text-2)'
+                                : 'var(--text-3)',
+                            marginBottom: '0.25rem',
+                          }}>
+                            {isLive && <span className="live-dot" />}
+                            {isLive
+                              ? 'Live'
+                              : hunt.status === 'completed'
+                                ? 'Beendet'
+                                : 'Geplant'}
                           </div>
+                          <div style={{
+                            fontFamily: 'var(--font-display)',
+                            fontSize: '1rem',
+                            fontWeight: 500,
+                            letterSpacing: '-0.01em',
+                            color: 'var(--text)',
+                            marginBottom: '0.375rem',
+                          }}>{hunt.name}</div>
                           <div className="flex gap-3.5 text-xs" style={{ color: 'var(--text-2)' }}>
                             {isLive && hunt.started_at && (
-                              <span>🕐 Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span>Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                            )}
+                            {hunt.status === 'completed' && hunt.ended_at && (
+                              <span>{new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}</span>
                             )}
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                               {hunt.myRole === 'jagdleiter' ? (
