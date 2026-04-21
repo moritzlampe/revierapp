@@ -475,6 +475,7 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
           detailKill !== null &&
           (viewer.role === 'jagdleiter' || detailKill.reporter_id === userId)
         }
+        isReporter={detailKill !== null && detailKill.reporter_id === userId}
         onClose={() => setDetailKill(null)}
       />
     </div>

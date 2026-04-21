@@ -12,6 +12,7 @@ interface KillDetailSheetProps {
   photoCount?: number
   canEdit?: boolean
   canDelete?: boolean
+  isReporter?: boolean
   onClose: () => void
   onEdit?: () => void
   onDelete?: () => void
@@ -26,6 +27,7 @@ export default function KillDetailSheet({
   photoCount,
   canEdit,
   canDelete,
+  isReporter,
   onClose,
   onEdit,
   onDelete,
@@ -103,6 +105,7 @@ export default function KillDetailSheet({
             photoCount={photoCount}
             canEdit={canEdit}
             canDelete={canDelete}
+            isReporter={isReporter}
             onEdit={onEdit}
             onDelete={onDelete}
             onShare={onShare}
