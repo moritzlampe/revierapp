@@ -35,7 +35,7 @@ export default function LoginPage() {
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg" style={{ background: 'linear-gradient(135deg, var(--green), var(--green-dim))' }}>🌲</div>
           <span className="text-xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>
-            Revier<span style={{ color: 'var(--green-bright)' }}>App</span>
+            Revier<span style={{ color: 'var(--accent-primary)' }}>App</span>
           </span>
         </div>
 
@@ -62,7 +62,7 @@ export default function LoginPage() {
 
         <p className="text-sm text-center mt-6" style={{ color: 'var(--text-3)' }}>
           Noch kein Konto?{' '}
-          <Link href="/signup" className="font-medium" style={{ color: 'var(--green-bright)' }}>Registrieren</Link>
+          <Link href="/signup" className="font-medium" style={{ color: 'var(--accent-primary)' }}>Registrieren</Link>
         </p>
       </div>
     </div>

@@ -69,8 +69,8 @@ export default function BottomTabBar() {
           left: 0,
           right: 0,
           zIndex: 40,
-          background: 'var(--surface)',
-          borderTop: '1px solid var(--border)',
+          background: 'var(--bg-elevated)',
+          borderTop: '1px solid var(--border-default)',
           paddingBottom: 'var(--safe-bottom)',
           ...(keyboardOpen ? {
             visibility: 'hidden' as const,
@@ -99,7 +99,7 @@ export default function BottomTabBar() {
               padding: 0,
               minHeight: '2.75rem',
               minWidth: '2.75rem',
-              color: erlegungOpen ? 'var(--text)' : 'var(--text-3)',
+              color: erlegungOpen ? 'var(--text-primary)' : 'var(--text-muted)',
               transition: 'color 0.15s',
               WebkitTapHighlightColor: 'transparent',
             }}
@@ -112,8 +112,8 @@ export default function BottomTabBar() {
                 width: '3.5rem',
                 height: '3.5rem',
                 borderRadius: '50%',
-                background: 'var(--green)',
-                color: 'var(--text)',
+                background: 'var(--accent-primary)',
+                color: 'var(--text-primary)',
                 transition: 'opacity 0.15s',
                 opacity: erlegungOpen ? 0.8 : 1,
                 /* Leicht angehoben, damit die 56px-FAB nicht den
@@ -125,9 +125,9 @@ export default function BottomTabBar() {
               <Target size={24} strokeWidth={2.2} />
             </span>
             <span style={{
-              fontSize: '0.625rem',
+              fontSize: '0.75rem',
               fontWeight: erlegungOpen ? 700 : 500,
-              color: erlegungOpen ? 'var(--green-bright)' : 'var(--text-3)',
+              color: erlegungOpen ? 'var(--accent-primary)' : 'var(--text-muted)',
             }}>
               Erlegung
             </span>
@@ -164,7 +164,7 @@ function renderLinkTab(
         justifyContent: 'center',
         gap: '0.125rem',
         textDecoration: 'none',
-        color: isActive ? 'var(--green-bright)' : 'var(--text-3)',
+        color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)',
         transition: 'color 0.15s',
         minHeight: '2.75rem',
         minWidth: '2.75rem',
@@ -174,7 +174,7 @@ function renderLinkTab(
         size={22}
         strokeWidth={isActive ? 2.5 : 1.8}
       />
-      <span style={{ fontSize: '0.625rem', fontWeight: isActive ? 700 : 500 }}>
+      <span style={{ fontSize: '0.75rem', fontWeight: isActive ? 700 : 500 }}>
         {tab.label}
       </span>
     </Link>

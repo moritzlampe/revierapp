@@ -130,7 +130,7 @@ function PresetCard({ quality }: { quality: PhotoQuality }) {
     >
       <h2
         style={{
-          color: 'var(--green-bright)',
+          color: 'var(--accent-primary)',
           fontSize: '1rem',
           fontWeight: 600,
           marginBottom: '0.25rem',
@@ -182,7 +182,7 @@ function PresetCard({ quality }: { quality: PhotoQuality }) {
       {uploadMsg && (
         <p
           style={{
-            color: 'var(--green-bright)',
+            color: 'var(--accent-primary)',
             fontSize: '0.8125rem',
             marginTop: '0.5rem',
           }}

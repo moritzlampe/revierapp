@@ -16,6 +16,7 @@ import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
 import { deleteHuntPhoto } from '@/lib/photos/hunt-photos'
 import { showToast } from '@/lib/erlegung/toast'
+import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 
 interface DisplayKillBatch {
   id: string
@@ -102,10 +103,17 @@ export default function StreckeBatchCard({
   onKillTap,
 }: StreckeBatchCardProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const confirmSheet = useConfirmSheet()
 
   const handleDeletePhoto = async (photo: HuntPhoto) => {
     if (!viewerUserId || photo.uploaded_by !== viewerUserId) return
-    if (!window.confirm('Foto wirklich löschen?')) return
+    const ok = await confirmSheet({
+      title: 'Foto löschen?',
+      description: 'Das Foto wird endgültig entfernt.',
+      confirmLabel: 'Löschen',
+      confirmVariant: 'danger',
+    })
+    if (!ok) return
     setDeletingId(photo.id)
     try {
       await deleteHuntPhoto(photo.id, photo.storage_path)
@@ -174,7 +182,7 @@ export default function StreckeBatchCard({
           {isOwnBatch && (
             <span
               style={{
-                fontSize: '0.6875rem',
+                fontSize: '0.75rem',
                 fontWeight: 600,
                 letterSpacing: '0.04em',
                 padding: '0.125rem 0.375rem',
@@ -229,20 +237,6 @@ export default function StreckeBatchCard({
           ))}
         </ul>
       </div>
-
-      {hasRotte && (
-        <div
-          style={{
-            fontSize: '0.8125rem',
-            fontWeight: 400,
-            color: 'var(--text-secondary)',
-            letterSpacing: '0.01em',
-            paddingLeft: hasRotte ? '1.625rem' : 0,
-          }}
-        >
-          Rotte · {batch.kills.length}× in derselben Minute
-        </div>
-      )}
 
       {showBatchPhotos && (
         <div
@@ -341,7 +335,7 @@ function KillSubItem({
       {isWounded && (
         <span
           style={{
-            fontSize: '0.6875rem',
+            fontSize: '0.75rem',
             fontWeight: 600,
             letterSpacing: '0.04em',
             padding: '0.125rem 0.375rem',

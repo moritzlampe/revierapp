@@ -124,7 +124,7 @@ export default function DuContent({
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (
-              <span style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--green-bright)' }}>
+              <span style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
                 {initials}
               </span>
             )}
@@ -173,7 +173,7 @@ export default function DuContent({
                   fontSize: '0.8125rem',
                   fontWeight: status === key ? 700 : 500,
                   background: status === key ? 'var(--green-dim)' : 'transparent',
-                  color: status === key ? 'var(--green-bright)' : 'var(--text-3)',
+                  color: status === key ? 'var(--accent-primary)' : 'var(--text-3)',
                   transition: 'all 0.15s',
                   whiteSpace: 'nowrap',
                 }}
@@ -328,7 +328,7 @@ export default function DuContent({
                 fontSize: '1.25rem',
                 fontWeight: 700,
                 letterSpacing: '0.05rem',
-                color: 'var(--green-bright)',
+                color: 'var(--accent-primary)',
               }}>
                 Felsenkeller2026
               </span>

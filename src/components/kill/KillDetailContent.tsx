@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Clock, User, Weight, MapPin, Star, Share2, Pencil, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Clock, User, Weight, Star, Share2, Pencil, Loader2 } from 'lucide-react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
   WILD_ART_TO_GROUP,
@@ -12,6 +12,9 @@ import {
   type WildArt,
 } from '@/lib/species-config'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
+import PinIcon from '@/components/icons/PinIcon'
+import { createClient } from '@/lib/supabase/client'
+import { showToast } from '@/lib/erlegung/toast'
 
 export type KillDetailMode = 'strecke' | 'nachsuche'
 
@@ -24,6 +27,11 @@ interface KillDetailContentProps {
   photoCount?: number
   canEdit?: boolean
   canDelete?: boolean
+  /**
+   * Nur der ursprüngliche Reporter darf kapital/notiz ändern
+   * (RLS: kills_reporter-Policy). Andere Viewer sehen die Werte read-only.
+   */
+  isReporter?: boolean
   onEdit?: () => void
   onDelete?: () => void
   onShare?: () => void
@@ -93,22 +101,69 @@ export default function KillDetailContent({
   photoCount = 0,
   canEdit = false,
   canDelete = false,
+  isReporter = false,
   onEdit,
   onDelete,
   onShare,
 }: KillDetailContentProps) {
-  // Kapital-Toggle + Notiz: noch kein DB-Feld; Sprint 58.1h.d rendert die UI,
-  // Persistenz kommt mit eigener Migration.
-  const [kapital, setKapital] = useState(false)
-  const [note, setNote] = useState('')
+  const supabase = useMemo(() => createClient(), [])
+
+  // Lokaler, optimistisch gepflegter Zustand. Wird bei Wechsel des Kills
+  // (anderes Detail-Sheet geöffnet) auf die DB-Werte zurückgesetzt.
+  const [kapital, setKapital] = useState<boolean>(kill.kapital)
+  const [note, setNote] = useState<string>(kill.notiz ?? '')
   const [editingNote, setEditingNote] = useState(false)
+  const [savingKapital, setSavingKapital] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
   const noteRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    setKapital(kill.kapital)
+    setNote(kill.notiz ?? '')
+    setEditingNote(false)
+  }, [kill.id, kill.kapital, kill.notiz])
 
   useEffect(() => {
     if (editingNote) {
       setTimeout(() => noteRef.current?.focus(), 50)
     }
   }, [editingNote])
+
+  const canEditReporterFields = isReporter
+
+  const handleKapitalToggle = useCallback(async () => {
+    if (!canEditReporterFields || savingKapital) return
+    const next = !kapital
+    setKapital(next) // optimistisch
+    setSavingKapital(true)
+    const { error } = await supabase
+      .from('kills')
+      .update({ kapital: next })
+      .eq('id', kill.id)
+    setSavingKapital(false)
+    if (error) {
+      setKapital(!next) // zurückrollen
+      showToast('Konnte nicht gespeichert werden', 'warning', error.message)
+    }
+  }, [canEditReporterFields, savingKapital, kapital, supabase, kill.id])
+
+  const handleNoteCommit = useCallback(async () => {
+    setEditingNote(false)
+    if (!canEditReporterFields) return
+    const next = note.trim()
+    const prev = (kill.notiz ?? '').trim()
+    if (next === prev) return
+    setSavingNote(true)
+    const { error } = await supabase
+      .from('kills')
+      .update({ notiz: next.length > 0 ? next : null })
+      .eq('id', kill.id)
+    setSavingNote(false)
+    if (error) {
+      setNote(kill.notiz ?? '') // zurückrollen
+      showToast('Notiz konnte nicht gespeichert werden', 'warning', error.message)
+    }
+  }, [canEditReporterFields, note, kill.notiz, kill.id, supabase])
 
   const latLng = extractLatLng(kill.position)
   const detailsTitle = [
@@ -183,23 +238,19 @@ export default function KillDetailContent({
         {typeof kill.gewicht_kg === 'number' && (
           <MetaChip icon={<Weight size={14} />} label={`${kill.gewicht_kg.toFixed(1)} kg`} />
         )}
-        {latLng && (
-          <MetaChip
-            icon={<MapPin size={14} />}
-            label={`${latLng.lat.toFixed(4)}, ${latLng.lng.toFixed(4)}`}
-          />
-        )}
       </div>
 
-      {/* Mini-Map */}
-      {latLng && <MiniMap latLng={latLng} />}
+      {/* Position: ehrliche Zeile statt Fake-Minimap.
+          Echte Karte kommt in einem späteren Sprint. */}
+      {latLng && <PositionRow latLng={latLng} />}
 
       {/* Kapital-Toggle */}
       <div style={{ padding: '0 1rem' }}>
         <button
           type="button"
-          onClick={() => setKapital(v => !v)}
-          disabled={!canEdit}
+          onClick={handleKapitalToggle}
+          disabled={!canEditReporterFields || savingKapital}
+          aria-pressed={kapital}
           style={{
             all: 'unset',
             display: 'flex',
@@ -210,8 +261,8 @@ export default function KillDetailContent({
             background: kapital ? 'color-mix(in srgb, var(--accent-gold) 18%, var(--bg-base))' : 'var(--bg-base)',
             border: `1px solid ${kapital ? 'var(--accent-gold)' : 'var(--border-default)'}`,
             borderRadius: '10px',
-            cursor: canEdit ? 'pointer' : 'default',
-            opacity: canEdit ? 1 : 0.7,
+            cursor: canEditReporterFields ? 'pointer' : 'default',
+            opacity: canEditReporterFields ? 1 : 0.75,
             boxSizing: 'border-box',
             minHeight: '2.75rem',
           }}
@@ -226,17 +277,27 @@ export default function KillDetailContent({
           <span style={{ fontSize: '0.9375rem', color: 'var(--text-primary)', flex: 1 }}>
             {kapital ? 'Als kapital markiert' : 'Als kapital markieren'}
           </span>
+          {savingKapital && (
+            <Loader2
+              size={14}
+              aria-label="Wird gespeichert"
+              style={{
+                color: 'var(--text-secondary)',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            />
+          )}
         </button>
       </div>
 
       {/* Notiz-Feld */}
-      <div style={{ padding: '0 1rem' }}>
+      <div style={{ padding: '0 1rem', position: 'relative' }}>
         {editingNote ? (
           <textarea
             ref={noteRef}
             value={note}
             onChange={e => setNote(e.target.value)}
-            onBlur={() => setEditingNote(false)}
+            onBlur={handleNoteCommit}
             placeholder="Notiz zu diesem Stück…"
             rows={3}
             style={{
@@ -256,8 +317,8 @@ export default function KillDetailContent({
         ) : (
           <button
             type="button"
-            onClick={() => canEdit && setEditingNote(true)}
-            disabled={!canEdit}
+            onClick={() => canEditReporterFields && setEditingNote(true)}
+            disabled={!canEditReporterFields}
             style={{
               all: 'unset',
               display: 'block',
@@ -266,16 +327,31 @@ export default function KillDetailContent({
               background: 'var(--bg-base)',
               border: '1px solid var(--border-default)',
               borderRadius: '10px',
-              cursor: canEdit ? 'pointer' : 'default',
+              cursor: canEditReporterFields ? 'pointer' : 'default',
               fontSize: '0.9375rem',
               color: note ? 'var(--text-primary)' : 'var(--text-secondary)',
               lineHeight: 1.5,
               boxSizing: 'border-box',
               minHeight: '2.75rem',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
             }}
           >
-            {note || 'Notiz zu diesem Stück…'}
+            {note || (canEditReporterFields ? 'Notiz zu diesem Stück…' : 'Keine Notiz')}
           </button>
+        )}
+        {savingNote && (
+          <Loader2
+            size={14}
+            aria-label="Wird gespeichert"
+            style={{
+              position: 'absolute',
+              top: '0.875rem',
+              right: '1.75rem',
+              color: 'var(--text-secondary)',
+              animation: 'spin 0.8s linear infinite',
+            }}
+          />
         )}
       </div>
 
@@ -283,6 +359,7 @@ export default function KillDetailContent({
       <div
         style={{
           display: 'flex',
+          alignItems: 'center',
           gap: '0.5rem',
           padding: '0.5rem 1rem 0',
           borderTop: '1px solid var(--border-default)',
@@ -296,12 +373,26 @@ export default function KillDetailContent({
           <ActionButton icon={<Pencil size={16} />} label="Bearbeiten" onClick={onEdit} />
         )}
         {canDelete && onDelete && (
-          <ActionButton
-            icon={<Trash2 size={16} />}
-            label="Löschen"
+          <button
+            type="button"
             onClick={onDelete}
-            variant="danger"
-          />
+            className="tap-ripple"
+            style={{
+              all: 'unset',
+              padding: '0.75rem 0.75rem',
+              color: 'var(--text-secondary)',
+              fontSize: '0.8125rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              WebkitTapHighlightColor: 'transparent',
+              boxSizing: 'border-box',
+              minHeight: '2.75rem',
+              textAlign: 'center',
+              flexShrink: 0,
+            }}
+          >
+            Löschen
+          </button>
         )}
       </div>
     </div>
@@ -411,46 +502,53 @@ function MetaChip({
   )
 }
 
-function MiniMap({ latLng }: { latLng: LatLng }) {
-  // Statisches OpenStreetMap-Tile via Bildvorschau. Echte Karte mit Marker
-  // kommt in Sprint 58.1h.e zusammen mit dem Streckenkarten-Export.
-  const zoom = 15
+function PositionRow({ latLng }: { latLng: LatLng }) {
   const { lat, lng } = latLng
-  const lat2tile = (l: number, z: number) =>
-    Math.floor((1 - Math.log(Math.tan((l * Math.PI) / 180) + 1 / Math.cos((l * Math.PI) / 180)) / Math.PI) / 2 * 2 ** z)
-  const lng2tile = (l: number, z: number) => Math.floor(((l + 180) / 360) * 2 ** z)
-  const tileX = lng2tile(lng, zoom)
-  const tileY = lat2tile(lat, zoom)
-  const tileUrl = `https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`
-
+  const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  // geo:-URI öffnet Apple Maps / Google Maps / OsmAnd je nach Plattform.
+  const geoHref = `geo:${lat},${lng}?q=${lat},${lng}`
   return (
-    <div style={{ padding: '0 1rem' }}>
-      <div
+    <a
+      href={geoHref}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        margin: '0 1rem',
+        padding: '0.625rem 0.75rem',
+        background: 'var(--bg-sunken)',
+        border: '1px solid var(--border-default)',
+        borderRadius: '10px',
+        color: 'var(--text-primary)',
+        textDecoration: 'none',
+        minHeight: '2.75rem',
+        boxSizing: 'border-box',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      <PinIcon
+        size={16}
+        style={{ color: 'var(--accent-primary)', flexShrink: 0 }}
+        ariaLabel="Position"
+      />
+      <span style={{ fontSize: '0.9375rem', fontWeight: 500, flexShrink: 0 }}>
+        Position erfasst
+      </span>
+      <span
         style={{
-          position: 'relative',
-          height: '6.25rem',
-          borderRadius: '10px',
+          flex: 1,
+          fontSize: '0.8125rem',
+          color: 'var(--text-secondary)',
+          fontVariantNumeric: 'tabular-nums',
+          textAlign: 'right',
           overflow: 'hidden',
-          border: '1px solid var(--border-default)',
-          background: `var(--bg-sunken) url(${tileUrl}) center / cover`,
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}
       >
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -100%)',
-            color: 'var(--alert-text)',
-            fontSize: '1.25rem',
-            textShadow: '0 1px 2px rgba(255, 255, 255, 0.7)',
-          }}
-        >
-          📍
-        </div>
-      </div>
-    </div>
+        {coords}
+      </span>
+    </a>
   )
 }
 
@@ -458,14 +556,11 @@ function ActionButton({
   icon,
   label,
   onClick,
-  variant = 'default',
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
-  variant?: 'default' | 'danger'
 }) {
-  const isDanger = variant === 'danger'
   return (
     <button
       type="button"
@@ -480,10 +575,10 @@ function ActionButton({
         gap: '0.375rem',
         padding: '0.75rem 0.5rem',
         background: 'var(--bg-base)',
-        border: `1px solid ${isDanger ? 'var(--alert-border)' : 'var(--border-default)'}`,
+        border: '1px solid var(--border-default)',
         borderRadius: '10px',
-        color: isDanger ? 'var(--alert-text)' : 'var(--text-primary)',
-        fontSize: '0.875rem',
+        color: 'var(--text-primary)',
+        fontSize: '0.8125rem',
         fontWeight: 500,
         cursor: 'pointer',
         WebkitTapHighlightColor: 'transparent',

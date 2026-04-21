@@ -110,7 +110,7 @@ function makePreviewIcon(type: string, confirmed: boolean): L.DivIcon {
   const svg = buildPinSvg(variant, `preview-${type}`)
   const style = confirmed
     ? 'opacity: 0.85'
-    : 'opacity: 0.7; filter: drop-shadow(0 0 6px var(--green-bright)); animation: preview-pulse 1.5s ease-in-out infinite'
+    : 'opacity: 0.7; filter: drop-shadow(0 0 6px var(--accent-primary)); animation: preview-pulse 1.5s ease-in-out infinite'
   return L.divIcon({
     className: '',
     html: `<div style="${style}">${svg}</div>`,
@@ -233,7 +233,7 @@ export default function RevierMap({
             height="20"
             viewBox="0 0 24 24"
             fill="none"
-            stroke={isEditing ? 'var(--green-bright)' : 'var(--text)'}
+            stroke={isEditing ? 'var(--accent-primary)' : 'var(--text)'}
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"

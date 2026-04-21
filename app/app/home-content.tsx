@@ -535,7 +535,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
           style={{
             width: '2.5rem', height: '2.5rem', borderRadius: '50%',
             background: 'var(--surface-2)',
-            color: 'var(--green-bright)',
+            color: 'var(--accent-primary)',
           }}
         >
           <Plus size={22} strokeWidth={2.5} />
@@ -869,7 +869,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                         </span>
                         {item.lastMessageTime && (
                           <span className="text-xs flex-shrink-0 ml-2"
-                            style={{ color: item.unreadCount > 0 ? 'var(--green-bright)' : 'var(--text-3)', fontSize: '0.6875rem' }}>
+                            style={{ color: item.unreadCount > 0 ? 'var(--accent-primary)' : 'var(--text-3)', fontSize: '0.6875rem' }}>
                             {formatChatTime(item.lastMessageTime)}
                           </span>
                         )}

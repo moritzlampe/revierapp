@@ -45,6 +45,9 @@ export interface Kill {
   trichinen_pflicht: boolean
   trichinen_ergebnis: string | null
   freigabe_verkauf: boolean
+  // Reporter-Einschätzung (Migration 034 — nur Reporter darf ändern)
+  kapital: boolean
+  notiz: string | null
   // Zeitstempel
   erlegt_am: string           // ISO timestamptz
   created_at: string

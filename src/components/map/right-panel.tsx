@@ -6,10 +6,12 @@ import { getEmoji, getIconBg, getTypLabel, getZoneLabel } from "@/lib/data/demo-
 import type { Zone } from "@/lib/types/revier";
 import { useMapContext } from "./map-context";
 import { createClient } from "@/lib/supabase/client";
+import { useConfirmSheet } from "@/components/ui/ConfirmSheet";
 
 type Tab = "hochsitze" | "parkplaetze" | "zonen";
 
 export function RightPanel() {
+  const confirmSheet = useConfirmSheet();
   const [activeTab, setActiveTab] = useState<Tab>("hochsitze");
   const {
     objekte,
@@ -47,7 +49,13 @@ export function RightPanel() {
   ).length;
 
   const handleDeleteZone = async (zone: Zone) => {
-    if (!confirm(`Zone "${zone.name}" wirklich l\u00F6schen?`)) return;
+    const ok = await confirmSheet({
+      title: `Zone „${zone.name}" löschen?`,
+      description: "Die Zone wird endgültig entfernt.",
+      confirmLabel: "Löschen",
+      confirmVariant: "danger",
+    });
+    if (!ok) return;
     const supabase = createClient();
     const { error } = await supabase.from("zonen").delete().eq("id", zone.id);
     if (error) {

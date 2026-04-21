@@ -13,6 +13,7 @@ import HuntStreckeTab from '@/components/hunt/HuntStreckeTab'
 import { HuntActionsMenu } from '@/components/hunt/HuntActionsMenu'
 import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 
 function getInitials(name: string) { return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() }
 
@@ -25,6 +26,7 @@ export default function HuntPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
+  const confirmSheet = useConfirmSheet()
   const [hunt, setHunt] = useState<Hunt | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
   const [userId, setUserId] = useState<string | null>(null)
@@ -248,15 +250,30 @@ export default function HuntPage() {
 
   async function endHunt(skipConfirm = false) {
     if (!hunt) return
-    const label = hunt.kind === 'solo' ? 'Einzeljagd beenden?' : 'Jagd für alle beenden?'
-    if (!skipConfirm && !confirm(label)) return
+    if (!skipConfirm) {
+      const ok = await confirmSheet({
+        title: hunt.kind === 'solo' ? 'Einzeljagd beenden?' : 'Jagd für alle beenden?',
+        description: hunt.kind === 'solo'
+          ? 'Die Jagd wird auf „abgeschlossen" gesetzt.'
+          : 'Alle Teilnehmer sehen die Jagd als beendet.',
+        confirmLabel: 'Beenden',
+        confirmVariant: 'danger',
+      })
+      if (!ok) return
+    }
     await supabase.from('hunts').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', hunt.id)
     router.push('/app')
   }
 
   async function leaveHunt() {
     if (!hunt || !userId) return
-    if (!confirm('Jagd verlassen?')) return
+    const ok = await confirmSheet({
+      title: 'Jagd verlassen?',
+      description: 'Du kannst später wieder beitreten, solange die Jagd läuft.',
+      confirmLabel: 'Verlassen',
+      confirmVariant: 'danger',
+    })
+    if (!ok) return
     await supabase
       .from('hunt_participants')
       .update({ status: 'left', left_at: new Date().toISOString() })
@@ -346,7 +363,7 @@ export default function HuntPage() {
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className="flex-1 py-2.5 text-xs font-semibold text-center transition"
             style={{
-              color: activeTab === tab.key ? 'var(--green-bright)' : 'var(--text-3)',
+              color: activeTab === tab.key ? 'var(--accent-primary)' : 'var(--text-3)',
               borderBottom: activeTab === tab.key ? '2px solid var(--green)' : '2px solid transparent',
             }}>
             {tab.icon} {tab.label}

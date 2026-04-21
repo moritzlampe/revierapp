@@ -502,7 +502,7 @@ export default function RevierContent({ district, objects: initialObjects, userI
               width: '3.5rem',
               height: '3.5rem',
               borderRadius: '50%',
-              background: 'var(--green-bright)',
+              background: 'var(--accent-primary)',
               border: 'none',
               boxShadow: '0 0.25rem 0.5rem rgba(0,0,0,0.4)',
               display: 'flex',

@@ -1,0 +1,334 @@
+# Handoff — Sprint 58.1h + 58.1i + 58.1j abgeschlossen
+
+Datum: 2026-04-21 Abend
+Branch aktiv: feature/post-58_1h-polish (zweigt von main ab, main enthaelt
+bereits Sprint 58.1h-Merge commit 2d36873)
+Naechster Arbeitspunkt: Echter Design-Review mit installiertem
+frontend-design-Skill, danach Sprint 58.1k (Wildart-Icons v2)
+
+================================================================
+WAS HEUTE GEMACHT WURDE (2026-04-21)
+================================================================
+
+VORMITTAG: Merge und Design-Review
+- Merge von feature/theme-a-rollout in main (--no-ff, commit 2d36873)
+- Gestern war Merge angekuendigt aber nicht durchgefuehrt — heute morgen
+  nachgezogen
+- Claude Code Design-Review durchgefuehrt — ohne Skill (wir dachten er
+  waere da, war er nicht). Bericht unter
+  docs/recon/BERICHT_58_1h_design_review.md
+- Review war trotzdem hochwertig, 27 priorisierte Empfehlungen in drei
+  Buckets geordnet
+
+SPRINT 58.1i — Integritaet (5 Commits, ~13 Min)
+Branch: feature/post-58_1h-polish
+Ziel: Pseudo-Features ehrlich machen (Review Bucket 1)
+
+1. 5f25f9e — Migration 034_kills_kapital_notizen.sql
+   kills.kapital BOOLEAN NOT NULL DEFAULT false
+   kills.notiz TEXT NULL
+   Manuell im Supabase SQL-Editor ausgefuehrt
+2. 88358e1 — Kapital-Toggle + Notiz-Feld persistent in KillDetailContent
+   Reporter-Only-Edit via isReporter-Prop (Jagdleiter kann anderes
+   editieren, aber nicht kapital/notiz — persoenliche Einschaetzungen
+   des Reporters)
+   Saving-Indicator via Loader2-Spinner, Error-Toast, kein Success-Toast
+3. dea6ac4 — PinIcon SVG neue Komponente in
+   src/components/icons/PinIcon.tsx
+4. efda443 — MiniMap ersetzt durch ehrliche PositionRow
+   geo:-Link fuer Apple Maps, 5 Nachkommastellen Koordinaten
+   Redundanter Koordinaten-MetaChip entfernt
+5. 32c04b3 — ConfirmSheet + Provider statt window.confirm
+   Promise-basierter Hook useConfirmSheet
+   Pattern: Bottom-Sheet mit .map-object-sheet + Swipe-Dismiss
+   8 Stellen migriert, Variable zu confirmSheet umbenannt (nicht
+   confirm um globale Browser-Funktion nicht zu shadowen)
+
+Design-Entscheidungen unterwegs:
+- 📍-Emojis ausserhalb Strecke-Scope (GpsStatusBadge, MapContent,
+  MapObjectSheet, StandDetailSheet, hunt/create, revier/setup) bleiben
+  vorerst. Kandidaten fuer spaeteren Icon-Sprint.
+- Tote RZ-Archiv-Dateien (revier-map.tsx, right-panel.tsx) mitmigriert
+  fuer Konsistenz
+
+SPRINT 58.1j — Theme-A-Polish (8 Commits, ~12 Min)
+Branch: feature/post-58_1h-polish
+Ziel: Qualitaets-Fixes aus Review (Bucket 2)
+
+1. 87b298e — BottomTabBar auf Theme-A-Tokens
+   --surface -> --bg-elevated, --border -> --border-default,
+   --text -> --text-primary, --text-3 -> --text-muted
+   Tab-Label von 10px auf 12px (Spec Badge-Groesse)
+2. 1a3e7db — Sweep: 20 Dateien von var(--green-bright) auf
+   var(--accent-primary) umgestellt (Active-State-Semantik, nicht Hover)
+   Legacy-Alias-Definitionen bleiben als Rollback-Reserve bestehen
+3. 9a53ed7 — Badge-Typo konsolidiert
+   DU-Badge + Nachsuche-Badge 11px -> 12px
+   ActionButton 14px -> 13px
+4. 1ddab9c — Fraunces-Display-Font (Weight 500) fuer Hero-Zahl
+   via next/font/google, --font-display CSS-Variable
+   Nur in StreckeHero.tsx fuer 4.5rem Display-Zahl
+   Rest bleibt SF Pro
+   Hero-Pill-Gap von 2px auf 6px
+5. 364797b — Filter-Pill Scale 1.02 -> 1.05
+   Foto-Button-Schatten auf Card-Level (0 1px 2px)
+   Divider entfernt (marginLeft 1rem stattdessen)
+6. ae2666a — "Rotte · N× in derselben Minute" Text raus
+   Klammer traegt die Info visuell
+7. 06f16bd — --sheet-max-height: 85dvh CSS-Variable
+   Alle Sheets (FotoZielSheet/KillAuswahlSheet/KillDetailSheet) nutzen
+   die Variable
+   Row-BG in Sheets von --bg-base auf --bg-sunken (nested hierarchy)
+8. 1af381b — "· krank" -> "· in Nachsuche" in UI-Labels
+   DB-Wert unveraendert (kills.status bleibt 'wounded')
+   Loeschen-Button in KillDetail deprioritiert: kein Icon,
+   --text-secondary, kleiner, kein Rahmen
+
+Design-Entscheidungen unterwegs:
+- --green-bright-Sweep breit durchgezogen (20 Dateien in app/, src/,
+  globals.css)
+- Loeschen-Button: Option A (kleiner, muted) statt Overflow-Menue
+- textTransform lowercase bei "in Nachsuche" entfernt —
+  deutsches Substantiv wird grossgeschrieben
+- ActionButton variant="danger" geloescht — war nur fuer Loeschen
+  genutzt, nicht mehr gebraucht
+
+SKILL-INSTALLATION (am Tagesende)
+- Recherche ergab: frontend-design-Skill ist offizielles
+  Anthropic-Produkt, 277k+ Installs, adressiert genau unsere
+  Design-Schwaechen (distributional convergence bei LLM-Designs)
+- Installiert via curl nach ~/.claude/skills/frontend-design/SKILL.md
+- Datei 4274 Bytes, YAML-Frontmatter korrekt
+- Ab naechstem Claude-Code-Start aktiv
+
+================================================================
+STATUS PER HEUTE ABEND
+================================================================
+
+Branch-Status:
+- main: enthaelt Sprint 58.1h (gemerged heute morgen, commit 2d36873)
+- feature/post-58_1h-polish: enthaelt Sprint 58.1i + 58.1j (5+8 Commits
+  on top of main)
+- feature/theme-a-rollout: existiert noch, war die Ur-Branch fuer Theme A
+  (kann geloescht werden sobald polish-Branch gemerged ist)
+
+Coolify-Status (beim Feierabend):
+- Branch steht auf feature/post-58_1h-polish
+- War auf Redeploy seit Sprint 58.1j fertig war
+- iPhone-Test von Sprint 58.1j war am Ende nur noch kurz durchgezogen,
+  oberflaechlich bestaetigt dass nichts kaputt ist, aber noch nicht
+  tiefer bewertet
+
+Pipeline offen fuer morgen / spaeter:
+- Sprint 58.1k — Wildart-Icons v2 (kompletter Neustart der Icons)
+- Sprint 58.1e — Auto-Solo-Hunt (noch nicht angefasst, originaler
+  Pipeline-Punkt)
+- Review-Bucket 3 Nice-to-haves (Punkte 18-27 aus Design-Review):
+  orchestrierte Motion, Skeleton-States, Segmented-Controls,
+  Realtime-Animations, mutigere Palette
+- Jagdtagebuch-Pipeline (Sprint 60) in urspruenglichem Plan
+
+================================================================
+WICHTIGE OFFENE PUNKTE
+================================================================
+
+1. iPhone-Test Sprint 58.1j noch nicht vollstaendig durchgezogen
+   - Deploy lief, App sichtbar nicht kaputt
+   - Fraunces-Hero-Zahl noch nicht ernsthaft bewertet
+   - Kann morgen frueh nachgeholt werden (5 Min)
+
+2. Coolify nach Feierabend nicht auf main zurueckgestellt
+   - Branch steht auf feature/post-58_1h-polish
+   - Produktion zeigt aktuell den Polish-Branch-Stand
+   - Fuer Peter/Tester kein Problem (Polish ist vorwaerts-
+     kompatibel), aber Status merken
+
+3. feature/post-58_1h-polish muss noch auf main gemerged werden
+   - Erst NACH Sprint 58.1k (oder ohne Sprint k falls Moritz so
+     entscheidet)
+   - Dann Coolify auf main + Redeploy
+
+4. Memory-Edits heute nicht gepflegt
+   - Viele Entscheidungen im Chat passiert, nicht in Memory gesichert
+   - Beim naechsten Sessionstart eventuell kurz durchgehen ob
+     relevantes in Memory soll
+
+================================================================
+FAHRPLAN FUER MORGEN
+================================================================
+
+Schritt 1: Quick-Test Sprint 58.1j (5-10 Min)
+- iPhone-Test mit Fokus auf Hero-Zahl in Fraunces
+- Bottom-Nav Labels pruefen
+- Kill-Detail-Sheet Loeschen-Button pruefen
+
+Schritt 2: Frontend-Design-Skill verifizieren (2 Min)
+- Neuer Claude-Code-Chat startet, Skill sollte automatisch geladen sein
+- Claude Code fragen: "Ist der frontend-design-Skill aktiv?"
+- Falls ja: weiter
+- Falls nein: Troubleshooting oder anderer Pfad
+
+Schritt 3: Echter Design-Review mit Skill (20-30 Min Claude Code)
+- Prompt siehe separates Dokument oder unten
+- Erwartung: kritischere Sicht als gestriger Review, weil Skill bold
+  aesthetic direction einfordert
+
+Schritt 4: Entscheidung nach Review
+- Wenn Review wenige neue Punkte bringt: direkt Sprint 58.1k starten
+- Wenn Review fundamentale neue Punkte bringt: erst diese abarbeiten
+- Wenn Review komplett anderes Fundament einfordert (unwahrscheinlich):
+  Entscheidung ueber Scope-Anpassung
+
+Schritt 5: Sprint 58.1k (Wildart-Icons v2)
+- Kompletter Icon-Neustart, bessere Silhouetten oder heraldisch
+- Empty-State-Illustration im gleichen Stil
+- FAB-Icon ueberdenken
+- Skill-getrieben
+
+Schritt 6: Merge
+- feature/post-58_1h-polish auf main mergen
+- Coolify auf main, Redeploy
+- Feature-Branches aufraeumen
+
+================================================================
+PROMPT FUER MORGEN: DESIGN-REVIEW MIT SKILL
+================================================================
+
+Diesen Prompt in neuer Claude-Code-Session einfuegen (nach /clear oder
+bei Session-Start). Effort-Level: max.
+
+--- START PROMPT ---
+
+Hi Claude. Neue Session am 2026-04-22. Sprint 58.1h (Theme A Rollout +
+Strecke-Tab Rebuild), 58.1i (Integritaets-Fixes) und 58.1j (Theme-A-
+Polish) sind abgeschlossen und auf feature/post-58_1h-polish gepusht.
+
+Aktueller Stand Referenzen:
+- Letzter Handoff: docs/handoffs/Handoff_21042026_Abend_Sprint_58_1h_bis_j.txt
+- Gestriger Review (ohne Skill): docs/recon/BERICHT_58_1h_design_review.md
+- Design-System: docs/design-system/design-system.md
+
+WICHTIG — SKILL-AKTIVIERUNG PRUEFEN ZUERST:
+
+Der frontend-design-Skill von Anthropic wurde gestern Abend nach
+~/.claude/skills/frontend-design/SKILL.md installiert. Dieser Skill ist
+der eigentliche Grund fuer das heutige Review.
+
+Bevor du mit dem Review anfaengst, pruefe:
+
+1. Liste deine verfuegbaren Skills auf — ist frontend-design darunter?
+2. Falls ja: bestaetige dass er aktiv ist
+3. Falls nein: pruefe per file read ob
+   ~/.claude/skills/frontend-design/SKILL.md existiert und lies sie
+4. Falls weder aktiviert noch Datei vorhanden: STOP und frag Moritz
+
+Gib mir eine kurze Bestaetigung des Skill-Status, dann geht's weiter.
+
+Wenn Skill aktiv und geladen:
+
+AUFGABE: Kritischer Design-Review nach frontend-design-Skill-Standards
+
+Erstelle einen neuen Review-Bericht unter
+docs/recon/BERICHT_58_1h_design_review_v2_mit_skill.md
+
+Struktur:
+
+TEIL 0 — Skill-Bestaetigung
+Kurze Bestaetigung am Anfang dass der Skill wirklich aktiv ist und
+welche Version/Stand (ggf. erste Zeilen des SKILL.md zitieren als
+Beleg).
+
+TEIL 1 — Aesthetische Grundanalyse (aus Skill-Perspektive)
+Der Skill fordert:
+- BOLD aesthetic direction: Welche? (brutalist / maximalist /
+  retro-futuristic / organic / luxury / playful / editorial / brutalist
+  raw / art deco / soft pastel / industrial / andere)
+- Ist "Moos auf Papier" wirklich eine bold direction — oder ein
+  vorsichtiger Kompromiss?
+- Was macht diese App UNFORGETTABLE? Gibt es ueberhaupt ein solches
+  Element?
+- Welche generic patterns finden sich die der Skill explizit ablehnt
+  (generic fonts wie Inter/Arial, purple gradients, cookie-cutter
+  components)?
+
+TEIL 2 — Komponenten-Review nach Skill-Standards
+Diesmal durch Skill-Lens:
+- src/components/hunt/strecke/StreckeHero.tsx (mit Fraunces jetzt)
+- src/components/hunt/strecke/StreckeBatchCard.tsx
+- src/components/hunt/strecke/StreckeFilterBar.tsx
+- src/components/hunt/strecke/StreckeNachsucheSection.tsx
+- src/components/hunt/strecke/StreckeEmptyState.tsx
+- src/components/icons/SpeciesIcons.tsx (der kritischste Punkt)
+- src/components/kill/KillDetailContent.tsx
+- src/components/bottom-tab-bar.tsx
+- src/components/hunt/MapContent.tsx (wurde bisher wenig reviewt)
+- app/app/home-content.tsx und /hunt/[id]/page.tsx (Layouts)
+
+Pro Komponente:
+- Skill-Konformitaet: wo erfuellt es die Skill-Prinzipien?
+- Skill-Verstoesse: wo widerspricht es ihnen konkret?
+- "Unforgettable"-Check: was macht diese Komponente erinnerbar?
+- Konkrete Verbesserungs-Richtung (nicht nur "besser machen", sondern
+  in welche Richtung)
+
+TEIL 3 — Systemische Themen (Skill-getrieben)
+- Typografie-Pairing: Fraunces + SF Pro — ist das die richtige Paarung
+  oder haben wir das erste beste genommen?
+- Farbpalette: "Moos auf Papier" vs. bold aesthetic — ist es mutig
+  genug?
+- Motion: orchestrated interactions wie Skill sie fordert — vorhanden
+  oder fehlen komplett?
+- Spatial composition: asymmetry, grid-breaking, visual depth — haben
+  wir das ueberhaupt?
+- Memorability: gibt es EIN Element das diese App definiert? Falls
+  nein: welches koennte es sein?
+
+TEIL 4 — Abgleich mit gestrigem Review
+- Welche Befunde von gestern bestaetigt der Skill-Review?
+- Welche neuen Befunde kommen hinzu die gestriger Review uebersehen hat?
+- Welche gestrigen Befunde wuerden sich aus Skill-Perspektive anders
+  bewerten?
+
+TEIL 5 — Aktualisierte Sprint-Planung
+Basierend auf Befunden:
+- Sprint 58.1k (Wildart-Icons v2): welche konkreten Stil-Vorgaben sollen
+  jetzt gelten?
+- Gibt es neue Sprints die dazukommen (z.B. Motion-Layer, spatial
+  composition)?
+- Welche Sprints sind obsolete oder sollten anders gescoped werden?
+
+TEIL 6 — Priorisierte Empfehlungen
+Tabellarisch:
+- Schweregrad (kritisch / wichtig / nice-to-have)
+- Aufwand (schnell / mittel / gross)
+- Sprint-Zuordnung
+
+KEIN CODE schreiben. Nur Bericht. Ehrlich kritisch. Wenn die App nach
+Skill-Standards nur 6/10 ist, dann das sagen. Wenn sie 8/10 ist auch.
+Nicht diplomatisch, aber auch nicht uebertrieben streng.
+
+Effort-Level: max.
+
+--- ENDE PROMPT ---
+
+================================================================
+TECHNISCHE REMINDER
+================================================================
+
+Mac Mini: ~/Code/revierapp
+Supabase Projekt: bzfevyqfkizmovoclysy
+Migration-Stand nach heute: 034
+Branch zum Weiterarbeiten: feature/post-58_1h-polish
+Coolify Branch: feature/post-58_1h-polish (Branch-Rueckstellung faellig
+wenn merge durch)
+Frontend-Design-Skill: ~/.claude/skills/frontend-design/SKILL.md
+(4274 Bytes, installiert 2026-04-21 Abend)
+
+Wichtigstes Repo-Detail: Moritz prueft vor jedem iPhone-Test per
+git log --oneline origin/main..HEAD ob alles gepusht ist. Gleiches
+Muster auch fuer Feature-Branch: git log --oneline origin/feature/
+post-58_1h-polish..HEAD
+
+================================================================
+ENDE HANDOFF
+================================================================

@@ -15,6 +15,7 @@ import { MapToast } from "./map-toast";
 import { ZoneEditor } from "./zone-editor";
 import { ZoneLayers } from "./zone-layers";
 import { createClient } from "@/lib/supabase/client";
+import { useConfirmSheet } from "@/components/ui/ConfirmSheet";
 
 const BROCKWINKEL_CENTER: LatLngExpression = [53.264, 10.354];
 
@@ -102,6 +103,7 @@ function POIMarkers() {
     loadObjekte,
     showToast,
   } = useMapContext();
+  const confirmSheet = useConfirmSheet();
   const markerRefs = useRef<Map<string, L.Marker>>(new Map());
 
   // Open popup when selected from panel
@@ -115,7 +117,13 @@ function POIMarkers() {
   }, [selectedObjekt]);
 
   const handleDelete = async (objekt: RevierObjekt) => {
-    if (!confirm(`"${objekt.name}" wirklich l\u00F6schen?`)) return;
+    const ok = await confirmSheet({
+      title: `„${objekt.name}" löschen?`,
+      description: "Das Objekt wird endgültig entfernt.",
+      confirmLabel: "Löschen",
+      confirmVariant: "danger",
+    });
+    if (!ok) return;
     const supabase = createClient();
     const { error } = await supabase
       .from("revier_objekte")

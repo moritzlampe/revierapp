@@ -91,7 +91,7 @@ export default function FotoZielSheet({ open, onClose, onSelect }: FotoZielSheet
         className="map-object-sheet"
         style={{
           paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
-          maxHeight: '60dvh',
+          maxHeight: 'var(--sheet-max-height)',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--bg-elevated)',
@@ -157,7 +157,7 @@ function OptionRow({ option, onClick }: { option: OptionSpec; onClick: () => voi
         alignItems: 'center',
         gap: '0.875rem',
         padding: '1rem',
-        background: 'var(--bg-base)',
+        background: 'var(--bg-sunken)',
         border: '1px solid var(--border-default)',
         borderRadius: '12px',
         cursor: 'pointer',

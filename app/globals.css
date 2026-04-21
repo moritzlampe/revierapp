@@ -105,6 +105,8 @@
   --keyboard-offset: 0px;
   /* Abstand unter Content: Tab-Bar-Höhe + Safe-Area, entfällt bei Tastatur */
   --bottom-bar-space: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  /* Einheitliche Sheet-Maxhöhe. Ausnahme: kompakte Confirm-Sheets. */
+  --sheet-max-height: 85dvh;
 }
 
 /* ============================================================
@@ -676,7 +678,7 @@ button:active {
   font-size: 0.6875rem;
 }
 .participant-popup-distance {
-  color: var(--green-bright);
+  color: var(--accent-primary);
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -883,7 +885,7 @@ button:active {
 .type-pill.active {
   background: var(--green-dim);
   border-color: var(--green) !important;
-  color: var(--green-bright);
+  color: var(--accent-primary);
 }
 
 /* Mehr-Button für zusätzliche Typen */
@@ -923,7 +925,7 @@ button:active {
   border-radius: 1.25rem;
   background: var(--surface-3);
   border: 1px solid var(--border) !important;
-  color: var(--green-bright);
+  color: var(--accent-primary);
   font-size: 0.75rem;
   font-weight: 600;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -1015,7 +1017,7 @@ button:active {
   padding: 0.5rem 1rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--green-bright);
+  color: var(--accent-primary);
   box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.4);
   animation: toast-in 0.3s ease-out;
   white-space: nowrap;
@@ -1055,7 +1057,7 @@ button:active {
 .draw-boundary-btn.active {
   background: var(--green-dim);
   border-color: var(--green) !important;
-  color: var(--green-bright);
+  color: var(--accent-primary);
 }
 
 /* Zeichenmodus Hinweis-Overlay */
@@ -1071,7 +1073,7 @@ button:active {
   padding: 0.375rem 0.875rem;
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--green-bright);
+  color: var(--accent-primary);
   white-space: nowrap;
   animation: draw-hint-in 0.3s ease-out;
   pointer-events: none;
@@ -1361,7 +1363,7 @@ button:active {
   padding: 0.375rem 1rem;
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--green-bright);
+  color: var(--accent-primary);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   z-index: 10;
   cursor: pointer;
@@ -1650,7 +1652,7 @@ button:active {
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 50%;
-  border: 2.5px solid var(--green-bright);
+  border: 2.5px solid var(--accent-primary);
   font-size: 0.6875rem;
   font-weight: 700;
   color: white;
@@ -1694,7 +1696,7 @@ button:active {
   transition: border-color 0.2s;
 }
 .assign-map-container.drag-active {
-  border-color: var(--green-bright);
+  border-color: var(--accent-primary);
 }
 
 /* Tap-Hinweis auf der Karte */

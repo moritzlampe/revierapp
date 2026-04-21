@@ -97,7 +97,7 @@ export default function JoinHuntPage() {
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg"
             style={{ background: 'linear-gradient(135deg, var(--green), var(--green-dim))' }}>🌲</div>
           <span className="text-xl font-bold tracking-tight">
-            Revier<span style={{ color: 'var(--green-bright)' }}>App</span>
+            Revier<span style={{ color: 'var(--accent-primary)' }}>App</span>
           </span>
         </div>
 
@@ -109,7 +109,7 @@ export default function JoinHuntPage() {
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl mb-4"
             style={{ background: 'rgba(107,159,58,0.08)', border: '1px solid rgba(107,159,58,0.2)' }}>
             <span>🪑</span>
-            <span className="text-sm font-semibold" style={{ color: 'var(--green-bright)' }}>
+            <span className="text-sm font-semibold" style={{ color: 'var(--accent-primary)' }}>
               Dein Stand: {seatInfo}
             </span>
           </div>

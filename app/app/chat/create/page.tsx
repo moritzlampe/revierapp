@@ -179,7 +179,7 @@ export default function CreateChatGroupPage() {
           <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-2)' }}>
             Teilnehmer hinzufügen
             {selectedCount > 0 && (
-              <span style={{ color: 'var(--green-bright)', fontWeight: 400 }}> · {selectedCount} ausgewählt</span>
+              <span style={{ color: 'var(--accent-primary)', fontWeight: 400 }}> · {selectedCount} ausgewählt</span>
             )}
           </label>
 

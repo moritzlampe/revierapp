@@ -121,7 +121,7 @@ export default function StreckeFilterBar({
                 gap: '0.375rem',
                 whiteSpace: 'nowrap',
                 transition: 'background-color 150ms ease, color 150ms ease, transform 150ms ease',
-                transform: isActive ? 'scale(1.02)' : 'scale(1)',
+                transform: isActive ? 'scale(1.05)' : 'scale(1)',
               }}
             >
               {Icon && <Icon size={16} />}
@@ -139,40 +139,30 @@ export default function StreckeFilterBar({
         })}
       </div>
       {canUploadPhoto && (
-        <>
-          <div
-            aria-hidden="true"
-            style={{
-              width: '1px',
-              height: '1.5rem',
-              background: 'var(--border-default)',
-              flexShrink: 0,
-            }}
-          />
-          <button
-            type="button"
-            onClick={onPhotoClick}
-            aria-label="Foto hinzufügen"
-            className="tap-ripple"
-            style={{
-              width: '2.5rem',
-              height: '2.5rem',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'var(--bg-sunken)',
-              color: 'var(--accent-primary)',
-              border: 'none',
-              borderRadius: '999px',
-              cursor: 'pointer',
-              WebkitTapHighlightColor: 'transparent',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)',
-            }}
-          >
-            <Camera size={18} />
-          </button>
-        </>
+        <button
+          type="button"
+          onClick={onPhotoClick}
+          aria-label="Foto hinzufügen"
+          className="tap-ripple"
+          style={{
+            width: '2.5rem',
+            height: '2.5rem',
+            marginLeft: '1rem',
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'var(--bg-sunken)',
+            color: 'var(--accent-primary)',
+            border: 'none',
+            borderRadius: '999px',
+            cursor: 'pointer',
+            WebkitTapHighlightColor: 'transparent',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)',
+          }}
+        >
+          <Camera size={18} />
+        </button>
       )}
     </div>
   )
