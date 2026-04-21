@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
+// Target bleibt einstweilen Lucide — wird in Sprint 58.1k.3 durch BullseyeIcon ersetzt.
+// Siehe docs/recon/BERICHT_58_1k_0_Recon.md (Signature-Motif).
 import { Target } from 'lucide-react'
 import { Crosshair, ChatCircle, User } from '@phosphor-icons/react'
 import { ErlegungSheet } from '@/components/erlegung/ErlegungSheet'
