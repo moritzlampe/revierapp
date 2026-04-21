@@ -14,6 +14,11 @@ import { HuntActionsMenu } from '@/components/hunt/HuntActionsMenu'
 import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
+import { MapTrifold, WarningCircle, ChatCircle } from '@phosphor-icons/react'
+import { RehwildIcon } from '@/components/icons/SpeciesIcons'
+import type { ComponentType, SVGProps } from 'react'
+
+type TabIconComponent = ComponentType<{ size?: number; weight?: 'regular' | 'fill'; color?: string } & SVGProps<SVGSVGElement>>
 
 function getInitials(name: string) { return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() }
 
@@ -290,17 +295,17 @@ export default function HuntPage() {
 
   const isSolo = hunt.kind === 'solo'
 
-  const TABS = isSolo
+  const TABS: Array<{ key: 'karte' | 'chat' | 'nachsuche' | 'strecke'; label: string; icon: TabIconComponent; iconKind: 'phosphor' | 'species'; iconColor?: string }> = isSolo
     ? [
-        { key: 'karte' as const, label: 'Karte', icon: '🗺️' },
-        { key: 'nachsuche' as const, label: 'Nachsuche', icon: '🔴' },
-        { key: 'strecke' as const, label: 'Strecke', icon: '🦌' },
+        { key: 'karte', label: 'Karte', icon: MapTrifold, iconKind: 'phosphor' },
+        { key: 'nachsuche', label: 'Nachsuche', icon: WarningCircle, iconKind: 'phosphor', iconColor: 'var(--red)' },
+        { key: 'strecke', label: 'Strecke', icon: RehwildIcon as TabIconComponent, iconKind: 'species' },
       ]
     : [
-        { key: 'karte' as const, label: 'Karte', icon: '🗺️' },
-        { key: 'chat' as const, label: 'Chat', icon: '💬' },
-        { key: 'nachsuche' as const, label: 'Nachsuche', icon: '🔴' },
-        { key: 'strecke' as const, label: 'Strecke', icon: '🦌' },
+        { key: 'karte', label: 'Karte', icon: MapTrifold, iconKind: 'phosphor' },
+        { key: 'chat', label: 'Chat', icon: ChatCircle, iconKind: 'phosphor' },
+        { key: 'nachsuche', label: 'Nachsuche', icon: WarningCircle, iconKind: 'phosphor', iconColor: 'var(--red)' },
+        { key: 'strecke', label: 'Strecke', icon: RehwildIcon as TabIconComponent, iconKind: 'species' },
       ]
 
   return (
@@ -359,19 +364,36 @@ export default function HuntPage() {
 
       {/* Hunt Tabs */}
       <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid var(--border-light)' }}>
-        {TABS.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className="flex-1 py-2.5 text-xs font-semibold text-center transition"
-            style={{
-              color: activeTab === tab.key ? 'var(--accent-primary)' : 'var(--text-3)',
-              borderBottom: activeTab === tab.key ? '2px solid var(--green)' : '2px solid transparent',
-            }}>
-            {tab.icon} {tab.label}
-            {tab.key === 'chat' && chatUnread > 0 && (
-              <span className="tab-badge">{chatUnread > 99 ? '99+' : chatUnread}</span>
-            )}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const isActive = activeTab === tab.key
+          const Icon = tab.icon
+          return (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              className="flex-1 py-2.5 text-xs font-semibold transition"
+              style={{
+                color: isActive ? 'var(--accent-primary)' : 'var(--text-3)',
+                borderBottom: isActive ? '2px solid var(--green)' : '2px solid transparent',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.375rem',
+              }}>
+              {tab.iconKind === 'phosphor' ? (
+                <Icon
+                  size={16}
+                  weight={isActive ? 'fill' : 'regular'}
+                  color={tab.iconColor}
+                />
+              ) : (
+                <Icon size={18} />
+              )}
+              <span>{tab.label}</span>
+              {tab.key === 'chat' && chatUnread > 0 && (
+                <span className="tab-badge">{chatUnread > 99 ? '99+' : chatUnread}</span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {/* Teilnehmer-Chips (nur auf Karte-Tab) */}
