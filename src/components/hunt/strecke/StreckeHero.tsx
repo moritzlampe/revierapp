@@ -182,8 +182,9 @@ function FullHero({
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.625rem', flexWrap: 'wrap' }}>
           <span
             style={{
+              fontFamily: 'var(--font-display)',
               fontSize: '4.5rem',
-              fontWeight: 600,
+              fontWeight: 500,
               lineHeight: 1.05,
               letterSpacing: '-0.02em',
               color: 'var(--text-primary)',
@@ -204,7 +205,7 @@ function FullHero({
       </div>
 
       {aggregates.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
           {aggregates.map(agg => {
             const hasChevron = agg.count >= CHEVRON_THRESHOLD
             const isActive = activeGroupFilter === agg.group
