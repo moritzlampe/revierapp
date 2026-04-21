@@ -12,6 +12,7 @@ import { createSoloHunt } from '@/lib/supabase/hunts'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { getGroupIcon } from '@/components/icons/SpeciesIcons'
 import type { WildGroup } from '@/lib/species-config'
+import { Star, Crosshair, UsersThree, Dog } from '@phosphor-icons/react'
 
 const BUNDESLAENDER = [
   'Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen',
@@ -645,7 +646,7 @@ export default function CreateHuntPage() {
                   {getInitials(p.userName)}
                 </div>
                 {p.userName.split(' ')[0]}
-                {i === 0 && <span style={{ fontSize: '0.625rem' }}>🎖️</span>}
+                {i === 0 && <Star size={10} weight="fill" color="var(--accent-gold)" />}
                 {placed && <span style={{ fontSize: '0.625rem', color: 'var(--accent-primary)' }}>✓</span>}
               </button>
             )
@@ -1016,9 +1017,15 @@ export default function CreateHuntPage() {
               <div className="avatar" style={{ background: getAvatarColor(currentUser.id), color: '#fff' }}>{getInitials(currentUser.name)}</div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-bold" style={{ color: 'var(--accent-primary)' }}>Du ({currentUser.name})</div>
-                <div className="text-xs" style={{ color: 'var(--text-3)' }}>🎯 Schütze</div>
+                <div className="text-xs" style={{ color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <Crosshair size={12} />
+                  <span>Schütze</span>
+                </div>
               </div>
-              <span className="badge badge-gold text-xs font-bold">🎖️ Jagdleiter</span>
+              <span className="badge badge-gold text-xs font-bold" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                <Star size={12} weight="fill" />
+                Jagdleiter
+              </span>
             </div>
           )}
 
@@ -1052,10 +1059,10 @@ export default function CreateHuntPage() {
                 </div>
                 {/* Tags */}
                 <div className="flex gap-1 flex-shrink-0">
-                  <button type="button" onClick={() => toggleTag(c.id, 'tagGL')}
-                    className={`tag-btn ${c.tagGL ? 'on-blue' : ''}`}>👥</button>
-                  <button type="button" onClick={() => toggleTag(c.id, 'tagHF')}
-                    className={`tag-btn ${c.tagHF ? 'on-orange' : ''}`}>🐕</button>
+                  <button type="button" onClick={() => toggleTag(c.id, 'tagGL')} aria-label="Gruppenleiter-Tag"
+                    className={`tag-btn ${c.tagGL ? 'on-blue' : ''}`}><UsersThree size={14} /></button>
+                  <button type="button" onClick={() => toggleTag(c.id, 'tagHF')} aria-label="Hundeführer-Tag"
+                    className={`tag-btn ${c.tagHF ? 'on-orange' : ''}`}><Dog size={14} /></button>
                 </div>
                 {/* Checkbox */}
                 <div onClick={() => toggleContact(c.id)} className="cursor-pointer flex-shrink-0"

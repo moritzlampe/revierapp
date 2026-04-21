@@ -14,7 +14,7 @@ import { HuntActionsMenu } from '@/components/hunt/HuntActionsMenu'
 import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
-import { MapTrifold, WarningCircle, ChatCircle } from '@phosphor-icons/react'
+import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog } from '@phosphor-icons/react'
 import { RehwildIcon } from '@/components/icons/SpeciesIcons'
 import type { ComponentType, SVGProps } from 'react'
 
@@ -319,8 +319,19 @@ export default function HuntPage() {
           <div className="text-sm font-bold flex items-center gap-1.5">
             <span className="live-dot" /> {hunt.name}
           </div>
-          <div className="text-xs" style={{ color: 'var(--text-3)' }}>
-            {isJagdleiter ? '🎖️ Jagdleiter' : '🎯 Schütze'} · {joinedParticipants.length} Jäger aktiv
+          <div className="text-xs" style={{ color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            {isJagdleiter ? (
+              <>
+                <Star size={12} weight="fill" color="var(--accent-gold)" />
+                <span>Jagdleiter</span>
+              </>
+            ) : (
+              <>
+                <Crosshair size={12} />
+                <span>Schütze</span>
+              </>
+            )}
+            <span>· {joinedParticipants.length} Jäger aktiv</span>
           </div>
         </div>
         <button onClick={copyInviteLink} className="flex items-center justify-center rounded-lg text-sm"
@@ -335,7 +346,9 @@ export default function HuntPage() {
         />
         {isJagdleiter && (
           <button onClick={() => setShowJLBar(!showJLBar)} className="px-2 flex items-center justify-center rounded-lg text-xs font-bold"
-            style={{ background: 'var(--surface-2)', border: '1px solid var(--accent-gold)', color: 'var(--accent-gold)', minHeight: '2.75rem' }}>🎖️</button>
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--accent-gold)', color: 'var(--accent-gold)', minHeight: '2.75rem', minWidth: '2.75rem' }}>
+            <Star size={16} weight="fill" />
+          </button>
         )}
       </div>
 
@@ -405,9 +418,9 @@ export default function HuntPage() {
               style={{ background: 'var(--surface-2)', border: p.role === 'jagdleiter' ? '1px solid var(--accent-gold)' : '1px solid var(--border)' }}>
               <div className="avatar-xs" style={{ background: getAvatarColor(p.id), color: '#fff' }}>{getInitials(pName(p))}</div>
               <span className="text-xs font-medium">{p.user_id === userId ? 'Du' : pName(p).split(' ')[0]}</span>
-              {p.role === 'jagdleiter' && <span className="text-xs" style={{ color: 'var(--accent-gold)' }}>🎖️</span>}
-              {p.tags?.includes('gruppenleiter') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>👥</span>}
-              {p.tags?.includes('hundefuehrer') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>🐕</span>}
+              {p.role === 'jagdleiter' && <Star size={12} weight="fill" color="var(--accent-gold)" />}
+              {p.tags?.includes('gruppenleiter') && <UsersThree size={12} color="var(--text-secondary)" />}
+              {p.tags?.includes('hundefuehrer') && <Dog size={12} color="var(--text-secondary)" />}
             </div>
           ))}
         </div>

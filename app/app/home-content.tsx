@@ -8,7 +8,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { usePrefetchChats } from '@/hooks/usePrefetchChats'
 import SwipeToAction from '@/components/ui/swipe-to-action'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
-import { MagnifyingGlass, Plus } from '@phosphor-icons/react'
+import { MagnifyingGlass, Plus, Star, Crosshair } from '@phosphor-icons/react'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
 
@@ -778,7 +778,19 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             {isLive && hunt.started_at && (
                               <span>🕐 Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
                             )}
-                            <span>{hunt.myRole === 'jagdleiter' ? '🎖️ Jagdleiter' : '🎯 Schütze'}</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {hunt.myRole === 'jagdleiter' ? (
+                                <>
+                                  <Star size={12} weight="fill" color="var(--accent-gold)" />
+                                  Jagdleiter
+                                </>
+                              ) : (
+                                <>
+                                  <Crosshair size={12} />
+                                  Schütze
+                                </>
+                              )}
+                            </span>
                           </div>
                         </Link>
                       </SwipeToAction>

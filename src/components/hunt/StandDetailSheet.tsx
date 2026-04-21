@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { StandData } from './MapContent'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { Star, UsersThree, Dog } from '@phosphor-icons/react'
 
 // --- Types ---
 
@@ -186,13 +187,13 @@ export default function StandDetailSheet({
                 }}>
                   {assignee.name}
                   {assignee.role === 'jagdleiter' && (
-                    <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem', color: 'var(--accent-gold)' }}>🎖️</span>
+                    <Star size={12} weight="fill" style={{ marginLeft: '0.375rem', color: 'var(--accent-gold)', display: 'inline' }} />
                   )}
                   {assignee.tags?.includes('gruppenleiter') && (
-                    <span style={{ marginLeft: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>👥</span>
+                    <UsersThree size={12} style={{ marginLeft: '0.25rem', color: 'var(--text-secondary)', display: 'inline' }} />
                   )}
                   {assignee.tags?.includes('hundefuehrer') && (
-                    <span style={{ marginLeft: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>🐕</span>
+                    <Dog size={12} style={{ marginLeft: '0.25rem', color: 'var(--text-secondary)', display: 'inline' }} />
                   )}
                 </p>
                 <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', margin: 0 }}>
