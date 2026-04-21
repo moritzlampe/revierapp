@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Share2, Pencil, Plus, Upload, Trash2 } from "lucide-react";
+import { ShareNetwork as Share2, PencilSimple as Pencil, Plus, UploadSimple as Upload, Trash as Trash2 } from "@phosphor-icons/react";
 import { getEmoji, getIconBg, getTypLabel, getZoneLabel } from "@/lib/data/demo-pois";
 import type { Zone } from "@/lib/types/revier";
 import { useMapContext } from "./map-context";

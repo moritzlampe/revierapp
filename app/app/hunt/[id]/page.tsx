@@ -14,6 +14,11 @@ import { HuntActionsMenu } from '@/components/hunt/HuntActionsMenu'
 import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
+import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog, Megaphone, Stop } from '@phosphor-icons/react'
+import { RehwildIcon } from '@/components/icons/SpeciesIcons'
+import type { ComponentType, SVGProps } from 'react'
+
+type TabIconComponent = ComponentType<{ size?: number; weight?: 'regular' | 'fill'; color?: string } & SVGProps<SVGSVGElement>>
 
 function getInitials(name: string) { return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() }
 
@@ -290,17 +295,17 @@ export default function HuntPage() {
 
   const isSolo = hunt.kind === 'solo'
 
-  const TABS = isSolo
+  const TABS: Array<{ key: 'karte' | 'chat' | 'nachsuche' | 'strecke'; label: string; icon: TabIconComponent; iconKind: 'phosphor' | 'species'; iconColor?: string }> = isSolo
     ? [
-        { key: 'karte' as const, label: 'Karte', icon: '🗺️' },
-        { key: 'nachsuche' as const, label: 'Nachsuche', icon: '🔴' },
-        { key: 'strecke' as const, label: 'Strecke', icon: '🦌' },
+        { key: 'karte', label: 'Karte', icon: MapTrifold, iconKind: 'phosphor' },
+        { key: 'nachsuche', label: 'Nachsuche', icon: WarningCircle, iconKind: 'phosphor', iconColor: 'var(--red)' },
+        { key: 'strecke', label: 'Strecke', icon: RehwildIcon as TabIconComponent, iconKind: 'species' },
       ]
     : [
-        { key: 'karte' as const, label: 'Karte', icon: '🗺️' },
-        { key: 'chat' as const, label: 'Chat', icon: '💬' },
-        { key: 'nachsuche' as const, label: 'Nachsuche', icon: '🔴' },
-        { key: 'strecke' as const, label: 'Strecke', icon: '🦌' },
+        { key: 'karte', label: 'Karte', icon: MapTrifold, iconKind: 'phosphor' },
+        { key: 'chat', label: 'Chat', icon: ChatCircle, iconKind: 'phosphor' },
+        { key: 'nachsuche', label: 'Nachsuche', icon: WarningCircle, iconKind: 'phosphor', iconColor: 'var(--red)' },
+        { key: 'strecke', label: 'Strecke', icon: RehwildIcon as TabIconComponent, iconKind: 'species' },
       ]
 
   return (
@@ -314,8 +319,19 @@ export default function HuntPage() {
           <div className="text-sm font-bold flex items-center gap-1.5">
             <span className="live-dot" /> {hunt.name}
           </div>
-          <div className="text-xs" style={{ color: 'var(--text-3)' }}>
-            {isJagdleiter ? '🎖️ Jagdleiter' : '🎯 Schütze'} · {joinedParticipants.length} Jäger aktiv
+          <div className="text-xs" style={{ color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            {isJagdleiter ? (
+              <>
+                <Star size={12} weight="fill" color="var(--accent-gold)" />
+                <span>Jagdleiter</span>
+              </>
+            ) : (
+              <>
+                <Crosshair size={12} />
+                <span>Schütze</span>
+              </>
+            )}
+            <span>· {joinedParticipants.length} Jäger aktiv</span>
           </div>
         </div>
         <button onClick={copyInviteLink} className="flex items-center justify-center rounded-lg text-sm"
@@ -330,7 +346,9 @@ export default function HuntPage() {
         />
         {isJagdleiter && (
           <button onClick={() => setShowJLBar(!showJLBar)} className="px-2 flex items-center justify-center rounded-lg text-xs font-bold"
-            style={{ background: 'var(--surface-2)', border: '1px solid var(--accent-gold)', color: 'var(--accent-gold)', minHeight: '2.75rem' }}>🎖️</button>
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--accent-gold)', color: 'var(--accent-gold)', minHeight: '2.75rem', minWidth: '2.75rem' }}>
+            <Star size={16} weight="fill" />
+          </button>
         )}
       </div>
 
@@ -338,40 +356,61 @@ export default function HuntPage() {
       {showJLBar && isJagdleiter && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
           style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
-          <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--accent-primary)', background: 'var(--accent-primary)', color: '#fff', minHeight: '2.75rem' }}>
-            📢 Treiben!
+            <Megaphone size={14} />
+            Treiben!
           </button>
-          <button onClick={() => endHunt()} className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button onClick={() => endHunt()} className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--alert-border)', background: 'var(--alert-bg)', color: 'var(--alert-text)', minHeight: '2.75rem' }}>
-            🔴 Hahn in Ruh
+            <Stop size={14} weight="fill" color="var(--red)" />
+            Hahn in Ruh
           </button>
-          <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--border-default)', background: 'var(--bg-sunken)', color: 'var(--text-primary)', minHeight: '2.75rem' }}>
-            👥 Rollen
+            <UsersThree size={14} />
+            Rollen
           </button>
-          <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--accent-gold)', background: 'var(--bg-sunken)', color: 'var(--accent-gold)', minHeight: '2.75rem' }}>
-            🐕 +Nachsuche
+            <Dog size={14} />
+            +Nachsuche
           </button>
         </div>
       )}
 
       {/* Hunt Tabs */}
       <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid var(--border-light)' }}>
-        {TABS.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className="flex-1 py-2.5 text-xs font-semibold text-center transition"
-            style={{
-              color: activeTab === tab.key ? 'var(--accent-primary)' : 'var(--text-3)',
-              borderBottom: activeTab === tab.key ? '2px solid var(--green)' : '2px solid transparent',
-            }}>
-            {tab.icon} {tab.label}
-            {tab.key === 'chat' && chatUnread > 0 && (
-              <span className="tab-badge">{chatUnread > 99 ? '99+' : chatUnread}</span>
-            )}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const isActive = activeTab === tab.key
+          const Icon = tab.icon
+          return (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              className="flex-1 py-2.5 text-xs font-semibold transition"
+              style={{
+                color: isActive ? 'var(--accent-primary)' : 'var(--text-3)',
+                borderBottom: isActive ? '2px solid var(--green)' : '2px solid transparent',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.375rem',
+              }}>
+              {tab.iconKind === 'phosphor' ? (
+                <Icon
+                  size={16}
+                  weight={isActive ? 'fill' : 'regular'}
+                  color={tab.iconColor}
+                />
+              ) : (
+                <Icon size={18} />
+              )}
+              <span>{tab.label}</span>
+              {tab.key === 'chat' && chatUnread > 0 && (
+                <span className="tab-badge">{chatUnread > 99 ? '99+' : chatUnread}</span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {/* Teilnehmer-Chips (nur auf Karte-Tab) */}
@@ -383,9 +422,9 @@ export default function HuntPage() {
               style={{ background: 'var(--surface-2)', border: p.role === 'jagdleiter' ? '1px solid var(--accent-gold)' : '1px solid var(--border)' }}>
               <div className="avatar-xs" style={{ background: getAvatarColor(p.id), color: '#fff' }}>{getInitials(pName(p))}</div>
               <span className="text-xs font-medium">{p.user_id === userId ? 'Du' : pName(p).split(' ')[0]}</span>
-              {p.role === 'jagdleiter' && <span className="text-xs" style={{ color: 'var(--accent-gold)' }}>🎖️</span>}
-              {p.tags?.includes('gruppenleiter') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>👥</span>}
-              {p.tags?.includes('hundefuehrer') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>🐕</span>}
+              {p.role === 'jagdleiter' && <Star size={12} weight="fill" color="var(--accent-gold)" />}
+              {p.tags?.includes('gruppenleiter') && <UsersThree size={12} color="var(--text-secondary)" />}
+              {p.tags?.includes('hundefuehrer') && <Dog size={12} color="var(--text-secondary)" />}
             </div>
           ))}
         </div>

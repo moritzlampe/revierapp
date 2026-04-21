@@ -5,19 +5,19 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
-  ChevronRight,
+  CaretRight as ChevronRight,
   Copy,
   UserPlus,
   MapPin,
   Bell,
   Palette,
-  Mail,
+  EnvelopeSimple as Mail,
   Lock,
-  LogOut,
+  SignOut as LogOut,
   X,
   Camera,
   Eye,
-} from 'lucide-react'
+} from '@phosphor-icons/react'
 type Status = 'available' | 'on_hunt' | 'do_not_disturb'
 
 const STATUS_OPTIONS: { key: Status; label: string }[] = [

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMapContext } from "./map-context";
-import { CheckCircle, AlertCircle, Info } from "lucide-react";
+import { CheckCircle, WarningCircle as AlertCircle, Info } from "@phosphor-icons/react";
 
 const icons = {
   success: CheckCircle,

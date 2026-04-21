@@ -1,6 +1,6 @@
 'use client'
 
-import { Camera } from 'lucide-react'
+import { Camera } from '@phosphor-icons/react'
 import { WILD_GROUP_CONFIG, type WildGroup } from '@/lib/species-config'
 import { getGroupIcon } from '@/components/icons/SpeciesIcons'
 

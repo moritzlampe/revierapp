@@ -1,6 +1,6 @@
 'use client'
 
-import { MoreVertical } from 'lucide-react'
+import { DotsThreeVertical as MoreVertical } from '@phosphor-icons/react'
 import { useState } from 'react'
 
 interface Props {

@@ -8,7 +8,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { usePrefetchChats } from '@/hooks/usePrefetchChats'
 import SwipeToAction from '@/components/ui/swipe-to-action'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
-import { Search, Plus } from 'lucide-react'
+import { MagnifyingGlass, Plus, Star, Crosshair } from '@phosphor-icons/react'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
 
@@ -538,7 +538,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
             color: 'var(--accent-primary)',
           }}
         >
-          <Plus size={22} strokeWidth={2.5} />
+          <Plus size={22} weight="bold" />
         </Link>
       </div>
 
@@ -573,7 +573,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
           height: '2.5rem',
           border: '1px solid var(--border)',
         }}>
-          <Search size={16} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+          <MagnifyingGlass size={16} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
           <input
             type="text"
             placeholder="Suchen"
@@ -778,7 +778,19 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             {isLive && hunt.started_at && (
                               <span>🕐 Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
                             )}
-                            <span>{hunt.myRole === 'jagdleiter' ? '🎖️ Jagdleiter' : '🎯 Schütze'}</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {hunt.myRole === 'jagdleiter' ? (
+                                <>
+                                  <Star size={12} weight="fill" color="var(--accent-gold)" />
+                                  Jagdleiter
+                                </>
+                              ) : (
+                                <>
+                                  <Crosshair size={12} />
+                                  Schütze
+                                </>
+                              )}
+                            </span>
                           </div>
                         </Link>
                       </SwipeToAction>

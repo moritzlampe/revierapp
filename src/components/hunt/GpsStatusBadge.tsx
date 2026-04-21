@@ -1,7 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
 import type { GeolocationState } from '@/hooks/useGeolocation'
+import {
+  XCircle,
+  Warning,
+  MagnifyingGlass,
+  WifiHigh,
+  MapPin,
+  PersonSimpleWalk,
+} from '@phosphor-icons/react'
+
+type IconWeight = 'regular' | 'fill'
+type PhosphorIcon = ComponentType<{ size?: number; weight?: IconWeight; color?: string; className?: string }>
 
 /**
  * GPS-Status-Badge: Zeigt den aktuellen GPS-Zustand als Pill-Overlay.
@@ -29,39 +40,47 @@ export default function GpsStatusBadge({ geo }: { geo: GeolocationState }) {
     return () => clearInterval(interval)
   }, [geo.position])
 
-  let icon: string
+  let Icon: PhosphorIcon
+  let iconWeight: IconWeight = 'regular'
+  let iconPulse = false
   let label: string
   let bgColor: string
   let textColor: string
   let showSpinner = false
 
   if (geo.error) {
-    icon = '❌'; label = 'GPS nicht verfügbar'
+    Icon = XCircle; iconWeight = 'fill'; label = 'GPS nicht verfügbar'
     bgColor = 'rgba(239, 83, 80, 0.15)'; textColor = 'var(--red)'
   } else if (!geo.position) {
     // Kein Fix — erst nach 5s Badge zeigen
     if (noFixSeconds < 5) return null
     showSpinner = true
     if (noFixSeconds >= 30) {
-      icon = '⚠️'; label = 'GPS nicht verfügbar — Standort aktivieren?'
+      Icon = Warning; iconWeight = 'fill'
+      label = 'GPS nicht verfügbar — Standort aktivieren?'
       bgColor = 'rgba(239, 83, 80, 0.15)'; textColor = 'var(--red)'
     } else {
-      icon = '🔍'; label = 'GPS wird gesucht...'
+      Icon = MagnifyingGlass; iconPulse = true
+      label = 'GPS wird gesucht...'
       bgColor = 'rgba(255, 255, 255, 0.1)'; textColor = 'var(--text-2)'
     }
   } else if (geo.mode === 'searching' && geo.accuracy && geo.accuracy > 30) {
     // Position da, aber sehr ungenau
-    icon = '📡'; label = `GPS ungenau (${Math.round(geo.accuracy)}m)`
+    Icon = WifiHigh; iconPulse = true
+    label = `GPS ungenau (${Math.round(geo.accuracy)}m)`
     bgColor = 'rgba(255, 143, 0, 0.12)'; textColor = 'var(--orange)'
   } else if (geo.mode === 'searching' && geo.accuracy && geo.accuracy > 10) {
     // Position da, mittlere Genauigkeit
-    icon = '📡'; label = `GPS (${Math.round(geo.accuracy)}m)`
+    Icon = WifiHigh; iconPulse = true
+    label = `GPS (${Math.round(geo.accuracy)}m)`
     bgColor = 'rgba(255, 255, 255, 0.1)'; textColor = 'var(--text-2)'
   } else if (geo.mode === 'locked') {
-    icon = '📍'; label = 'Position fixiert'
+    Icon = MapPin; iconWeight = 'fill'
+    label = 'Position fixiert'
     bgColor = 'rgba(107, 159, 58, 0.15)'; textColor = 'var(--accent-primary)'
   } else {
-    icon = '🚶'; label = 'Unterwegs'
+    Icon = PersonSimpleWalk
+    label = 'Unterwegs'
     bgColor = 'rgba(255, 143, 0, 0.15)'; textColor = 'var(--orange)'
   }
 
@@ -85,7 +104,11 @@ export default function GpsStatusBadge({ geo }: { geo: GeolocationState }) {
       boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
     }}>
       {showSpinner && <span className="gps-spinner" />}
-      <span>{icon}</span>
+      <Icon
+        size={14}
+        weight={iconWeight}
+        className={iconPulse ? 'animate-pulse' : undefined}
+      />
       <span>{label}</span>
     </div>
   )

@@ -26,6 +26,12 @@ import { buildPinSvg, getPinVariant, isAssignableStand, type PinSize } from '@/l
 import { buildInitials, formatDistanceLabel } from '@/lib/markers/marker-labels'
 import { WildartPicker } from '@/components/erlegung/WildartPicker'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { Star, Crosshair, UsersThree, Dog } from '@phosphor-icons/react'
+
+// Inline-SVG-Markup fuer Leaflet-divIcon HTML (React-Komponenten koennen
+// dort nicht gerendert werden). Pfade aus Phosphor 2.1 (Star fill, Dog regular).
+const MARKER_STAR_SVG = '<svg width="12" height="12" viewBox="0 0 256 256" fill="var(--accent-gold)" aria-hidden="true"><path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/></svg>'
+const MARKER_DOG_SVG = '<svg width="12" height="12" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M239.71,125l-16.42-88a16,16,0,0,0-19.61-12.58l-.31.09L150.85,40h-45.7L52.63,24.56l-.31-.09A16,16,0,0,0,32.71,37.05L16.29,125a15.77,15.77,0,0,0,9.12,17.52A16.26,16.26,0,0,0,32.12,144,15.48,15.48,0,0,0,40,141.84V184a40,40,0,0,0,40,40h96a40,40,0,0,0,40-40V141.85a15.5,15.5,0,0,0,7.87,2.16,16.31,16.31,0,0,0,6.72-1.47A15.77,15.77,0,0,0,239.71,125ZM32,128h0L48.43,40,90.5,52.37Zm144,80H136V195.31l13.66-13.65a8,8,0,0,0-11.32-11.32L128,180.69l-10.34-10.35a8,8,0,0,0-11.32,11.32L120,195.31V208H80a24,24,0,0,1-24-24V123.11L107.92,56h40.15L200,123.11V184A24,24,0,0,1,176,208Zm48-80L165.5,52.37,207.57,40,224,128ZM104,140a12,12,0,1,1-12-12A12,12,0,0,1,104,140Zm72,0a12,12,0,1,1-12-12A12,12,0,0,1,176,140Z"/></svg>'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -112,13 +118,24 @@ function formatDistance(m: number): string {
   return m < 1000 ? `~${Math.round(m)}m` : `~${(m / 1000).toFixed(1)}km`
 }
 
-function roleLabel(role: string, tags: string[]): string {
-  const parts: string[] = []
-  if (role === 'jagdleiter') parts.push('🎖️ Jagdleiter')
-  else parts.push('🎯 Schütze')
-  if (tags.includes('hundefuehrer')) parts.push('🐕')
-  if (tags.includes('gruppenleiter')) parts.push('👥')
-  return parts.join(' ')
+function RoleLabel({ role, tags }: { role: string; tags: string[] }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+      {role === 'jagdleiter' ? (
+        <>
+          <Star size={12} weight="fill" color="var(--accent-gold)" />
+          <span>Jagdleiter</span>
+        </>
+      ) : (
+        <>
+          <Crosshair size={12} />
+          <span>Schütze</span>
+        </>
+      )}
+      {tags.includes('hundefuehrer') && <Dog size={12} color="var(--text-secondary)" />}
+      {tags.includes('gruppenleiter') && <UsersThree size={12} color="var(--text-secondary)" />}
+    </span>
+  )
 }
 
 // --- Karten-Steuerung (innerhalb MapContainer) ---
@@ -351,8 +368,9 @@ function FitAllButton({ userPosition, participants }: {
       className="map-btn"
       style={{ bottom: '0.75rem', right: '0.75rem' }}
       title="Alle Teilnehmer anzeigen"
+      aria-label="Alle Teilnehmer anzeigen"
     >
-      👥
+      <UsersThree size={20} />
     </button>
   )
 }
@@ -383,8 +401,8 @@ function ParticipantMarker({
     const movingClass = isMoving && !isStale ? ' is-moving' : ''
 
     let badge = ''
-    if (participant.role === 'jagdleiter') badge = '<span class="marker-badge">🎖️</span>'
-    else if (participant.tags.includes('hundefuehrer')) badge = '<span class="marker-badge">🐕</span>'
+    if (participant.role === 'jagdleiter') badge = `<span class="marker-badge">${MARKER_STAR_SVG}</span>`
+    else if (participant.tags.includes('hundefuehrer')) badge = `<span class="marker-badge">${MARKER_DOG_SVG}</span>`
 
     return L.divIcon({
       className: `participant-marker${staleClass}${movingClass}`,
@@ -408,7 +426,7 @@ function ParticipantMarker({
       <Popup className="participant-popup">
         <div className="participant-popup-content">
           <strong>{participant.name}</strong>
-          <span className="participant-popup-role">{roleLabel(participant.role, participant.tags)}</span>
+          <span className="participant-popup-role"><RoleLabel role={participant.role} tags={participant.tags} /></span>
           {distance !== null && (
             <span className="participant-popup-distance">{formatDistance(distance)}</span>
           )}
@@ -752,9 +770,9 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>Auf: {assignment.standName}</p>
                   )}
                 </div>
-                {p.role === 'jagdleiter' && <span className="text-xs" style={{ color: 'var(--accent-gold)' }}>🎖️</span>}
-                {p.tags?.includes('gruppenleiter') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>👥</span>}
-                {p.tags?.includes('hundefuehrer') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>🐕</span>}
+                {p.role === 'jagdleiter' && <Star size={12} weight="fill" color="var(--accent-gold)" />}
+                {p.tags?.includes('gruppenleiter') && <UsersThree size={12} color="var(--text-secondary)" />}
+                {p.tags?.includes('hundefuehrer') && <Dog size={12} color="var(--text-secondary)" />}
               </button>
             )
           })}

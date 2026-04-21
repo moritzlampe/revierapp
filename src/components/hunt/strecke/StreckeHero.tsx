@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { CaretRight as ChevronRight } from '@phosphor-icons/react'
 import { WILD_ART_TO_GROUP, WILD_GROUP_CONFIG, type WildArt, type WildGroup } from '@/lib/species-config'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import { getGroupIcon } from '@/components/icons/SpeciesIcons'

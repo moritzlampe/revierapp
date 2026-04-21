@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Copy, Check } from "lucide-react";
+import { X, Copy, Check } from "@phosphor-icons/react";
 import { useMapContext, type ShareTarget } from "./map-context";
 
 export function ShareModal() {

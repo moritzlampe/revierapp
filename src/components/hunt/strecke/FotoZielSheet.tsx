@@ -1,7 +1,9 @@
 'use client'
 
 import { useCallback, useRef } from 'react'
-import { ChevronRight, Target, Sunrise } from 'lucide-react'
+// Target bleibt einstweilen Lucide — wird in Sprint 58.1k.3 durch BullseyeIcon ersetzt.
+import { Target } from 'lucide-react'
+import { CaretRight as ChevronRight, SunHorizon as Sunrise } from '@phosphor-icons/react'
 import { RehwildIcon } from '@/components/icons/SpeciesIcons'
 
 export type FotoZiel = 'streckenfoto' | 'stimmung' | 'erlegung'

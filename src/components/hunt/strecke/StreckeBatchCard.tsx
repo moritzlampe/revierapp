@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Camera } from 'lucide-react'
+import { Camera } from '@phosphor-icons/react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import type { HuntPhoto } from '@/lib/types/hunt-photo'
 import { getAvatarColor } from '@/lib/avatar-color'

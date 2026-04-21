@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Eye } from 'lucide-react'
+import { Eye } from '@phosphor-icons/react'
 
 type Props = {
   userId: string

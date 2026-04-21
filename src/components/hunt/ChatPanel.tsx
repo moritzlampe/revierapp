@@ -9,7 +9,7 @@ import LinkPreviewCard from '@/components/chat/LinkPreviewCard'
 import { MessageContextSheet } from '@/components/chat/MessageContextSheet'
 import { ReplyQuoteBar } from '@/components/chat/ReplyQuoteBar'
 import { InlineQuoteBox } from '@/components/chat/InlineQuoteBox'
-import { Clock, Check, AlertCircle } from 'lucide-react'
+import { Clock, Check, WarningCircle as AlertCircle } from '@phosphor-icons/react'
 import { getAvatarColor } from '@/lib/avatar-color'
 
 // === Types ===

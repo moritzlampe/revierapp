@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Plus, Loader2 } from 'lucide-react'
+import { Plus, CircleNotch as Loader2 } from '@phosphor-icons/react'
 import type { MapObject, ObjektType, MapObjectPhoto } from '@/lib/types/revier'
 import PhotoCapture from '@/components/photo/PhotoCapture'
 import PhotoThumbnail from '@/components/photo/PhotoThumbnail'

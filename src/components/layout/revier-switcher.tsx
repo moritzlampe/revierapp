@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Check, Plus } from "lucide-react";
+import { CaretDown as ChevronDown, Check, Plus } from "@phosphor-icons/react";
 import { useRevier } from "@/lib/context/revier-context";
 
 export function RevierSwitcher() {
