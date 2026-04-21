@@ -9,6 +9,7 @@ import { uploadPhoto } from '@/lib/photos/upload'
 import { deletePhoto } from '@/lib/photos/delete'
 import { listMapObjectPhotos } from '@/lib/photos/list'
 import { createClient } from '@/lib/supabase/client'
+import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 
 const TYPE_LABELS: Record<ObjektType, string> = {
   hochsitz: 'Hochsitz',
@@ -31,6 +32,7 @@ type Props = {
 }
 
 export default function ObjektDetailSheet({ object, userId, onClose, onPositionChange, onDelete, onUpdate }: Props) {
+  const confirmSheet = useConfirmSheet()
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState(object.name)
   const [savingName, setSavingName] = useState(false)
@@ -210,7 +212,13 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
   // --- Foto Delete ---
 
   async function handlePhotoDelete(photo: MapObjectPhoto) {
-    if (!confirm('Foto wirklich löschen?')) return
+    const ok = await confirmSheet({
+      title: 'Foto löschen?',
+      description: 'Das Foto wird endgültig entfernt.',
+      confirmLabel: 'Löschen',
+      confirmVariant: 'danger',
+    })
+    if (!ok) return
     setPhotos((prev) => prev.filter((p) => p.id !== photo.id))
     try {
       const supabase = createClient()

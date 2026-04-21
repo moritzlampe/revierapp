@@ -16,6 +16,7 @@ import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
 import { deleteHuntPhoto } from '@/lib/photos/hunt-photos'
 import { showToast } from '@/lib/erlegung/toast'
+import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 
 interface DisplayKillBatch {
   id: string
@@ -102,10 +103,17 @@ export default function StreckeBatchCard({
   onKillTap,
 }: StreckeBatchCardProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const confirmSheet = useConfirmSheet()
 
   const handleDeletePhoto = async (photo: HuntPhoto) => {
     if (!viewerUserId || photo.uploaded_by !== viewerUserId) return
-    if (!window.confirm('Foto wirklich löschen?')) return
+    const ok = await confirmSheet({
+      title: 'Foto löschen?',
+      description: 'Das Foto wird endgültig entfernt.',
+      confirmLabel: 'Löschen',
+      confirmVariant: 'danger',
+    })
+    if (!ok) return
     setDeletingId(photo.id)
     try {
       await deleteHuntPhoto(photo.id, photo.storage_path)

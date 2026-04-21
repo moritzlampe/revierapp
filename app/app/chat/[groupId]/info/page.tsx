@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 
 function getInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
@@ -72,6 +73,7 @@ export default function GroupInfoPage() {
   const params = useParams()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const confirmSheet = useConfirmSheet()
   const groupId = params.groupId as string
 
   const [group, setGroup] = useState<ChatGroup | null>(null)
@@ -317,7 +319,12 @@ export default function GroupInfoPage() {
   // Gruppe verlassen
   async function handleLeave() {
     if (!userId) return
-    const confirmed = window.confirm('Gruppe wirklich verlassen?')
+    const confirmed = await confirmSheet({
+      title: 'Gruppe verlassen?',
+      description: 'Du erhältst keine neuen Nachrichten aus dieser Gruppe mehr.',
+      confirmLabel: 'Verlassen',
+      confirmVariant: 'danger',
+    })
     if (!confirmed) return
 
     setActionLoading(true)
@@ -341,7 +348,12 @@ export default function GroupInfoPage() {
 
   // Gruppe löschen
   async function handleDelete() {
-    const confirmed = window.confirm('Gruppe und alle Nachrichten unwiderruflich löschen?')
+    const confirmed = await confirmSheet({
+      title: 'Gruppe löschen?',
+      description: 'Gruppe und alle Nachrichten werden unwiderruflich gelöscht.',
+      confirmLabel: 'Löschen',
+      confirmVariant: 'danger',
+    })
     if (!confirmed) return
 
     setActionLoading(true)
