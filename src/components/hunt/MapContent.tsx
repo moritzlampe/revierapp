@@ -515,7 +515,7 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
           <div className="stand-popup-content">
             <strong>{stand.name}</strong>
             <span>{typeLabel}</span>
-            {assignedTo && <span style={{ color: 'var(--green-bright)', fontSize: '0.6875rem' }}>→ {assignedTo}</span>}
+            {assignedTo && <span style={{ color: 'var(--accent-primary)', fontSize: '0.6875rem' }}>→ {assignedTo}</span>}
             {stand.description && (
               <span style={{ color: 'var(--text-2)', fontSize: '0.6875rem' }}>{stand.description}</span>
             )}
@@ -528,7 +528,7 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
                   borderRadius: '0.5rem',
                   background: 'var(--surface-3)',
                   border: '1px solid var(--border)',
-                  color: 'var(--green-bright)',
+                  color: 'var(--accent-primary)',
                   fontSize: '0.75rem',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -716,7 +716,7 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
         <div className="sheet-header" style={{ fontSize: '0.8125rem' }}>
           🪜 {stand.name}
           {currentAssignee?.user_id && (
-            <span style={{ color: 'var(--green-bright)', fontWeight: 400, marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+            <span style={{ color: 'var(--accent-primary)', fontWeight: 400, marginLeft: '0.5rem', fontSize: '0.75rem' }}>
               → {pName(huntParticipants.find(p => p.user_id === currentAssignee.user_id) || { profiles: null, guest_name: null } as any)}
             </span>
           )}
@@ -746,7 +746,7 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate">{pName(p)}</p>
                   {isOnThisStand && (
-                    <p className="text-xs" style={{ color: 'var(--green-bright)' }}>Hier zugewiesen ✓</p>
+                    <p className="text-xs" style={{ color: 'var(--accent-primary)' }}>Hier zugewiesen ✓</p>
                   )}
                   {isAssignedElsewhere && (
                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>Auf: {assignment.standName}</p>
@@ -1761,7 +1761,7 @@ export default function MapContent({
             width: '3.5rem',
             height: '3.5rem',
             borderRadius: '50%',
-            background: 'var(--green-bright)',
+            background: 'var(--accent-primary)',
             border: 'none',
             boxShadow: '0 0.25rem 0.5rem rgba(0,0,0,0.4)',
             display: 'flex',

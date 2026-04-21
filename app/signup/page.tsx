@@ -61,7 +61,7 @@ export default function SignupPage() {
           <p className="mb-6" style={{ color: 'var(--text-2)' }}>
             Bestätigungslink an <strong style={{ color: 'var(--text)' }}>{email}</strong> geschickt.
           </p>
-          <Link href="/login" className="font-medium" style={{ color: 'var(--green-bright)' }}>Zurück zum Login</Link>
+          <Link href="/login" className="font-medium" style={{ color: 'var(--accent-primary)' }}>Zurück zum Login</Link>
         </div>
       </div>
     )
@@ -73,7 +73,7 @@ export default function SignupPage() {
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg" style={{ background: 'linear-gradient(135deg, var(--green), var(--green-dim))' }}>🌲</div>
           <span className="text-xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>
-            Revier<span style={{ color: 'var(--green-bright)' }}>App</span>
+            Revier<span style={{ color: 'var(--accent-primary)' }}>App</span>
           </span>
         </div>
 
@@ -109,7 +109,7 @@ export default function SignupPage() {
 
         <p className="text-sm text-center mt-6" style={{ color: 'var(--text-3)' }}>
           Schon ein Konto?{' '}
-          <Link href="/login" className="font-medium" style={{ color: 'var(--green-bright)' }}>Anmelden</Link>
+          <Link href="/login" className="font-medium" style={{ color: 'var(--accent-primary)' }}>Anmelden</Link>
         </p>
       </div>
     </div>

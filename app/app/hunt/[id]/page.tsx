@@ -363,7 +363,7 @@ export default function HuntPage() {
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className="flex-1 py-2.5 text-xs font-semibold text-center transition"
             style={{
-              color: activeTab === tab.key ? 'var(--green-bright)' : 'var(--text-3)',
+              color: activeTab === tab.key ? 'var(--accent-primary)' : 'var(--text-3)',
               borderBottom: activeTab === tab.key ? '2px solid var(--green)' : '2px solid transparent',
             }}>
             {tab.icon} {tab.label}

@@ -35,7 +35,7 @@ export default function CompassToggleButton({ enabled, permission, onToggle }: C
         height="20"
         viewBox="0 0 24 24"
         fill="none"
-        stroke={isActive ? 'var(--green-bright)' : isDenied ? 'var(--red)' : 'var(--text)'}
+        stroke={isActive ? 'var(--accent-primary)' : isDenied ? 'var(--red)' : 'var(--text)'}
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"

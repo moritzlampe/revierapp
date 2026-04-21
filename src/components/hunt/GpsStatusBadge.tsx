@@ -59,7 +59,7 @@ export default function GpsStatusBadge({ geo }: { geo: GeolocationState }) {
     bgColor = 'rgba(255, 255, 255, 0.1)'; textColor = 'var(--text-2)'
   } else if (geo.mode === 'locked') {
     icon = '📍'; label = 'Position fixiert'
-    bgColor = 'rgba(107, 159, 58, 0.15)'; textColor = 'var(--green-bright)'
+    bgColor = 'rgba(107, 159, 58, 0.15)'; textColor = 'var(--accent-primary)'
   } else {
     icon = '🚶'; label = 'Unterwegs'
     bgColor = 'rgba(255, 143, 0, 0.15)'; textColor = 'var(--orange)'

@@ -207,7 +207,7 @@ function ToggleRow({
           width: '1.25rem',
           height: '1.25rem',
           borderRadius: '50%',
-          background: value ? 'var(--green-bright)' : 'var(--text-3)',
+          background: value ? 'var(--accent-primary)' : 'var(--text-3)',
           transition: 'left 0.15s, background 0.15s',
         }} />
       </span>

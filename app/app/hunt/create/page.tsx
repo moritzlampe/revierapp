@@ -623,7 +623,7 @@ export default function CreateHuntPage() {
               {assignMode === 'stands' ? 'Tippe Karte = neuer Stand' : 'Tippe Karte = Position setzen'}
             </p>
           </div>
-          <span className="text-xs font-semibold" style={{ color: placedCount > 0 ? 'var(--green-bright)' : 'var(--text-3)' }}>
+          <span className="text-xs font-semibold" style={{ color: placedCount > 0 ? 'var(--accent-primary)' : 'var(--text-3)' }}>
             {placedCount}/{allParticipants.length}
           </span>
         </div>
@@ -644,7 +644,7 @@ export default function CreateHuntPage() {
                 </div>
                 {p.userName.split(' ')[0]}
                 {i === 0 && <span style={{ fontSize: '0.625rem' }}>🎖️</span>}
-                {placed && <span style={{ fontSize: '0.625rem', color: 'var(--green-bright)' }}>✓</span>}
+                {placed && <span style={{ fontSize: '0.625rem', color: 'var(--accent-primary)' }}>✓</span>}
               </button>
             )
           })}
@@ -734,7 +734,7 @@ export default function CreateHuntPage() {
               <h3 className="text-sm font-bold mb-2" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 🪜 {assigningStand.name}
                 {assigningStand.assignedUserId && (
-                  <span style={{ color: 'var(--green-bright)', fontWeight: 400, fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--accent-primary)', fontWeight: 400, fontSize: '0.75rem' }}>
                     → {allParticipants.find(p => p.userId === assigningStand.assignedUserId)?.userName}
                   </span>
                 )}
@@ -777,7 +777,7 @@ export default function CreateHuntPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate">{p.userName}</p>
                         {isOnThisStand && (
-                          <p className="text-xs" style={{ color: 'var(--green-bright)' }}>Hier zugewiesen ✓</p>
+                          <p className="text-xs" style={{ color: 'var(--accent-primary)' }}>Hier zugewiesen ✓</p>
                         )}
                         {assignedElsewhere && (
                           <p className="text-xs" style={{ color: 'var(--text-3)' }}>Auf: {assignedElsewhere}</p>
@@ -989,7 +989,7 @@ export default function CreateHuntPage() {
                 style={{
                   border: `1.5px solid ${wildPresets.includes(w.value) ? 'var(--green)' : 'var(--border)'}`,
                   background: wildPresets.includes(w.value) ? 'rgba(107,159,58,0.1)' : 'var(--bg)',
-                  color: wildPresets.includes(w.value) ? 'var(--green-bright)' : 'var(--text-3)',
+                  color: wildPresets.includes(w.value) ? 'var(--accent-primary)' : 'var(--text-3)',
                 }}>
                 {w.icon} {w.label}
               </button>
@@ -1008,7 +1008,7 @@ export default function CreateHuntPage() {
               style={{ background: 'var(--bg)', border: '1.5px solid var(--green)' }}>
               <div className="avatar" style={{ background: getAvatarColor(currentUser.id), color: '#fff' }}>{getInitials(currentUser.name)}</div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold" style={{ color: 'var(--green-bright)' }}>Du ({currentUser.name})</div>
+                <div className="text-sm font-bold" style={{ color: 'var(--accent-primary)' }}>Du ({currentUser.name})</div>
                 <div className="text-xs" style={{ color: 'var(--text-3)' }}>🎯 Schütze</div>
               </div>
               <span className="badge badge-gold text-xs font-bold">🎖️ Jagdleiter</span>

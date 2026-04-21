@@ -244,7 +244,7 @@ export default function StandDetailSheet({
               border: '1px solid var(--green-dim)',
               textAlign: 'center',
               fontSize: '0.8125rem',
-              color: 'var(--green-bright)',
+              color: 'var(--accent-primary)',
               fontWeight: 600,
             }}>
               ✓ Dein Stand

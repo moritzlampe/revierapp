@@ -199,7 +199,7 @@ function RevierSetupContent() {
           style={{
             border: `1.5px solid ${mode === 'stands' ? 'var(--green)' : 'var(--border)'}`,
             background: mode === 'stands' ? 'rgba(107,159,58,0.15)' : 'transparent',
-            color: mode === 'stands' ? 'var(--green-bright)' : 'var(--text-3)',
+            color: mode === 'stands' ? 'var(--accent-primary)' : 'var(--text-3)',
           }}
         >
           📍 Hochsitze setzen
@@ -210,7 +210,7 @@ function RevierSetupContent() {
           style={{
             border: `1.5px solid ${mode === 'boundary' ? 'var(--green)' : 'var(--border)'}`,
             background: mode === 'boundary' ? 'rgba(107,159,58,0.15)' : 'transparent',
-            color: mode === 'boundary' ? 'var(--green-bright)' : 'var(--text-3)',
+            color: mode === 'boundary' ? 'var(--accent-primary)' : 'var(--text-3)',
           }}
         >
           🔲 Grenze zeichnen
@@ -256,7 +256,7 @@ function RevierSetupContent() {
                 onClick={saveBoundary}
                 disabled={saving}
                 className="text-xs font-bold"
-                style={{ color: 'var(--green-bright)', background: 'none', border: 'none' }}
+                style={{ color: 'var(--accent-primary)', background: 'none', border: 'none' }}
               >
                 {saving ? '...' : '✓ Speichern'}
               </button>
