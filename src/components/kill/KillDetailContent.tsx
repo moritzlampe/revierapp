@@ -13,6 +13,7 @@ import {
 } from '@/lib/species-config'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 import PinIcon from '@/components/icons/PinIcon'
+import BullseyeIcon from '@/components/icons/BullseyeIcon'
 import { createClient } from '@/lib/supabase/client'
 import { showToast } from '@/lib/erlegung/toast'
 
@@ -245,6 +246,8 @@ export default function KillDetailContent({
           Echte Karte kommt in einem späteren Sprint. */}
       {latLng && <PositionRow latLng={latLng} />}
 
+      <BullseyeDivider />
+
       {/* Kapital-Toggle */}
       <div style={{ padding: '0 1rem' }}>
         <button
@@ -290,6 +293,8 @@ export default function KillDetailContent({
           )}
         </button>
       </div>
+
+      <BullseyeDivider />
 
       {/* Notiz-Feld */}
       <div style={{ padding: '0 1rem', position: 'relative' }}>
@@ -553,6 +558,34 @@ function PositionRow({ latLng }: { latLng: LatLng }) {
         {coords}
       </span>
     </a>
+  )
+}
+
+/**
+ * Dezenter Section-Divider als Signature-Caesur. Winziges Bullseye
+ * (10px) auf --border-strong mit 40% Opacity, horizontal zentriert,
+ * ohne umgebende Hairline. Inspiriert vom NYT-End-of-Article-Glyph,
+ * hier als Inline-Sektionswechsel innerhalb des Kill-Detail-Sheets.
+ *
+ * Revert-Stufen bei Kitsch-Erkennung:
+ * 1. opacity 0.4 → 0.25
+ * 2. size 10 → 8
+ * 3. komplett durch {@code borderTop: 1px solid var(--border-default)} ersetzen
+ */
+function BullseyeDivider() {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        padding: '0.125rem 0',
+        color: 'var(--border-strong)',
+        opacity: 0.4,
+      }}
+    >
+      <BullseyeIcon size={10} />
+    </div>
   )
 }
 
