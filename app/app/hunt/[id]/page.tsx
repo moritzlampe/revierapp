@@ -12,15 +12,9 @@ import ChatPanel from '@/components/hunt/ChatPanel'
 import HuntStreckeTab from '@/components/hunt/HuntStreckeTab'
 import { HuntActionsMenu } from '@/components/hunt/HuntActionsMenu'
 import type { StandData } from '@/components/hunt/MapContent'
+import { getAvatarColor } from '@/lib/avatar-color'
 
-const AVATAR_COLORS = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5', 'av-6']
-const SEAT_AVATAR_COLORS = ['#2E7D32', '#1565C0', '#E65100', '#6A1B9A', '#00838F', '#C62828']
 function getInitials(name: string) { return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() }
-function getAvatarColor(id: string): string {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) { hash = ((hash << 5) - hash) + id.charCodeAt(i) }
-  return SEAT_AVATAR_COLORS[Math.abs(hash) % SEAT_AVATAR_COLORS.length]
-}
 
 type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string; anonymize_kills: boolean } | null }
@@ -319,28 +313,28 @@ export default function HuntPage() {
         />
         {isJagdleiter && (
           <button onClick={() => setShowJLBar(!showJLBar)} className="px-2 flex items-center justify-center rounded-lg text-xs font-bold"
-            style={{ background: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)', color: 'var(--gold)', minHeight: '2.75rem' }}>🎖️</button>
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--accent-gold)', color: 'var(--accent-gold)', minHeight: '2.75rem' }}>🎖️</button>
         )}
       </div>
 
       {/* Jagdleiter Command Bar */}
       {showJLBar && isJagdleiter && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg, #2a2008, #1f1a06)', borderBottom: '1px solid rgba(255,215,0,0.15)' }}>
+          style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
           <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid rgba(107,159,58,0.3)', background: 'rgba(107,159,58,0.1)', color: 'var(--green-bright)', minHeight: '2.75rem' }}>
+            style={{ border: '1px solid var(--accent-primary)', background: 'var(--accent-primary)', color: '#fff', minHeight: '2.75rem' }}>
             📢 Treiben!
           </button>
           <button onClick={() => endHunt()} className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid rgba(239,83,80,0.3)', background: 'rgba(239,83,80,0.1)', color: 'var(--red)', minHeight: '2.75rem' }}>
+            style={{ border: '1px solid var(--alert-border)', background: 'var(--alert-bg)', color: 'var(--alert-text)', minHeight: '2.75rem' }}>
             🔴 Hahn in Ruh
           </button>
           <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-2)', minHeight: '2.75rem' }}>
+            style={{ border: '1px solid var(--border-default)', background: 'var(--bg-sunken)', color: 'var(--text-primary)', minHeight: '2.75rem' }}>
             👥 Rollen
           </button>
           <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid rgba(255,143,0,0.3)', background: 'rgba(255,143,0,0.08)', color: 'var(--orange)', minHeight: '2.75rem' }}>
+            style={{ border: '1px solid var(--accent-gold)', background: 'var(--bg-sunken)', color: 'var(--accent-gold)', minHeight: '2.75rem' }}>
             🐕 +Nachsuche
           </button>
         </div>
@@ -367,14 +361,14 @@ export default function HuntPage() {
       {activeTab === 'karte' && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
           style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
-          {participants.map((p, i) => (
+          {participants.map((p) => (
             <div key={p.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full flex-shrink-0"
-              style={{ background: 'var(--surface-2)', border: p.role === 'jagdleiter' ? '1px solid rgba(255,215,0,0.3)' : '1px solid var(--border)' }}>
-              <div className={`avatar-xs ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>{getInitials(pName(p))}</div>
+              style={{ background: 'var(--surface-2)', border: p.role === 'jagdleiter' ? '1px solid var(--accent-gold)' : '1px solid var(--border)' }}>
+              <div className="avatar-xs" style={{ background: getAvatarColor(p.id), color: '#fff' }}>{getInitials(pName(p))}</div>
               <span className="text-xs font-medium">{p.user_id === userId ? 'Du' : pName(p).split(' ')[0]}</span>
-              {p.role === 'jagdleiter' && <span className="text-xs" style={{ color: 'var(--gold)' }}>🎖️</span>}
-              {p.tags?.includes('gruppenleiter') && <span className="text-xs" style={{ color: 'var(--blue)' }}>👥</span>}
-              {p.tags?.includes('hundefuehrer') && <span className="text-xs" style={{ color: 'var(--orange)' }}>🐕</span>}
+              {p.role === 'jagdleiter' && <span className="text-xs" style={{ color: 'var(--accent-gold)' }}>🎖️</span>}
+              {p.tags?.includes('gruppenleiter') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>👥</span>}
+              {p.tags?.includes('hundefuehrer') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>🐕</span>}
             </div>
           ))}
         </div>

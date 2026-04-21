@@ -23,7 +23,7 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: 'cover',
   interactiveWidget: 'resizes-content',
-  themeColor: '#0a0f08',
+  themeColor: '#E7DDC7',
 }
 
 export default function RootLayout({
@@ -33,12 +33,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="de">
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body className="antialiased">
         <ServiceWorkerRegistration />
         <div className="min-h-viewport app-mobile-wrapper" style={{

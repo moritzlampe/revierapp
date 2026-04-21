@@ -36,6 +36,13 @@ export default function BottomTabBar() {
     return () => window.removeEventListener('quickhunt:keyboard', handler)
   }, [])
 
+  // Erlegung-Sheet von anderen Screens öffnen (Strecke-Tab-Empty-State).
+  useEffect(() => {
+    const handler = () => setErlegungOpen(true)
+    window.addEventListener('quickhunt:open-erlegung', handler)
+    return () => window.removeEventListener('quickhunt:open-erlegung', handler)
+  }, [])
+
   // Auf bestimmten Routes komplett ausblenden
   if (HIDE_ON_ROUTES.some(r => pathname.startsWith(r))) return null
 
@@ -76,7 +83,7 @@ export default function BottomTabBar() {
           {/* Tab 1: Jagd */}
           {renderLinkTab(linkTabs[0], activeKey)}
 
-          {/* Tab 2: Erlegung (Action-Button) */}
+          {/* Tab 2: Erlegung (Action-Button, Design-System §5.12: 56px FAB) */}
           <button
             onClick={() => setErlegungOpen(true)}
             style={{
@@ -92,7 +99,7 @@ export default function BottomTabBar() {
               padding: 0,
               minHeight: '2.75rem',
               minWidth: '2.75rem',
-              color: erlegungOpen ? '#fff' : 'var(--text-3)',
+              color: erlegungOpen ? 'var(--text)' : 'var(--text-3)',
               transition: 'color 0.15s',
               WebkitTapHighlightColor: 'transparent',
             }}
@@ -102,16 +109,20 @@ export default function BottomTabBar() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: '2.25rem',
-                height: '2.25rem',
+                width: '3.5rem',
+                height: '3.5rem',
                 borderRadius: '50%',
                 background: 'var(--green)',
-                color: '#fff',
+                color: 'var(--text)',
                 transition: 'opacity 0.15s',
                 opacity: erlegungOpen ? 0.8 : 1,
+                /* Leicht angehoben, damit die 56px-FAB nicht den
+                   gesamten Nav-Höhe-Slot ausfüllt. */
+                marginTop: '-1rem',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
               }}
             >
-              <Target size={20} strokeWidth={2.2} />
+              <Target size={24} strokeWidth={2.2} />
             </span>
             <span style={{
               fontSize: '0.625rem',

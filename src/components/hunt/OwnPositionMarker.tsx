@@ -62,14 +62,15 @@ const OwnPositionMarker = forwardRef<OwnPositionMarkerHandle, OwnPositionMarkerP
     const y2 = cy - CONE_LENGTH * Math.sin(rad2)
     const conePath = `M${cx},${cy} L${x1},${y1} A${CONE_LENGTH},${CONE_LENGTH} 0 0,0 ${x2},${y2} Z`
 
-    // SVG-HTML für den Marker
+    // SVG-HTML für den Marker. `currentColor` zieht die Farbe aus dem CSS
+    // des Containers (.own-position-marker → color: var(--accent-primary)).
     const svgHtml = `
       <svg width="${SVG_SIZE}" height="${SVG_SIZE}" viewBox="0 0 ${SVG_SIZE} ${SVG_SIZE}" xmlns="http://www.w3.org/2000/svg">
         <g class="compass-cone" style="transform-origin: ${cx}px ${cy}px; display: ${compassEnabled ? 'block' : 'none'};">
-          <path d="${conePath}" fill="rgba(66, 165, 245, 0.25)" stroke="rgba(66, 165, 245, 0.4)" stroke-width="0.5" />
+          <path d="${conePath}" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-opacity="0.4" stroke-width="0.5" />
         </g>
-        <circle cx="${cx}" cy="${cy}" r="${RING_R}" fill="rgba(66, 165, 245, ${ringFill})" stroke="rgba(66, 165, 245, ${ringOpacity})" stroke-width="2" class="${pulseClass}" />
-        <circle cx="${cx}" cy="${cy}" r="${DOT_R}" fill="#42A5F5" fill-opacity="${dotOpacity}" stroke="#ffffff" stroke-width="${DOT_STROKE}" />
+        <circle cx="${cx}" cy="${cy}" r="${RING_R}" fill="currentColor" fill-opacity="${ringFill}" stroke="currentColor" stroke-opacity="${ringOpacity}" stroke-width="2" class="${pulseClass}" />
+        <circle cx="${cx}" cy="${cy}" r="${DOT_R}" fill="currentColor" fill-opacity="${dotOpacity}" stroke="#ffffff" stroke-width="${DOT_STROKE}" />
       </svg>`
 
     // Imperativ: Marker erzeugen / updaten
@@ -136,9 +137,10 @@ const OwnPositionMarker = forwardRef<OwnPositionMarkerHandle, OwnPositionMarkerP
             center={center}
             radius={accuracy}
             pathOptions={{
-              color: 'rgba(66, 165, 245, 0.3)',
-              fillColor: 'rgba(66, 165, 245, 0.1)',
-              fillOpacity: 1,
+              color: 'var(--accent-primary)',
+              opacity: 0.3,
+              fillColor: 'var(--accent-primary)',
+              fillOpacity: 0.1,
               weight: 1,
             }}
           />

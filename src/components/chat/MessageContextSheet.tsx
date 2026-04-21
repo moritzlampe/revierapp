@@ -90,7 +90,7 @@ export function MessageContextSheet({ isOpen, isOwn, hasText, onReply, onForward
 
         {/* Löschen — nur eigene Nachrichten */}
         {isOwn && (
-          <button onClick={() => handleAction(onDelete)} style={{ ...actionStyle, color: '#ef4444' }}>
+          <button onClick={() => handleAction(onDelete)} style={{ ...actionStyle, color: 'var(--danger)' }}>
             <span style={iconStyle}>🗑️</span>
             <span>Löschen</span>
           </button>

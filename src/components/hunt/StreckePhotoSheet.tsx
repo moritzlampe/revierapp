@@ -296,7 +296,7 @@ export default function StreckePhotoSheet({
                 flex: 1,
                 padding: '0.875rem 1rem',
                 background: pendingPhotos.length === 0 ? 'var(--surface-2)' : 'var(--green)',
-                color: pendingPhotos.length === 0 ? 'var(--text-3)' : '#fff',
+                color: pendingPhotos.length === 0 ? 'var(--text-3)' : 'var(--text)',
                 border: 'none',
                 borderRadius: '0.75rem',
                 fontSize: '1rem',
@@ -321,7 +321,7 @@ export default function StreckePhotoSheet({
                 flex: 1,
                 padding: '0.875rem 1rem',
                 background: 'var(--green)',
-                color: '#fff',
+                color: 'var(--text)',
                 border: 'none',
                 borderRadius: '0.75rem',
                 fontSize: '1rem',
@@ -407,7 +407,7 @@ function CapturePhase({
               width: '100%',
               padding: '0.875rem 1rem',
               background: 'var(--green)',
-              color: '#fff',
+              color: 'var(--text)',
               border: 'none',
               borderRadius: '0.75rem',
               fontSize: '0.9375rem',
@@ -618,7 +618,7 @@ function KillSelectRow({
             flexShrink: 0,
           }}
         >
-          {selected && <Check size={14} color="#fff" strokeWidth={3} />}
+          {selected && <Check size={14} color="var(--text)" strokeWidth={3} />}
         </span>
         <span style={{ color: 'var(--text)' }}>{label}</span>
         {kill.status === 'wounded' && (

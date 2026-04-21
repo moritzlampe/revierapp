@@ -29,6 +29,22 @@ export interface DisplayKill extends Kill {
 // Anonymer Anzeigename — exakt "Jäger", keine Nummerierung.
 export const ANONYMOUS_NAME = 'Jäger' as const
 
+// Fallback-Kaskade für den Reporter-Namen:
+//   1. display_name, sofern gesetzt und keine E-Mail-Adresse
+//   2. Teil vor "@", wenn display_name eine E-Mail ist (z.B. "moritz.lampe")
+//   3. "Unbekannt"
+// Altdaten-Schutz: Profile aus der Registrierungs-Frühphase haben display_name
+// = E-Mail. Hier wird die Mail-Darstellung im Strecke-Tab unterdrückt.
+export function resolveReporterName(raw: string | null | undefined): string {
+  const trimmed = raw?.trim()
+  if (!trimmed) return 'Unbekannt'
+  if (trimmed.includes('@')) {
+    const prefix = trimmed.split('@')[0].trim()
+    return prefix || 'Unbekannt'
+  }
+  return trimmed
+}
+
 // Privilegierte Rolle = darf alles sehen (Klartext + Krank).
 // V1: nur Jagdleiter. Erweiterbar ohne Helper-Aufrufer-Änderung.
 function isPrivileged(viewer: ViewerContext): boolean {
@@ -55,7 +71,7 @@ export function maskKillForViewer(
   killer: KillerProfile | undefined,
   viewer: ViewerContext,
 ): DisplayKill | null {
-  const killerName = killer?.display_name ?? 'Unbekannt'
+  const killerName = resolveReporterName(killer?.display_name)
   const killerAnonymous = killer?.anonymize_kills ?? false
 
   // (1) Eigener Kill → immer voll anzeigen

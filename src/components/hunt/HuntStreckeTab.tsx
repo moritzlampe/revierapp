@@ -1,15 +1,18 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
-import { Camera } from 'lucide-react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useHuntStrecke } from '@/hooks/useHuntStrecke'
 import StreckePhotoSheet from '@/components/hunt/StreckePhotoSheet'
-import type { Geschlecht, WildArt } from '@/lib/species-config'
-import {
-  WILD_GROUP_CONFIG,
-  WILD_GROUP_DETAILS,
-  FLAT_GROUP_TIERE,
-} from '@/lib/species-config'
+import StreckeHero from '@/components/hunt/strecke/StreckeHero'
+import StreckeFilterBar, { type StreckeFilter } from '@/components/hunt/strecke/StreckeFilterBar'
+import StreckeBatchCard from '@/components/hunt/strecke/StreckeBatchCard'
+import StreckeNachsucheSection from '@/components/hunt/strecke/StreckeNachsucheSection'
+import StreckeEmptyState, { type StreckeEmptyRole } from '@/components/hunt/strecke/StreckeEmptyState'
+import FotoZielSheet, { type FotoZiel } from '@/components/hunt/strecke/FotoZielSheet'
+import KillAuswahlSheet from '@/components/hunt/strecke/KillAuswahlSheet'
+import KillDetailSheet from '@/components/kill/KillDetailSheet'
+import type { WildArt, WildGroup } from '@/lib/species-config'
+import { WILD_ART_TO_GROUP } from '@/lib/species-config'
 import {
   maskKillForViewer,
   type DisplayKill,
@@ -18,9 +21,6 @@ import {
 } from '@/lib/strecke/visibility'
 import { groupKillsByBatch } from '@/lib/erlegung/groupByBatch'
 import { getMoodPhotos, getPhotosForBatch } from '@/lib/strecke/photo-matching'
-import { deleteHuntPhoto } from '@/lib/photos/hunt-photos'
-import type { HuntPhoto } from '@/lib/types/hunt-photo'
-import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
 
 interface Participant {
   id: string
@@ -48,36 +48,55 @@ interface DisplayKillBatch {
   kills: DisplayKill[]
 }
 
-function getWildArtLabel(wildArt: string): string {
-  for (const details of Object.values(WILD_GROUP_DETAILS)) {
-    if (!details) continue
-    const found = details.altersklassen.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  for (const list of Object.values(FLAT_GROUP_TIERE)) {
-    const found = list?.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === wildArt as WildArt)
-  if (group) return group.label
-  return wildArt
-}
-
-function getGeschlechtLabel(g: Geschlecht | null | undefined): string | null {
-  if (!g) return null
-  if (g === 'maennlich') return 'männlich'
-  if (g === 'weiblich') return 'weiblich'
-  return null
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
 
 export default function HuntStreckeTab({ huntId, participants, userId }: HuntStreckeTabProps) {
   const { kills, photos, loading, error } = useHuntStrecke(huntId)
   const [photoSheetOpen, setPhotoSheetOpen] = useState(false)
+  const [fotoZielOpen, setFotoZielOpen] = useState(false)
+  const [killAuswahlOpen, setKillAuswahlOpen] = useState(false)
+  const [detailKill, setDetailKill] = useState<DisplayKill | null>(null)
+  const [detailMode, setDetailMode] = useState<'strecke' | 'nachsuche'>('strecke')
+  const [filter, setFilter] = useState<StreckeFilter>({ kind: 'all' })
+  const [pinnedGroup, setPinnedGroup] = useState<WildGroup | null>(null)
+  const nachsucheSectionRef = useRef<HTMLElement | null>(null)
+
+  const openDetail = useCallback((kill: DisplayKill, mode: 'strecke' | 'nachsuche' = 'strecke') => {
+    setDetailKill(kill)
+    setDetailMode(mode)
+  }, [])
+
+  // Hero-Chevron-Tap: pinnt die Wildart-Pill und aktiviert den Filter.
+  // Zweiter Tap (auf dieselbe Gruppe oder auf den Pill 'Alle') löst die Pin.
+  const handleGroupTap = useCallback((group: WildGroup) => {
+    setFilter(current => {
+      if (current.kind === 'group' && current.group === group) {
+        setPinnedGroup(null)
+        return { kind: 'all' }
+      }
+      setPinnedGroup(group)
+      return { kind: 'group', group }
+    })
+  }, [])
+
+  // Wenn der Filter nicht mehr auf 'group' steht, darf der Wildart-Pill
+  // trotzdem sichtbar bleiben (als schneller Re-Toggle). Aber wenn der User
+  // explizit 'Alle' wählt, räumen wir die gepinnte Gruppe ab.
+  const handleFilterChange = useCallback((next: StreckeFilter) => {
+    setFilter(next)
+    if (next.kind === 'all') setPinnedGroup(null)
+  }, [])
+
+  const handleFotoZielSelect = useCallback((ziel: FotoZiel) => {
+    setFotoZielOpen(false)
+    if (ziel === 'erlegung') {
+      setKillAuswahlOpen(true)
+      return
+    }
+    // Streckenfoto & Stimmung → hunt-gebundenes Foto ohne Kill-Referenz.
+    // Bestehender StreckePhotoSheet fängt den Flow (Capture + optionale
+    // Kill-Auswahl kann leer bleiben).
+    setPhotoSheetOpen(true)
+  }, [])
 
   // Viewer-Kontext: eigene Rolle + Anonymisierungswunsch.
   const viewer = useMemo<ViewerContext>(() => {
@@ -130,12 +149,69 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     [kills, profileMap, viewer],
   )
 
-  // Batching erst NACH Filter — sonst könnten gemischte Batches entstehen,
-  // bei denen der sichtbare Anteil vorne/hinten auseinanderbricht.
-  const visibleBatches = useMemo<DisplayKillBatch[]>(
-    () => groupKillsByBatch(visibleKills).slice().reverse() as DisplayKillBatch[],
+  // Offizielle Strecke (harvested) vs. Nachsuche (wounded).
+  // Hero-Count ignoriert wounded — laut Design-Brief zählen sie jagdrechtlich
+  // erst ab Freigabe-Update zur Strecke.
+  const harvestedKills = useMemo(
+    () => visibleKills.filter(k => k.status === 'harvested'),
     [visibleKills],
   )
+  const woundedKills = useMemo(
+    () => visibleKills.filter(k => k.status === 'wounded'),
+    [visibleKills],
+  )
+
+  // Nachsuche-Sichtbarkeit: Jagdleiter sehen alles, Schützen sehen eigene Wounded-Kills
+  // (die landen bereits durch maskKillForViewer in visibleKills), Hundeführer sehen alles.
+  const canSeeNachsuche = useMemo(() => {
+    if (viewer.role === 'jagdleiter') return true
+    if (viewer.tags.includes('hundefuehrer')) return true
+    return woundedKills.length > 0
+  }, [viewer.role, viewer.tags, woundedKills.length])
+
+  const ownHarvestedCount = useMemo(
+    () => harvestedKills.filter(k => k.reporter_id === userId).length,
+    [harvestedKills, userId],
+  )
+
+  const pinnedGroupCount = useMemo(() => {
+    if (!pinnedGroup) return 0
+    return harvestedKills.filter(
+      k => WILD_ART_TO_GROUP[k.wild_art as WildArt] === pinnedGroup,
+    ).length
+  }, [harvestedKills, pinnedGroup])
+
+  // Filter wirken vor dem Batching. Nachsuche-Filter blendet die
+  // Chrono-Liste komplett aus — nur die dedizierte Nachsuche-Sektion
+  // bleibt dann sichtbar.
+  const filteredKills = useMemo<DisplayKill[]>(() => {
+    switch (filter.kind) {
+      case 'nachsuche':
+        return []
+      case 'own':
+        return visibleKills.filter(k => k.reporter_id === userId)
+      case 'group':
+        return visibleKills.filter(
+          k => WILD_ART_TO_GROUP[k.wild_art as WildArt] === filter.group,
+        )
+      case 'all':
+      default:
+        return visibleKills
+    }
+  }, [filter, visibleKills, userId])
+
+  // Chronologische Reihenfolge: älteste zuerst (Logbuch-Gedanke —
+  // Tagesablauf rekonstruieren). groupKillsByBatch liefert ASC.
+  const visibleBatches = useMemo<DisplayKillBatch[]>(
+    () => groupKillsByBatch(filteredKills) as DisplayKillBatch[],
+    [filteredKills],
+  )
+
+  const showChronoList = filter.kind !== 'nachsuche'
+
+  const scrollToNachsuche = useCallback(() => {
+    nachsucheSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
 
   // Foto-Visibility: ein Kill-Foto ist nur sichtbar, wenn mindestens
   // ein referenzierter Kill sichtbar ist. Mood-Fotos (ohne kill_ids)
@@ -165,25 +241,16 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     return set
   }, [visiblePhotos])
 
-  const canDeletePhoto = useCallback(
-    (photo: HuntPhoto): boolean => {
-      if (!userId) return false
-      if (photo.uploaded_by === userId) return true
-      if (viewer.role === 'jagdleiter') return true
-      return false
-    },
-    [userId, viewer.role],
-  )
-
-  const handleDeletePhoto = useCallback(async (photo: HuntPhoto) => {
-    if (!confirm('Foto löschen?')) return
-    try {
-      await deleteHuntPhoto(photo.id, photo.storage_path)
-      // Realtime-Event propagiert Update automatisch
-    } catch (err) {
-      console.error('Foto-Lösch-Fehler', err)
+  const killPhotoCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const p of visiblePhotos) {
+      if (!p.kill_ids) continue
+      for (const kid of p.kill_ids) {
+        map.set(kid, (map.get(kid) ?? 0) + 1)
+      }
     }
-  }, [])
+    return map
+  }, [visiblePhotos])
 
   if (loading) {
     return (
@@ -203,48 +270,20 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
   }
 
   if (visibleBatches.length === 0 && moodPhotos.length === 0) {
+    const emptyRole: StreckeEmptyRole = !userId
+      ? 'gast'
+      : viewer.role === 'jagdleiter'
+        ? 'jagdleiter'
+        : 'schuetze'
     return (
-      <>
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <div className="text-5xl mb-4">🦌</div>
-          <p className="text-lg font-bold mb-1">Noch keine Erlegungen</p>
-          <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-            Meldungen erscheinen hier automatisch.
-          </p>
-          {userId && (
-            <button
-              type="button"
-              onClick={() => setPhotoSheetOpen(true)}
-              style={{
-                marginTop: '1.25rem',
-                padding: '0.75rem 1.25rem',
-                background: 'transparent',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '0.75rem',
-                fontSize: '0.9375rem',
-                fontWeight: 500,
-                minHeight: '2.75rem',
-                cursor: 'pointer',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              📷 Foto hinzufügen
-            </button>
-          )}
-        </div>
-        {userId && (
-          <StreckePhotoSheet
-            open={photoSheetOpen}
-            onOpenChange={setPhotoSheetOpen}
-            huntId={huntId}
-            userId={userId}
-            kills={kills}
-            participants={participants}
-            viewer={viewer}
-          />
-        )}
-      </>
+      <StreckeEmptyState
+        role={emptyRole}
+        onStartErlegung={
+          emptyRole === 'gast'
+            ? undefined
+            : () => window.dispatchEvent(new Event('quickhunt:open-erlegung'))
+        }
+      />
     )
   }
 
@@ -257,44 +296,31 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
         WebkitOverflowScrolling: 'touch',
       }}
     >
-      {userId && (
-        <div
-          style={{
-            position: 'sticky',
-            top: 0,
-            zIndex: 2,
-            background: 'var(--bg)',
-            borderBottom: '1px solid var(--border)',
-            padding: '0.5rem 0.75rem',
-            flexShrink: 0,
+      <div style={{ padding: '1rem 0.75rem 0' }}>
+        <StreckeHero
+          harvestedKills={harvestedKills}
+          woundedCount={woundedKills.length}
+          showNachsucheWarning={canSeeNachsuche && filter.kind !== 'nachsuche'}
+          activeGroupFilter={filter.kind === 'group' ? filter.group : null}
+          onGroupTap={handleGroupTap}
+          onNachsucheTap={scrollToNachsuche}
+        />
+      </div>
+      <div style={{ padding: '1rem 0 0', flexShrink: 0 }}>
+        <StreckeFilterBar
+          active={filter}
+          onChange={handleFilterChange}
+          counts={{
+            all: harvestedKills.length,
+            own: ownHarvestedCount,
+            nachsuche: woundedKills.length,
+            group: pinnedGroup ? { group: pinnedGroup, count: pinnedGroupCount } : undefined,
           }}
-        >
-          <button
-            type="button"
-            onClick={() => setPhotoSheetOpen(true)}
-            style={{
-              width: '100%',
-              padding: '0.625rem 0.875rem',
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: '0.75rem',
-              fontSize: '0.9375rem',
-              fontWeight: 500,
-              minHeight: '2.75rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              cursor: 'pointer',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            <span aria-hidden="true">📷</span>
-            <span>+ Foto zur Strecke</span>
-          </button>
-        </div>
-      )}
+          showNachsuchePill={canSeeNachsuche}
+          canUploadPhoto={Boolean(userId)}
+          onPhotoClick={() => setFotoZielOpen(true)}
+        />
+      </div>
       <div
         style={{
           padding: '0.75rem',
@@ -303,194 +329,155 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
           gap: '0.75rem',
         }}
       >
-      {visibleBatches.map(batch => {
-        const batchKillIds = batch.kills.map(k => k.id)
-        const batchPhotos = getPhotosForBatch(batchKillIds, visiblePhotos)
-        return (
-          <BatchCard
-            key={batch.id}
-            batch={batch}
-            photos={batchPhotos}
-            killIdsWithPhotos={killIdsWithPhotos}
-            canDeletePhoto={canDeletePhoto}
-            onDeletePhoto={handleDeletePhoto}
-          />
+      {showChronoList ? (
+        visibleBatches.length > 0 ? (
+          visibleBatches.map(batch => {
+            const batchKillIds = batch.kills.map(k => k.id)
+            const batchPhotos = getPhotosForBatch(batchKillIds, visiblePhotos)
+            return (
+              <StreckeBatchCard
+                key={batch.id}
+                batch={batch}
+                photos={batchPhotos}
+                killIdsWithPhotos={killIdsWithPhotos}
+                killPhotoCounts={killPhotoCounts}
+                isOwnBatch={userId !== null && batch.reporter_id === userId}
+                viewerUserId={userId}
+                onKillTap={kill => openDetail(kill, 'strecke')}
+              />
+            )
+          })
+        ) : (
+          <p
+            style={{
+              margin: '0.5rem 0',
+              textAlign: 'center',
+              fontSize: '0.875rem',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            {filter.kind === 'own'
+              ? 'Noch keine eigenen Meldungen.'
+              : 'Keine Einträge für diesen Filter.'}
+          </p>
         )
-      })}
-
-      {moodPhotos.length > 0 && (
-        <section
+      ) : (
+        <p
           style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            padding: '0.875rem',
-            marginTop: '0.75rem',
-            flexShrink: 0,
+            margin: 0,
+            padding: '0.5rem 0.25rem',
+            fontSize: '0.8125rem',
+            color: 'var(--text-secondary)',
+            letterSpacing: '0.01em',
           }}
         >
-          <h3
+          Weitere Einträge werden ausgeblendet, solange „Nachsuche" aktiv ist.
+        </p>
+      )}
+
+      {canSeeNachsuche && woundedKills.length > 0 && (
+        <StreckeNachsucheSection
+          ref={nachsucheSectionRef}
+          kills={woundedKills}
+          onKillTap={kill => openDetail(kill, 'nachsuche')}
+        />
+      )}
+
+      {moodPhotos.length > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            // Hunt-Photo-Gallery existiert noch nicht als eigene Komponente.
+            // Platzhalter bis zur dedizierten Gallery-Seite.
+            console.log('[Strecke] Mood-Gallery öffnen — noch nicht implementiert', moodPhotos.length)
+          }}
+          style={{
+            all: 'unset',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.75rem 1rem',
+            marginTop: '0.25rem',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-default)',
+            borderRadius: '12px',
+            cursor: 'pointer',
+            WebkitTapHighlightColor: 'transparent',
+            boxSizing: 'border-box',
+            minHeight: '2.75rem',
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: '1rem' }}>🌅</span>
+          <span
             style={{
+              flex: 1,
               fontSize: '0.8125rem',
-              fontWeight: 600,
-              color: 'var(--text-2)',
-              marginBottom: '0.75rem',
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
+              letterSpacing: '0.01em',
             }}
           >
-            Stimmung & Strecke
-          </h3>
-          <div
+            {moodPhotos.length} {moodPhotos.length === 1 ? 'Stimmungsfoto' : 'Stimmungsfotos'}
+          </span>
+          <span
+            aria-hidden="true"
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(6rem, 1fr))',
-              gap: '0.5rem',
+              color: 'var(--text-secondary)',
+              fontSize: '1rem',
             }}
           >
-            {moodPhotos.map(photo => (
-              <PhotoThumbnail
-                key={photo.id}
-                url={photo.url}
-                size={6}
-                onDelete={canDeletePhoto(photo) ? () => handleDeletePhoto(photo) : undefined}
-              />
-            ))}
-          </div>
-        </section>
+            ›
+          </span>
+        </button>
       )}
       </div>
       {userId && (
-        <StreckePhotoSheet
-          open={photoSheetOpen}
-          onOpenChange={setPhotoSheetOpen}
-          huntId={huntId}
-          userId={userId}
-          kills={kills}
-          participants={participants}
-          viewer={viewer}
-        />
+        <>
+          <FotoZielSheet
+            open={fotoZielOpen}
+            onClose={() => setFotoZielOpen(false)}
+            onSelect={handleFotoZielSelect}
+          />
+          <KillAuswahlSheet
+            open={killAuswahlOpen}
+            onClose={() => setKillAuswahlOpen(false)}
+            kills={visibleKills}
+            userId={userId}
+            huntId={huntId}
+            killPhotoCounts={killPhotoCounts}
+          />
+          <StreckePhotoSheet
+            open={photoSheetOpen}
+            onOpenChange={setPhotoSheetOpen}
+            huntId={huntId}
+            userId={userId}
+            kills={kills}
+            participants={participants}
+            viewer={viewer}
+          />
+        </>
       )}
+      <KillDetailSheet
+        open={detailKill !== null}
+        kill={detailKill}
+        mode={detailMode}
+        heroPhotoUrl={
+          detailKill
+            ? visiblePhotos.find(p => p.kill_ids?.includes(detailKill.id))?.url ?? null
+            : null
+        }
+        photoCount={detailKill ? killPhotoCounts.get(detailKill.id) ?? 0 : 0}
+        canEdit={
+          detailKill !== null &&
+          (viewer.role === 'jagdleiter' || detailKill.reporter_id === userId)
+        }
+        canDelete={
+          detailKill !== null &&
+          (viewer.role === 'jagdleiter' || detailKill.reporter_id === userId)
+        }
+        onClose={() => setDetailKill(null)}
+      />
     </div>
   )
 }
 
-interface BatchCardProps {
-  batch: DisplayKillBatch
-  photos: HuntPhoto[]
-  killIdsWithPhotos: Set<string>
-  canDeletePhoto: (photo: HuntPhoto) => boolean
-  onDeletePhoto: (photo: HuntPhoto) => void
-}
-
-function BatchCard({
-  batch,
-  photos,
-  killIdsWithPhotos,
-  canDeletePhoto,
-  onDeletePhoto,
-}: BatchCardProps) {
-  // Alle Kills im Batch haben denselben reporter_id, also auch denselben
-  // maskierten display_name und is_anonymized-Flag.
-  const reporterName = batch.kills[0].display_name
-  const isAnonymized = batch.kills[0].is_anonymized
-
-  return (
-    <div
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        overflow: 'hidden',
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          padding: '0.625rem 0.875rem',
-          borderBottom: '1px solid var(--border-light)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          fontSize: '0.8125rem',
-        }}
-      >
-        <span style={{ fontWeight: 600, color: 'var(--text)' }}>{formatTime(batch.first_at)}</span>
-        <span style={{ color: 'var(--text-3)' }}>·</span>
-        <span style={{ color: 'var(--text-2)' }}>
-          Von:{' '}
-          <span style={{ color: isAnonymized ? 'var(--text-2)' : 'var(--text)' }}>
-            {reporterName}
-          </span>
-        </span>
-      </div>
-      <ul style={{ listStyle: 'none', margin: 0, padding: '0.25rem 0' }}>
-        {batch.kills.map(k => (
-          <KillRow key={k.id} kill={k} hasPhoto={killIdsWithPhotos.has(k.id)} />
-        ))}
-      </ul>
-      {photos.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            gap: '0.5rem',
-            overflowX: 'auto',
-            padding: '0.5rem 0.875rem 0.625rem',
-            borderTop: '1px solid var(--border-light)',
-          }}
-        >
-          {photos.map(photo => (
-            <PhotoThumbnail
-              key={photo.id}
-              url={photo.url}
-              size={4.5}
-              onDelete={canDeletePhoto(photo) ? () => onDeletePhoto(photo) : undefined}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function KillRow({ kill, hasPhoto }: { kill: DisplayKill; hasPhoto: boolean }) {
-  const label = getWildArtLabel(kill.wild_art)
-  const geschlecht = getGeschlechtLabel(kill.geschlecht)
-  const extras: string[] = []
-  if (geschlecht) extras.push(geschlecht)
-  if (kill.altersklasse) extras.push(kill.altersklasse)
-
-  return (
-    <li
-      style={{
-        padding: '0.5rem 0.875rem',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem',
-        fontSize: '0.9375rem',
-      }}
-    >
-      <span style={{ color: 'var(--text-3)' }}>•</span>
-      <span style={{ color: 'var(--text)' }}>{label}</span>
-      {hasPhoto && (
-        <Camera
-          size={14}
-          aria-label="Foto vorhanden"
-          style={{ color: 'var(--text-3)', flexShrink: 0 }}
-        />
-      )}
-      {kill.status === 'wounded' && (
-        <span
-          aria-label="Krankschuss"
-          title="Krankgeschossen"
-          style={{ fontSize: '0.875rem', color: 'var(--orange)' }}
-        >
-          🩹
-        </span>
-      )}
-      {extras.length > 0 && (
-        <span style={{ color: 'var(--text-3)', fontSize: '0.8125rem' }}>
-          ({extras.join(', ')})
-        </span>
-      )}
-    </li>
-  )
-}

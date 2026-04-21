@@ -10,6 +10,7 @@ import { MessageContextSheet } from '@/components/chat/MessageContextSheet'
 import { ReplyQuoteBar } from '@/components/chat/ReplyQuoteBar'
 import { InlineQuoteBox } from '@/components/chat/InlineQuoteBox'
 import { Clock, Check, AlertCircle } from 'lucide-react'
+import { getAvatarColor } from '@/lib/avatar-color'
 
 // === Types ===
 
@@ -54,7 +55,6 @@ type Props = {
 
 // === Konstanten ===
 
-const SENDER_COLORS = ['#8BC34A', '#42A5F5', '#FF8F00', '#EF5350', '#AB47BC', '#26A69A', '#FF7043', '#5C6BC0']
 const PAGE_SIZE = 20
 const SCROLL_THRESHOLD = 100
 const SYSTEM_TYPES = ['signal', 'kill_report', 'tracking']
@@ -166,7 +166,7 @@ function renderMessageContent(content: string) {
 
 export default function ChatPanel({ huntId, groupId, chatName, isDirect = false, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange, canDeleteAll = false }: Props) {
   // Gruppenchat-Modus: Mitglieder als "Participants" laden
-  const [groupMembers, setGroupMembers] = useState<Record<string, { name: string; colorIndex: number }>>({})
+  const [groupMembers, setGroupMembers] = useState<Record<string, { name: string; color: string }>>({})
   const isGroupChat = !!groupId && !huntId
   const channelId = huntId || groupId || 'none'
   const chatCache = useChatCache()
@@ -248,11 +248,11 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
         .select('user_id, profiles:user_id(display_name)')
         .eq('group_id', groupId)
       if (cancelled || !data) return
-      const map: Record<string, { name: string; colorIndex: number }> = {}
-      data.forEach((m: any, i: number) => {
+      const map: Record<string, { name: string; color: string }> = {}
+      data.forEach((m: any) => {
         map[m.user_id] = {
           name: m.profiles?.display_name || 'Unbekannt',
-          colorIndex: i % SENDER_COLORS.length,
+          color: getAvatarColor(m.user_id),
         }
       })
       setGroupMembers(map)
@@ -261,14 +261,14 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     return () => { cancelled = true }
   }, [isGroupChat, groupId, supabase])
 
-  // Teilnehmer-Lookup: id → { name, colorIndex }
+  // Teilnehmer-Lookup: id → { name, color }
   const participantMap = useMemo(() => {
     if (isGroupChat) return groupMembers
-    const map: Record<string, { name: string; colorIndex: number }> = {}
-    participants.forEach((p, i) => {
+    const map: Record<string, { name: string; color: string }> = {}
+    participants.forEach((p) => {
       map[p.id] = {
         name: p.profiles?.display_name || p.guest_name || 'Unbekannt',
-        colorIndex: i % SENDER_COLORS.length,
+        color: getAvatarColor(p.id),
       }
     })
     return map
@@ -911,8 +911,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                         onContextMenu={(e) => { e.preventDefault(); setContextMenuMessage(msg) }}
                       >
                         {showSenderName && (
-                          <div className="msg-sender" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: SENDER_COLORS[sender.colorIndex] }}>
-                            {/* Avatar-Slot: hier kann später ein Initialen-Kreis eingefügt werden */}
+                          <div className="msg-sender" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: sender.color }}>
                             <span>{sender.name}</span>
                           </div>
                         )}
@@ -999,7 +998,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                 onClick={() => handleDeleteMessage(confirmDeleteId)}
                 style={{
                   flex: 1, padding: '0.625rem', borderRadius: 'var(--radius)', border: 'none',
-                  background: 'var(--red)', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
+                  background: 'var(--danger)', color: 'var(--text)', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer',
                 }}
               >
                 Löschen

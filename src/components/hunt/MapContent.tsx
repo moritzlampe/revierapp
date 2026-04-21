@@ -25,6 +25,7 @@ import { useCompassHeading, getCompassEnabled, setCompassEnabled } from '@/hooks
 import { buildPinSvg, getPinVariant, isAssignableStand, type PinSize } from '@/lib/markers/pin-svg'
 import { buildInitials, formatDistanceLabel } from '@/lib/markers/marker-labels'
 import { WildartPicker } from '@/components/erlegung/WildartPicker'
+import { getAvatarColor } from '@/lib/avatar-color'
 
 // Leaflet Icon Fix für Webpack/Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -739,7 +740,7 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
                   background: isOnThisStand ? 'rgba(107,159,58,0.08)' : 'transparent',
                 }}
               >
-                <div className="avatar-xs av-1" style={{ flexShrink: 0 }}>
+                <div className="avatar-xs" style={{ flexShrink: 0, background: getAvatarColor(p.id), color: '#fff' }}>
                   {getInitials(pName(p))}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -751,8 +752,9 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>Auf: {assignment.standName}</p>
                   )}
                 </div>
-                {p.role === 'jagdleiter' && <span className="text-xs" style={{ color: 'var(--gold)' }}>🎖️</span>}
-                {p.tags?.includes('hundefuehrer') && <span className="text-xs" style={{ color: 'var(--orange)' }}>🐕</span>}
+                {p.role === 'jagdleiter' && <span className="text-xs" style={{ color: 'var(--accent-gold)' }}>🎖️</span>}
+                {p.tags?.includes('gruppenleiter') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>👥</span>}
+                {p.tags?.includes('hundefuehrer') && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>🐕</span>}
               </button>
             )
           })}

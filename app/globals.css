@@ -1,28 +1,149 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0a0f08;
-  --surface: #141c10;
-  --surface-2: #1c2818;
-  --surface-3: #243220;
-  --border: rgba(107,159,58,0.12);
-  --border-light: rgba(255,255,255,0.06);
-  --green: #6B9F3A;
-  --green-bright: #8BC34A;
-  --green-dim: #3d5e22;
-  --green-900: #1a3409;
-  --orange: #FF8F00;
-  --red: #EF5350;
-  --blue: #42A5F5;
-  --gold: #FFD700;
-  --text: #f0f0e8;
-  --text-2: rgba(240,240,232,0.72);
-  --text-3: rgba(240,240,232,0.42);
+  /* ============================================================
+     Theme A — "Moos auf Papier" (Tag, Ziel in Sprint 58.1h.c)
+     Diese Werte werden hier deklariert, aber noch nicht aktiv
+     verwendet. In 58.1h.c werden die Active-Tokens auf diese
+     Werte umgebogen.
+     ============================================================ */
+  --theme-a-bg-base: #E7DDC7;
+  --theme-a-bg-elevated: #CEC5A8;
+  --theme-a-bg-sunken: #BEB39A;
+  --theme-a-surface-hero: #A4AF8D;
+  --theme-a-accent-primary: #4A5A2A;
+  --theme-a-accent-primary-hover: #5E6F38;
+  --theme-a-accent-success: #3F6B3A;
+  --theme-a-accent-gold: #8C6A2E;
+  --theme-a-text-primary: #1F2618;
+  --theme-a-text-secondary: #4E543F;
+  --theme-a-text-muted: #5D634F;
+  --theme-a-border-default: #9F9782;
+  --theme-a-border-strong: #8E8874;
+  --theme-a-alert-text: #5A1F1F;
+  --theme-a-alert-bg: #D4B3AE;
+  --theme-a-alert-border: #5A1F1F;
+  --theme-a-danger: #8A3E3E;
+
+  /* ============================================================
+     Legacy — aktuelle Dark-Werte.
+     Referenzwerte für die heutige Optik. Komponenten sollen
+     NICHT direkt auf --legacy-* zugreifen, sondern auf die
+     Active-Tokens bzw. deren Legacy-Aliases darunter.
+     ============================================================ */
+  --legacy-bg: #0a0f08;
+  --legacy-surface: #141c10;
+  --legacy-surface-2: #1c2818;
+  --legacy-surface-3: #243220;
+  --legacy-border: rgba(107,159,58,0.12);
+  --legacy-border-light: rgba(255,255,255,0.06);
+  --legacy-green: #6B9F3A;
+  --legacy-green-bright: #8BC34A;
+  --legacy-green-dim: #3d5e22;
+  --legacy-green-900: #1a3409;
+  --legacy-orange: #FF8F00;
+  --legacy-red: #EF5350;
+  --legacy-blue: #42A5F5;
+  --legacy-gold: #FFD700;
+  --legacy-text: #f0f0e8;
+  --legacy-text-2: rgba(240,240,232,0.72);
+  --legacy-text-3: rgba(240,240,232,0.42);
+
+  /* ============================================================
+     Active Tokens — Theme A ("Moos auf Papier") aktiv seit Sprint 58.1h.c.
+     Die Legacy-Variablen bleiben definiert (Rollback-Reserve), werden
+     aber nicht mehr referenziert.
+     ============================================================ */
+  --bg-base: var(--theme-a-bg-base);
+  --bg-elevated: var(--theme-a-bg-elevated);
+  --bg-sunken: var(--theme-a-bg-sunken);
+  --surface-hero: var(--theme-a-surface-hero);
+  --accent-primary: var(--theme-a-accent-primary);
+  --accent-primary-hover: var(--theme-a-accent-primary-hover);
+  --accent-success: var(--theme-a-accent-success);
+  --accent-gold: var(--theme-a-accent-gold);
+  --text-primary: var(--theme-a-text-primary);
+  --text-secondary: var(--theme-a-text-secondary);
+  --text-muted: var(--theme-a-text-muted);
+  --border-default: var(--theme-a-border-default);
+  --border-strong: var(--theme-a-border-strong);
+  /* Nachsuche-Semantik (nur für Tracking-Requests) */
+  --alert-text: var(--theme-a-alert-text);
+  --alert-bg: var(--theme-a-alert-bg);
+  --alert-border: var(--theme-a-alert-border);
+  /* Fehler-/Delete-/Live-Dot-Semantik */
+  --danger: var(--theme-a-danger);
+  /* Soft-Accent für aktive Toggles/self-Bubbles (Moos auf Papier gemischt) */
+  --accent-primary-soft: color-mix(in srgb, var(--theme-a-accent-primary) 20%, var(--theme-a-bg-base));
+
+  /* ============================================================
+     Legacy-Aliases — alte Token-Namen zeigen auf die neuen Theme-A
+     Active-Tokens. So greifen bestehende Komponenten (var(--bg),
+     var(--surface-2), var(--green), …) automatisch auf Paper-Werte.
+     ============================================================ */
+  --bg: var(--bg-base);
+  --surface: var(--bg-elevated);
+  --surface-2: var(--bg-sunken);
+  --surface-3: var(--bg-sunken);
+  --border: var(--border-default);
+  --border-light: var(--border-default);
+  --green: var(--accent-primary);
+  --green-bright: var(--accent-primary-hover);
+  --green-dim: var(--accent-primary-soft);
+  --green-900: var(--accent-primary);
+  --orange: var(--accent-gold);
+  --red: var(--danger);
+  --blue: var(--text-secondary);
+  --gold: var(--accent-gold);
+  --text: var(--text-primary);
+  --text-2: var(--text-secondary);
+  --text-3: var(--text-muted);
+
+  /* Layout */
   --radius: 0.875rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --keyboard-offset: 0px;
   /* Abstand unter Content: Tab-Bar-Höhe + Safe-Area, entfällt bei Tastatur */
   --bottom-bar-space: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* ============================================================
+   Tailwind v4 — Bindung der semantischen shadcn-Tokens an
+   unsere Active-Tokens. Ohne diesen Block rendern bg-popover /
+   bg-primary / bg-muted gegen v4-Light-Defaults, was in Sheets
+   (ErlegungSheet, WildartPicker, StreckePhotoSheet) zu hellen
+   Blitzern führt. "inline" sorgt dafür, dass die var()-Referenzen
+   zur Laufzeit aufgelöst werden (sonst friert Tailwind die Werte
+   beim Build ein).
+   ============================================================ */
+@theme inline {
+  --color-background: var(--bg-base);
+  --color-foreground: var(--text-primary);
+
+  --color-card: var(--bg-elevated);
+  --color-card-foreground: var(--text-primary);
+
+  --color-popover: var(--bg-elevated);
+  --color-popover-foreground: var(--text-primary);
+
+  --color-primary: var(--accent-primary);
+  --color-primary-foreground: var(--text-primary);
+
+  --color-secondary: var(--bg-sunken);
+  --color-secondary-foreground: var(--text-primary);
+
+  --color-muted: var(--bg-sunken);
+  --color-muted-foreground: var(--text-secondary);
+
+  --color-accent: var(--accent-primary);
+  --color-accent-foreground: var(--text-primary);
+
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--text-primary);
+
+  --color-border: var(--border-default);
+  --color-input: var(--bg-sunken);
+  --color-ring: var(--accent-primary);
 }
 
 * { -webkit-tap-highlight-color: transparent; }
@@ -43,8 +164,8 @@
 /* Mobile-First Wrapper: 430px in Portrait, volle Breite in Landscape */
 .app-mobile-wrapper {
   max-width: 430px;
-  border-left: 1px solid rgba(107,159,58,0.15);
-  border-right: 1px solid rgba(107,159,58,0.15);
+  border-left: 1px solid var(--border-default);
+  border-right: 1px solid var(--border-default);
 }
 @media (orientation: landscape) {
   .app-mobile-wrapper {
@@ -58,7 +179,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -115,12 +236,6 @@ button:active {
 }
 .avatar-sm { width: 1.625rem; height: 1.625rem; font-size: 0.625rem; }
 .avatar-xs { width: 1.375rem; height: 1.375rem; font-size: 0.5625rem; }
-.av-1 { background: #2E7D32; color: white; }
-.av-2 { background: #1565C0; color: white; }
-.av-3 { background: #E65100; color: white; }
-.av-4 { background: #6A1B9A; color: white; }
-.av-5 { background: #00838F; color: white; }
-.av-6 { background: #C62828; color: white; }
 .av-muted { background: var(--surface-3); color: var(--text-3); }
 
 /* Badges */
@@ -131,10 +246,10 @@ button:active {
   font-weight: 600;
   white-space: nowrap;
 }
-.badge-live { background: rgba(239,83,80,0.15); color: var(--red); }
-.badge-planned { background: rgba(66,165,245,0.15); color: var(--blue); }
-.badge-done { background: rgba(107,159,58,0.15); color: var(--green); }
-.badge-gold { background: rgba(255,215,0,0.12); border: 1px solid rgba(255,215,0,0.25); color: var(--gold); }
+.badge-live { background: var(--alert-bg); color: var(--alert-text); }
+.badge-planned { background: color-mix(in srgb, var(--text-secondary) 14%, transparent); color: var(--text-secondary); }
+.badge-done { background: color-mix(in srgb, var(--accent-primary) 14%, transparent); color: var(--accent-primary); }
+.badge-gold { background: color-mix(in srgb, var(--accent-gold) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent-gold) 30%, transparent); color: var(--accent-gold); }
 
 /* Live dot */
 .live-dot {
@@ -193,8 +308,8 @@ button:active {
   color: var(--text-3);
   transition: all 0.15s;
 }
-.tag-btn.on-blue { border-color: var(--blue); background: rgba(66,165,245,0.12); color: var(--blue); }
-.tag-btn.on-orange { border-color: var(--orange); background: rgba(255,143,0,0.12); color: var(--orange); }
+.tag-btn.on-blue { border-color: var(--text-secondary); background: color-mix(in srgb, var(--text-secondary) 12%, transparent); color: var(--text-primary); }
+.tag-btn.on-orange { border-color: var(--accent-gold); background: color-mix(in srgb, var(--accent-gold) 14%, transparent); color: var(--text-primary); }
 
 /* Leaflet Karte: z-index begrenzen, damit Tab-Bar darüber bleibt */
 .leaflet-container {
@@ -203,7 +318,7 @@ button:active {
 }
 .leaflet-control-attribution {
   font-size: 0.625rem !important;
-  background: rgba(10,15,8,0.7) !important;
+  background: color-mix(in srgb, var(--bg-base) 75%, transparent) !important;
   color: var(--text-3) !important;
 }
 .leaflet-control-attribution a {
@@ -225,10 +340,12 @@ button:active {
   100% { opacity: 1; }
 }
 
-/* Eigener Standort-Marker (divIcon-Container) */
+/* Eigener Standort-Marker (divIcon-Container).
+   SVG nutzt currentColor → Farbe kommt aus color. */
 .own-position-marker {
   background: transparent !important;
   border: none !important;
+  color: var(--accent-primary);
 }
 /* Kompass-Kegel: sanfte Rotation */
 .compass-cone {
@@ -269,7 +386,7 @@ button:active {
   font-size: 0.625rem;
   font-weight: 700;
   line-height: 1;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
 .marker-badge {
   position: absolute;
@@ -303,7 +420,7 @@ button:active {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   font-size: 0.75rem;
   font-weight: 600;
   padding: 0.25rem 0.5rem;
@@ -486,7 +603,7 @@ button:active {
   border-radius: var(--radius);
   background: var(--green);
   color: #fff;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   font-size: 0.8125rem;
   font-weight: 700;
   border: none;
@@ -502,7 +619,7 @@ button:active {
   color: #FFFFFF;
   border: none;
   border-radius: 0.3125rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   font-size: 0.625rem;
   font-weight: 600;
   padding: 0.125rem 0.4375rem;
@@ -548,7 +665,7 @@ button:active {
   flex-direction: column;
   gap: 0.125rem;
   padding: 0.5rem 0.625rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
 .participant-popup-content strong {
   color: var(--text);
@@ -572,7 +689,7 @@ button:active {
   flex-direction: column;
   gap: 0.125rem;
   padding: 0.375rem 0.5rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
 .stand-popup-content strong {
   color: var(--text);
@@ -603,14 +720,49 @@ button:active {
   width: 1.5rem;
   height: 1.5rem;
   border-radius: 50%;
-  background: var(--green-bright);
+  background: var(--accent-primary);
   border: 2px solid #fff;
-  box-shadow: 0 0 0 0 rgba(139, 195, 74, 0.5);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-primary) 50%, transparent);
   animation: temp-pulse 1.2s ease-in-out infinite;
 }
 @keyframes temp-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 195, 74, 0.5); }
-  50% { box-shadow: 0 0 0 0.75rem rgba(139, 195, 74, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-primary) 50%, transparent); }
+  50% { box-shadow: 0 0 0 0.75rem color-mix(in srgb, var(--accent-primary) 0%, transparent); }
+}
+
+/* ============================================================
+   Micro-Interactions (58.1h.e)
+   ============================================================ */
+
+/* Tap-Feedback: kurz dunkler beim Drücken.
+   Gilt für alle Elemente mit .tap-ripple. */
+.tap-ripple {
+  transition: filter 100ms ease-out, transform 100ms ease-out;
+}
+.tap-ripple:active {
+  filter: brightness(0.92);
+}
+
+/* Primary-Button Tap: BG-Wechsel auf hover-Ton. */
+.btn-primary-tap {
+  transition: background-color 100ms ease-out, filter 100ms ease-out;
+}
+.btn-primary-tap:active {
+  background: var(--accent-primary-hover) !important;
+}
+
+/* Filter-Pill: scale+color-Transition zusammen.
+   Implementierung via inline-style im Component für Active-Zustand. */
+.filter-pill:active {
+  filter: brightness(0.95);
+}
+
+/* Generischer Chevron-Rotate-Helper — auf SVG anwenden. */
+.chevron-rotate {
+  transition: transform 250ms ease;
+}
+.chevron-rotate[data-open="true"] {
+  transform: rotate(180deg);
 }
 
 /* ============================================================
@@ -622,11 +774,13 @@ button:active {
   inset: 0;
   z-index: 1100;
   background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   animation: sheet-fade-in 0.2s ease-out;
 }
 @keyframes sheet-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; backdrop-filter: blur(0); }
+  to { opacity: 1; backdrop-filter: blur(3px); }
 }
 
 .map-object-sheet {
@@ -638,7 +792,7 @@ button:active {
   background: var(--surface);
   border-top-left-radius: 1rem;
   border-top-right-radius: 1rem;
-  box-shadow: 0 -0.5rem 2rem rgba(0, 0, 0, 0.5);
+  box-shadow: 0 -0.25rem 1rem rgba(0, 0, 0, 0.2);
   animation: sheet-slide-up 0.3s ease-out;
   max-height: 80%;
   overflow-y: auto;
@@ -690,7 +844,7 @@ button:active {
   padding: 0.625rem 0.75rem;
   color: var(--text);
   font-size: 0.875rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   outline: none;
   transition: border-color 0.15s;
 }
@@ -718,7 +872,7 @@ button:active {
   color: var(--text-2);
   font-size: 0.8125rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   transition: all 0.15s;
   min-height: 2.75rem;
@@ -744,7 +898,7 @@ button:active {
   color: var(--text-3);
   font-size: 0.8125rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
 }
@@ -772,7 +926,7 @@ button:active {
   color: var(--green-bright);
   font-size: 0.75rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
 }
@@ -791,7 +945,7 @@ button:active {
   color: var(--text);
   font-size: 0.875rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
   text-align: center;
@@ -813,7 +967,7 @@ button:active {
   color: var(--text-2);
   font-size: 0.875rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
 }
@@ -826,7 +980,7 @@ button:active {
   color: #fff;
   font-size: 0.875rem;
   font-weight: 700;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
   transition: opacity 0.15s;
@@ -843,7 +997,7 @@ button:active {
   color: var(--red);
   font-size: 0.875rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
 }
@@ -893,7 +1047,7 @@ button:active {
   color: var(--text-2);
   font-size: 0.75rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
   transition: all 0.15s;
@@ -956,7 +1110,7 @@ button:active {
   color: var(--text-2);
   font-size: 0.75rem;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
   min-height: 2.75rem;
   transition: all 0.15s;
@@ -989,7 +1143,7 @@ button:active {
   height: 0.875rem;
   border-radius: 50%;
   background: #fff;
-  border: 2.5px solid hsl(142, 70%, 45%);
+  border: 2.5px solid var(--accent-primary);
   box-shadow: 0 0.0625rem 0.25rem rgba(0,0,0,0.4);
   cursor: grab;
 }
@@ -997,7 +1151,7 @@ button:active {
   width: 1rem;
   height: 1rem;
   border-width: 3px;
-  box-shadow: 0 0 0 0.25rem rgba(76, 175, 80, 0.25);
+  box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--accent-primary) 25%, transparent);
 }
 
 /* Midpoint (kleinerer Kreis zum Einfügen) */
@@ -1010,7 +1164,7 @@ button:active {
   height: 0.625rem;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.5);
-  border: 1.5px solid hsl(142, 70%, 45%);
+  border: 1.5px solid var(--accent-primary);
   cursor: pointer;
   opacity: 0.6;
   transition: opacity 0.15s;
@@ -1125,9 +1279,9 @@ button:active {
   max-width: 90%;
 }
 .chat-system-msg.tracking {
-  background: rgba(255,143,0,0.1);
-  border: 1px solid rgba(255,143,0,0.3);
-  color: var(--orange);
+  background: var(--alert-bg);
+  border: 1px solid var(--alert-border);
+  color: var(--alert-text);
 }
 
 /* Eingabeleiste */
@@ -1208,7 +1362,7 @@ button:active {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--green-bright);
-  font-family: 'DM Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   z-index: 10;
   cursor: pointer;
   box-shadow: 0 0.125rem 0.5rem rgba(0,0,0,0.3);
@@ -1318,7 +1472,7 @@ button:active {
 /* Reply: Scroll-to-Original Highlight-Flash */
 @keyframes msg-highlight-flash {
   0%   { background-color: transparent; }
-  20%  { background-color: rgba(107, 159, 58, 0.35); }
+  20%  { background-color: color-mix(in srgb, var(--accent-primary) 35%, transparent); }
   100% { background-color: transparent; }
 }
 .msg-highlight-flash {
@@ -1366,14 +1520,14 @@ button:active {
   font-size: 0.625rem;
 }
 .assign-chip.placed {
-  border-color: var(--green);
-  background: rgba(107,159,58,0.1);
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
 }
 .assign-chip.active {
-  border-color: var(--green-bright);
-  background: rgba(107,159,58,0.2);
+  border-color: var(--accent-primary-hover);
+  background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
   transform: scale(1.05);
-  box-shadow: 0 0 0.75rem rgba(107,159,58,0.3);
+  box-shadow: 0 0 0.75rem color-mix(in srgb, var(--accent-primary) 30%, transparent);
 }
 .assign-chip.dragging {
   opacity: 0.4;
@@ -1390,8 +1544,8 @@ button:active {
   gap: 0.375rem;
   padding: 0.375rem 0.75rem 0.375rem 0.375rem;
   border-radius: 1.5rem;
-  border: 2px solid var(--green-bright);
-  background: rgba(107,159,58,0.25);
+  border: 2px solid var(--accent-primary-hover);
+  background: color-mix(in srgb, var(--accent-primary) 25%, var(--bg-base));
   backdrop-filter: blur(8px);
   color: var(--text);
   font-size: 0.8125rem;
@@ -1431,8 +1585,8 @@ button:active {
   min-height: 2.75rem;
 }
 .assign-mode-btn.active {
-  background: rgba(107,159,58,0.15);
-  color: var(--green-bright);
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  color: var(--accent-primary);
 }
 
 /* Stand-Marker auf der Zuweisungskarte */
@@ -1450,13 +1604,13 @@ button:active {
   transition: border-color 0.2s, transform 0.2s;
 }
 .assign-stand-marker.has-person {
-  border-color: var(--green-bright);
-  background: rgba(107,159,58,0.2);
+  border-color: var(--accent-primary-hover);
+  background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
 }
 .assign-stand-marker.highlight {
-  border-color: var(--green-bright);
+  border-color: var(--accent-primary-hover);
   transform: scale(1.2);
-  box-shadow: 0 0 0.75rem rgba(107,159,58,0.4);
+  box-shadow: 0 0 0.75rem color-mix(in srgb, var(--accent-primary) 40%, transparent);
 }
 
 /* "+"-Badge Wrapper für Zuweisungskarte */
@@ -1471,7 +1625,7 @@ button:active {
 
 /* Stand-Label unter dem Marker */
 .assign-stand-label {
-  background: rgba(10,15,8,0.85);
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
   backdrop-filter: blur(4px);
   padding: 0.125rem 0.5rem;
   border-radius: 0.5rem;
@@ -1483,7 +1637,7 @@ button:active {
   border: 1px solid var(--border);
 }
 .assign-stand-label .person-name {
-  color: var(--green-bright);
+  color: var(--accent-primary);
   font-size: 0.625rem;
   display: block;
 }
@@ -1550,7 +1704,7 @@ button:active {
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
-  background: rgba(10,15,8,0.85);
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
   backdrop-filter: blur(8px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
