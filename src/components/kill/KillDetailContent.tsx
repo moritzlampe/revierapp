@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Clock, User, Weight, Star, Share2, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Clock, User, Weight, Star, Share2, Pencil, Loader2 } from 'lucide-react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
   WILD_ART_TO_GROUP,
@@ -359,6 +359,7 @@ export default function KillDetailContent({
       <div
         style={{
           display: 'flex',
+          alignItems: 'center',
           gap: '0.5rem',
           padding: '0.5rem 1rem 0',
           borderTop: '1px solid var(--border-default)',
@@ -372,12 +373,26 @@ export default function KillDetailContent({
           <ActionButton icon={<Pencil size={16} />} label="Bearbeiten" onClick={onEdit} />
         )}
         {canDelete && onDelete && (
-          <ActionButton
-            icon={<Trash2 size={16} />}
-            label="Löschen"
+          <button
+            type="button"
             onClick={onDelete}
-            variant="danger"
-          />
+            className="tap-ripple"
+            style={{
+              all: 'unset',
+              padding: '0.75rem 0.75rem',
+              color: 'var(--text-secondary)',
+              fontSize: '0.8125rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              WebkitTapHighlightColor: 'transparent',
+              boxSizing: 'border-box',
+              minHeight: '2.75rem',
+              textAlign: 'center',
+              flexShrink: 0,
+            }}
+          >
+            Löschen
+          </button>
         )}
       </div>
     </div>
@@ -541,14 +556,11 @@ function ActionButton({
   icon,
   label,
   onClick,
-  variant = 'default',
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
-  variant?: 'default' | 'danger'
 }) {
-  const isDanger = variant === 'danger'
   return (
     <button
       type="button"
@@ -563,9 +575,9 @@ function ActionButton({
         gap: '0.375rem',
         padding: '0.75rem 0.5rem',
         background: 'var(--bg-base)',
-        border: `1px solid ${isDanger ? 'var(--alert-border)' : 'var(--border-default)'}`,
+        border: '1px solid var(--border-default)',
         borderRadius: '10px',
-        color: isDanger ? 'var(--alert-text)' : 'var(--text-primary)',
+        color: 'var(--text-primary)',
         fontSize: '0.8125rem',
         fontWeight: 500,
         cursor: 'pointer',

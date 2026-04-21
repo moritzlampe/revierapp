@@ -160,11 +160,10 @@ function NachsucheCard({
               fontSize: '0.8125rem',
               fontWeight: 500,
               color: 'var(--alert-text)',
-              textTransform: 'lowercase',
               letterSpacing: '0.01em',
             }}
           >
-            · krank
+            · in Nachsuche
           </span>
         </div>
         <div
