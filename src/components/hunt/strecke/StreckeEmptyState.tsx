@@ -13,6 +13,8 @@ export default function StreckeEmptyState({ role, onStartErlegung }: StreckeEmpt
     <div
       style={{
         flex: 1,
+        position: 'relative',
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -22,8 +24,10 @@ export default function StreckeEmptyState({ role, onStartErlegung }: StreckeEmpt
         gap: '1.25rem',
       }}
     >
-      <AntlerIllustration />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: '22rem' }}>
+      {/* Signature-Motif als dezenter Watermark hinter dem Content */}
+      <BullseyeWatermark />
+
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: '22rem' }}>
         <h2
           style={{
             margin: 0,
@@ -52,6 +56,8 @@ export default function StreckeEmptyState({ role, onStartErlegung }: StreckeEmpt
           type="button"
           onClick={onStartErlegung}
           style={{
+            position: 'relative',
+            zIndex: 1,
             marginTop: '0.5rem',
             padding: '0.75rem 1.5rem',
             background: 'var(--accent-primary)',
@@ -92,46 +98,33 @@ const COPY: Record<StreckeEmptyRole, { title: string; subtext: string; cta: stri
   },
 }
 
-function AntlerIllustration() {
-  // Schlichter Rehkopf-Umriss mit Geweih, monochrom --text-secondary.
-  // Custom-SVG-Feinschliff kommt in Sprint 58.1h.e.
+/**
+ * Dezenter Bullseye-Watermark als Signature-Motif im Empty-State.
+ * Drei konzentrische Kreise (320/220/120 px Durchmesser), 1px Stroke,
+ * opacity 0.05 — Grenzwert der Anti-Kitsch-Guard. Über 0.06 kippt es
+ * Richtung Vereinsheim-Optik.
+ */
+function BullseyeWatermark() {
   return (
-    <svg
-      width="120"
-      height="120"
-      viewBox="0 0 120 120"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
+    <div
       aria-hidden="true"
+      style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '320px',
+        height: '320px',
+        pointerEvents: 'none',
+        color: 'var(--text-secondary)',
+        opacity: 0.05,
+      }}
     >
-      <g
-        stroke="var(--text-secondary)"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-        opacity="0.7"
-      >
-        {/* Geweih links */}
-        <path d="M40 40 L30 18" />
-        <path d="M30 18 L22 22" />
-        <path d="M30 18 L24 10" />
-        <path d="M30 18 L34 8" />
-        <path d="M40 40 L26 28" />
-        {/* Geweih rechts */}
-        <path d="M80 40 L90 18" />
-        <path d="M90 18 L98 22" />
-        <path d="M90 18 L96 10" />
-        <path d="M90 18 L86 8" />
-        <path d="M80 40 L94 28" />
-        {/* Kopf-Umriss (abstrakter Rehkopf) */}
-        <path d="M40 40 C 40 32, 48 28, 60 28 C 72 28, 80 32, 80 40 L 80 68 C 80 82, 72 92, 60 96 C 48 92, 40 82, 40 68 Z" />
-        {/* Augen-Andeutung */}
-        <circle cx="50" cy="54" r="1.5" fill="var(--text-secondary)" stroke="none" />
-        <circle cx="70" cy="54" r="1.5" fill="var(--text-secondary)" stroke="none" />
-        {/* Nase */}
-        <path d="M56 76 Q60 80 64 76" />
-      </g>
-    </svg>
+      <svg width="320" height="320" viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="160" cy="160" r="159" stroke="currentColor" strokeWidth="1" />
+        <circle cx="160" cy="160" r="110" stroke="currentColor" strokeWidth="1" />
+        <circle cx="160" cy="160" r="60" stroke="currentColor" strokeWidth="1" />
+      </svg>
+    </div>
   )
 }
