@@ -765,8 +765,8 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                       >
                         <Link href={`/app/hunt/${hunt.id}`}
                           className="block rounded-2xl p-3.5" style={{
-                            background: isLive ? 'rgba(107,159,58,0.08)' : 'var(--surface)',
-                            border: isLive ? '1px solid rgba(107,159,58,0.25)' : '1px solid var(--border)',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
                           }}>
                           {/* Kicker: Status als Small-Caps */}
                           <div style={{
