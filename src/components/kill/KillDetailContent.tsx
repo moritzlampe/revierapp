@@ -230,14 +230,14 @@ export default function KillDetailContent({
           WebkitOverflowScrolling: 'touch',
         }}
       >
-        <MetaChip icon={<Clock size={14} />} label={formatFullTime(kill.erlegt_am ?? kill.created_at)} />
+        <MetaChip icon={<Clock size={14} />} label={formatFullTime(kill.erlegt_am ?? kill.created_at)} mono />
         <MetaChip
           icon={<User size={14} />}
           label={kill.display_name}
           italic={kill.is_anonymized}
         />
         {typeof kill.gewicht_kg === 'number' && (
-          <MetaChip icon={<Weight size={14} />} label={`${kill.gewicht_kg.toFixed(1)} kg`} />
+          <MetaChip icon={<Weight size={14} />} label={`${kill.gewicht_kg.toFixed(1)} kg`} mono />
         )}
       </div>
 
@@ -477,10 +477,12 @@ function MetaChip({
   icon,
   label,
   italic,
+  mono,
 }: {
   icon: React.ReactNode
   label: string
   italic?: boolean
+  mono?: boolean
 }) {
   return (
     <div
@@ -498,7 +500,7 @@ function MetaChip({
       }}
     >
       <span style={{ color: 'var(--text-secondary)', display: 'inline-flex' }}>{icon}</span>
-      {label}
+      <span style={{ fontFamily: mono ? 'var(--font-mono)' : undefined }}>{label}</span>
     </div>
   )
 }
@@ -538,9 +540,10 @@ function PositionRow({ latLng }: { latLng: LatLng }) {
       <span
         style={{
           flex: 1,
+          fontFamily: 'var(--font-mono)',
           fontSize: '0.8125rem',
+          fontWeight: 400,
           color: 'var(--text-secondary)',
-          fontVariantNumeric: 'tabular-nums',
           textAlign: 'right',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
