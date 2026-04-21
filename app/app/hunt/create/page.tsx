@@ -10,6 +10,8 @@ import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
 import { parsePointHex } from '@/lib/geo-utils'
 import { createSoloHunt } from '@/lib/supabase/hunts'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { getGroupIcon } from '@/components/icons/SpeciesIcons'
+import type { WildGroup } from '@/lib/species-config'
 
 const BUNDESLAENDER = [
   'Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen',
@@ -18,11 +20,11 @@ const BUNDESLAENDER = [
   'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen',
 ]
 
-const WILD_PRESETS = [
-  { value: 'schwarzwild', label: 'Schwarzwild', icon: '🐗', items: ['keiler', 'bache', 'ueberlaeufer', 'frischling'] },
-  { value: 'rehwild', label: 'Rehwild', icon: '🦌', items: ['rehbock', 'ricke', 'rehkitz'] },
-  { value: 'fuchs', label: 'Fuchs', icon: '🦊', items: ['fuchs'] },
-  { value: 'dachs', label: 'Dachs', icon: '🦡', items: ['dachs'] },
+const WILD_PRESETS: { value: string; label: string; group: WildGroup; items: string[] }[] = [
+  { value: 'schwarzwild', label: 'Schwarzwild', group: 'schwarzwild', items: ['keiler', 'bache', 'ueberlaeufer', 'frischling'] },
+  { value: 'rehwild', label: 'Rehwild', group: 'rehwild', items: ['rehbock', 'ricke', 'rehkitz'] },
+  { value: 'fuchs', label: 'Fuchs', group: 'raubwild', items: ['fuchs'] },
+  { value: 'dachs', label: 'Dachs', group: 'raubwild', items: ['dachs'] },
 ]
 
 type District = {
@@ -983,17 +985,22 @@ export default function CreateHuntPage() {
         <div>
           <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Wildarten für Schnellmeldung</label>
           <div className="flex gap-2 flex-wrap">
-            {WILD_PRESETS.map(w => (
-              <button key={w.value} type="button" onClick={() => toggleWild(w.value)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold transition"
-                style={{
-                  border: `1.5px solid ${wildPresets.includes(w.value) ? 'var(--green)' : 'var(--border)'}`,
-                  background: wildPresets.includes(w.value) ? 'rgba(107,159,58,0.1)' : 'var(--bg)',
-                  color: wildPresets.includes(w.value) ? 'var(--accent-primary)' : 'var(--text-3)',
-                }}>
-                {w.icon} {w.label}
-              </button>
-            ))}
+            {WILD_PRESETS.map(w => {
+              const Icon = getGroupIcon(w.group)
+              const selected = wildPresets.includes(w.value)
+              return (
+                <button key={w.value} type="button" onClick={() => toggleWild(w.value)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold transition"
+                  style={{
+                    border: `1.5px solid ${selected ? 'var(--green)' : 'var(--border)'}`,
+                    background: selected ? 'rgba(107,159,58,0.1)' : 'var(--bg)',
+                    color: selected ? 'var(--accent-primary)' : 'var(--text-3)',
+                  }}>
+                  <Icon size={18} />
+                  <span>{w.label}</span>
+                </button>
+              )
+            })}
           </div>
         </div>
 
