@@ -182,7 +182,7 @@ export default function StreckeBatchCard({
           {isOwnBatch && (
             <span
               style={{
-                fontSize: '0.6875rem',
+                fontSize: '0.75rem',
                 fontWeight: 600,
                 letterSpacing: '0.04em',
                 padding: '0.125rem 0.375rem',
@@ -349,7 +349,7 @@ function KillSubItem({
       {isWounded && (
         <span
           style={{
-            fontSize: '0.6875rem',
+            fontSize: '0.75rem',
             fontWeight: 600,
             letterSpacing: '0.04em',
             padding: '0.125rem 0.375rem',

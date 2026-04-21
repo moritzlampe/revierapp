@@ -566,7 +566,7 @@ function ActionButton({
         border: `1px solid ${isDanger ? 'var(--alert-border)' : 'var(--border-default)'}`,
         borderRadius: '10px',
         color: isDanger ? 'var(--alert-text)' : 'var(--text-primary)',
-        fontSize: '0.875rem',
+        fontSize: '0.8125rem',
         fontWeight: 500,
         cursor: 'pointer',
         WebkitTapHighlightColor: 'transparent',
