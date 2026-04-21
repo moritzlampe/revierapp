@@ -272,6 +272,38 @@ Begründung Default-System-Font: native Rendering-Qualität, respektiert iOS-Tex
 
 - Größe: 56px × 56px
 - Hintergrund: `--accent-primary`
+
+### 5.13 Editorial-Kicker-Pattern
+
+Kanonisiertes dreistufiges Editorial-Muster für Content-Hierarchien — Small-Caps-Kicker + Display-Headline + Meta-Pills. Erstmals in Kill-Detail-Sheet eingeführt, ausgeweitet auf Hunt-Card.
+
+**Aufbau:**
+
+```
+[KICKER in Small-Caps]       ← 0.6875rem, weight 600, letter-spacing 0.08em, UPPERCASE
+[Headline in Fraunces]        ← 1rem–1.75rem, weight 500, letter-spacing -0.01em/-0.02em
+[Meta-Pill 1] [Meta-Pill 2]   ← 0.8125rem SF Pro, Icon + Label
+```
+
+**Varianten:**
+
+| Kontext | Kicker | Headline-Size | Typisch |
+|---|---|---|---|
+| Kill-Detail-Sheet | WILDGRUPPE (Rehwild, Schwarzwild) | 1.75rem | Detail-Sheet (zentral) |
+| Hunt-Card in Liste | STATUS (LIVE, BEENDET, GEPLANT) | 1rem | Liste-Item |
+
+**Farbregeln für Kicker:**
+
+- Aktive States → `--accent-primary`
+- Neutral/Beendet → `--text-secondary`
+- Inaktiv/Geplant → `--text-muted`
+- Kritisch/Nachsuche → `--alert-text`
+
+**Nicht-Kontexte (bewusst ausgeschlossen):**
+
+- Chat-Gruppen-Detail-Header — zu formell für Chat-Register
+- Filter-Pill-Labels — zu klein für Charakter-Wirkung
+- Settings-Section-Header — **H2 in Fraunces** (§3.1 Editorial-H2) ohne zusätzliche Kicker-Nummer; Kapitel-Nummerierung wirkt in einer Werkzeug-App wie Festschrift
 - Icon: `#FFFFFF`, 24px
 - Radius: 50%
 - Position: zentriert in Bottom-Navigation, leicht angehoben
