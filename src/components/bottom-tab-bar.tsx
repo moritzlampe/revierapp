@@ -3,9 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-// Target bleibt einstweilen Lucide — wird in Sprint 58.1k.3 durch BullseyeIcon ersetzt.
-// Siehe docs/recon/BERICHT_58_1k_0_Recon.md (Signature-Motif).
-import { Target } from 'lucide-react'
+import BullseyeIcon from '@/components/icons/BullseyeIcon'
 import { Crosshair, ChatCircle, User } from '@phosphor-icons/react'
 import { ErlegungSheet } from '@/components/erlegung/ErlegungSheet'
 import { useActiveHunt } from '@/hooks/useActiveHunt'
@@ -125,7 +123,7 @@ export default function BottomTabBar() {
                 boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
               }}
             >
-              <Target size={24} strokeWidth={2.2} />
+              <BullseyeIcon size={24} ariaLabel="Erlegung" />
             </span>
             <span style={{
               fontSize: '0.75rem',
