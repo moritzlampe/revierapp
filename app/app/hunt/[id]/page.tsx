@@ -14,7 +14,7 @@ import { HuntActionsMenu } from '@/components/hunt/HuntActionsMenu'
 import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
-import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog } from '@phosphor-icons/react'
+import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog, Megaphone, Stop } from '@phosphor-icons/react'
 import { RehwildIcon } from '@/components/icons/SpeciesIcons'
 import type { ComponentType, SVGProps } from 'react'
 
@@ -356,21 +356,25 @@ export default function HuntPage() {
       {showJLBar && isJagdleiter && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
           style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
-          <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--accent-primary)', background: 'var(--accent-primary)', color: '#fff', minHeight: '2.75rem' }}>
-            📢 Treiben!
+            <Megaphone size={14} />
+            Treiben!
           </button>
-          <button onClick={() => endHunt()} className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button onClick={() => endHunt()} className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--alert-border)', background: 'var(--alert-bg)', color: 'var(--alert-text)', minHeight: '2.75rem' }}>
-            🔴 Hahn in Ruh
+            <Stop size={14} weight="fill" color="var(--red)" />
+            Hahn in Ruh
           </button>
-          <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--border-default)', background: 'var(--bg-sunken)', color: 'var(--text-primary)', minHeight: '2.75rem' }}>
-            👥 Rollen
+            <UsersThree size={14} />
+            Rollen
           </button>
-          <button className="flex items-center gap-1 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--accent-gold)', background: 'var(--bg-sunken)', color: 'var(--accent-gold)', minHeight: '2.75rem' }}>
-            🐕 +Nachsuche
+            <Dog size={14} />
+            +Nachsuche
           </button>
         </div>
       )}
