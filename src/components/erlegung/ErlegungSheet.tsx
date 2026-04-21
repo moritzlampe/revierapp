@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { CircleNotch } from '@phosphor-icons/react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { WildartPicker } from './WildartPicker'
 import { useActiveHunt } from '@/hooks/useActiveHunt'
@@ -277,7 +277,7 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
               gap: '0.75rem',
               padding: '3rem 0',
             }}>
-              <Loader2
+              <CircleNotch
                 size={32}
                 style={{ color: 'var(--green)', animation: 'spin 1s linear infinite' }}
               />

@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Map,
+  MapTrifold as Map,
   FileText,
   Eye,
   Users,
-  ClipboardList,
+  ClipboardText as ClipboardList,
   PlayCircle,
-  Calendar,
-  Settings,
-  LogOut,
-} from "lucide-react";
+  CalendarBlank as Calendar,
+  Gear as Settings,
+  SignOut as LogOut,
+} from "@phosphor-icons/react";
 import { RevierSwitcher } from "./revier-switcher";
 import { createClient } from "@/lib/supabase/client";
 

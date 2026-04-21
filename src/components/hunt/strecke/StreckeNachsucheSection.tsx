@@ -1,7 +1,7 @@
 'use client'
 
 import { forwardRef } from 'react'
-import { ChevronRight, MapPin } from 'lucide-react'
+import { CaretRight as ChevronRight, MapPin } from '@phosphor-icons/react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
   WILD_GROUP_CONFIG,

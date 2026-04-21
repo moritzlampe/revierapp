@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Clock, User, Weight, Star, Share2, Pencil, Loader2 } from 'lucide-react'
+import { Clock, User, Barbell as Weight, Star, ShareNetwork as Share2, PencilSimple as Pencil, CircleNotch as Loader2 } from '@phosphor-icons/react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
   WILD_ART_TO_GROUP,
@@ -269,9 +269,9 @@ export default function KillDetailContent({
         >
           <Star
             size={18}
+            weight={kapital ? 'fill' : 'regular'}
             style={{
               color: kapital ? 'var(--accent-gold)' : 'var(--text-secondary)',
-              fill: kapital ? 'var(--accent-gold)' : 'transparent',
             }}
           />
           <span style={{ fontSize: '0.9375rem', color: 'var(--text-primary)', flex: 1 }}>

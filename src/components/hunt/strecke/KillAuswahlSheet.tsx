@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { Camera, Loader2 } from 'lucide-react'
+import { Camera, CircleNotch as Loader2 } from '@phosphor-icons/react'
 import imageCompression from 'browser-image-compression'
 import { uploadPhoto } from '@/lib/photos/upload'
 import { insertHuntPhoto } from '@/lib/photos/hunt-photos'

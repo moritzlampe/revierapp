@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check } from 'lucide-react'
+import { ArrowLeft, Check } from '@phosphor-icons/react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import PhotoCapture from '@/components/photo/PhotoCapture'
 import PhotoThumbnail from '@/components/photo/PhotoThumbnail'

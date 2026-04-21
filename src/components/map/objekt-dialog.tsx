@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X } from "lucide-react";
+import { X } from "@phosphor-icons/react";
 import { useMapContext } from "./map-context";
 import { useRevier } from "@/lib/context/revier-context";
 import { createClient } from "@/lib/supabase/client";

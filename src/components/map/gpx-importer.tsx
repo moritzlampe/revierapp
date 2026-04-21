@@ -9,7 +9,7 @@ import * as turf from "@turf/turf";
 import { useMapContext } from "./map-context";
 import { useRevier } from "@/lib/context/revier-context";
 import { createClient } from "@/lib/supabase/client";
-import { Upload, Check, X } from "lucide-react";
+import { UploadSimple as Upload, Check, X } from "@phosphor-icons/react";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 

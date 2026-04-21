@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ImageOff, X } from 'lucide-react'
+import { ImageBroken, X } from '@phosphor-icons/react'
 
 interface PhotoThumbnailProps {
   url: string
@@ -82,7 +82,7 @@ export default function PhotoThumbnail({
             justifyContent: 'center',
           }}
         >
-          <ImageOff
+          <ImageBroken
             style={{
               width: `${size * 0.4}rem`,
               height: `${size * 0.4}rem`,

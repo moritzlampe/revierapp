@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Crosshair, Target, MessageSquare, User } from 'lucide-react'
+import { Target } from 'lucide-react'
+import { Crosshair, ChatCircle, User } from '@phosphor-icons/react'
 import { ErlegungSheet } from '@/components/erlegung/ErlegungSheet'
 import { useActiveHunt } from '@/hooks/useActiveHunt'
 
@@ -22,7 +23,7 @@ export default function BottomTabBar() {
 
   const linkTabs = [
     { key: 'jagd', label: 'Jagd', icon: Crosshair, href: jagdHref },
-    { key: 'chat', label: 'Chat', icon: MessageSquare, href: '/app?tab=chats' },
+    { key: 'chat', label: 'Chat', icon: ChatCircle, href: '/app?tab=chats' },
     { key: 'du', label: 'Du', icon: User, href: '/app/du' },
   ] as const
 
@@ -147,7 +148,7 @@ export default function BottomTabBar() {
 }
 
 function renderLinkTab(
-  tab: { key: string; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }>; href: string },
+  tab: { key: string; label: string; icon: React.ComponentType<{ size?: number; weight?: 'regular' | 'fill' | 'bold' }>; href: string },
   activeKey: string,
 ) {
   const isActive = activeKey === tab.key
@@ -172,7 +173,7 @@ function renderLinkTab(
     >
       <tab.icon
         size={22}
-        strokeWidth={isActive ? 2.5 : 1.8}
+        weight={isActive ? 'fill' : 'regular'}
       />
       <span style={{ fontSize: '0.75rem', fontWeight: isActive ? 700 : 500 }}>
         {tab.label}

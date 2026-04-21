@@ -1,14 +1,14 @@
 "use client";
 
 import {
-  MousePointer2,
+  Cursor as MousePointer2,
   Triangle,
-  LayoutGrid,
+  SquaresFour as LayoutGrid,
   MapPin,
   Image,
-  Upload,
-  Share2,
-} from "lucide-react";
+  UploadSimple as Upload,
+  ShareNetwork as Share2,
+} from "@phosphor-icons/react";
 import { useMapContext, type Tool } from "@/components/map/map-context";
 import { triggerGPXImport } from "@/components/map/gpx-importer";
 

@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useRef } from 'react'
-import { ChevronRight, Target, Sunrise } from 'lucide-react'
+import { Target } from 'lucide-react'
+import { CaretRight as ChevronRight, SunHorizon as Sunrise } from '@phosphor-icons/react'
 import { RehwildIcon } from '@/components/icons/SpeciesIcons'
 
 export type FotoZiel = 'streckenfoto' | 'stimmung' | 'erlegung'

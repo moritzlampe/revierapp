@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, type ReactNode, type ChangeEvent } from 'react'
-import { Camera, Loader2 } from 'lucide-react'
+import { Camera, CircleNotch } from '@phosphor-icons/react'
 import imageCompression from 'browser-image-compression'
 
 // ============================================================
@@ -169,7 +169,7 @@ export default function PhotoCapture({
           }}
         >
           {verarbeitet ? (
-            <Loader2
+            <CircleNotch
               size={18}
               style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}
             />
