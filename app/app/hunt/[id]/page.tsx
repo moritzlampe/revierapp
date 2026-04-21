@@ -180,7 +180,7 @@ export default function HuntPage() {
     setParticipants(parts || [])
     setUserId(user?.id ?? null)
     setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter') || false)
-    setIsGruppenleiter(parts?.some(p => p.user_id === user?.id && p.tags?.includes('👥')) || false)
+    setIsGruppenleiter(parts?.some(p => p.user_id === user?.id && p.tags?.includes('gruppenleiter')) || false)
     setLoading(false)
 
     // Solo-Hunt: Chat-Tab nicht erlaubt → auf Karte fallbacken
