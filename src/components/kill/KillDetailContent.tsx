@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Clock, User, Weight, MapPin, Star, Share2, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Clock, User, Weight, Star, Share2, Pencil, Trash2, Loader2 } from 'lucide-react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
   WILD_ART_TO_GROUP,
@@ -12,6 +12,7 @@ import {
   type WildArt,
 } from '@/lib/species-config'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
+import PinIcon from '@/components/icons/PinIcon'
 import { createClient } from '@/lib/supabase/client'
 import { showToast } from '@/lib/erlegung/toast'
 
@@ -237,16 +238,11 @@ export default function KillDetailContent({
         {typeof kill.gewicht_kg === 'number' && (
           <MetaChip icon={<Weight size={14} />} label={`${kill.gewicht_kg.toFixed(1)} kg`} />
         )}
-        {latLng && (
-          <MetaChip
-            icon={<MapPin size={14} />}
-            label={`${latLng.lat.toFixed(4)}, ${latLng.lng.toFixed(4)}`}
-          />
-        )}
       </div>
 
-      {/* Mini-Map */}
-      {latLng && <MiniMap latLng={latLng} />}
+      {/* Position: ehrliche Zeile statt Fake-Minimap.
+          Echte Karte kommt in einem späteren Sprint. */}
+      {latLng && <PositionRow latLng={latLng} />}
 
       {/* Kapital-Toggle */}
       <div style={{ padding: '0 1rem' }}>
@@ -491,46 +487,53 @@ function MetaChip({
   )
 }
 
-function MiniMap({ latLng }: { latLng: LatLng }) {
-  // Statisches OpenStreetMap-Tile via Bildvorschau. Echte Karte mit Marker
-  // kommt in Sprint 58.1h.e zusammen mit dem Streckenkarten-Export.
-  const zoom = 15
+function PositionRow({ latLng }: { latLng: LatLng }) {
   const { lat, lng } = latLng
-  const lat2tile = (l: number, z: number) =>
-    Math.floor((1 - Math.log(Math.tan((l * Math.PI) / 180) + 1 / Math.cos((l * Math.PI) / 180)) / Math.PI) / 2 * 2 ** z)
-  const lng2tile = (l: number, z: number) => Math.floor(((l + 180) / 360) * 2 ** z)
-  const tileX = lng2tile(lng, zoom)
-  const tileY = lat2tile(lat, zoom)
-  const tileUrl = `https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`
-
+  const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  // geo:-URI öffnet Apple Maps / Google Maps / OsmAnd je nach Plattform.
+  const geoHref = `geo:${lat},${lng}?q=${lat},${lng}`
   return (
-    <div style={{ padding: '0 1rem' }}>
-      <div
+    <a
+      href={geoHref}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        margin: '0 1rem',
+        padding: '0.625rem 0.75rem',
+        background: 'var(--bg-sunken)',
+        border: '1px solid var(--border-default)',
+        borderRadius: '10px',
+        color: 'var(--text-primary)',
+        textDecoration: 'none',
+        minHeight: '2.75rem',
+        boxSizing: 'border-box',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      <PinIcon
+        size={16}
+        style={{ color: 'var(--accent-primary)', flexShrink: 0 }}
+        ariaLabel="Position"
+      />
+      <span style={{ fontSize: '0.9375rem', fontWeight: 500, flexShrink: 0 }}>
+        Position erfasst
+      </span>
+      <span
         style={{
-          position: 'relative',
-          height: '6.25rem',
-          borderRadius: '10px',
+          flex: 1,
+          fontSize: '0.8125rem',
+          color: 'var(--text-secondary)',
+          fontVariantNumeric: 'tabular-nums',
+          textAlign: 'right',
           overflow: 'hidden',
-          border: '1px solid var(--border-default)',
-          background: `var(--bg-sunken) url(${tileUrl}) center / cover`,
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}
       >
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -100%)',
-            color: 'var(--alert-text)',
-            fontSize: '1.25rem',
-            textShadow: '0 1px 2px rgba(255, 255, 255, 0.7)',
-          }}
-        >
-          📍
-        </div>
-      </div>
-    </div>
+        {coords}
+      </span>
+    </a>
   )
 }
 
