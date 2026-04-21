@@ -238,20 +238,6 @@ export default function StreckeBatchCard({
         </ul>
       </div>
 
-      {hasRotte && (
-        <div
-          style={{
-            fontSize: '0.8125rem',
-            fontWeight: 400,
-            color: 'var(--text-secondary)',
-            letterSpacing: '0.01em',
-            paddingLeft: hasRotte ? '1.625rem' : 0,
-          }}
-        >
-          Rotte · {batch.kills.length}× in derselben Minute
-        </div>
-      )}
-
       {showBatchPhotos && (
         <div
           style={{
