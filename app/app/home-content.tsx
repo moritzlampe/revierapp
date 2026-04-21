@@ -526,7 +526,13 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
       {/* Header */}
       <div className="flex items-center justify-between" style={{ padding: '0.75rem 1.25rem 0.625rem' }}>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.03rem', color: 'var(--text)' }}>
+        <h1 style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: '2rem',
+          fontWeight: 500,
+          letterSpacing: '-0.02em',
+          color: 'var(--text)',
+        }}>
           {activeTab === 'jagden' ? 'Jagden' : 'Chats'}
         </h1>
         <Link

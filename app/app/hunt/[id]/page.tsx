@@ -316,7 +316,13 @@ export default function HuntPage() {
         <button onClick={() => router.push('/app?tab=jagden')} className="flex items-center justify-center rounded-lg"
           style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '1rem',
+            fontWeight: 500,
+            letterSpacing: '-0.01em',
+            color: 'var(--text)',
+          }}>
             <span className="live-dot" /> {hunt.name}
           </div>
           <div className="text-xs" style={{ color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>

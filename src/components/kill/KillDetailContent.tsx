@@ -194,10 +194,11 @@ export default function KillDetailContent({
         <h2
           style={{
             margin: 0,
-            fontSize: '1.5rem',
-            fontWeight: 600,
-            lineHeight: 1.3,
-            letterSpacing: '-0.01em',
+            fontFamily: 'var(--font-display)',
+            fontSize: '1.75rem',
+            fontWeight: 500,
+            lineHeight: 1.2,
+            letterSpacing: '-0.02em',
             color: 'var(--text-primary)',
           }}
         >
