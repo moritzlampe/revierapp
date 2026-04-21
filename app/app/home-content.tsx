@@ -779,9 +779,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             textTransform: 'uppercase',
                             color: isLive
                               ? 'var(--accent-primary)'
-                              : hunt.status === 'completed'
-                                ? 'var(--text-2)'
-                                : 'var(--text-3)',
+                              : 'var(--text-3)',
                             marginBottom: '0.25rem',
                           }}>
                             {isLive && <span className="live-dot" />}
