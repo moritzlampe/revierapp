@@ -43,10 +43,18 @@ export default function GpsStatusBadge({ geo }: { geo: GeolocationState }) {
   let Icon: PhosphorIcon
   let iconWeight: IconWeight = 'regular'
   let iconPulse = false
-  let label: string
+  let label: React.ReactNode
   let bgColor: string
   let textColor: string
   let showSpinner = false
+
+  const accuracyLabel = (prefix: string, m: number) => (
+    <>
+      {prefix} (
+      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 400 }}>{m}</span>
+      m)
+    </>
+  )
 
   if (geo.error) {
     Icon = XCircle; iconWeight = 'fill'; label = 'GPS nicht verfügbar'
@@ -67,12 +75,12 @@ export default function GpsStatusBadge({ geo }: { geo: GeolocationState }) {
   } else if (geo.mode === 'searching' && geo.accuracy && geo.accuracy > 30) {
     // Position da, aber sehr ungenau
     Icon = WifiHigh; iconPulse = true
-    label = `GPS ungenau (${Math.round(geo.accuracy)}m)`
+    label = accuracyLabel('GPS ungenau', Math.round(geo.accuracy))
     bgColor = 'rgba(255, 143, 0, 0.12)'; textColor = 'var(--orange)'
   } else if (geo.mode === 'searching' && geo.accuracy && geo.accuracy > 10) {
     // Position da, mittlere Genauigkeit
     Icon = WifiHigh; iconPulse = true
-    label = `GPS (${Math.round(geo.accuracy)}m)`
+    label = accuracyLabel('GPS', Math.round(geo.accuracy))
     bgColor = 'rgba(255, 255, 255, 0.1)'; textColor = 'var(--text-2)'
   } else if (geo.mode === 'locked') {
     Icon = MapPin; iconWeight = 'fill'
