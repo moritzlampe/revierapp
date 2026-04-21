@@ -769,7 +769,13 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             border: isLive ? '1px solid rgba(107,159,58,0.25)' : '1px solid var(--border)',
                           }}>
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-bold">{hunt.name}</span>
+                            <span style={{
+                              fontFamily: 'var(--font-display)',
+                              fontSize: '1rem',
+                              fontWeight: 500,
+                              letterSpacing: '-0.01em',
+                              color: 'var(--text)',
+                            }}>{hunt.name}</span>
                             {isLive ? (
                               <span className="badge badge-live"><span className="live-dot mr-1" /> Live</span>
                             ) : hunt.status === 'completed' ? (
@@ -877,7 +883,13 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                     {/* Name + letzte Nachricht */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold truncate flex items-center gap-1.5" style={{ fontSize: '0.9375rem' }}>
+                        <span className="truncate flex items-center gap-1.5" style={{
+                          fontFamily: 'var(--font-display)',
+                          fontSize: '1rem',
+                          fontWeight: 500,
+                          letterSpacing: '-0.01em',
+                          color: 'var(--text)',
+                        }}>
                           {item.isHuntChat ? item.name.replace('🎯 ', '') : item.name}
                           {item.isHuntChat && item.huntStatus === 'active' && (
                             <span className="badge badge-live" style={{ fontSize: '0.5625rem', padding: '0.0625rem 0.375rem' }}>

@@ -156,7 +156,13 @@ export default function GroupChatPage() {
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold truncate">{displayName || group.name}</div>
+            <div className="truncate" style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: '1rem',
+              fontWeight: 500,
+              letterSpacing: '-0.01em',
+              color: 'var(--text)',
+            }}>{displayName || group.name}</div>
             <div className="text-xs" style={{ color: 'var(--text-3)' }}>
               {isDirect ? 'Einzelchat' : `👥 ${memberCount} Mitglieder`}
             </div>
