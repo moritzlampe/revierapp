@@ -105,6 +105,8 @@
   --keyboard-offset: 0px;
   /* Abstand unter Content: Tab-Bar-Höhe + Safe-Area, entfällt bei Tastatur */
   --bottom-bar-space: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  /* Einheitliche Sheet-Maxhöhe. Ausnahme: kompakte Confirm-Sheets. */
+  --sheet-max-height: 85dvh;
 }
 
 /* ============================================================

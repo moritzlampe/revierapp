@@ -83,7 +83,7 @@ export default function KillDetailSheet({
         className="map-object-sheet"
         style={{
           paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
-          maxHeight: '85dvh',
+          maxHeight: 'var(--sheet-max-height)',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--bg-elevated)',
