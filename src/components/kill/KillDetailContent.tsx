@@ -13,6 +13,7 @@ import {
 } from '@/lib/species-config'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 import PinIcon from '@/components/icons/PinIcon'
+import BullseyeIcon from '@/components/icons/BullseyeIcon'
 import { createClient } from '@/lib/supabase/client'
 import { showToast } from '@/lib/erlegung/toast'
 
@@ -194,10 +195,11 @@ export default function KillDetailContent({
         <h2
           style={{
             margin: 0,
-            fontSize: '1.5rem',
-            fontWeight: 600,
-            lineHeight: 1.3,
-            letterSpacing: '-0.01em',
+            fontFamily: 'var(--font-display)',
+            fontSize: '1.75rem',
+            fontWeight: 500,
+            lineHeight: 1.2,
+            letterSpacing: '-0.02em',
             color: 'var(--text-primary)',
           }}
         >
@@ -229,20 +231,22 @@ export default function KillDetailContent({
           WebkitOverflowScrolling: 'touch',
         }}
       >
-        <MetaChip icon={<Clock size={14} />} label={formatFullTime(kill.erlegt_am ?? kill.created_at)} />
+        <MetaChip icon={<Clock size={14} />} label={formatFullTime(kill.erlegt_am ?? kill.created_at)} mono />
         <MetaChip
           icon={<User size={14} />}
           label={kill.display_name}
           italic={kill.is_anonymized}
         />
         {typeof kill.gewicht_kg === 'number' && (
-          <MetaChip icon={<Weight size={14} />} label={`${kill.gewicht_kg.toFixed(1)} kg`} />
+          <MetaChip icon={<Weight size={14} />} label={`${kill.gewicht_kg.toFixed(1)} kg`} mono />
         )}
       </div>
 
       {/* Position: ehrliche Zeile statt Fake-Minimap.
           Echte Karte kommt in einem späteren Sprint. */}
       {latLng && <PositionRow latLng={latLng} />}
+
+      <BullseyeDivider />
 
       {/* Kapital-Toggle */}
       <div style={{ padding: '0 1rem' }}>
@@ -289,6 +293,8 @@ export default function KillDetailContent({
           )}
         </button>
       </div>
+
+      <BullseyeDivider tight />
 
       {/* Notiz-Feld */}
       <div style={{ padding: '0 1rem', position: 'relative' }}>
@@ -476,10 +482,12 @@ function MetaChip({
   icon,
   label,
   italic,
+  mono,
 }: {
   icon: React.ReactNode
   label: string
   italic?: boolean
+  mono?: boolean
 }) {
   return (
     <div
@@ -497,7 +505,7 @@ function MetaChip({
       }}
     >
       <span style={{ color: 'var(--text-secondary)', display: 'inline-flex' }}>{icon}</span>
-      {label}
+      <span style={{ fontFamily: mono ? 'var(--font-mono)' : undefined }}>{label}</span>
     </div>
   )
 }
@@ -537,9 +545,10 @@ function PositionRow({ latLng }: { latLng: LatLng }) {
       <span
         style={{
           flex: 1,
+          fontFamily: 'var(--font-mono)',
           fontSize: '0.8125rem',
+          fontWeight: 400,
           color: 'var(--text-secondary)',
-          fontVariantNumeric: 'tabular-nums',
           textAlign: 'right',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -549,6 +558,38 @@ function PositionRow({ latLng }: { latLng: LatLng }) {
         {coords}
       </span>
     </a>
+  )
+}
+
+/**
+ * Dezenter Section-Divider als Signature-Caesur. Winziges Bullseye
+ * (10px) auf --border-strong mit 40% Opacity, horizontal zentriert,
+ * ohne umgebende Hairline. Inspiriert vom NYT-End-of-Article-Glyph,
+ * hier als Inline-Sektionswechsel innerhalb des Kill-Detail-Sheets.
+ *
+ * Revert-Stufen bei Kitsch-Erkennung:
+ * 1. opacity 0.4 → 0.25
+ * 2. size 10 → 8
+ * 3. komplett durch {@code borderTop: 1px solid var(--border-default)} ersetzen
+ */
+function BullseyeDivider({ tight = false }: { tight?: boolean } = {}) {
+  // tight zieht den Flex-Gap (1rem) der Eltern zusammen, damit Kapital-Toggle
+  // und Notiz-Block auf Standard-iPhone-Höhe ohne Scroll in den Viewport
+  // passen. Effektiver Abstand zu angrenzenden Sections: 0.5rem statt 1rem.
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        padding: '0.125rem 0',
+        margin: tight ? '-0.5rem 0' : undefined,
+        color: 'var(--border-strong)',
+        opacity: 0.4,
+      }}
+    >
+      <BullseyeIcon size={10} />
+    </div>
   )
 }
 

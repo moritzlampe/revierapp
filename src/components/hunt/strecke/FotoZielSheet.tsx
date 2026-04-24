@@ -1,8 +1,7 @@
 'use client'
 
 import { useCallback, useRef } from 'react'
-// Target bleibt einstweilen Lucide — wird in Sprint 58.1k.3 durch BullseyeIcon ersetzt.
-import { Target } from 'lucide-react'
+import BullseyeIcon from '@/components/icons/BullseyeIcon'
 import { CaretRight as ChevronRight, SunHorizon as Sunrise } from '@phosphor-icons/react'
 import { RehwildIcon } from '@/components/icons/SpeciesIcons'
 
@@ -24,7 +23,7 @@ interface OptionSpec {
 const OPTIONS: OptionSpec[] = [
   {
     id: 'streckenfoto',
-    icon: <Target size={26} />,
+    icon: <BullseyeIcon size={26} />,
     title: 'Streckenfoto',
     subtext: 'Gruppenbild der gelegten Strecke.',
   },

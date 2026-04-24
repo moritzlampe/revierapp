@@ -385,11 +385,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <p style={{
         padding: '0 1.25rem',
         marginBottom: '0.5rem',
-        fontSize: '0.6875rem',
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: '0.05rem',
-        color: 'var(--text-3)',
+        fontFamily: 'var(--font-display)',
+        fontSize: '1.125rem',
+        fontWeight: 500,
+        letterSpacing: '-0.01em',
+        color: 'var(--text)',
       }}>
         {title}
       </p>
