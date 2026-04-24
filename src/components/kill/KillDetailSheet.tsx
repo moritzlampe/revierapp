@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useEffect } from 'react'
 import KillDetailContent, { type KillDetailMode } from '@/components/kill/KillDetailContent'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 
@@ -33,85 +33,92 @@ export default function KillDetailSheet({
   onDelete,
   onShare,
 }: KillDetailSheetProps) {
-  const sheetRef = useRef<HTMLDivElement>(null)
-  const swipeStartY = useRef(0)
-  const swipeStartTime = useRef(0)
-  const swipeDeltaY = useRef(0)
-  const isSwiping = useRef(false)
-
-  const handleSwipeStart = useCallback((e: React.TouchEvent) => {
-    swipeStartY.current = e.touches[0].clientY
-    swipeStartTime.current = Date.now()
-    swipeDeltaY.current = 0
-    isSwiping.current = true
-    const sheet = sheetRef.current
-    if (sheet) sheet.style.transition = 'none'
-  }, [])
-
-  const handleSwipeMove = useCallback((e: React.TouchEvent) => {
-    if (!isSwiping.current) return
-    const delta = e.touches[0].clientY - swipeStartY.current
-    swipeDeltaY.current = Math.max(0, delta)
-    const sheet = sheetRef.current
-    if (sheet) sheet.style.transform = `translateY(${swipeDeltaY.current}px)`
-  }, [])
-
-  const handleSwipeEnd = useCallback(() => {
-    if (!isSwiping.current) return
-    isSwiping.current = false
-    const sheet = sheetRef.current
-    if (!sheet) return
-    const elapsed = Date.now() - swipeStartTime.current
-    const velocity = swipeDeltaY.current / Math.max(elapsed, 1)
-    if (swipeDeltaY.current > 80 || velocity > 0.5) {
-      sheet.style.transition = 'transform 0.25s ease-out'
-      sheet.style.transform = 'translateY(100%)'
-      setTimeout(onClose, 250)
-    } else {
-      sheet.style.transition = 'transform 0.2s ease'
-      sheet.style.transform = 'translateY(0)'
+  // Escape schließt Sheet (Desktop/Keyboard-Accessibility)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
     }
-  }, [onClose])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
 
   if (!open || !kill) return null
 
+  // Fullscreen-Modal über der Hunt-Page. Deckt die Hunt-Topbar ab, damit der
+  // einzig sichtbare Back-Button der eigene ist (onClose statt router.push).
   return (
-    <>
-      <div className="map-object-sheet-overlay" onClick={onClose} />
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1200,
+        background: 'var(--bg)',
+        display: 'flex',
+        flexDirection: 'column',
+        animation: 'sheet-slide-up 0.25s ease-out',
+      }}
+    >
       <div
-        ref={sheetRef}
-        className="map-object-sheet"
+        className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
         style={{
+          background: 'var(--surface)',
+          borderBottom: '1px solid var(--border-light)',
+          paddingTop: 'calc(0.625rem + env(safe-area-inset-top, 0px))',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Zurück zur Strecke"
+          className="flex items-center justify-center rounded-lg"
+          style={{
+            background: 'var(--surface-2)',
+            minWidth: '2.75rem',
+            minHeight: '2.75rem',
+            fontSize: '1.125rem',
+            color: 'var(--text)',
+          }}
+        >
+          ←
+        </button>
+        <div
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '1.0625rem',
+            fontWeight: 500,
+            letterSpacing: '-0.01em',
+            color: 'var(--text)',
+          }}
+        >
+          Strecke
+        </div>
+      </div>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          paddingTop: '0.75rem',
           paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
-          maxHeight: 'var(--sheet-max-height)',
-          display: 'flex',
-          flexDirection: 'column',
           background: 'var(--bg-elevated)',
         }}
       >
-        <div
-          onTouchStart={handleSwipeStart}
-          onTouchMove={handleSwipeMove}
-          onTouchEnd={handleSwipeEnd}
-          style={{ width: '100%', padding: '0.75rem 0', cursor: 'grab', touchAction: 'none' }}
-        >
-          <div className="sheet-handle" />
-        </div>
-        <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, paddingBottom: '0.5rem' }}>
-          <KillDetailContent
-            kill={kill}
-            mode={mode}
-            heroPhotoUrl={heroPhotoUrl}
-            photoCount={photoCount}
-            canEdit={canEdit}
-            canDelete={canDelete}
-            isReporter={isReporter}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onShare={onShare}
-          />
-        </div>
+        <KillDetailContent
+          kill={kill}
+          mode={mode}
+          heroPhotoUrl={heroPhotoUrl}
+          photoCount={photoCount}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          isReporter={isReporter}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onShare={onShare}
+        />
       </div>
-    </>
+    </div>
   )
 }
