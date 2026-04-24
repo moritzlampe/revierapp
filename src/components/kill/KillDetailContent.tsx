@@ -294,7 +294,7 @@ export default function KillDetailContent({
         </button>
       </div>
 
-      <BullseyeDivider />
+      <BullseyeDivider tight />
 
       {/* Notiz-Feld */}
       <div style={{ padding: '0 1rem', position: 'relative' }}>
@@ -572,7 +572,10 @@ function PositionRow({ latLng }: { latLng: LatLng }) {
  * 2. size 10 → 8
  * 3. komplett durch {@code borderTop: 1px solid var(--border-default)} ersetzen
  */
-function BullseyeDivider() {
+function BullseyeDivider({ tight = false }: { tight?: boolean } = {}) {
+  // tight zieht den Flex-Gap (1rem) der Eltern zusammen, damit Kapital-Toggle
+  // und Notiz-Block auf Standard-iPhone-Höhe ohne Scroll in den Viewport
+  // passen. Effektiver Abstand zu angrenzenden Sections: 0.5rem statt 1rem.
   return (
     <div
       aria-hidden="true"
@@ -580,6 +583,7 @@ function BullseyeDivider() {
         display: 'flex',
         justifyContent: 'center',
         padding: '0.125rem 0',
+        margin: tight ? '-0.5rem 0' : undefined,
         color: 'var(--border-strong)',
         opacity: 0.4,
       }}
