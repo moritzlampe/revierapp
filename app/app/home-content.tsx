@@ -174,7 +174,9 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     name: string
   } | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
-  const activeCloseRef = useRef<(() => void) | null>(null)
+  // Speichert Item-ID + close-Fn der aktuell offenen Swipe-Action.
+  // ID-Vergleich verhindert, dass ein Item beim erneuten Öffnen sich selbst schließt.
+  const activeCloseRef = useRef<{ id: string; close: () => void } | null>(null)
 
   // Client-seitiges Nachladen der Jagden (Server-Cache kann veraltet sein)
   // Filter (Kind/Revier) benötigt vollständige Hunt-Liste; bei >200 Hunts später Pagination.
@@ -284,12 +286,8 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
 
   // Schließe offene Swipe-Action wenn woanders getippt wird
   const closeActiveSwipe = useCallback(() => {
-    // DEBUG (Sprint 58.1r.5): closeActiveSwipe nachverfolgen
-    console.log('[swipe-list] closeActiveSwipe called',
-      'hasActive=', !!activeCloseRef.current,
-      '\nstack:', new Error().stack)
     if (activeCloseRef.current) {
-      activeCloseRef.current()
+      activeCloseRef.current.close()
       activeCloseRef.current = null
     }
   }, [])
@@ -857,8 +855,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                         disabled={!isOwner}
                         onAction={() => setConfirmDialog({ type: 'delete-hunt', id: hunt.id, name: hunt.name })}
                         onSwipeOpen={(closeFn) => {
-                          closeActiveSwipe()
-                          activeCloseRef.current = closeFn
+                          if (activeCloseRef.current?.id !== hunt.id) {
+                            closeActiveSwipe()
+                          }
+                          activeCloseRef.current = { id: hunt.id, close: closeFn }
                         }}
                       >
                         <Link href={`/app/hunt/${hunt.id}`}
@@ -1043,13 +1043,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                       disabled={isLiveHunt}
                       onAction={() => handleHideChat(item)}
                       onSwipeOpen={(closeFn) => {
-                        // DEBUG (Sprint 58.1r.5): wer öffnet, was wird verdrängt?
-                        console.log('[swipe-list] onSwipeOpen',
-                          'itemId=', item.id, 'groupId=', item.groupId,
-                          'name=', item.name,
-                          'previousActiveExists=', !!activeCloseRef.current)
-                        closeActiveSwipe()
-                        activeCloseRef.current = closeFn
+                        if (activeCloseRef.current?.id !== item.id) {
+                          closeActiveSwipe()
+                        }
+                        activeCloseRef.current = { id: item.id, close: closeFn }
                       }}
                     >
                       {chatRow}

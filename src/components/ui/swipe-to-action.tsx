@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback, useEffect, type ReactNode } from 'react'
+import { useRef, useCallback, type ReactNode } from 'react'
 
 type SwipeToActionProps = {
   actionIcon: ReactNode
@@ -49,37 +49,8 @@ export default function SwipeToAction({
   const directionLocked = useRef<'horizontal' | 'vertical' | null>(null)
   const isDragging = useRef(false)
   const didSwipe = useRef(false)
-  // DEBUG (Sprint 58.1r.3): Drosselung für handleMove-Logging — alle 50px
-  const lastLoggedX = useRef(0)
-  // DEBUG (Sprint 58.1r.5): Per-Instance-ID zum Korrelieren der Logs
-  const debugId = useRef(Math.random().toString(36).slice(2, 7))
-
-  // DEBUG (Sprint 58.1r.5): Mount/Unmount tracken
-  useEffect(() => {
-    console.log('[swipe', debugId.current, '] MOUNT')
-    return () => console.log('[swipe', debugId.current, '] UNMOUNT')
-  }, [])
-
-  // DEBUG (Sprint 58.1r.5): transitionend auf Content-Element protokollieren
-  useEffect(() => {
-    const el = contentRef.current
-    if (!el) return
-    const handler = (e: TransitionEvent) => {
-      if (e.propertyName !== 'transform') return
-      console.log('[swipe', debugId.current, '] transitionend transform',
-        'currentX=', currentX.current,
-        'isOpen=', isOpen.current,
-        'computed=', window.getComputedStyle(el).transform)
-    }
-    el.addEventListener('transitionend', handler)
-    return () => el.removeEventListener('transitionend', handler)
-  }, [])
 
   const close = useCallback(() => {
-    // DEBUG (Sprint 58.1r.5): wer ruft close()? Stack-Trace verrät die Quelle.
-    console.log('[swipe', debugId.current, '] close() called',
-      'wasOpen=', isOpen.current, 'currentX=', currentX.current,
-      '\nstack:', new Error().stack)
     const el = contentRef.current
     if (!el) return
     el.style.transition = 'transform 0.3s ease'
@@ -100,21 +71,12 @@ export default function SwipeToAction({
   const handleStart = useCallback((clientX: number, clientY: number) => {
     const el = contentRef.current
     if (!el) return
-    // DEBUG (Sprint 58.1r.3): State VOR dem Reset + Computed-Transform aus dem DOM
-    const computed = window.getComputedStyle(el).transform
-    console.log('[swipe', debugId.current, '] start | pre-reset',
-      'isOpen=', isOpen.current,
-      'currentX=', currentX.current,
-      'directionLocked=', directionLocked.current,
-      'isDragging=', isDragging.current,
-      'computedTransform=', computed)
     el.style.transition = 'none'
     startX.current = clientX
     startY.current = clientY
     directionLocked.current = null
     isDragging.current = true
     didSwipe.current = false
-    lastLoggedX.current = currentX.current
   }, [])
 
   const handleMove = useCallback((clientX: number, clientY: number) => {
@@ -129,9 +91,6 @@ export default function SwipeToAction({
     if (!directionLocked.current) {
       if (Math.abs(diffX) > DIRECTION_LOCK_DISTANCE || Math.abs(diffY) > DIRECTION_LOCK_DISTANCE) {
         directionLocked.current = Math.abs(diffX) > Math.abs(diffY) ? 'horizontal' : 'vertical'
-        // DEBUG (Sprint 58.1r.3): Direction-Lock-Entscheidung
-        console.log('[swipe', debugId.current, '] move | direction-lock=', directionLocked.current,
-          'diffX=', diffX, 'diffY=', diffY, 'isOpen=', isOpen.current)
         if (directionLocked.current === 'horizontal') {
           onDragStart?.()
         }
@@ -159,13 +118,6 @@ export default function SwipeToAction({
     currentX.current = offset
     el.style.transform = `translateX(${offset}px)`
 
-    // DEBUG (Sprint 58.1r.3): Drossel — alle 50px ein Log
-    if (Math.abs(offset - lastLoggedX.current) >= 50) {
-      console.log('[swipe', debugId.current, '] move | currentX=', offset,
-        'baseOffset=', baseOffset, 'diffX=', diffX, 'isOpen=', isOpen.current)
-      lastLoggedX.current = offset
-    }
-
     // Delete-Action sichtbar machen bei Links-Swipe
     const deleteEl = deleteActionRef.current
     if (deleteEl) {
@@ -180,12 +132,7 @@ export default function SwipeToAction({
   }, [disabled, onReply, replyMaxPx, replyTriggerPx, onDragStart])
 
   const handleEnd = useCallback(() => {
-    if (!isDragging.current) {
-      // DEBUG (Sprint 58.1r.3): early-return weil isDragging schon false
-      console.log('[swipe', debugId.current, '] end | EARLY-RETURN isDragging=false currentX=', currentX.current,
-        'isOpen=', isOpen.current)
-      return
-    }
+    if (!isDragging.current) return
     isDragging.current = false
     const el = contentRef.current
     if (!el) return
@@ -194,8 +141,6 @@ export default function SwipeToAction({
 
     // Reply: RIGHT-Swipe über Trigger-Schwelle → sofort feuern + zurücksnappen
     if (currentX.current >= replyTriggerPx && onReply) {
-      // DEBUG (Sprint 58.1r.3)
-      console.log('[swipe', debugId.current, '] end | REPLY currentX=', currentX.current, 'trigger=', replyTriggerPx)
       el.style.transform = 'translateX(0)'
       currentX.current = 0
       navigator.vibrate?.(15)
@@ -207,9 +152,6 @@ export default function SwipeToAction({
 
     // Delete: LEFT-Swipe über Threshold → einrasten
     if (!disabled && currentX.current <= -THRESHOLD) {
-      // DEBUG (Sprint 58.1r.3)
-      console.log('[swipe', debugId.current, '] end | LATCH currentX=', currentX.current,
-        'threshold=', -THRESHOLD, 'wasOpen=', isOpen.current)
       el.style.transform = `translateX(-${ACTION_WIDTH}px)`
       currentX.current = -ACTION_WIDTH
       if (!isOpen.current) {
@@ -219,27 +161,7 @@ export default function SwipeToAction({
       // Delete-Action bleibt sichtbar
       const deleteEl = deleteActionRef.current
       if (deleteEl) deleteEl.style.opacity = '1'
-
-      // DEBUG (Sprint 58.1r.5): post-latch DOM-Check — verrät externe Mutationen
-      const id = debugId.current
-      setTimeout(() => {
-        const ce = contentRef.current
-        console.log('[swipe', id, '] post-latch +50ms transform=',
-          ce ? window.getComputedStyle(ce).transform : 'NO_REF',
-          'isOpen=', isOpen.current,
-          'currentX=', currentX.current)
-      }, 50)
-      setTimeout(() => {
-        const ce = contentRef.current
-        console.log('[swipe', id, '] post-latch +300ms transform=',
-          ce ? window.getComputedStyle(ce).transform : 'NO_REF',
-          'isOpen=', isOpen.current,
-          'currentX=', currentX.current)
-      }, 300)
     } else {
-      // DEBUG (Sprint 58.1r.3)
-      console.log('[swipe', debugId.current, '] end | ABORT currentX=', currentX.current,
-        'threshold=', -THRESHOLD, 'disabled=', disabled, 'wasOpen=', isOpen.current)
       el.style.transform = 'translateX(0)'
       currentX.current = 0
       isOpen.current = false
@@ -270,10 +192,6 @@ export default function SwipeToAction({
   // Scroll-Heuristiken des Parents. Ohne diesen Handler bleibt isDragging=true
   // mit veraltetem currentX/isOpen — die nächste Geste startet aus inkonsistentem State.
   const onTouchCancel = useCallback(() => {
-    // DEBUG (Sprint 58.1r.3): zeigt ob iOS die Geste killt
-    console.log('[swipe', debugId.current, '] TOUCH CANCEL FIRED | isDragging=', isDragging.current,
-      'currentX=', currentX.current, 'isOpen=', isOpen.current,
-      'directionLocked=', directionLocked.current)
     if (!isDragging.current) return
     const el = contentRef.current
     if (!el) return
