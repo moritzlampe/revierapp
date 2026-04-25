@@ -183,7 +183,18 @@ export default function KillDetailContent({
     .join(' · ')
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1rem',
+        // iOS Safari geht bei <30px scrollHeight-Überschuss nicht in den
+        // echten Scroll-Modus → Drag federt zurück. Großzügiges Bottom-
+        // Padding sichert die Schwelle UND rückt die Aktionsleiste vom
+        // Home-Indicator weg.
+        paddingBottom: 'calc(2rem + env(safe-area-inset-bottom))',
+      }}
+    >
       {/* Hero: Foto oder großes Emoji */}
       <Hero wildArt={kill.wild_art} photoUrl={heroPhotoUrl} photoCount={photoCount} />
 
