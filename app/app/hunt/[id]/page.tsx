@@ -20,6 +20,11 @@ import type { ComponentType, SVGProps } from 'react'
 
 type TabIconComponent = ComponentType<{ size?: number; weight?: 'regular' | 'fill'; color?: string } & SVGProps<SVGSVGElement>>
 
+const VALID_TABS = ['karte', 'chat', 'nachsuche', 'strecke'] as const
+type TabKey = typeof VALID_TABS[number]
+const isValidTab = (v: string | null): v is TabKey =>
+  v !== null && (VALID_TABS as readonly string[]).includes(v)
+
 function getInitials(name: string) { return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() }
 
 type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
@@ -212,6 +217,19 @@ export default function HuntPage() {
 
   useEffect(() => { loadHunt() }, [loadHunt])
 
+  // URL-Sync: ?tab=… ist Source of Truth. Re-Navigation auf gleiche Route
+  // (z.B. zweiter Tap auf Hunt-Chat in Liste) updated activeTab über diesen Effect.
+  // Funktionaler Setter vermeidet activeTab-Dependency und Stale-Closure.
+  useEffect(() => {
+    const raw = searchParams.get('tab')
+    if (!isValidTab(raw)) return
+    if (hunt?.kind === 'solo' && raw === 'chat') {
+      setActiveTab(prev => prev !== 'karte' ? 'karte' : prev)
+      return
+    }
+    setActiveTab(prev => prev !== raw ? raw : prev)
+  }, [searchParams, hunt?.kind])
+
   const handleStandsChanged = useCallback((newStand?: StandData, deletedId?: string) => {
     // Optimistisches Update: sofort anzeigen ohne Refetch abzuwarten
     if (newStand) {
@@ -391,7 +409,10 @@ export default function HuntPage() {
           const isActive = activeTab === tab.key
           const Icon = tab.icon
           return (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            <button key={tab.key} onClick={() => {
+                setActiveTab(tab.key)
+                router.replace(`/app/hunt/${params.id}?tab=${tab.key}`, { scroll: false })
+              }}
               className="flex-1 py-2.5 text-xs font-semibold transition"
               style={{
                 color: isActive ? 'var(--accent-primary)' : 'var(--text-3)',
