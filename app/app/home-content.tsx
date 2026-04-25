@@ -284,6 +284,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
 
   // Schließe offene Swipe-Action wenn woanders getippt wird
   const closeActiveSwipe = useCallback(() => {
+    // DEBUG (Sprint 58.1r.5): closeActiveSwipe nachverfolgen
+    console.log('[swipe-list] closeActiveSwipe called',
+      'hasActive=', !!activeCloseRef.current,
+      '\nstack:', new Error().stack)
     if (activeCloseRef.current) {
       activeCloseRef.current()
       activeCloseRef.current = null
@@ -1039,6 +1043,11 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                       disabled={isLiveHunt}
                       onAction={() => handleHideChat(item)}
                       onSwipeOpen={(closeFn) => {
+                        // DEBUG (Sprint 58.1r.5): wer öffnet, was wird verdrängt?
+                        console.log('[swipe-list] onSwipeOpen',
+                          'itemId=', item.id, 'groupId=', item.groupId,
+                          'name=', item.name,
+                          'previousActiveExists=', !!activeCloseRef.current)
                         closeActiveSwipe()
                         activeCloseRef.current = closeFn
                       }}
