@@ -3,7 +3,7 @@
 import { useRef, useCallback, type ReactNode } from 'react'
 
 type SwipeToActionProps = {
-  actionIcon: string
+  actionIcon: ReactNode
   actionColor: string
   onAction: () => void
   disabled?: boolean
@@ -57,8 +57,15 @@ export default function SwipeToAction({
     el.style.transform = 'translateX(0)'
     currentX.current = 0
     isOpen.current = false
+    // Defensiv: Drag-/Direction-Flags mitresetten, falls close() aus
+    // einem inkonsistenten State (z.B. abgebrochene Geste) gerufen wird.
+    isDragging.current = false
+    directionLocked.current = null
+    didSwipe.current = false
     const deleteEl = deleteActionRef.current
     if (deleteEl) deleteEl.style.opacity = '0'
+    const indicator = replyIndicatorRef.current
+    if (indicator) indicator.style.opacity = '0'
   }, [])
 
   const handleStart = useCallback((clientX: number, clientY: number) => {
@@ -181,6 +188,26 @@ export default function SwipeToAction({
     handleEnd()
   }, [handleEnd])
 
+  // touchcancel feuert auf iOS bei Konflikt mit System-Gesten oder
+  // Scroll-Heuristiken des Parents. Ohne diesen Handler bleibt isDragging=true
+  // mit veraltetem currentX/isOpen — die nächste Geste startet aus inkonsistentem State.
+  const onTouchCancel = useCallback(() => {
+    if (!isDragging.current) return
+    const el = contentRef.current
+    if (!el) return
+    el.style.transition = 'transform 0.3s ease'
+    el.style.transform = 'translateX(0)'
+    currentX.current = 0
+    isOpen.current = false
+    isDragging.current = false
+    directionLocked.current = null
+    didSwipe.current = false
+    const deleteEl = deleteActionRef.current
+    if (deleteEl) deleteEl.style.opacity = '0'
+    const indicator = replyIndicatorRef.current
+    if (indicator) indicator.style.opacity = '0'
+  }, [])
+
   // Mouse Events (Desktop-Testing)
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     handleStart(e.clientX, e.clientY)
@@ -280,6 +307,7 @@ export default function SwipeToAction({
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchCancel}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -291,6 +319,10 @@ export default function SwipeToAction({
           background: 'var(--bg)',
           willChange: 'transform',
           userSelect: 'none',
+          // pan-y signalisiert iOS: vertikales Scrollen bleibt System-Sache,
+          // horizontale Gesten gehören uns. Verhindert mid-gesture touchcancel
+          // durch System-Heuristiken (Edge-Swipe, Scroll-Hijack).
+          touchAction: 'pan-y',
         }}
       >
         {children}
