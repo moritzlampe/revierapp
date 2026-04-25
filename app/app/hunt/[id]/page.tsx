@@ -441,6 +441,7 @@ export default function HuntPage() {
         {/* Karte — NICHT unmounten beim Tab-Wechsel (display statt conditional) */}
         <div style={{ position: 'absolute', inset: 0, display: activeTab === 'karte' ? 'block' : 'none' }}>
           <MapView
+            isVisible={activeTab === 'karte'}
             geoState={geoState}
             participants={otherPositions}
             boundary={boundary}

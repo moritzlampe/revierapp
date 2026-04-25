@@ -28,6 +28,7 @@ export interface SeatAssignmentData {
 }
 
 interface MapViewProps {
+  isVisible: boolean
   geoState: GeolocationState
   participants: ParticipantPosition[]
   boundary?: [number, number][][] | null
@@ -49,6 +50,7 @@ interface MapViewProps {
 }
 
 export default function MapView({
+  isVisible,
   geoState,
   participants,
   boundary,
@@ -76,6 +78,7 @@ export default function MapView({
       zIndex: 0,
     }}>
       <MapContent
+        isVisible={isVisible}
         geoState={geoState}
         participants={participants}
         boundary={boundary}

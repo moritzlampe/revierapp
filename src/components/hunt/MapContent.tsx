@@ -88,6 +88,7 @@ export interface FreePositionData {
 }
 
 export interface MapContentProps {
+  isVisible: boolean
   geoState: GeolocationState
   participants: ParticipantPosition[]
   boundary?: [number, number][][] | null
@@ -141,7 +142,8 @@ function RoleLabel({ role, tags }: { role: string; tags: string[] }) {
 // --- Karten-Steuerung (innerhalb MapContainer) ---
 
 /** Initiales Positionieren: Reviergrenze > GPS > Brockwinkel */
-function InitialViewSetter({ boundary, position, hasFlown }: {
+function InitialViewSetter({ isVisible, boundary, position, hasFlown }: {
+  isVisible: boolean
   boundary?: [number, number][][] | null
   position: GeoPosition | null
   hasFlown: React.MutableRefObject<boolean>
@@ -150,23 +152,40 @@ function InitialViewSetter({ boundary, position, hasFlown }: {
 
   // Reviergrenze hat höchste Priorität
   useEffect(() => {
+    // Sichtbarkeits-Guard zuerst: bei display:none ist getSize()=(0,0)
+    // und Leaflets internes fitBounds-Padding produziert NaN-Koordinaten.
+    if (!isVisible) return
     if (!boundary || boundary.length === 0) return
     const ring = boundary[0]
     if (!ring || ring.length === 0) return
     if (!ring.every(([lat, lng]) => isFinite(lat) && isFinite(lng))) return
+    if (hasFlown.current) return
     const bounds = L.latLngBounds(ring as L.LatLngExpression[])
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 })
     hasFlown.current = true
-  }, [boundary, map, hasFlown])
+  }, [isVisible, boundary, map, hasFlown])
 
   // GPS-Fallback
   useEffect(() => {
-    if (hasFlown.current || !position) return
+    if (!isVisible) return
+    if (!position) return
     if (!isFinite(position.lat) || !isFinite(position.lng)) return
+    if (hasFlown.current) return
     map.flyTo([position.lat, position.lng], 16, { duration: 1.2 })
     hasFlown.current = true
-  }, [position, map, hasFlown])
+  }, [isVisible, position, map, hasFlown])
 
+  return null
+}
+
+/** Bei Sichtbar-Werden Container-Größe neu messen, damit nachfolgende
+ *  fitBounds/flyTo nicht auf einen size=(0,0)-Container laufen. */
+function VisibilityResizer({ isVisible }: { isVisible: boolean }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!isVisible) return
+    map.invalidateSize()
+  }, [isVisible, map])
   return null
 }
 
@@ -951,6 +970,7 @@ function WmsLoadingIndicator() {
 // ============================================================
 
 export default function MapContent({
+  isVisible,
   geoState,
   participants,
   boundary,
@@ -1530,8 +1550,9 @@ export default function MapContent({
         {/* === Move-Mode: Klicks auf Karte ignorieren === */}
 
         {/* === Karten-Steuerung === */}
+        <VisibilityResizer isVisible={isVisible} />
         <MapResizer />
-        <InitialViewSetter boundary={boundary} position={geoState.position} hasFlown={hasFlown} />
+        <InitialViewSetter isVisible={isVisible} boundary={boundary} position={geoState.position} hasFlown={hasFlown} />
         <MapMoveTracker userPosition={geoState.position} onMoved={handleMapMoved} />
         <ZoomTracker onZoomChange={handleZoomChange} />
 
