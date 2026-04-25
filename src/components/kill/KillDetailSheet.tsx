@@ -60,6 +60,10 @@ export default function KillDetailSheet({
         background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
+        // overflow:hidden verhindert, dass iOS den fixed-Outer als Pseudo-
+        // Scroller benutzt, wenn die Touch-Geste nicht eindeutig auf den
+        // inneren Scroll-Container greift (sonst: Federbounce ohne Effekt).
+        overflow: 'hidden',
         animation: 'sheet-slide-up 0.25s ease-out',
       }}
     >
@@ -103,6 +107,12 @@ export default function KillDetailSheet({
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
+          // iOS: Momentum-Scroll + Body-Bounce-Containment + eindeutige
+          // Vertikal-Geste. Ohne diese drei verschluckt iOS Safari die
+          // Touch-Geste und der Sheet federt zurück.
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          touchAction: 'pan-y',
           paddingTop: '0.75rem',
           paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
           background: 'var(--bg-elevated)',
