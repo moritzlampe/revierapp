@@ -8,7 +8,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { usePrefetchChats } from '@/hooks/usePrefetchChats'
 import SwipeToAction from '@/components/ui/swipe-to-action'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
-import { MagnifyingGlass, Plus, Star, Crosshair } from '@phosphor-icons/react'
+import { MagnifyingGlass, Plus, Star, Crosshair, EyeSlash } from '@phosphor-icons/react'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
 
@@ -340,6 +340,77 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     setRemovingId(null)
   }, [supabase])
 
+  // Undo-Toast für Chat-Ausblenden (minimaler Inline-Toast, kein neues Framework)
+  const [hideToast, setHideToast] = useState<{ groupId: string; item: ChatListItem } | null>(null)
+  const hideToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearHideToast = useCallback(() => {
+    if (hideToastTimerRef.current) {
+      clearTimeout(hideToastTimerRef.current)
+      hideToastTimerRef.current = null
+    }
+    setHideToast(null)
+  }, [])
+
+  // Chat aus Liste ausblenden (hidden_at setzen, Item lokal raus, Undo-Toast 4s)
+  const handleHideChat = useCallback(async (item: ChatListItem) => {
+    closeActiveSwipe()
+    setChatItems(prev => prev.filter(c => c.groupId !== item.groupId))
+
+    if (hideToastTimerRef.current) clearTimeout(hideToastTimerRef.current)
+    setHideToast({ groupId: item.groupId, item })
+    hideToastTimerRef.current = setTimeout(() => setHideToast(null), 4000)
+
+    const { error } = await supabase
+      .from('chat_group_members')
+      .update({ hidden_at: new Date().toISOString() })
+      .eq('group_id', item.groupId)
+      .eq('user_id', userId)
+
+    if (error) {
+      // Rollback: Item zurück einfügen, Toast als Fehler ersetzen
+      clearHideToast()
+      setChatItems(prev => {
+        if (prev.some(c => c.groupId === item.groupId)) return prev
+        return [...prev, item].sort((a, b) => {
+          const aLive = a.isHuntChat && a.huntStatus === 'active'
+          const bLive = b.isHuntChat && b.huntStatus === 'active'
+          if (aLive && !bLive) return -1
+          if (!aLive && bLive) return 1
+          const tA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0
+          const tB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0
+          return tB - tA
+        })
+      })
+      window.dispatchEvent(new CustomEvent('quickhunt:toast', {
+        detail: { message: 'Konnte nicht ausgeblendet werden', type: 'warning' },
+      }))
+    }
+  }, [supabase, userId, closeActiveSwipe, clearHideToast])
+
+  // Undo: hidden_at zurücksetzen
+  const handleUndoHide = useCallback(async () => {
+    const current = hideToast
+    if (!current) return
+    clearHideToast()
+
+    const { error } = await supabase
+      .from('chat_group_members')
+      .update({ hidden_at: null })
+      .eq('group_id', current.groupId)
+      .eq('user_id', userId)
+
+    if (!error) {
+      // Liste neu laden — sicherer als manuelles Wiedereinfügen (Trigger-Konflikte etc.)
+      loadChats()
+    } else {
+      window.dispatchEvent(new CustomEvent('quickhunt:toast', {
+        detail: { message: 'Rückgängig fehlgeschlagen', type: 'warning' },
+      }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, userId, hideToast, clearHideToast])
+
   // Chat-Gruppe verlassen
   const handleLeaveGroup = useCallback(async (groupId: string) => {
     setConfirmDialog(null)
@@ -385,15 +456,17 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       huntData?.forEach(h => { huntStatusMap[h.id] = h.status })
     }
 
-    // Meine Mitgliedschaften laden (für last_read_at)
+    // Meine Mitgliedschaften laden (für last_read_at + hidden_at)
     const { data: memberships } = await supabase
       .from('chat_group_members')
-      .select('group_id, last_read_at')
+      .select('group_id, last_read_at, hidden_at')
       .eq('user_id', userId)
       .in('group_id', groupIds)
 
-    const membershipMap: Record<string, string> = {}
-    memberships?.forEach(m => { membershipMap[m.group_id] = m.last_read_at })
+    const membershipMap: Record<string, { last_read_at: string | null; hidden_at: string | null }> = {}
+    memberships?.forEach(m => {
+      membershipMap[m.group_id] = { last_read_at: m.last_read_at, hidden_at: m.hidden_at }
+    })
 
     // Alle Mitglieder aller Gruppen batch-laden (für 2er-Chat-Erkennung)
     const { data: allMembers } = await supabase
@@ -446,7 +519,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
 
       // Ungelesen zählen
       let unreadCount = 0
-      const lastReadAt = membershipMap[group.id]
+      const lastReadAt = membershipMap[group.id]?.last_read_at
       if (lastReadAt && lastMsg) {
         const { count } = await supabase
           .from('messages')
@@ -488,8 +561,13 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       })
     }
 
+    // Ausgeblendete Chats rausfiltern (hidden_at gesetzt)
+    const filteredItems = items.filter(
+      item => !membershipMap[item.groupId]?.hidden_at
+    )
+
     // Sortierung: aktive Jagd-Chats gepinnt oben, Rest nach letzter Nachricht
-    items.sort((a, b) => {
+    filteredItems.sort((a, b) => {
       const aLive = a.isHuntChat && a.huntStatus === 'active'
       const bLive = b.isHuntChat && b.huntStatus === 'active'
       if (aLive && !bLive) return -1
@@ -499,7 +577,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       return timeB - timeA
     })
 
-    setChatItems(items)
+    setChatItems(filteredItems)
     setLoadingChats(false)
   }, [supabase, userId])
 
@@ -514,6 +592,22 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   useEffect(() => {
     loadChats()
   }, [loadChats])
+
+  // Pull bei Tab-Fokus: ausgeblendete Chats können per DB-Trigger (neue Message)
+  // unhidden worden sein — beim Tab-Switch auf "Chats" und beim Wechsel der App-Sichtbarkeit neu laden.
+  useEffect(() => {
+    if (activeTab === 'chats') loadChats()
+  }, [activeTab, loadChats])
+
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible' && activeTab === 'chats') {
+        loadChats()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [activeTab, loadChats])
 
   function getChatHref(item: ChatListItem) {
     if (item.isHuntChat && item.huntId) {
@@ -845,12 +939,9 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
           ) : (
             <div className="flex-1 overflow-y-auto">
               {filteredChats.map(item => {
-                const isOwner = item.createdBy === userId
-                const isSwipeable = !item.isHuntChat
-                const swipeAction = isOwner ? 'delete-group' : 'leave-group'
-                const swipeIcon = isOwner ? '🗑️' : '🚪'
-                const swipeColor = isOwner ? 'var(--red)' : 'var(--orange)'
-
+                // Sprint 58.1r: Swipe-Action ist Hide für ALLE Chats (auch Hunt-Chats).
+                // Owner-Delete und Leave-Group werden in Folge-Sprint wieder erreichbar gemacht
+                // (Long-Press / Settings-Sheet) — derzeit nur per Hide ausblenden.
                 const isLiveHunt = item.isHuntChat && item.huntStatus === 'active'
 
                 const chatRow = (
@@ -941,19 +1032,11 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                 )
 
                 return (
-                  <div
-                    key={item.id}
-                    className={removingId === item.groupId ? 'swipe-removing' : ''}
-                  >
+                  <div key={item.id}>
                     <SwipeToAction
-                      actionIcon={swipeIcon}
-                      actionColor={swipeColor}
-                      disabled={!isSwipeable}
-                      onAction={() => setConfirmDialog({
-                        type: swipeAction as 'delete-group' | 'leave-group',
-                        id: item.groupId,
-                        name: item.name,
-                      })}
+                      actionIcon={<EyeSlash size={22} weight="regular" color="#fff" />}
+                      actionColor="var(--text-muted)"
+                      onAction={() => handleHideChat(item)}
                       onSwipeOpen={(closeFn) => {
                         closeActiveSwipe()
                         activeCloseRef.current = closeFn
@@ -1025,6 +1108,46 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Undo-Toast für ausgeblendeten Chat — inline, kein globales Toast-Framework */}
+      {hideToast && (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            bottom: 'calc(var(--bottom-bar-space) + 0.75rem)',
+            zIndex: 110,
+            background: 'var(--surface-3)',
+            color: 'var(--text)',
+            borderRadius: 'var(--radius)',
+            padding: '0.625rem 0.75rem 0.625rem 1rem',
+            boxShadow: '0 0.25rem 1rem rgba(0,0,0,0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            maxWidth: 'calc(100vw - 2rem)',
+            border: '1px solid var(--border)',
+          }}
+        >
+          <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Chat ausgeblendet</span>
+          <button
+            onClick={handleUndoHide}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--accent-primary)',
+              fontSize: '0.875rem',
+              fontWeight: 700,
+              padding: '0.375rem 0.625rem',
+              minHeight: '2rem',
+              cursor: 'pointer',
+            }}
+          >
+            Rückgängig
+          </button>
         </div>
       )}
     </div>

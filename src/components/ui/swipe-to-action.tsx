@@ -3,7 +3,7 @@
 import { useRef, useCallback, type ReactNode } from 'react'
 
 type SwipeToActionProps = {
-  actionIcon: string
+  actionIcon: ReactNode
   actionColor: string
   onAction: () => void
   disabled?: boolean
