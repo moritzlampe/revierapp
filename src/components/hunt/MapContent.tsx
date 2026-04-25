@@ -151,7 +151,10 @@ function InitialViewSetter({ boundary, position, hasFlown }: {
   // Reviergrenze hat höchste Priorität
   useEffect(() => {
     if (!boundary || boundary.length === 0) return
-    const bounds = L.latLngBounds(boundary[0] as L.LatLngExpression[])
+    const ring = boundary[0]
+    if (!ring || ring.length === 0) return
+    if (!ring.every(([lat, lng]) => isFinite(lat) && isFinite(lng))) return
+    const bounds = L.latLngBounds(ring as L.LatLngExpression[])
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 })
     hasFlown.current = true
   }, [boundary, map, hasFlown])
@@ -159,6 +162,7 @@ function InitialViewSetter({ boundary, position, hasFlown }: {
   // GPS-Fallback
   useEffect(() => {
     if (hasFlown.current || !position) return
+    if (!isFinite(position.lat) || !isFinite(position.lng)) return
     map.flyTo([position.lat, position.lng], 16, { duration: 1.2 })
     hasFlown.current = true
   }, [position, map, hasFlown])
