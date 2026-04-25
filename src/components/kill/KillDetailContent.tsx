@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Clock, User, Barbell as Weight, Star, ShareNetwork as Share2, PencilSimple as Pencil, CircleNotch as Loader2 } from '@phosphor-icons/react'
+import { Clock, User, Barbell as Weight, Star, ShareNetwork as Share2, PencilSimple as Pencil, Camera, CircleNotch as Loader2 } from '@phosphor-icons/react'
+import PhotoCapture from '@/components/photo/PhotoCapture'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
   WILD_ART_TO_GROUP,
@@ -36,6 +37,12 @@ interface KillDetailContentProps {
   onEdit?: () => void
   onDelete?: () => void
   onShare?: () => void
+  /**
+   * Reporter kann ein Foto an diesen Kill anhängen. Wird intern via
+   * PhotoCapture (System-Picker, HEIC-Konvertierung, Compression) zur
+   * fertigen JPEG-File aufgerufen.
+   */
+  onAddPhoto?: (file: File) => void | Promise<void>
 }
 
 interface LatLng { lat: number; lng: number }
@@ -106,6 +113,7 @@ export default function KillDetailContent({
   onEdit,
   onDelete,
   onShare,
+  onAddPhoto,
 }: KillDetailContentProps) {
   const supabase = useMemo(() => createClient(), [])
 
@@ -374,6 +382,17 @@ export default function KillDetailContent({
       >
         {onShare && (
           <ActionButton icon={<Share2 size={16} />} label="Teilen" onClick={onShare} />
+        )}
+        {isReporter && onAddPhoto && (
+          <PhotoCapture
+            quality="documentation"
+            mode="choose"
+            onCapture={onAddPhoto}
+            wrapperStyle={{ flex: 1, display: 'flex' }}
+          >
+            {/* Click bubblet zum PhotoCapture-Wrapper, der den File-Picker öffnet. */}
+            <ActionButton icon={<Camera size={16} />} label="Foto" onClick={() => {}} />
+          </PhotoCapture>
         )}
         {canEdit && onEdit && (
           <ActionButton icon={<Pencil size={16} />} label="Bearbeiten" onClick={onEdit} />

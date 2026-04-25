@@ -17,6 +17,7 @@ interface KillDetailSheetProps {
   onEdit?: () => void
   onDelete?: () => void
   onShare?: () => void
+  onAddPhoto?: (file: File) => void | Promise<void>
 }
 
 export default function KillDetailSheet({
@@ -32,6 +33,7 @@ export default function KillDetailSheet({
   onEdit,
   onDelete,
   onShare,
+  onAddPhoto,
 }: KillDetailSheetProps) {
   // Escape schließt Sheet (Desktop/Keyboard-Accessibility)
   useEffect(() => {
@@ -117,6 +119,7 @@ export default function KillDetailSheet({
           onEdit={onEdit}
           onDelete={onDelete}
           onShare={onShare}
+          onAddPhoto={onAddPhoto}
         />
       </div>
     </div>

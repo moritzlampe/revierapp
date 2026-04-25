@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, type ReactNode, type ChangeEvent } from 'react'
+import { useRef, useState, type CSSProperties, type ReactNode, type ChangeEvent } from 'react'
 import { Camera, CircleNotch } from '@phosphor-icons/react'
 import imageCompression from 'browser-image-compression'
 
@@ -31,6 +31,12 @@ interface PhotoCaptureProps {
   children?: ReactNode // Optionaler Custom-Trigger
   /** 'choose' = iOS-Auswahl (Kamera/Mediathek/Dateien), 'camera' = direkt Kamera */
   mode?: 'camera' | 'choose'
+  /**
+   * Optionales Styling für den children-Wrapper-Div. Nötig wenn der
+   * Trigger sich layout-mäßig in einen Flex-Container einreihen muss
+   * (z.B. flex:1 in einer Aktionsleiste).
+   */
+  wrapperStyle?: CSSProperties
 }
 
 // ============================================================
@@ -70,6 +76,7 @@ export default function PhotoCapture({
   disabled = false,
   children,
   mode = 'choose',
+  wrapperStyle,
 }: PhotoCaptureProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [verarbeitet, setVerarbeitet] = useState(false)
@@ -142,7 +149,10 @@ export default function PhotoCapture({
         // Custom-Trigger: children in klickbaren Wrapper packen
         <div
           onClick={handleClick}
-          style={{ cursor: disabled || verarbeitet ? 'default' : 'pointer' }}
+          style={{
+            cursor: disabled || verarbeitet ? 'default' : 'pointer',
+            ...wrapperStyle,
+          }}
         >
           {children}
         </div>

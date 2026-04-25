@@ -21,6 +21,9 @@ import {
 } from '@/lib/strecke/visibility'
 import { groupKillsByBatch } from '@/lib/erlegung/groupByBatch'
 import { getMoodPhotos, getPhotosForBatch } from '@/lib/strecke/photo-matching'
+import { uploadPhoto } from '@/lib/photos/upload'
+import { insertHuntPhoto } from '@/lib/photos/hunt-photos'
+import { showToast } from '@/lib/erlegung/toast'
 
 interface Participant {
   id: string
@@ -85,6 +88,36 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     setFilter(next)
     if (next.kind === 'all') setPinnedGroup(null)
   }, [])
+
+  const handleAddKillPhoto = useCallback(
+    async (file: File) => {
+      if (!detailKill || !userId) return
+      try {
+        const { url, path } = await uploadPhoto({
+          file,
+          userId,
+          entityType: 'kill',
+          entityId: detailKill.id,
+        })
+        await insertHuntPhoto({
+          huntId,
+          killIds: [detailKill.id],
+          storagePath: path,
+          url,
+          uploadedBy: userId,
+        })
+        showToast('Foto hinzugefügt', 'success')
+      } catch (e) {
+        console.error('[HuntStreckeTab] Foto-Upload zum Kill fehlgeschlagen', e)
+        showToast(
+          'Foto konnte nicht hinzugefügt werden',
+          'warning',
+          e instanceof Error ? e.message : undefined,
+        )
+      }
+    },
+    [detailKill, userId, huntId],
+  )
 
   const handleFotoZielSelect = useCallback((ziel: FotoZiel) => {
     setFotoZielOpen(false)
@@ -476,6 +509,7 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
           (viewer.role === 'jagdleiter' || detailKill.reporter_id === userId)
         }
         isReporter={detailKill !== null && detailKill.reporter_id === userId}
+        onAddPhoto={handleAddKillPhoto}
         onClose={() => setDetailKill(null)}
       />
     </div>
