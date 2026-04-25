@@ -1036,6 +1036,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                     <SwipeToAction
                       actionIcon={<EyeSlash size={22} weight="regular" color="#fff" />}
                       actionColor="var(--text-muted)"
+                      disabled={isLiveHunt}
                       onAction={() => handleHideChat(item)}
                       onSwipeOpen={(closeFn) => {
                         closeActiveSwipe()
