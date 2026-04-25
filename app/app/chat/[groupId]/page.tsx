@@ -2,11 +2,14 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { DotsThreeVertical } from '@phosphor-icons/react'
 import { createClient } from '@/lib/supabase/client'
 import ChatPanel from '@/components/hunt/ChatPanel'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
+import { leaveChatGroup, deleteChatGroup } from '@/lib/chat-group-actions'
 
 type ChatGroup = {
   id: string
@@ -21,12 +24,60 @@ export default function GroupChatPage() {
   const params = useParams()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const confirmSheet = useConfirmSheet()
   const [group, setGroup] = useState<ChatGroup | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [memberCount, setMemberCount] = useState(0)
   const [displayName, setDisplayName] = useState('')
   const [isDirect, setIsDirect] = useState(false)
   const [displayInitial, setDisplayInitial] = useState<string | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
+
+  const isOwner = !!group && !!userId && group.created_by === userId
+
+  const showErrorToast = useCallback((message: string) => {
+    window.dispatchEvent(new CustomEvent('quickhunt:toast', {
+      detail: { message, type: 'warning' },
+    }))
+  }, [])
+
+  const handleMenuTap = useCallback(async () => {
+    if (!group || !userId || actionLoading) return
+
+    if (isOwner) {
+      const ok = await confirmSheet({
+        title: 'Gruppe löschen?',
+        description: 'Diese Gruppe wird für alle Mitglieder gelöscht. Der Chat-Verlauf geht verloren.',
+        confirmLabel: 'Löschen',
+        confirmVariant: 'danger',
+      })
+      if (!ok) return
+      setActionLoading(true)
+      const { error } = await deleteChatGroup(supabase, group.id)
+      setActionLoading(false)
+      if (error) {
+        showErrorToast('Gruppe konnte nicht gelöscht werden')
+        return
+      }
+      router.push('/app?tab=chats')
+    } else {
+      const ok = await confirmSheet({
+        title: 'Gruppe verlassen?',
+        description: 'Du kannst von einem Mitglied wieder hinzugefügt werden.',
+        confirmLabel: 'Verlassen',
+        confirmVariant: 'danger',
+      })
+      if (!ok) return
+      setActionLoading(true)
+      const { error } = await leaveChatGroup(supabase, group.id, userId)
+      setActionLoading(false)
+      if (error) {
+        showErrorToast('Gruppe konnte nicht verlassen werden')
+        return
+      }
+      router.push('/app?tab=chats')
+    }
+  }, [group, userId, isOwner, actionLoading, confirmSheet, supabase, router, showErrorToast])
 
   const loadGroup = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -168,6 +219,22 @@ export default function GroupChatPage() {
             </div>
           </div>
         </div>
+        {!isDirect && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleMenuTap() }}
+            disabled={actionLoading}
+            aria-label={isOwner ? 'Gruppe löschen' : 'Gruppe verlassen'}
+            className="flex items-center justify-center rounded-lg flex-shrink-0"
+            style={{
+              minWidth: '2.75rem',
+              minHeight: '2.75rem',
+              color: 'var(--text-2)',
+              background: 'transparent',
+            }}
+          >
+            <DotsThreeVertical size={22} weight="regular" />
+          </button>
+        )}
       </div>
 
       {/* Chat */}

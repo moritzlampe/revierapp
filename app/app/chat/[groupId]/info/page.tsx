@@ -7,6 +7,7 @@ import { getChatDisplayInfo } from '@/lib/chat-utils'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
+import { leaveChatGroup, deleteChatGroup } from '@/lib/chat-group-actions'
 
 function getInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
@@ -328,21 +329,7 @@ export default function GroupInfoPage() {
     if (!confirmed) return
 
     setActionLoading(true)
-    await supabase
-      .from('chat_group_members')
-      .delete()
-      .eq('group_id', groupId)
-      .eq('user_id', userId)
-
-    const { count } = await supabase
-      .from('chat_group_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('group_id', groupId)
-
-    if (count === 0) {
-      await supabase.from('chat_groups').delete().eq('id', groupId)
-    }
-
+    await leaveChatGroup(supabase, groupId, userId)
     router.push('/app?tab=chats')
   }
 
@@ -357,9 +344,7 @@ export default function GroupInfoPage() {
     if (!confirmed) return
 
     setActionLoading(true)
-    await supabase.from('chat_group_members').delete().eq('group_id', groupId)
-    await supabase.from('messages').delete().eq('group_id', groupId)
-    await supabase.from('chat_groups').delete().eq('id', groupId)
+    await deleteChatGroup(supabase, groupId)
     router.push('/app?tab=chats')
   }
 
