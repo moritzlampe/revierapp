@@ -32,6 +32,8 @@ export default function GroupChatPage() {
   const [isDirect, setIsDirect] = useState(false)
   const [displayInitial, setDisplayInitial] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  // Erst rendern, wenn Gruppen-Daten + Mitglieder geladen sind (verhindert Flicker des Dots-Buttons bei 1:1-Chats)
+  const [isReady, setIsReady] = useState(false)
 
   const isOwner = !!group && !!userId && group.created_by === userId
 
@@ -120,6 +122,7 @@ export default function GroupChatPage() {
     setDisplayName(info.displayName)
     setIsDirect(info.isDirect)
     setDisplayInitial(info.displayInitial)
+    setIsReady(true)
 
     // last_read_at aktualisieren
     await supabase
@@ -219,7 +222,7 @@ export default function GroupChatPage() {
             </div>
           </div>
         </div>
-        {!isDirect && (
+        {isReady && !isDirect && (
           <button
             onClick={(e) => { e.stopPropagation(); handleMenuTap() }}
             disabled={actionLoading}
