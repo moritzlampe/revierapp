@@ -110,21 +110,20 @@
 }
 
 /* ============================================================
-   Tagebuch-Surface — scoped Theme-Override für den editorial-warmen
-   Dark-Container des Jagdtagebuchs (Sprint 60.2). Tokens werden NUR
-   innerhalb dieses Containers neu definiert, sodass app-weite
+   Sprint 60.2: Tagebuch-Theme — gescopt, NICHT in :root.
+   Siehe Sprint_60_Konzept_V3 §6.
+
+   Editorial-warmer Dark-Container für das Jagdtagebuch. Tokens werden
+   NUR innerhalb dieses Containers neu definiert, sodass app-weite
    Werkzeug-Surfaces (Karte, Hunt, Chat) Theme A "Moos auf Papier"
    behalten. Eigene Akzente (--bronze/--forest/--slate) bleiben
    tagebuch-lokal — sie sollen nirgendwo sonst auftauchen.
 
-   Re-Definitions-Strategie: Tagebuch-eigene Werte für Backgrounds,
-   Borders und Text + Re-Mapping aller relevanten Theme-A-Tokens
-   (Active + Legacy-Aliases) damit bestehende Komponenten innerhalb
-   des Containers automatisch dunkel rendern. Theme-A-Akzentfarben
-   (--accent-primary/--green, --accent-gold/--gold/--orange) werden
-   BEWUSST nicht überschrieben — sie sollen im Tagebuch nicht
-   verwendet werden. Falls sie auftauchen, ist das ein Bug im
-   Tagebuch-Code, nicht in der Token-Strategie.
+   Re-Definitions-Strategie: ALLE relevanten Theme-A-Tokens (Active +
+   Legacy-Aliases inkl. Akzentfarben) werden mit-überschrieben. Sonst
+   bluten Theme-A-Werte durch Legacy-Komponenten ins Tagebuch durch
+   (Recon C.4). Eine Komponente, die var(--green) zieht, soll im
+   Tagebuch automatisch forest werden — nicht Theme-A-Moos.
    ============================================================ */
 .tagebuch-surface {
   /* Tagebuch-eigene Backgrounds */
@@ -161,18 +160,34 @@
   --bg-base:        var(--bg);
   --bg-elevated:    var(--surface);
   --bg-sunken:      var(--surface-2);
+  --surface-hero:   var(--surface-2);
   --text-primary:   var(--text);
   --text-secondary: var(--text-muted);
   --border-default: var(--border);
   --border-strong:  var(--border-3);
 
+  /* Re-Definition Theme-A Akzent-Tokens — Forest ersetzt Moos,
+     Bronze ersetzt Gold. Sonst zeigen --green / --gold / --accent-primary
+     auf Theme-A-Werte und bluten ins Tagebuch durch (Recon C.4). */
+  --accent-primary:       var(--forest);
+  --accent-primary-hover: var(--forest);
+  --accent-primary-soft:  color-mix(in srgb, var(--forest) 22%, var(--bg));
+  --accent-success:       var(--forest);
+  --accent-gold:          var(--bronze);
+
   /* Re-Definition restlicher Legacy-Aliases auf Tagebuch-Werte.
      --bg, --surface, --surface-2/-3, --border, --text sind oben bereits
-     direkt überschrieben — die folgenden Aliases zeigen in Theme A auf
-     Active-Tokens, die wir noch nicht abgedeckt haben. */
+     direkt überschrieben. */
   --border-light: var(--border);
   --text-2:       var(--text-muted);
   --text-3:       var(--text-dim);
+  --green:        var(--forest);
+  --green-bright: var(--forest);
+  --green-dim:    color-mix(in srgb, var(--forest) 22%, var(--bg));
+  --green-900:    var(--forest);
+  --gold:         var(--bronze);
+  --orange:       var(--bronze);
+  --blue:         var(--slate);
 
   background: var(--bg);
   color: var(--text);
