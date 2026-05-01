@@ -17,6 +17,7 @@ import {
   X,
   Camera,
   Eye,
+  Notebook,
 } from '@phosphor-icons/react'
 type Status = 'available' | 'on_hunt' | 'do_not_disturb'
 
@@ -184,18 +185,6 @@ export default function DuContent({
           </div>
         </div>
 
-        {/* PREVIEW 60.2.1 — manuell aktivieren zum iPhone-Test der Tagebuch-Tokens.
-            Kommentar-Marker entfernen, am iPhone öffnen, visuell verifizieren,
-            danach (in 60.2.3) komplett löschen.
-        <div className="tagebuch-surface" style={{ padding: '1rem', borderRadius: '0.75rem', margin: '1rem' }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.125rem' }}>Tagebuch-Preview</div>
-          <div style={{ color: 'var(--bronze)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>BRONZE</div>
-          <div style={{ color: 'var(--forest)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>FOREST</div>
-          <div style={{ color: 'var(--slate)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>SLATE</div>
-          <div style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>Body in --text-muted</div>
-        </div>
-        */}
-
         {/* === Sektion: QuickHunt === */}
         <Section title="QuickHunt">
           <MenuItem
@@ -220,6 +209,16 @@ export default function DuContent({
               sublabel="Keine Reviere verknüpft"
             />
           )}
+        </Section>
+
+        {/* === Sektion: Jagdtagebuch === */}
+        <Section title="Jagdtagebuch">
+          <Link href="/app/du/tagebuch" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <MenuItem
+              icon={<Notebook size={18} />}
+              label="Jagdtagebuch"
+            />
+          </Link>
         </Section>
 
         {/* === Sektion: Einstellungen === */}
