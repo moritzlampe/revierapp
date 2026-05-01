@@ -110,6 +110,75 @@
 }
 
 /* ============================================================
+   Tagebuch-Surface — scoped Theme-Override für den editorial-warmen
+   Dark-Container des Jagdtagebuchs (Sprint 60.2). Tokens werden NUR
+   innerhalb dieses Containers neu definiert, sodass app-weite
+   Werkzeug-Surfaces (Karte, Hunt, Chat) Theme A "Moos auf Papier"
+   behalten. Eigene Akzente (--bronze/--forest/--slate) bleiben
+   tagebuch-lokal — sie sollen nirgendwo sonst auftauchen.
+
+   Re-Definitions-Strategie: Tagebuch-eigene Werte für Backgrounds,
+   Borders und Text + Re-Mapping aller relevanten Theme-A-Tokens
+   (Active + Legacy-Aliases) damit bestehende Komponenten innerhalb
+   des Containers automatisch dunkel rendern. Theme-A-Akzentfarben
+   (--accent-primary/--green, --accent-gold/--gold/--orange) werden
+   BEWUSST nicht überschrieben — sie sollen im Tagebuch nicht
+   verwendet werden. Falls sie auftauchen, ist das ein Bug im
+   Tagebuch-Code, nicht in der Token-Strategie.
+   ============================================================ */
+.tagebuch-surface {
+  /* Tagebuch-eigene Backgrounds */
+  --bg:           #11140F;
+  --bg-elev:      rgba(27,32,24,0.55);
+  --surface:      #1B2018;
+  --surface-2:    #242A1F;
+  --surface-3:    #303729;
+
+  /* Tagebuch-eigene Borders */
+  --border:       rgba(232,228,212,0.09);
+  --border-2:     rgba(232,228,212,0.14);
+  --border-3:     rgba(232,228,212,0.18);
+
+  /* Tagebuch-eigene Text-Tokens */
+  --text:         #EFEBDB;
+  --text-muted:   rgba(239,235,219,0.70);
+  --text-dim:     rgba(239,235,219,0.48);
+  --text-faint:   rgba(239,235,219,0.22);
+
+  /* Tagebuch-Akzente: Erlegung / Anblick / Gesellschaft */
+  --bronze:       #C08E48;
+  --bronze-dim:   #8a6532;
+  --bronze-edge:  rgba(192,142,72,0.55);
+  --forest:       #6E8A52;
+  --forest-edge:  rgba(110,138,82,0.55);
+  --slate:        #8B8775;
+  --slate-edge:   rgba(139,135,117,0.45);
+
+  /* Re-Definition Theme-A Active-Tokens auf Tagebuch-Werte.
+     Komponenten, die direkt --bg-base / --bg-elevated / --bg-sunken /
+     --text-primary / --text-secondary / --border-default / --border-strong
+     nutzen, kommen automatisch editorial-dunkel raus. */
+  --bg-base:        var(--bg);
+  --bg-elevated:    var(--surface);
+  --bg-sunken:      var(--surface-2);
+  --text-primary:   var(--text);
+  --text-secondary: var(--text-muted);
+  --border-default: var(--border);
+  --border-strong:  var(--border-3);
+
+  /* Re-Definition restlicher Legacy-Aliases auf Tagebuch-Werte.
+     --bg, --surface, --surface-2/-3, --border, --text sind oben bereits
+     direkt überschrieben — die folgenden Aliases zeigen in Theme A auf
+     Active-Tokens, die wir noch nicht abgedeckt haben. */
+  --border-light: var(--border);
+  --text-2:       var(--text-muted);
+  --text-3:       var(--text-dim);
+
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ============================================================
    Tailwind v4 — Bindung der semantischen shadcn-Tokens an
    unsere Active-Tokens. Ohne diesen Block rendern bg-popover /
    bg-primary / bg-muted gegen v4-Light-Defaults, was in Sheets
