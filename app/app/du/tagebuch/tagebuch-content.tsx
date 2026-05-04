@@ -3,6 +3,7 @@ import { Notebook } from '@phosphor-icons/react/dist/ssr'
 import type { Jagdjahr } from '@/lib/diary/season'
 import type { DiaryStats } from '@/lib/diary/queries'
 import DiaryHeader from '@/components/diary/DiaryHeader'
+import DiaryChipRow from '@/components/diary/DiaryChipRow'
 
 interface Props {
   jagdjahr: Jagdjahr
@@ -54,6 +55,8 @@ export default function TagebuchContent({ jagdjahr, stats }: Props) {
       </div>
 
       <DiaryHeader jagdjahr={jagdjahr} stats={stats} />
+
+      <DiaryChipRow />
 
       {isEmpty ? (
         <div

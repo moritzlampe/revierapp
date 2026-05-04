@@ -1,0 +1,88 @@
+'use client'
+
+import { useRouter, useSearchParams } from 'next/navigation'
+
+type Filter = 'alle' | 'erlegungen' | 'jagdtage'
+
+interface ChipDef {
+  value: Filter | 'anblicke'
+  label: string
+  disabled?: boolean
+}
+
+const CHIPS: ChipDef[] = [
+  { value: 'alle', label: 'Alle' },
+  { value: 'erlegungen', label: 'Erlegungen' },
+  { value: 'jagdtage', label: 'Jagdtage' },
+  { value: 'anblicke', label: 'Anblicke', disabled: true },
+]
+
+const VALID_FILTERS: ReadonlyArray<Filter> = ['alle', 'erlegungen', 'jagdtage']
+
+function parseFilter(raw: string | null): Filter {
+  if (raw && (VALID_FILTERS as ReadonlyArray<string>).includes(raw)) {
+    return raw as Filter
+  }
+  return 'alle'
+}
+
+export default function DiaryChipRow() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const active = parseFilter(searchParams.get('filter'))
+
+  function handleClick(value: Filter) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (value === 'alle') {
+      params.delete('filter')
+    } else {
+      params.set('filter', value)
+    }
+    const qs = params.toString()
+    router.replace(`/app/du/tagebuch${qs ? `?${qs}` : ''}`)
+  }
+
+  return (
+    <div
+      className="flex flex-nowrap overflow-x-auto"
+      style={{
+        gap: '0.375rem',
+        padding: '0.25rem 1.5rem 0.75rem',
+        scrollbarWidth: 'none',
+      }}
+    >
+      {CHIPS.map((chip) => {
+        const isActive = !chip.disabled && chip.value === active
+        return (
+          <button
+            key={chip.value}
+            type="button"
+            disabled={chip.disabled}
+            aria-pressed={isActive}
+            onClick={() => {
+              if (chip.disabled) return
+              handleClick(chip.value as Filter)
+            }}
+            className="flex-shrink-0 inline-flex items-center justify-center whitespace-nowrap"
+            style={{
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              letterSpacing: '0.02em',
+              minHeight: '2rem',
+              padding: '0.375rem 0.875rem',
+              borderRadius: '999px',
+              border: `1px solid ${isActive ? 'var(--border-3)' : 'var(--border-2)'}`,
+              background: isActive ? 'var(--surface-2)' : 'var(--surface)',
+              color: isActive ? 'var(--text)' : 'var(--text-muted)',
+              opacity: chip.disabled ? 0.4 : 1,
+              cursor: chip.disabled ? 'not-allowed' : 'pointer',
+              transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+            }}
+          >
+            {chip.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}

@@ -7,7 +7,9 @@ import TagebuchContent from './tagebuch-content'
 export default async function TagebuchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ j?: string }>
+  // filter wird in 60.3.4 serverseitig validiert + an Queries weitergereicht.
+  // Aktuell: nur Type-Widening, Validierung passiert clientseitig in DiaryChipRow.
+  searchParams: Promise<{ j?: string; filter?: string }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

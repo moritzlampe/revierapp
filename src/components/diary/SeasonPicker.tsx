@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { CaretLeft, CaretRight } from '@phosphor-icons/react'
 import {
   type Jagdjahr,
@@ -14,14 +14,21 @@ interface Props {
 
 export default function SeasonPicker({ jagdjahr }: Props) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  function buildHref(targetKey: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('j', targetKey)
+    return `/app/du/tagebuch?${params.toString()}`
+  }
 
   function goPrev() {
     const target = prevJagdjahr(jagdjahr)
-    router.replace(`/app/du/tagebuch?j=${target.key}`)
+    router.replace(buildHref(target.key))
   }
   function goNext() {
     const target = nextJagdjahr(jagdjahr)
-    router.replace(`/app/du/tagebuch?j=${target.key}`)
+    router.replace(buildHref(target.key))
   }
 
   return (
