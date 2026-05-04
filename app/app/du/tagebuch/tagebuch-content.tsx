@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Notebook } from '@phosphor-icons/react/dist/ssr'
 import type { Jagdjahr } from '@/lib/diary/season'
 import type { DiaryStats } from '@/lib/diary/queries'
+import DiaryHeader from '@/components/diary/DiaryHeader'
 
 interface Props {
   jagdjahr: Jagdjahr
@@ -10,8 +11,6 @@ interface Props {
 
 export default function TagebuchContent({ jagdjahr, stats }: Props) {
   const isEmpty = stats.erlegungen === 0 && stats.jagdtage === 0
-  // Im aktuellen Sprint wird jagdjahr noch nicht gerendert — DiaryHeader kommt in Phase 2.
-  void jagdjahr
 
   return (
     <div className="tagebuch-surface min-h-dvh flex flex-col">
@@ -54,7 +53,7 @@ export default function TagebuchContent({ jagdjahr, stats }: Props) {
         </h1>
       </div>
 
-      {/* PHASE 2: <DiaryHeader jagdjahr={jagdjahr} stats={stats} /> hier einsetzen */}
+      <DiaryHeader jagdjahr={jagdjahr} stats={stats} />
 
       {isEmpty ? (
         <div
