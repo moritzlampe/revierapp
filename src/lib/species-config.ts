@@ -49,17 +49,24 @@ export interface WildGroupConfig {
   unspezValue: WildArt | null  // direkter "Bestätigen ohne Detail"-Wert
   hasGeschlecht: boolean        // Stufe-2-Frage anbieten?
   hasAltersklasse: boolean      // Stufe-3-Frage anbieten?
+  /**
+   * Aggregations-Default für Tagebuch-Timeline.
+   * true  = mehrere Stücke am gleichen Tag werden zu 1 Strecke-Card zusammengefasst.
+   * false = jedes Stück eigene Erlegung-Card. Solo-Schwellen-Override
+   *         kann das in timeline.ts trotzdem aggregieren (>= SOLO_AGGREGATE_THRESHOLD).
+   */
+  aggregatePerDay: boolean
 }
 
 export const WILD_GROUP_CONFIG: WildGroupConfig[] = [
-  { group: 'rehwild', label: 'Rehwild', emoji: '🦌', unspezValue: 'rehwild_unspez', hasGeschlecht: true, hasAltersklasse: true },
-  { group: 'schwarzwild', label: 'Schwarzwild', emoji: '🐗', unspezValue: 'schwarzwild_unspez', hasGeschlecht: true, hasAltersklasse: true },
-  { group: 'raubwild', label: 'Raubwild', emoji: '🦊', unspezValue: null, hasGeschlecht: false, hasAltersklasse: false },
-  { group: 'rotwild', label: 'Rotwild', emoji: '🦌', unspezValue: 'rotwild_unspez', hasGeschlecht: true, hasAltersklasse: true },
-  { group: 'hasenartig', label: 'Hasenartig', emoji: '🐰', unspezValue: null, hasGeschlecht: false, hasAltersklasse: false },
-  { group: 'federwild', label: 'Federwild', emoji: '🦆', unspezValue: null, hasGeschlecht: false, hasAltersklasse: false },
-  { group: 'damwild', label: 'Damwild', emoji: '🦌', unspezValue: 'damwild_unspez', hasGeschlecht: true, hasAltersklasse: true },
-  { group: 'sonstiges', label: 'Sonstiges', emoji: '❓', unspezValue: 'sonstiges', hasGeschlecht: false, hasAltersklasse: false },
+  { group: 'rehwild', label: 'Rehwild', emoji: '🦌', unspezValue: 'rehwild_unspez', hasGeschlecht: true, hasAltersklasse: true, aggregatePerDay: false },
+  { group: 'schwarzwild', label: 'Schwarzwild', emoji: '🐗', unspezValue: 'schwarzwild_unspez', hasGeschlecht: true, hasAltersklasse: true, aggregatePerDay: false },
+  { group: 'raubwild', label: 'Raubwild', emoji: '🦊', unspezValue: null, hasGeschlecht: false, hasAltersklasse: false, aggregatePerDay: false },
+  { group: 'rotwild', label: 'Rotwild', emoji: '🦌', unspezValue: 'rotwild_unspez', hasGeschlecht: true, hasAltersklasse: true, aggregatePerDay: false },
+  { group: 'hasenartig', label: 'Hasenartig', emoji: '🐰', unspezValue: null, hasGeschlecht: false, hasAltersklasse: false, aggregatePerDay: true },
+  { group: 'federwild', label: 'Federwild', emoji: '🦆', unspezValue: null, hasGeschlecht: false, hasAltersklasse: false, aggregatePerDay: true },
+  { group: 'damwild', label: 'Damwild', emoji: '🦌', unspezValue: 'damwild_unspez', hasGeschlecht: true, hasAltersklasse: true, aggregatePerDay: false },
+  { group: 'sonstiges', label: 'Sonstiges', emoji: '❓', unspezValue: 'sonstiges', hasGeschlecht: false, hasAltersklasse: false, aggregatePerDay: true },
 ]
 
 // Detail-Konfiguration je Wildgruppe (Stufe 2/3 — Geschlecht/Altersklasse)
@@ -163,3 +170,14 @@ export const FLAT_GROUP_TIERE: Partial<Record<WildGroup, DetailOption[]>> = {
     { value: 'kraehe', label: 'Krähe' },
   ],
 }
+
+/**
+ * Schwellenwert für Solo-Schalenwild-Aggregation auf Einzeljagd.
+ * Wenn auf einer Hunt mit < 2 Teilnehmern eine Wildgruppe (auch eine mit
+ * aggregatePerDay=false) >= dieser Anzahl Stücke hat, wird trotzdem zu
+ * einer Strecke-Card zusammengefasst.
+ *
+ * Begründung: Sicherheitsnetz gegen falsch-deklarierte Drückjagden und
+ * gegen vergessene aggregatePerDay-Flags bei seltenen Wildarten.
+ */
+export const SOLO_AGGREGATE_THRESHOLD = 5
