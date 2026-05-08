@@ -2,15 +2,18 @@ import Link from 'next/link'
 import { Notebook } from '@phosphor-icons/react/dist/ssr'
 import type { Jagdjahr } from '@/lib/diary/season'
 import type { DiaryStats } from '@/lib/diary/queries'
+import type { TimelineItem } from '@/lib/diary/timeline'
 import DiaryHeader from '@/components/diary/DiaryHeader'
 import DiaryChipRow from '@/components/diary/DiaryChipRow'
+import DiaryTimelineList from '@/components/diary/cards/DiaryTimelineList'
 
 interface Props {
   jagdjahr: Jagdjahr
   stats: DiaryStats
+  items: TimelineItem[]
 }
 
-export default function TagebuchContent({ jagdjahr, stats }: Props) {
+export default function TagebuchContent({ jagdjahr, stats, items }: Props) {
   const isEmpty = stats.erlegungen === 0 && stats.jagdtage === 0
 
   return (
@@ -92,7 +95,9 @@ export default function TagebuchContent({ jagdjahr, stats }: Props) {
           </p>
         </div>
       ) : (
-        <div className="flex-1" />
+        <div className="flex-1" style={{ paddingBottom: '2rem' }}>
+          <DiaryTimelineList items={items} />
+        </div>
       )}
     </div>
   )
