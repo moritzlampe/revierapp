@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>QuickHunt — Jagdtagebuch (Sprint 60 V1.5 Mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<style>
+  /* =====================================================================
+     Sprint 60 V1.5 — Jagdtagebuch (Experimentversion)
+     Basierend auf V1.4. Geänderte Punkte:
+     • Timeline-Rail mit Typ-Punkten ersetzt 2px-Card-Indikator
+     • Cards verdichtet (kleineres Padding, kompaktere Pills)
+     • Wildarten als 2×3-Grid (alternativ horizontal verfügbar)
+     • Foto-Thumbnail nur wenn echtes Foto vorhanden
+     • Sonderkarte "Besonderer Moment" als V2/V3-Stub vorbereitet
+     ===================================================================== */
+  :root {
+    --bg:           #11140F;
+    --bg-elev:      rgba(27,32,24,0.55);
+    --surface:      #1B2018;
+    --surface-2:    #242A1F;
+    --surface-3:    #303729;
+
+    --border:       rgba(232,228,212,0.09);
+    --border-2:     rgba(232,228,212,0.14);
+    --border-3:     rgba(232,228,212,0.18);
+
+    --text:         #EFEBDB;
+    --text-muted:   rgba(239,235,219,0.70);
+    --text-dim:     rgba(239,235,219,0.48);
+    --text-faint:   rgba(239,235,219,0.22);
+
+    --bronze:       #C08E48;
+    --bronze-dim:   #8a6532;
+    --bronze-edge:  rgba(192,142,72,0.55);
+    --forest:       #6E8A52;
+    --forest-edge:  rgba(110,138,82,0.55);
+    --slate:        #8B8775;
+    --slate-edge:   rgba(139,135,117,0.45);
+
+    --display:      'Fraunces', Georgia, serif;
+    --body:         'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+    --mono:         'IBM Plex Mono', ui-monospace, monospace;
+
+    --safe-bottom:  env(safe-area-inset-bottom, 0px);
+    --bnav-h:       64px;
+  }
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: var(--body);
+    background: #050605;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.4;
+    overscroll-behavior: none;
+  }
+
+  .stage {
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse at top, #1c2118 0%, rgba(6,6,4,0.2) 60%),
+      #060605;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 40px;
+    gap: 18px;
+  }
+  .stage-meta {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .stage-meta strong { color: var(--text); font-weight: 600; }
+  .device-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    text-align: center;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+
+  /* iPhone Frame */
+  .device { display: flex; flex-direction: column; align-items: center; }
+  .app {
+    width: 390px;
+    height: 844px;
+    background: var(--bg);
+    border-radius: 44px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 11px #1c1d1a,
+      0 0 0 12px #2a2c27,
+      0 50px 100px -20px rgba(0,0,0,0.7);
+    display: flex;
+    flex-direction: column;
+  }
+  .app::before {
+    content: '';
+    position: absolute;
+    top: 11px; left: 50%;
+    transform: translateX(-50%);
+    width: 120px; height: 34px;
+    background: #000;
+    border-radius: 20px;
+    z-index: 100;
+  }
+
+  .status-bar {
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 28px 0;
+    font-family: var(--body);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .status-bar-right { display: flex; gap: 6px; align-items: center; }
+  .status-bar-right i { font-size: 14px; }
+
+  .screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: calc(var(--bnav-h) + var(--safe-bottom) + 16px);
+  }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  /* =====================================================================
+     1. Header
+     ===================================================================== */
+  .head { padding: 4px 24px 12px; }
+  .head-title {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 26px;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    color: var(--text);
+    font-variation-settings: "opsz" 144;
+  }
+  .head-season {
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .head-season .arr {
+    font-size: 10px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .head-stats {
+    margin-top: 9px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    line-height: 1.45;
+  }
+  .head-stats .stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  .head-stats .stat b {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* =====================================================================
+     2. Filter-Chips
+     ===================================================================== */
+  .chip-row {
+    display: flex;
+    gap: 6px;
+    padding: 4px 24px 12px;
+    overflow-x: auto;
+  }
+  .chip-row::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: 0 0 auto;
+    background: transparent;
+    border: 1px solid var(--border-2);
+    border-radius: 999px;
+    padding: 6px 13px;
+    font-family: var(--body);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .chip.active {
+    background: var(--surface-2);
+    border-color: var(--border-3);
+    color: var(--text);
+  }
+
+  /* =====================================================================
+     3. Timeline mit vertikaler Rail
+     ===================================================================== */
+  .timeline {
+    position: relative;
+    padding: 0 20px 0 36px;
+  }
+  .timeline::before {
+    /* Vertikale Rail-Linie */
+    content: '';
+    position: absolute;
+    left: 24px;
+    top: 36px;
+    bottom: 4px;
+    width: 1px;
+    background: var(--border-2);
+    pointer-events: none;
+  }
+
+  .month-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin: 4px 4px 12px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .month-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* =====================================================================
+     Card Base — 2px-Indikator entfernt, Punkt auf Rail stattdessen
+     Cards leicht verdichtet (Padding 13/14 → 11/12)
+     ===================================================================== */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+  .card::before {
+    /* Typ-Punkt auf der Timeline-Rail */
+    content: '';
+    position: absolute;
+    left: -16px;
+    top: 16px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--border-3);
+    box-shadow: 0 0 0 3px var(--bg);
+    z-index: 2;
+  }
+  .card.t-erlegung::before { background: var(--bronze); }
+  .card.t-anblick::before  { background: var(--forest); }
+  .card.t-gesell::before   { background: var(--slate); }
+
+  .card-inner { padding: 11px 12px; }
+
+  .card-kind {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .card.t-erlegung .card-kind { color: var(--bronze); }
+  .card.t-anblick  .card-kind { color: var(--forest); }
+  .card.t-gesell   .card-kind { color: var(--slate); }
+
+  .card-meta {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    line-height: 1.3;
+  }
+  .card-meta .sep { color: var(--text-faint); margin: 0 4px; }
+  /* PRIVACY-MODE PREP — siehe V1.4 Hinweis. Spans .when, .time, .place
+     bleiben strukturell, .card[data-privacy="true"] schaltet später .place um. */
+
+  .card-title {
+    margin-top: 4px;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 18px;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    font-variation-settings: "opsz" 144;
+  }
+  .card-substatus {
+    margin-top: 2px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+  }
+
+  /* Pills — kompakter */
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 7px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .pill i { font-size: 11px; color: var(--text-muted); }
+  .pill small { color: var(--text-muted); margin-left: 1px; }
+
+  /* Notiz — max 2 Zeilen, body min 12px */
+  .note {
+    margin-top: 8px;
+    font-family: var(--body);
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    border-left: 2px solid var(--border-3);
+    padding-left: 9px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .note.bronze  { border-left-color: var(--bronze-dim); }
+  .note.forest  { border-left-color: rgba(110,138,82,0.55); }
+
+  .breadcrumb {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-2);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+  }
+  .breadcrumb i { font-size: 11px; color: var(--text-faint); }
+  .breadcrumb b { color: var(--text-muted); font-weight: 500; }
+
+  /* =====================================================================
+     Erlegung MIT Foto — kleines Thumbnail links
+     Erlegung OHNE Foto = kompakte Textcard ohne .erlegung-Wrapper
+     ===================================================================== */
+  .erlegung {
+    display: flex;
+    gap: 11px;
+  }
+  .erlegung .photo {
+    flex: 0 0 70px;
+    width: 70px;
+    align-self: stretch;
+    min-height: 70px;
+    border-radius: 9px;
+    background:
+      radial-gradient(ellipse at 30% 25%, rgba(192,142,72,0.20), transparent 60%),
+      linear-gradient(135deg, #4a3a1c 0%, #2a1f10 60%, #0f0e0a 100%);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .erlegung .photo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 60% 70%, rgba(0,0,0,0.4), transparent 60%);
+  }
+  .erlegung .body { flex: 1; min-width: 0; }
+
+  /* =====================================================================
+     Anblick-Card
+     ===================================================================== */
+  .anblick-list {
+    margin-top: 8px;
+    font-family: var(--body);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .anblick-list .ax {
+    color: var(--forest);
+    font-weight: 600;
+    font-family: var(--mono);
+    font-size: 12px;
+    margin-right: 1px;
+  }
+  .anblick-list .sep {
+    color: var(--text-faint);
+    margin: 0 6px;
+  }
+
+  /* =====================================================================
+     Hunt-Container
+     ===================================================================== */
+  .jagdtag-block {
+    margin-top: 9px;
+    padding-top: 9px;
+    border-top: 1px solid var(--border);
+  }
+  .jagdtag-label,
+  .total-label {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--bronze);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .total-label { color: var(--text-dim); }
+  .jagdtag-value {
+    font-family: var(--body);
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.3;
+    color: var(--text);
+    letter-spacing: 0.005em;
+  }
+  .jagdtag-value .stand,
+  .jagdtag-value .meta-detail {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .jagdtag-value .sep { color: var(--text-faint); margin: 0 4px; }
+
+  .total-strecke {
+    margin-top: 9px;
+    padding-top: 9px;
+    border-top: 1px dashed var(--border-2);
+  }
+  .total-list {
+    font-family: var(--body);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.3;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  .total-list span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .total-list .num {
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .total-locked {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .total-locked i { font-size: 12px; color: var(--text-faint); }
+
+  .hunt-foot {
+    margin-top: 9px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .hunt-foot-stats { display: flex; gap: 14px; }
+  .hunt-foot-stats span { display: inline-flex; align-items: center; gap: 4px; }
+  .hunt-foot-stats i { font-size: 12px; color: var(--text-dim); }
+  .hunt-foot-arrow { color: var(--text-dim); font-size: 14px; }
+
+  /* =====================================================================
+     Wildarten · Jagdjahr — als Stats-Block zwischen Timeline-Gruppen
+     V1.5 zeigt 2×3-Grid-Variante (besser scanbar für 30-65 J.)
+     Horizontale Variante bleibt als CSS-Klasse verfügbar (s. unten)
+     ===================================================================== */
+  .stats-block {
+    margin: 16px 0 12px;
+    position: relative;
+  }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 24px 10px;
+  }
+  .section-kicker {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .section-link {
+    font-family: var(--body);
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  /* Variante A: 2×3 Grid (V1.5 default) */
+  .wildarten-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    padding: 0 24px;
+  }
+  .w-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .w-row.zero { opacity: 0.5; }
+  .w-row .ic {
+    width: 22px; height: 22px;
+    flex-shrink: 0;
+    color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .w-row .ic svg { width: 22px; height: 22px; }
+  .w-row .ic i { font-size: 20px; }
+  .w-row .w-name {
+    flex: 1;
+    font-family: var(--body);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: 0.005em;
+  }
+  .w-row.zero .w-name { color: var(--text-muted); }
+  .w-row .w-count {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+  .w-row.zero .w-count { color: var(--text-dim); font-weight: 500; }
+
+  /*
+   * Variante B (alternativ aktivierbar): horizontale Tile-Reihe wie V1.4
+   * Klasse .wildarten-horizontal existiert weiter, im V1.5 nicht aktiviert.
+   */
+  .wildarten-horizontal {
+    display: flex;
+    gap: 8px;
+    padding: 0 24px 4px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+  }
+  .wildarten-horizontal::-webkit-scrollbar { display: none; }
+  .wildarten-horizontal .w-tile {
+    flex: 0 0 auto;
+    width: 72px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 11px 8px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* =====================================================================
+     SONDERKARTE "BESONDERER MOMENT" — V2/V3 Stub (NICHT aktiv in V1)
+     Markup-Beispiel:
+       <div class="card t-moment moment-card">
+         <div class="moment-hero"></div>
+         <div class="card-inner">
+           <div class="card-kind">Vor 1 Jahr</div>
+           <h2 class="moment-title">Dein erster Bock 2025</h2>
+           <div class="card-meta">26. April 2025 · Brockwinkel</div>
+         </div>
+       </div>
+     Nur einsetzen für: Memory-Cards, Erstlinge, Saisonrückblick.
+     ===================================================================== */
+  .card.t-moment {
+    /* Vorbereitet für V2/V3 — eigener Card-Typ mit großem Hero */
+    /* Eigene Akzentfarbe später (bronze/forest je Anlass) */
+  }
+  .card.t-moment::before {
+    background: var(--bronze);
+  }
+  .moment-hero {
+    aspect-ratio: 16/9;
+    background:
+      radial-gradient(ellipse at 30% 30%, rgba(192,142,72,0.18), transparent 60%),
+      linear-gradient(135deg, #4a3a1c 0%, #2a1f10 60%, #0f0e0a 100%);
+    border-radius: 12px 12px 0 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .moment-title {
+    margin-top: 5px;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 22px;
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    color: var(--text);
+    font-variation-settings: "opsz" 144;
+  }
+
+  /* =====================================================================
+     Privacy Footer
+     ===================================================================== */
+  .privacy-footer {
+    margin: 14px 20px 4px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+  }
+  .privacy-footer i {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 1px;
+    flex-shrink: 0;
+  }
+  .privacy-footer .pf-text {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    letter-spacing: 0.02em;
+  }
+  .privacy-footer .pf-text strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* Bottom Nav */
+  .bnav {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: var(--bnav-h);
+    padding-bottom: var(--safe-bottom);
+    background: rgba(17,20,15,0.94);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    z-index: 50;
+  }
+  .bnav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding-top: 4px;
+  }
+  .bnav-item.active { color: var(--text); }
+  .bnav-item i { font-size: 22px; }
+  .bnav-item .lab {
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-family: var(--mono);
+  }
+  .bnav-item.fab i {
+    width: 46px; height: 46px;
+    background: var(--bronze);
+    color: #15171a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 6px 20px rgba(192,142,72,0.35);
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <div class="stage-meta">
+    <strong>Sprint 60 V1.5 — Jagdtagebuch (Experimentversion)</strong><br>
+    Timeline-Rail · verdichtete Cards · Wildarten als 2×3 · Foto-Regel · Sonderkarte vorbereitet
+  </div>
+
+  <div class="device">
+    <div class="app">
+
+      <div class="status-bar">
+        <span>20:42</span>
+        <div class="status-bar-right">
+          <i class="ph ph-cell-signal-full"></i>
+          <i class="ph ph-wifi-high"></i>
+          <i class="ph-fill ph-battery-full"></i>
+        </div>
+      </div>
+
+      <div class="screen">
+        <div class="scroll">
+
+          <!-- Header -->
+          <div class="head">
+            <h1 class="head-title">Jagdtagebuch</h1>
+            <div class="head-season">
+              <i class="ph ph-caret-left arr"></i>
+              <span>Jagdjahr 2026/27</span>
+              <i class="ph ph-caret-right arr"></i>
+            </div>
+            <div class="head-stats">
+              <span class="stat"><b>14</b> Jagdtage</span>
+              <span class="stat"><b>6</b> Erlegungen</span>
+              <span class="stat"><b>23×</b> Anblick</span>
+              <span class="stat"><b>42 h</b> im Revier</span>
+            </div>
+          </div>
+
+          <!-- Filter -->
+          <div class="chip-row">
+            <button class="chip active">Alle</button>
+            <button class="chip">Erlegungen</button>
+            <button class="chip">Jagdtage</button>
+            <button class="chip">Anblicke</button>
+          </div>
+
+          <!-- Timeline mit Rail -->
+          <div class="timeline">
+
+            <div class="month-label">April 2026</div>
+
+            <!-- CARD A: Erlegung MIT Foto — Rehbock -->
+            <div class="card t-erlegung">
+              <div class="card-inner">
+                <div class="erlegung">
+                  <div class="photo"></div>
+                  <div class="body">
+                    <div class="card-kind">Erlegung</div>
+                    <div class="card-meta">
+                      <span class="when">24. Apr</span><span class="sep">·</span><span class="time">20:14</span><span class="sep">·</span><span class="place">Brockwinkel</span>
+                    </div>
+                    <h2 class="card-title">Rehbock</h2>
+                    <div class="pills">
+                      <span class="pill"><i class="ph ph-scales"></i>18<small>kg</small></span>
+                      <span class="pill"><i class="ph ph-arrows-horizontal"></i>82<small>m</small></span>
+                      <span class="pill"><i class="ph ph-thermometer-simple"></i>7°C</span>
+                    </div>
+                    <div class="note bronze">Kam spät aus dem Bestand, sauberer Schuss vom Hochsitz 4.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CARD B: Anblick — Abendansitz -->
+            <div class="card t-anblick">
+              <div class="card-inner">
+                <div class="card-kind">Anblick</div>
+                <div class="card-meta">
+                  <span class="when">22. Apr</span><span class="sep">·</span><span class="time">19:10–21:05</span><span class="sep">·</span><span class="place">Brockwinkel</span>
+                </div>
+                <h2 class="card-title">Abendansitz</h2>
+                <div class="card-substatus">ohne Strecke</div>
+
+                <div class="anblick-list">
+                  <span class="ax">3×</span>Rehwild<span class="sep">·</span><span class="ax">1×</span>Fuchs
+                </div>
+
+                <div class="pills">
+                  <span class="pill"><i class="ph ph-clock"></i>1h 55min</span>
+                  <span class="pill"><i class="ph ph-thermometer-simple"></i>9°C</span>
+                  <span class="pill"><i class="ph ph-wind"></i>Nordost</span>
+                </div>
+
+                <div class="note forest">Viel Bewegung am Waldrand, Bock noch zu jung.</div>
+              </div>
+            </div>
+
+            <!-- CARD D: Erlegung OHNE Foto — Schmalreh
+                 Demonstriert die Foto-Regel: keine leere Dummy-Tile,
+                 sondern kompakte Textcard. -->
+            <div class="card t-erlegung">
+              <div class="card-inner">
+                <div class="card-kind">Erlegung</div>
+                <div class="card-meta">
+                  <span class="when">12. Apr</span><span class="sep">·</span><span class="time">06:35</span><span class="sep">·</span><span class="place">Morgenansitz</span>
+                </div>
+                <h2 class="card-title">Schmalreh</h2>
+                <div class="pills">
+                  <span class="pill"><i class="ph ph-scales"></i>14<small>kg</small></span>
+                  <span class="pill"><i class="ph ph-arrows-horizontal"></i>54<small>m</small></span>
+                  <span class="pill"><i class="ph ph-thermometer-simple"></i>3°C</span>
+                </div>
+                <div class="breadcrumb">
+                  <i class="ph ph-link-simple-horizontal"></i>
+                  Teil von: <b>Morgenansitz Nordkante</b>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Wildarten · Jagdjahr — 2×3 Grid Variante -->
+          <div class="stats-block">
+            <div class="section-head">
+              <div class="section-kicker">Wildarten · Jagdjahr</div>
+              <a class="section-link">Alle</a>
+            </div>
+            <div class="wildarten-grid">
+              <div class="w-row">
+                <div class="ic">
+                  <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 6 L8 3 M10 6 L13 4 M22 6 L24 3 M22 6 L19 4"/>
+                    <ellipse cx="16" cy="14" rx="5" ry="6"/>
+                    <path d="M11 18 L9 28 M21 18 L23 28 M14 19 L13 28 M18 19 L19 28"/>
+                  </svg>
+                </div>
+                <div class="w-name">Rehwild</div>
+                <div class="w-count">4</div>
+              </div>
+              <div class="w-row">
+                <div class="ic">
+                  <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 16 Q5 10 11 9 L20 9 Q26 9 27 13 L27 18 Q27 22 23 22 L9 22 Q5 22 5 18 Z"/>
+                    <circle cx="11" cy="14" r="0.8" fill="currentColor"/>
+                    <path d="M3 14 L5 16 M27 13 L29 12"/>
+                  </svg>
+                </div>
+                <div class="w-name">Schwarzwild</div>
+                <div class="w-count">1</div>
+              </div>
+              <div class="w-row">
+                <div class="ic">
+                  <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+                    <path d="M16 8 L10 4 L11 11 M16 8 L22 4 L21 11"/>
+                    <path d="M11 11 Q9 16 11 20 Q14 24 16 24 Q18 24 21 20 Q23 16 21 11 Z"/>
+                    <circle cx="13.5" cy="14" r="0.7" fill="currentColor"/>
+                    <circle cx="18.5" cy="14" r="0.7" fill="currentColor"/>
+                  </svg>
+                </div>
+                <div class="w-name">Fuchs</div>
+                <div class="w-count">1</div>
+              </div>
+              <div class="w-row zero">
+                <div class="ic"><i class="ph ph-rabbit"></i></div>
+                <div class="w-name">Hase</div>
+                <div class="w-count">0</div>
+              </div>
+              <div class="w-row zero">
+                <div class="ic"><i class="ph ph-bird"></i></div>
+                <div class="w-name">Federwild</div>
+                <div class="w-count">0</div>
+              </div>
+              <div class="w-row zero">
+                <div class="ic"><i class="ph ph-paw-print"></i></div>
+                <div class="w-name">Sonstige</div>
+                <div class="w-count">0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Timeline weiter mit Rail -->
+          <div class="timeline">
+
+            <div class="month-label">Januar 2026</div>
+
+            <!-- Drückjagd mit Gesamtstrecke freigegeben -->
+            <div class="card t-gesell">
+              <div class="card-inner">
+                <div class="card-kind">Gesellschaftsjagd</div>
+                <div class="card-meta">
+                  <span class="when">18. Jan</span><span class="sep">·</span><span class="time">09:00–14:30</span>
+                </div>
+                <h2 class="card-title">Drückjagd Brockwinkel</h2>
+
+                <div class="jagdtag-block">
+                  <div class="jagdtag-label">Dein Jagdtag</div>
+                  <div class="jagdtag-value">
+                    1× Schwarzwild
+                    <span class="sep">·</span>
+                    <span class="stand">Stand 12</span>
+                  </div>
+                </div>
+
+                <div class="total-strecke">
+                  <div class="total-label">Gesamtstrecke</div>
+                  <div class="total-list">
+                    <span><span class="num">6×</span>Schwarzwild</span>
+                    <span><span class="num">3×</span>Rehwild</span>
+                    <span><span class="num">2×</span>Fuchs</span>
+                  </div>
+                </div>
+
+                <div class="hunt-foot">
+                  <div class="hunt-foot-stats">
+                    <span><i class="ph ph-users"></i>38 Teilnehmer</span>
+                    <span><i class="ph ph-magnifying-glass"></i>2 Nachsuchen</span>
+                  </div>
+                  <i class="ph ph-caret-right hunt-foot-arrow"></i>
+                </div>
+              </div>
+            </div>
+
+            <!-- Treibjagd: erfolglose Teilnahme + Gesamtstrecke nicht freigegeben -->
+            <div class="card t-gesell">
+              <div class="card-inner">
+                <div class="card-kind">Gesellschaftsjagd</div>
+                <div class="card-meta">
+                  <span class="when">04. Jan</span><span class="sep">·</span><span class="time">08:30–13:45</span>
+                </div>
+                <h2 class="card-title">Treibjagd Wendisch Evern</h2>
+
+                <div class="jagdtag-block">
+                  <div class="jagdtag-label">Dein Jagdtag</div>
+                  <div class="jagdtag-value">
+                    <span class="meta-detail">Stand 7</span>
+                    <span class="sep">·</span>
+                    <span class="meta-detail">2× Rehwild gesehen</span>
+                    <span class="sep">·</span>
+                    <span class="meta-detail">ohne Strecke</span>
+                  </div>
+                </div>
+
+                <div class="total-strecke">
+                  <div class="total-label">Gesamtstrecke</div>
+                  <div class="total-locked">
+                    <i class="ph ph-lock-simple"></i>
+                    vom Jagdleiter nicht geteilt
+                  </div>
+                </div>
+
+                <div class="hunt-foot">
+                  <div class="hunt-foot-stats">
+                    <span><i class="ph ph-users"></i>22 Teilnehmer</span>
+                  </div>
+                  <i class="ph ph-caret-right hunt-foot-arrow"></i>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Privacy Footer -->
+          <div class="privacy-footer">
+            <i class="ph ph-shield-check"></i>
+            <div class="pf-text">
+              <strong>Privates Jagdtagebuch.</strong> Ersetzt kein Streckenbuch und keine
+              jagdrechtliche Dokumentation. Beim Teilen werden Standort, Reviername,
+              Foto-Metadaten und Teilnehmer anonymisiert.
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Bottom Nav -->
+        <div class="bnav">
+          <div class="bnav-item">
+            <i class="ph ph-binoculars"></i>
+            <span class="lab">Jagd</span>
+          </div>
+          <div class="bnav-item">
+            <i class="ph ph-list-bullets"></i>
+            <span class="lab">Strecke</span>
+          </div>
+          <div class="bnav-item fab">
+            <i class="ph-fill ph-target"></i>
+          </div>
+          <div class="bnav-item">
+            <i class="ph ph-chat-circle"></i>
+            <span class="lab">Chat</span>
+          </div>
+          <div class="bnav-item active">
+            <i class="ph-fill ph-user-circle"></i>
+            <span class="lab">Du</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="device-label">▸ Tagebuch-Startseite · Sprint 60 V1.5</div>
+  </div>
+
+  <div class="stage-meta" style="max-width:580px; margin-top:12px;">
+    Wildarten als 2×3-Grid (Variante A) · horizontale Tile-Reihe als alternative CSS-Klasse erhalten<br>
+    Erlegung ohne Foto = kompakte Textcard · keine leeren Dummy-Tiles<br>
+    Sonderkarte „Besonderer Moment" als V2/V3-Stub vorbereitet, im V1 nicht aktiv
+  </div>
+
+</div>
+
+</body>
+</html>
