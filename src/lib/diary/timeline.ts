@@ -10,7 +10,11 @@ import type { Jagdjahr } from './season'
 
 // ---------- Public types (UI contract) ----------
 
-export type TimelineItem = TimelineErlegung | TimelineStrecke | TimelineGesell
+export type TimelineItem =
+  | TimelineErlegung
+  | TimelineStrecke
+  | TimelineGesell
+  | TimelineAnblick
 
 interface TimelineBase {
   /** Stable React key derived from kind/hunt/date */
@@ -47,11 +51,15 @@ export interface TimelineGesell extends TimelineBase {
   huntName: string
   /** Raw enum value, fallback string for forward-compat */
   huntKind: 'group' | 'solo' | string
+  /** Roh-Wert von hunts.type ('ansitz' | 'pirsch' | 'drueckjagd' | 'erntejagd' …) */
+  huntType: string
   /** True wenn driven_hunt_id NICHT NULL */
   isDriven: boolean
   teilnehmerCount: number
   /** Nur User's eigene Kills, aggregiert nach species */
   deinAnteil: { species: WildArt; count: number }[]
+  /** Nur User's eigene Sightings auf diesem Hunt, aggregiert nach species (Freitext) */
+  deineAnblicke: { species: string; count: number }[]
   /** 'locked' wenn share_total_strecke=false UND user !== creator_id */
   gesamtStrecke: { species: WildArt; count: number }[] | 'locked'
   startedAt: Date | null
@@ -59,6 +67,22 @@ export interface TimelineGesell extends TimelineBase {
   notiz: string | null
   /** Anzahl Kills mit nachsuche=true (alle Reporter wenn visible, sonst nur User) */
   nachsucheCount: number
+}
+
+export interface TimelineAnblick extends TimelineBase {
+  kind: 'anblick'
+  /** Hunt-Name wenn huntId !== null (Hunt-Kontext "ohne Strecke"), sonst null (Solo-Tag) */
+  huntName: string | null
+  /** Roh-Wert von hunts.type ('ansitz' | 'pirsch' | 'drueckjagd' | 'erntejagd' …) — null bei Solo */
+  huntType: string | null
+  /** Pro species aggregiert mittels SUM(wild_events.count). species ist Freitext. */
+  sightings: { species: string; count: number }[]
+  /** Hunt-Kontext: hunt.started_at; Solo: frühestes occurred_at des Tages */
+  startedAt: Date | null
+  /** Hunt-Kontext: hunt.ended_at; Solo: spätestes occurred_at des Tages */
+  endedAt: Date | null
+  /** Hunt-Kontext: hunt.notiz; Solo: erste nicht-leere wild_events.note */
+  notiz: string | null
 }
 
 // ---------- Internal row shapes ----------
@@ -80,6 +104,7 @@ interface HuntRow {
   id: string
   name: string
   kind: string
+  type: string
   started_at: string | null
   ended_at: string | null
   driven_hunt_id: string | null
@@ -94,6 +119,15 @@ interface AllKillRow {
   nachsuche: boolean | null
 }
 
+interface SightingRow {
+  id: string
+  hunt_id: string | null
+  species: string | null
+  count: number | null
+  occurred_at: string
+  note: string | null
+}
+
 // ---------- Main function ----------
 
 /**
@@ -102,11 +136,14 @@ interface AllKillRow {
  *
  * Aggregations-Logik:
  *  - Hunts mit >=2 Teilnehmern  -> 1x TimelineGesell (auch bei 0 eigenen Kills)
- *  - Hunts mit  <2 Teilnehmern  -> Solo-Logik:
+ *  - Hunts mit  <2 Teilnehmern, 0 Kills, >0 Sightings -> 1x TimelineAnblick (Hunt-Kontext)
+ *  - Hunts mit  <2 Teilnehmern, 0 Kills, 0 Sightings  -> kein Item (Hunt war ergebnislos)
+ *  - Hunts mit  <2 Teilnehmern, >0 Kills -> Solo-Kill-Logik:
  *       Pro (Tag, Wildgruppe): wenn aggregatePerDay=true ODER count>=THRESHOLD
  *         -> 1x TimelineStrecke
  *       sonst: N x TimelineErlegung
  *  - Kills ohne hunt_id (orphan) -> immer TimelineErlegung mit place=null
+ *  - Sightings ohne hunt_id (orphan) -> pro Tag 1x TimelineAnblick (Solo-Tag)
  */
 export async function getTimelineItems(
   userId: string,
@@ -131,6 +168,34 @@ export async function getTimelineItems(
   }
   const userKills = (userKillsRes.data ?? []) as KillRow[]
 
+  // 1b. User-eigene Sightings (wild_events.type='sighting') im Jagdjahr
+  const sightingsRes = await supabase
+    .from('wild_events')
+    .select('id, hunt_id, species, count, occurred_at, note')
+    .eq('user_id', userId)
+    .eq('type', 'sighting')
+    .gte('occurred_at', startIso)
+    .lt('occurred_at', endIso)
+
+  if (sightingsRes.error) {
+    throw new Error(`getTimelineItems: sightings failed: ${sightingsRes.error.message}`)
+  }
+  const sightings = (sightingsRes.data ?? []) as SightingRow[]
+
+  // Sightings nach Hunt splitten: hunt-context-bound vs. orphan-day
+  const sightingsByHunt = new Map<string, SightingRow[]>()
+  const orphanSightings: SightingRow[] = []
+  for (const s of sightings) {
+    if (!s.species) continue // species ist Freitext-NULL möglich; defensiv überspringen
+    if (s.hunt_id) {
+      const list = sightingsByHunt.get(s.hunt_id) ?? []
+      list.push(s)
+      sightingsByHunt.set(s.hunt_id, list)
+    } else {
+      orphanSightings.push(s)
+    }
+  }
+
   // 2. Hunt-Teilnahme des Users (alle, ohne Datums-Filter — Range wird über hunts.started_at gezogen)
   const partRes = await supabase
     .from('hunt_participants')
@@ -144,20 +209,29 @@ export async function getTimelineItems(
     (partRes.data ?? []).map(r => r.hunt_id).filter((id): id is string => !!id),
   )
 
-  // 3. Alle relevanten Hunt-IDs = Teilnahme ∪ Hunts in denen User Kills hat
+  // 3. Alle relevanten Hunt-IDs = Teilnahme ∪ Kills ∪ Sightings
   const huntIdsFromKills = new Set<string>()
   for (const k of userKills) {
     if (k.hunt_id) huntIdsFromKills.add(k.hunt_id)
   }
-  const allHuntIds = new Set<string>([...participationHuntIds, ...huntIdsFromKills])
+  const huntIdsFromSightings = new Set<string>(sightingsByHunt.keys())
+  const allHuntIds = new Set<string>([
+    ...participationHuntIds,
+    ...huntIdsFromKills,
+    ...huntIdsFromSightings,
+  ])
 
   // 4. Hunts laden
+  // Saison-Cut auf started_at; null erlauben, damit Drafts ohne Datums-Anker
+  // weiterleben und im Loop via earliestKillDate-Fallback geprüft werden
+  // (Kill-Query ist datums-gefiltert -> earliestKillDate sitzt automatisch im Range).
   let hunts: HuntRow[] = []
   if (allHuntIds.size > 0) {
     const huntsRes = await supabase
       .from('hunts')
-      .select('id, name, kind, started_at, ended_at, driven_hunt_id, share_total_strecke, creator_id, notiz')
+      .select('id, name, kind, type, started_at, ended_at, driven_hunt_id, share_total_strecke, creator_id, notiz')
       .in('id', Array.from(allHuntIds))
+      .or(`started_at.is.null,and(started_at.gte.${startIso},started_at.lt.${endIso})`)
 
     if (huntsRes.error) {
       throw new Error(`getTimelineItems: hunts failed: ${huntsRes.error.message}`)
@@ -240,11 +314,28 @@ export async function getTimelineItems(
       .sort((a, b) => a.getTime() - b.getTime())[0] ?? null
     const occurredAt = startedAt ?? earliestKillDate
     if (!occurredAt) continue // Hunt ohne Datums-Anker -> skip
+    // Defensiver Saison-Cut: occurredAt muss strikt im Jagdjahr-Range liegen.
+    // Schützt gegen null-started_at + out-of-range-earliestKillDate (theoretisch
+    // nach kill-Filter unmöglich, aber explizit dokumentiert).
+    if (occurredAt < jagdjahr.start || occurredAt >= jagdjahr.end) continue
 
     if (pc >= 2) {
       // CASE A: Gesellschaftsjagd
       const isVisible = hunt.share_total_strecke === true || hunt.creator_id === userId
       const deinAnteil = aggregateBySpecies(userKillsInHunt)
+
+      const userSightingsInHunt = sightingsByHunt.get(hunt.id) ?? []
+      const deineAnblickeMap = new Map<string, number>()
+      for (const s of userSightingsInHunt) {
+        if (!s.species) continue
+        deineAnblickeMap.set(
+          s.species,
+          (deineAnblickeMap.get(s.species) ?? 0) + (s.count ?? 1),
+        )
+      }
+      const deineAnblicke = Array.from(deineAnblickeMap.entries()).map(
+        ([species, count]) => ({ species, count }),
+      )
 
       let gesamtStrecke: { species: WildArt; count: number }[] | 'locked'
       let nachsucheCount: number
@@ -264,9 +355,11 @@ export async function getTimelineItems(
         huntId: hunt.id,
         huntName: hunt.name,
         huntKind: hunt.kind,
+        huntType: hunt.type,
         isDriven: hunt.driven_hunt_id !== null,
         teilnehmerCount: pc,
         deinAnteil,
+        deineAnblicke,
         gesamtStrecke,
         startedAt,
         endedAt: hunt.ended_at ? new Date(hunt.ended_at) : null,
@@ -274,7 +367,19 @@ export async function getTimelineItems(
         nachsucheCount,
       })
     } else {
-      // CASE B: Solo — Gruppierung nach (Tag, species_group)
+      // CASE B: Solo — entweder Anblick (0 Kills + Sightings) oder Strecke/Erlegung
+      const huntSightings = sightingsByHunt.get(hunt.id) ?? []
+      if (userKillsInHunt.length === 0) {
+        if (huntSightings.length === 0) {
+          // 0 Kills + 0 Sightings -> Hunt war ergebnislos, taucht nicht im Tagebuch auf
+          continue
+        }
+        // 0 Kills + N Sightings -> AnblickCard mit Hunt-Kontext ("ohne Strecke")
+        items.push(buildAnblick(huntSightings, hunt))
+        continue
+      }
+
+      // CASE B': Solo mit Kills — Gruppierung nach (Tag, species_group)
       const groups = new Map<string, KillRow[]>()
       for (const k of userKillsInHunt) {
         const dateKey = toLocalDateKey(new Date(k.erlegt_am as string))
@@ -324,7 +429,19 @@ export async function getTimelineItems(
     items.push(buildErlegung(k, null))
   }
 
-  // 11. Sortiere absteigend nach occurredAt
+  // 11. Orphan-Sightings (hunt_id NULL) -> pro Tag eine AnblickCard
+  const sightingsByDay = new Map<string, SightingRow[]>()
+  for (const s of orphanSightings) {
+    const dateKey = toLocalDateKey(new Date(s.occurred_at))
+    const list = sightingsByDay.get(dateKey) ?? []
+    list.push(s)
+    sightingsByDay.set(dateKey, list)
+  }
+  for (const [dateKey, rows] of sightingsByDay) {
+    items.push(buildAnblick(rows, null, dateKey))
+  }
+
+  // 12. Sortiere absteigend nach occurredAt
   items.sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
 
   return items
@@ -362,6 +479,69 @@ function aggregateBySpecies(
     map.set(wa, (map.get(wa) ?? 0) + 1)
   }
   return Array.from(map.entries()).map(([species, count]) => ({ species, count }))
+}
+
+/**
+ * Baut ein TimelineAnblick-Item.
+ * - Hunt-Kontext: hunt !== null, dateKey ungenutzt; occurredAt/start/end/notiz aus hunt.
+ * - Solo-Tag: hunt === null, dateKey erforderlich; occurredAt = frühestes sighting,
+ *             start/end = min/max sighting-time des Tages, notiz = erste nicht-leere Note.
+ * Sightings-Aggregation in beiden Fällen: pro species SUM(count) (count fällt auf 1
+ * zurück, wenn NULL). Rows ohne species sind beim Splitten bereits ausgefiltert.
+ */
+function buildAnblick(
+  rows: SightingRow[],
+  hunt: HuntRow | null,
+  dateKey?: string,
+): TimelineAnblick {
+  const bySpecies = new Map<string, number>()
+  for (const r of rows) {
+    if (!r.species) continue
+    bySpecies.set(r.species, (bySpecies.get(r.species) ?? 0) + (r.count ?? 1))
+  }
+  const aggregated = Array.from(bySpecies.entries()).map(([species, count]) => ({
+    species,
+    count,
+  }))
+
+  const sortedTimes = rows
+    .map(r => new Date(r.occurred_at).getTime())
+    .sort((a, b) => a - b)
+  const earliestAt = new Date(sortedTimes[0])
+  const latestAt = new Date(sortedTimes[sortedTimes.length - 1])
+
+  if (hunt) {
+    const startedAt = hunt.started_at ? new Date(hunt.started_at) : null
+    const endedAt = hunt.ended_at ? new Date(hunt.ended_at) : null
+    return {
+      kind: 'anblick',
+      id: `a-h-${hunt.id}`,
+      occurredAt: startedAt ?? earliestAt,
+      huntId: hunt.id,
+      huntName: hunt.name,
+      huntType: hunt.type,
+      sightings: aggregated,
+      startedAt,
+      endedAt,
+      notiz: hunt.notiz,
+    }
+  }
+
+  // Solo-Tag — dateKey ist garantiert gesetzt vom Caller
+  const firstNote = rows.find(r => r.note && r.note.trim() !== '')?.note ?? null
+  const idKey = (dateKey ?? toLocalDateKey(earliestAt)).replace(/-/g, '')
+  return {
+    kind: 'anblick',
+    id: `a-orphan-${idKey}`,
+    occurredAt: earliestAt,
+    huntId: null,
+    huntName: null,
+    huntType: null,
+    sightings: aggregated,
+    startedAt: earliestAt,
+    endedAt: latestAt,
+    notiz: firstNote,
+  }
 }
 
 function parseWeather(raw: unknown): { temp_c?: number; wind_dir?: string } | null {

@@ -39,3 +39,25 @@ export function getWildArtLabelSingle(wildArt: WildArt | string): string {
 export function getWildGroupLabel(group: WildGroup): string {
   return WILD_GROUP_CONFIG.find(c => c.group === group)?.label ?? group
 }
+
+/**
+ * Resolver für wild_events.species — ein Freitext-Feld, das sowohl
+ * Wildgruppen-Keys ("rehwild", "schwarzwild") als auch Einzel-Wildart-Werte
+ * ("fuchs", "rehbock", "frischling") enthalten kann.
+ *
+ * Sucht in dieser Reihenfolge:
+ *   1) Wildgruppen-Match     ("rehwild" → "Rehwild")
+ *   2) Einzel-Wildart-Match  (delegiert an getWildArtLabelSingle)
+ *   3) Capitalize-Fallback   ("marder" → "Marder") — damit unbekannte
+ *      Freitext-Werte wenigstens grossgeschrieben gerendert werden.
+ */
+export function getSpeciesLabel(species: string): string {
+  const groupHit = WILD_GROUP_CONFIG.find(c => c.group === species)
+  if (groupHit) return groupHit.label
+
+  const single = getWildArtLabelSingle(species)
+  if (single !== species) return single
+
+  if (species.length === 0) return species
+  return species.charAt(0).toUpperCase() + species.slice(1)
+}

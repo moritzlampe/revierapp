@@ -5,14 +5,20 @@ import { useSearchParams } from 'next/navigation'
 import type { TimelineItem } from '@/lib/diary/timeline'
 import DiaryTimeline, { MonthLabel } from './DiaryTimeline'
 import ErlegungCard from './ErlegungCard'
+import AnblickCard from './AnblickCard'
+import GesellCard from './GesellCard'
 
-type Filter = 'alle' | 'erlegungen' | 'jagdtage'
+type Filter = 'alle' | 'erlegungen' | 'jagdtage' | 'anblicke'
 
-const VALID: ReadonlyArray<Filter> = ['alle', 'erlegungen', 'jagdtage']
+const VALID: ReadonlyArray<Filter> = ['alle', 'erlegungen', 'jagdtage', 'anblicke']
 
 function parseFilter(raw: string | null): Filter {
   if (raw && (VALID as ReadonlyArray<string>).includes(raw)) return raw as Filter
   return 'alle'
+}
+
+function assertNever(x: never): never {
+  throw new Error(`Unhandled timeline item kind: ${JSON.stringify(x)}`)
 }
 
 const MONTH_FMT = new Intl.DateTimeFormat('de-DE', {
@@ -41,8 +47,8 @@ interface Props {
  * Client wrapper that reads the URL filter param, applies it to the timeline
  * items, groups by month, and renders cards inside <DiaryTimeline>.
  *
- * Phase 2.1 only renders ErlegungCards; Anblick/Gesell come in 2.3.
- * Filter-aware empty states come in 2.4.
+ * Renders ErlegungCard, AnblickCard, GesellCard. StreckeCard (kind='strecke')
+ * is reserved for a later sprint. Filter-aware empty states come in Phase 2.4.
  */
 export default function DiaryTimelineList({ items }: Props) {
   const searchParams = useSearchParams()
@@ -51,6 +57,9 @@ export default function DiaryTimelineList({ items }: Props) {
   const filtered = useMemo(() => {
     if (filter === 'erlegungen') {
       return items.filter(i => i.kind === 'erlegung' || i.kind === 'strecke')
+    }
+    if (filter === 'anblicke') {
+      return items.filter(i => i.kind === 'anblick')
     }
     // 'alle' and 'jagdtage' both pass everything through for now;
     // 'jagdtage' semantics get refined in Phase 2.4.
@@ -97,21 +106,30 @@ export default function DiaryTimelineList({ items }: Props) {
         <div key={group.key}>
           <MonthLabel label={group.label} />
           {group.items.map(item => {
-            if (item.kind === 'erlegung') {
-              const breadcrumbText =
-                item.huntId && !representedHuntIds.has(item.huntId)
-                  ? item.place
-                  : null
-              return (
-                <ErlegungCard
-                  key={item.id}
-                  item={item}
-                  breadcrumbText={breadcrumbText}
-                />
-              )
+            switch (item.kind) {
+              case 'erlegung': {
+                const breadcrumbText =
+                  item.huntId && !representedHuntIds.has(item.huntId)
+                    ? item.place
+                    : null
+                return (
+                  <ErlegungCard
+                    key={item.id}
+                    item={item}
+                    breadcrumbText={breadcrumbText}
+                  />
+                )
+              }
+              case 'strecke':
+                // TODO 60.3.x: StreckeCard
+                return null
+              case 'gesell':
+                return <GesellCard key={item.id} item={item} />
+              case 'anblick':
+                return <AnblickCard key={item.id} item={item} />
+              default:
+                return assertNever(item)
             }
-            // Phase 2.1: Anblick/Gesell/Strecke not yet rendered; ignored silently.
-            return null
           })}
         </div>
       ))}
