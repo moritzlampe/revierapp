@@ -485,9 +485,6 @@ export default function CreateHuntPage() {
       localStorage.removeItem('last_selected_revier_id')
     }
 
-    // Solo- vs. Group-Intent: 0 Kontakte = Einzeljagd, sonst Gruppenjagd
-    const selectedContacts = contacts.filter(c => c.selected)
-
     const { data: hunt, error: insertError } = await supabase
       .from('hunts')
       .insert({
@@ -495,7 +492,10 @@ export default function CreateHuntPage() {
         district_id: selectedDistrictId || null,
         name: name || 'Jagd am ' + new Date().toLocaleDateString('de-DE'),
         type,
-        kind: selectedContacts.length === 0 ? 'solo' : 'group',
+        // handleCreate ist nur erreichbar wenn huntKind === 'group'
+        // (Solo-Routing in handleContinue). Hardcoded statt huntKind,
+        // damit ein Routing-Drift sichtbar wird.
+        kind: 'group' as const,
         status: 'active',
         invite_code: inviteCode,
         wild_presets: allWild,
@@ -514,6 +514,7 @@ export default function CreateHuntPage() {
     })
 
     // Ausgewählte Kontakte als Teilnehmer
+    const selectedContacts = contacts.filter(c => c.selected)
     if (selectedContacts.length > 0) {
       await supabase.from('hunt_participants').insert(
         selectedContacts.map(c => ({
