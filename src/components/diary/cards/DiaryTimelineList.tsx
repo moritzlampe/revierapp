@@ -3,19 +3,11 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { TimelineItem } from '@/lib/diary/timeline'
+import { type DiaryFilter, parseFilter } from '@/lib/diary/filter'
 import DiaryTimeline, { MonthLabel } from './DiaryTimeline'
 import ErlegungCard from './ErlegungCard'
 import AnblickCard from './AnblickCard'
 import GesellCard from './GesellCard'
-
-type Filter = 'alle' | 'erlegungen' | 'jagdtage' | 'anblicke'
-
-const VALID: ReadonlyArray<Filter> = ['alle', 'erlegungen', 'jagdtage', 'anblicke']
-
-function parseFilter(raw: string | null): Filter {
-  if (raw && (VALID as ReadonlyArray<string>).includes(raw)) return raw as Filter
-  return 'alle'
-}
 
 function assertNever(x: never): never {
   throw new Error(`Unhandled timeline item kind: ${JSON.stringify(x)}`)
@@ -52,7 +44,7 @@ interface Props {
  */
 export default function DiaryTimelineList({ items }: Props) {
   const searchParams = useSearchParams()
-  const filter = parseFilter(searchParams.get('filter'))
+  const filter: DiaryFilter = parseFilter(searchParams.get('filter'))
 
   const filtered = useMemo(() => {
     if (filter === 'erlegungen') {
@@ -61,8 +53,9 @@ export default function DiaryTimelineList({ items }: Props) {
     if (filter === 'anblicke') {
       return items.filter(i => i.kind === 'anblick')
     }
-    // 'alle' and 'jagdtage' both pass everything through for now;
-    // 'jagdtage' semantics get refined in Phase 2.4.
+    if (filter === 'gesell') {
+      return items.filter(i => i.kind === 'gesell')
+    }
     return items
   }, [items, filter])
 
@@ -98,7 +91,28 @@ export default function DiaryTimelineList({ items }: Props) {
     return out
   }, [filtered])
 
-  if (groups.length === 0) return null
+  if (groups.length === 0) {
+    // 'alle' delegates to the container-level empty state in tagebuch-content.tsx
+    // (driven by Server-Stats). Filter-specific empties render an inline hint here.
+    if (filter === 'alle') return null
+    const emptyText =
+      filter === 'erlegungen' ? 'Keine Erlegungen in dieser Saison'
+      : filter === 'anblicke' ? 'Keine Anblicke notiert'
+      : 'Keine Gesellschaftsjagden'
+    return (
+      <div
+        style={{
+          padding: '2rem 1rem',
+          textAlign: 'center',
+          color: 'var(--text-muted)',
+          fontFamily: 'var(--font-body)',
+          fontSize: '0.875rem',
+        }}
+      >
+        {emptyText}
+      </div>
+    )
+  }
 
   return (
     <DiaryTimeline>

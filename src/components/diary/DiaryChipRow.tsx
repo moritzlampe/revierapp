@@ -1,37 +1,26 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-
-type Filter = 'alle' | 'erlegungen' | 'jagdtage'
+import { type DiaryFilter, parseFilter } from '@/lib/diary/filter'
 
 interface ChipDef {
-  value: Filter | 'anblicke'
+  value: DiaryFilter
   label: string
-  disabled?: boolean
 }
 
 const CHIPS: ChipDef[] = [
-  { value: 'alle', label: 'Alle' },
+  { value: 'alle',       label: 'Alle' },
   { value: 'erlegungen', label: 'Erlegungen' },
-  { value: 'jagdtage', label: 'Jagdtage' },
-  { value: 'anblicke', label: 'Anblicke', disabled: true },
+  { value: 'anblicke',   label: 'Anblicke' },
+  { value: 'gesell',     label: 'Gesell' },
 ]
-
-const VALID_FILTERS: ReadonlyArray<Filter> = ['alle', 'erlegungen', 'jagdtage']
-
-function parseFilter(raw: string | null): Filter {
-  if (raw && (VALID_FILTERS as ReadonlyArray<string>).includes(raw)) {
-    return raw as Filter
-  }
-  return 'alle'
-}
 
 export default function DiaryChipRow() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const active = parseFilter(searchParams.get('filter'))
 
-  function handleClick(value: Filter) {
+  function handleClick(value: DiaryFilter) {
     const params = new URLSearchParams(searchParams.toString())
     if (value === 'alle') {
       params.delete('filter')
@@ -52,17 +41,13 @@ export default function DiaryChipRow() {
       }}
     >
       {CHIPS.map((chip) => {
-        const isActive = !chip.disabled && chip.value === active
+        const isActive = chip.value === active
         return (
           <button
             key={chip.value}
             type="button"
-            disabled={chip.disabled}
             aria-pressed={isActive}
-            onClick={() => {
-              if (chip.disabled) return
-              handleClick(chip.value as Filter)
-            }}
+            onClick={() => handleClick(chip.value)}
             className="flex-shrink-0 inline-flex items-center justify-center whitespace-nowrap"
             style={{
               fontSize: '0.75rem',
@@ -74,8 +59,6 @@ export default function DiaryChipRow() {
               border: `1px solid ${isActive ? 'var(--border-3)' : 'var(--border-2)'}`,
               background: isActive ? 'var(--surface-2)' : 'var(--surface)',
               color: isActive ? 'var(--text)' : 'var(--text-muted)',
-              opacity: chip.disabled ? 0.4 : 1,
-              cursor: chip.disabled ? 'not-allowed' : 'pointer',
               transition: 'background 0.15s, border-color 0.15s, color 0.15s',
             }}
           >
