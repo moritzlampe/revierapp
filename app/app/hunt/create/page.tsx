@@ -59,7 +59,7 @@ export default function CreateHuntPage() {
   const [step, setStep] = useState<1 | 2>(1)
   const [huntKind, setHuntKind] = useState<'group' | 'solo'>('group')
   const [name, setName] = useState('')
-  const [type, setType] = useState('ansitz')
+  const [type, setType] = useState<'ansitz' | 'drueckjagd'>('ansitz')
   const [wildPresets, setWildPresets] = useState<string[]>(['schwarzwild', 'rehwild', 'fuchs'])
   const [contacts, setContacts] = useState<Contact[]>([])
   const [search, setSearch] = useState('')
@@ -924,7 +924,7 @@ export default function CreateHuntPage() {
             </button>
             <button
               type="button"
-              onClick={() => setHuntKind('solo')}
+              onClick={() => { setHuntKind('solo'); setType('ansitz') }}
               style={{
                 height: '2.75rem', borderRadius: 'calc(var(--radius) - 4px)',
                 fontSize: '0.9375rem', fontWeight: 600,
@@ -937,6 +937,45 @@ export default function CreateHuntPage() {
             </button>
           </div>
         </div>
+
+        {/* Art der Jagd (nur Gruppenjagd) */}
+        {huntKind === 'group' && (
+          <div>
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Art der Jagd</label>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem',
+              padding: '0.25rem', borderRadius: 'var(--radius)',
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+            }}>
+              <button
+                type="button"
+                onClick={() => setType('ansitz')}
+                style={{
+                  height: '2.75rem', borderRadius: 'calc(var(--radius) - 4px)',
+                  fontSize: '0.9375rem', fontWeight: 600,
+                  background: type === 'ansitz' ? 'var(--green)' : 'transparent',
+                  color: type === 'ansitz' ? '#fff' : 'var(--text-2)',
+                  transition: 'background 120ms, color 120ms',
+                }}
+              >
+                Gemeinschaftsansitz
+              </button>
+              <button
+                type="button"
+                onClick={() => setType('drueckjagd')}
+                style={{
+                  height: '2.75rem', borderRadius: 'calc(var(--radius) - 4px)',
+                  fontSize: '0.9375rem', fontWeight: 600,
+                  background: type === 'drueckjagd' ? 'var(--green)' : 'transparent',
+                  color: type === 'drueckjagd' ? '#fff' : 'var(--text-2)',
+                  transition: 'background 120ms, color 120ms',
+                }}
+              >
+                Drückjagd
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Name */}
         <div>

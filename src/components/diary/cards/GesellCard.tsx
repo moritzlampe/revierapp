@@ -4,6 +4,7 @@ import {
   CaretRight,
 } from '@phosphor-icons/react/dist/ssr'
 import type { TimelineGesell } from '@/lib/diary/timeline'
+import { JAGDART_LABEL } from '@/lib/jagdart'
 import JagdtagBlock from './JagdtagBlock'
 import TotalStrecke from './TotalStrecke'
 import { AutoCompletedChip } from '@/components/hunt/AutoCompletedChip'
@@ -23,15 +24,6 @@ const TIME_FMT = new Intl.DateTimeFormat('de-DE', {
   hour12: false,
   timeZone: 'Europe/Berlin',
 })
-
-// Inline-Lookup, identisch zu AnblickCard. Zentralisierung kommt in einem
-// späteren Refactor-Mini-Sprint (siehe 2.3.3-Brief).
-const HUNT_TYPE_LABEL: Record<string, string> = {
-  ansitz: 'Ansitz',
-  pirsch: 'Pirsch',
-  drueckjagd: 'Drückjagd',
-  erntejagd: 'Erntejagd',
-}
 
 function formatDay(d: Date): string {
   return DATE_FMT.format(d).replace(/\.$/, '')
@@ -184,7 +176,7 @@ function teilnehmerPlural(n: number): string {
 export default function GesellCard({ item }: Props) {
   const day = formatDay(item.occurredAt)
   const timeRange = formatTimeRange(item.startedAt, item.endedAt)
-  const typeLabel = HUNT_TYPE_LABEL[item.huntType] ?? item.huntType
+  const typeLabel = JAGDART_LABEL[item.huntType as keyof typeof JAGDART_LABEL] ?? item.huntType
   const note = isVisibleNote(item.notiz) ? item.notiz : null
 
   return (

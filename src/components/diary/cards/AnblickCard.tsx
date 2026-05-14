@@ -1,5 +1,6 @@
 import type { TimelineAnblick } from '@/lib/diary/timeline'
 import { getSpeciesLabel } from '@/lib/wildArt'
+import { JAGDART_LABEL } from '@/lib/jagdart'
 import { AutoCompletedChip } from '@/components/hunt/AutoCompletedChip'
 
 interface Props {
@@ -17,13 +18,6 @@ const TIME_FMT = new Intl.DateTimeFormat('de-DE', {
   hour12: false,
   timeZone: 'Europe/Berlin',
 })
-
-const HUNT_TYPE_LABEL: Record<string, string> = {
-  ansitz: 'Ansitz',
-  pirsch: 'Pirsch',
-  drueckjagd: 'Drückjagd',
-  erntejagd: 'Erntejagd',
-}
 
 function formatDay(d: Date): string {
   return DATE_FMT.format(d).replace(/\.$/, '')
@@ -157,7 +151,7 @@ export default function AnblickCard({ item }: Props) {
   const isHuntContext = item.huntId !== null
 
   const typeLabel = item.huntType
-    ? (HUNT_TYPE_LABEL[item.huntType] ?? item.huntType)
+    ? (JAGDART_LABEL[item.huntType as keyof typeof JAGDART_LABEL] ?? item.huntType)
     : null
 
   const note = isVisibleNote(item.notiz) ? item.notiz : null
