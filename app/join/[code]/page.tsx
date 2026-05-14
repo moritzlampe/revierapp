@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { isHuntEnded } from '@/lib/hunt/status'
 
 export default function JoinHuntPage() {
   const params = useParams()
@@ -22,7 +23,7 @@ export default function JoinHuntPage() {
     const { data: hunt } = await supabase.from('hunts').select('id, name, status').eq('invite_code', params.code).single()
 
     if (!hunt) { setError('Einladungslink ungültig oder abgelaufen.'); setLoading(false); return }
-    if (hunt.status === 'completed') { setError('Diese Jagd ist bereits beendet.'); setLoading(false); return }
+    if (isHuntEnded(hunt.status)) { setError('Diese Jagd ist bereits beendet.'); setLoading(false); return }
 
     setHuntId(hunt.id)
     setHuntName(hunt.name)

@@ -6,6 +6,7 @@ import {
 import type { TimelineGesell } from '@/lib/diary/timeline'
 import JagdtagBlock from './JagdtagBlock'
 import TotalStrecke from './TotalStrecke'
+import { AutoCompletedChip } from '@/components/hunt/AutoCompletedChip'
 
 interface Props {
   item: TimelineGesell
@@ -199,6 +200,7 @@ export default function GesellCard({ item }: Props) {
               <span>{timeRange}</span>
             </>
           ) : null}
+          <AutoCompletedChip status={item.huntStatus} />
         </div>
 
         <h2 style={CARD_TITLE}>{item.huntName}</h2>

@@ -53,6 +53,8 @@ export interface TimelineGesell extends TimelineBase {
   huntKind: 'group' | 'solo' | string
   /** Roh-Wert von hunts.type ('ansitz' | 'pirsch' | 'drueckjagd' | 'erntejagd' …) */
   huntType: string
+  /** Roh-Wert von hunts.status — UI markiert 'auto_completed' mit Chip */
+  huntStatus: string | null
   /** True wenn driven_hunt_id NICHT NULL */
   isDriven: boolean
   teilnehmerCount: number
@@ -75,6 +77,8 @@ export interface TimelineAnblick extends TimelineBase {
   huntName: string | null
   /** Roh-Wert von hunts.type ('ansitz' | 'pirsch' | 'drueckjagd' | 'erntejagd' …) — null bei Solo */
   huntType: string | null
+  /** Roh-Wert von hunts.status — null bei Solo-Tag; UI markiert 'auto_completed' mit Chip */
+  huntStatus: string | null
   /** Pro species aggregiert mittels SUM(wild_events.count). species ist Freitext. */
   sightings: { species: string; count: number }[]
   /** Hunt-Kontext: hunt.started_at; Solo: frühestes occurred_at des Tages */
@@ -105,6 +109,7 @@ interface HuntRow {
   name: string
   kind: string
   type: string
+  status: string | null
   started_at: string | null
   ended_at: string | null
   driven_hunt_id: string | null
@@ -229,7 +234,7 @@ export async function getTimelineItems(
   if (allHuntIds.size > 0) {
     const huntsRes = await supabase
       .from('hunts')
-      .select('id, name, kind, type, started_at, ended_at, driven_hunt_id, share_total_strecke, creator_id, notiz')
+      .select('id, name, kind, type, status, started_at, ended_at, driven_hunt_id, share_total_strecke, creator_id, notiz')
       .in('id', Array.from(allHuntIds))
       .or(`started_at.is.null,and(started_at.gte.${startIso},started_at.lt.${endIso})`)
 
@@ -356,6 +361,7 @@ export async function getTimelineItems(
         huntName: hunt.name,
         huntKind: hunt.kind,
         huntType: hunt.type,
+        huntStatus: hunt.status ?? null,
         isDriven: hunt.driven_hunt_id !== null,
         teilnehmerCount: pc,
         deinAnteil,
@@ -520,6 +526,7 @@ function buildAnblick(
       huntId: hunt.id,
       huntName: hunt.name,
       huntType: hunt.type,
+      huntStatus: hunt.status ?? null,
       sightings: aggregated,
       startedAt,
       endedAt,
@@ -537,6 +544,7 @@ function buildAnblick(
     huntId: null,
     huntName: null,
     huntType: null,
+    huntStatus: null,
     sightings: aggregated,
     startedAt: earliestAt,
     endedAt: latestAt,

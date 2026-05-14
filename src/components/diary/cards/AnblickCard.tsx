@@ -1,5 +1,6 @@
 import type { TimelineAnblick } from '@/lib/diary/timeline'
 import { getSpeciesLabel } from '@/lib/wildArt'
+import { AutoCompletedChip } from '@/components/hunt/AutoCompletedChip'
 
 interface Props {
   item: TimelineAnblick
@@ -186,6 +187,7 @@ export default function AnblickCard({ item }: Props) {
               <span>{timeRange}</span>
             </>
           ) : null}
+          {item.huntId ? <AutoCompletedChip status={item.huntStatus} /> : null}
         </div>
 
         {isHuntContext ? (

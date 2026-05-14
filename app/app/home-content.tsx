@@ -11,6 +11,8 @@ import { getChatDisplayInfo } from '@/lib/chat-utils'
 import { MagnifyingGlass, Plus, Star, Crosshair, EyeSlash } from '@phosphor-icons/react'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { isHuntEnded } from '@/lib/hunt/status'
+import { AutoCompletedChip } from '@/components/hunt/AutoCompletedChip'
 
 function getInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
@@ -210,7 +212,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   useEffect(() => { loadHunts() }, [loadHunts])
 
   const activeHunts = hunts.filter(h => h.status === 'active')
-  const pastHunts = hunts.filter(h => h.status === 'completed').slice(0, 3)
+  const pastHunts = hunts.filter(h => isHuntEnded(h.status)).slice(0, 3)
 
   // Gefilterte Jagd-Liste
   const filteredHunts = useMemo(() => {
@@ -223,7 +225,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       // Filter nur wenn keine Suche aktiv
       if (jagdFilter === 'live') list = list.filter(h => h.status === 'active')
       else if (jagdFilter === 'geplant') list = list.filter(h => h.status === 'planned')
-      else if (jagdFilter === 'vergangen') list = list.filter(h => h.status === 'completed')
+      else if (jagdFilter === 'vergangen') list = list.filter(h => isHuntEnded(h.status))
 
       if (jagdKindFilter !== 'alle') {
         list = list.filter(h => h.kind === jagdKindFilter)
@@ -309,7 +311,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     if (hasKills) {
       // Hunt mit Kills → nur beenden (Daten bleiben erhalten)
       const hunt = hunts.find(h => h.id === huntId)
-      if (hunt?.status === 'completed') {
+      if (isHuntEnded(hunt?.status)) {
         setRemovingId(null)
         return
       }
@@ -883,9 +885,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             {isLive && <span className="live-dot" />}
                             {isLive
                               ? 'Live'
-                              : hunt.status === 'completed'
+                              : isHuntEnded(hunt.status)
                                 ? 'Beendet'
                                 : 'Geplant'}
+                            <AutoCompletedChip status={hunt.status} />
                           </div>
                           <div style={{
                             fontFamily: 'var(--font-display)',
@@ -899,7 +902,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             {isLive && hunt.started_at && (
                               <span>Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
                             )}
-                            {hunt.status === 'completed' && hunt.ended_at && (
+                            {isHuntEnded(hunt.status) && hunt.ended_at && (
                               <span>{new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}</span>
                             )}
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>

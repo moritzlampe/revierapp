@@ -1772,7 +1772,9 @@ export type Database = {
       driven_hunt_status: "entwurf" | "einladung" | "aktiv" | "abgeschlossen"
       geschlecht: "maennlich" | "weiblich" | "unbekannt"
       hunt_kind: "group" | "solo"
-      hunt_status: "draft" | "active" | "paused" | "completed"
+      // Manually patched for Sprint 58.1g.x — added 'auto_completed' (pg_cron job).
+      // Re-run `supabase gen types` to officially regenerate.
+      hunt_status: "draft" | "active" | "paused" | "completed" | "auto_completed"
       hunt_type: "ansitz" | "pirsch" | "drueckjagd" | "erntejagd"
       jagdart: "ansitz" | "pirsch" | "drueckjagd" | "erntejagd"
       jes_status: "aktiv" | "abgelaufen" | "entzogen" | "pausiert"
@@ -1995,7 +1997,9 @@ export const Constants = {
       driven_hunt_status: ["entwurf", "einladung", "aktiv", "abgeschlossen"],
       geschlecht: ["maennlich", "weiblich", "unbekannt"],
       hunt_kind: ["group", "solo"],
-      hunt_status: ["draft", "active", "paused", "completed"],
+      // Manually patched for Sprint 58.1g.x — added 'auto_completed' (pg_cron job).
+      // Re-run `supabase gen types` to officially regenerate.
+      hunt_status: ["draft", "active", "paused", "completed", "auto_completed"],
       hunt_type: ["ansitz", "pirsch", "drueckjagd", "erntejagd"],
       jagdart: ["ansitz", "pirsch", "drueckjagd", "erntejagd"],
       jes_status: ["aktiv", "abgelaufen", "entzogen", "pausiert"],
