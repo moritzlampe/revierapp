@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import type { Jagdjahr } from './season'
+import { toBerlinDateKey } from './time'
 
 /**
  * Aggregierte Werte für die Stats-Subline im Tagebuch-Header.
@@ -87,10 +88,10 @@ export async function getDiaryStats(
   // Date-Set bauen (lokale YYYY-MM-DD-Keys)
   const dateSet = new Set<string>()
   for (const row of killDatesRes.data ?? []) {
-    if (row.erlegt_am) dateSet.add(toLocalDateKey(new Date(row.erlegt_am)))
+    if (row.erlegt_am) dateSet.add(toBerlinDateKey(new Date(row.erlegt_am)))
   }
   for (const row of huntRows) {
-    if (row.started_at) dateSet.add(toLocalDateKey(new Date(row.started_at)))
+    if (row.started_at) dateSet.add(toBerlinDateKey(new Date(row.started_at)))
   }
   const jagdtage = dateSet.size
 
@@ -104,14 +105,4 @@ export async function getDiaryStats(
   const stundenImRevier = Math.round((totalMs / 3_600_000) * 10) / 10
 
   return { jagdtage, erlegungen, stundenImRevier }
-}
-
-// --- internal ---
-
-/** Local-time YYYY-MM-DD key for set-based day-deduplication. */
-function toLocalDateKey(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
 }

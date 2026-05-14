@@ -7,6 +7,7 @@ import {
   SOLO_AGGREGATE_THRESHOLD,
 } from '@/lib/species-config'
 import type { Jagdjahr } from './season'
+import { toBerlinDateKey } from './time'
 
 // ---------- Public types (UI contract) ----------
 
@@ -388,7 +389,7 @@ export async function getTimelineItems(
       // CASE B': Solo mit Kills — Gruppierung nach (Tag, species_group)
       const groups = new Map<string, KillRow[]>()
       for (const k of userKillsInHunt) {
-        const dateKey = toLocalDateKey(new Date(k.erlegt_am as string))
+        const dateKey = toBerlinDateKey(new Date(k.erlegt_am as string))
         const sg = WILD_ART_TO_GROUP[k.wild_art as WildArt]
         if (!sg) continue // unbekannte wild_art -> skip (defensiv)
         const groupKey = `${dateKey}|${sg}`
@@ -438,7 +439,7 @@ export async function getTimelineItems(
   // 11. Orphan-Sightings (hunt_id NULL) -> pro Tag eine AnblickCard
   const sightingsByDay = new Map<string, SightingRow[]>()
   for (const s of orphanSightings) {
-    const dateKey = toLocalDateKey(new Date(s.occurred_at))
+    const dateKey = toBerlinDateKey(new Date(s.occurred_at))
     const list = sightingsByDay.get(dateKey) ?? []
     list.push(s)
     sightingsByDay.set(dateKey, list)
@@ -536,7 +537,7 @@ function buildAnblick(
 
   // Solo-Tag — dateKey ist garantiert gesetzt vom Caller
   const firstNote = rows.find(r => r.note && r.note.trim() !== '')?.note ?? null
-  const idKey = (dateKey ?? toLocalDateKey(earliestAt)).replace(/-/g, '')
+  const idKey = (dateKey ?? toBerlinDateKey(earliestAt)).replace(/-/g, '')
   return {
     kind: 'anblick',
     id: `a-orphan-${idKey}`,
@@ -559,12 +560,4 @@ function parseWeather(raw: unknown): { temp_c?: number; wind_dir?: string } | nu
   if (typeof obj.temp_c === 'number') result.temp_c = obj.temp_c
   if (typeof obj.wind_dir === 'string') result.wind_dir = obj.wind_dir
   return Object.keys(result).length > 0 ? result : null
-}
-
-/** Local-time YYYY-MM-DD key for grouping kills by calendar day. */
-function toLocalDateKey(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
 }

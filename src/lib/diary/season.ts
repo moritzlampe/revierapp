@@ -4,10 +4,12 @@
  * Hegering-Statistiken und Schonzeiten richten sich danach.
  */
 
+import { berlinDateFields, berlinMidnight } from './time'
+
 export interface Jagdjahr {
   /** 4-stelliger Start-Year als String, z. B. "2026" für Jagdjahr 2026/27 */
   key: string
-  /** Anfang des Jagdjahrs, immer 1. April 00:00:00 lokal */
+  /** Anfang des Jagdjahrs, immer 1. April 00:00:00 Europe/Berlin */
   start: Date
   /** Ende des Jagdjahrs (exklusiv), immer 1. April 00:00:00 des Folgejahres */
   end: Date
@@ -21,8 +23,9 @@ export interface Jagdjahr {
  * Datum <  1.4. -> Vorjahr
  */
 export function getJagdjahr(date: Date = new Date()): Jagdjahr {
-  const year = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1
-  return jagdjahrFromStartYear(year)
+  const { year, monthIdx } = berlinDateFields(date)
+  const startYear = monthIdx >= 3 ? year : year - 1
+  return jagdjahrFromStartYear(startYear)
 }
 
 /**
@@ -61,8 +64,8 @@ export function isWithinJagdjahr(date: Date, jj: Jagdjahr): boolean {
 // --- internal ---
 
 function jagdjahrFromStartYear(startYear: number): Jagdjahr {
-  const start = new Date(startYear, 3, 1, 0, 0, 0, 0) // April = month 3
-  const end = new Date(startYear + 1, 3, 1, 0, 0, 0, 0)
+  const start = berlinMidnight(startYear, 3, 1)     // 1.4. 00:00 Berlin
+  const end = berlinMidnight(startYear + 1, 3, 1)   // 1.4. nächstes Jahr 00:00 Berlin
   const yyShort = String(startYear).slice(2)
   const yyShortNext = String(startYear + 1).slice(2)
   return {
