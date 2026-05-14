@@ -4,12 +4,40 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import BullseyeIcon from '@/components/icons/BullseyeIcon'
-import { Crosshair, ChatCircle, User } from '@phosphor-icons/react'
+import { Crosshair, ChatCircle, User, Notebook, Stack } from '@phosphor-icons/react'
 import { ErlegungSheet } from '@/components/erlegung/ErlegungSheet'
 import { useActiveHunt } from '@/hooks/useActiveHunt'
 
 // Vollbild-Aktionen: Tab-Bar ausblenden
 const HIDE_ON_ROUTES = ['/app/hunt/create']
+
+type ActiveKey = 'jagd' | 'tagebuchOrStrecke' | 'chat' | 'du' | null
+
+function getActiveKey(
+  pathname: string,
+  searchParams: URLSearchParams,
+  activeHunt: { id: string } | null,
+): ActiveKey {
+  // Tagebuch / Strecke — MUSS vor dem generischen /app/hunt-Check stehen,
+  // sonst gewinnt bei tab=strecke immer 'jagd'.
+  if (pathname === '/app/du/tagebuch') return 'tagebuchOrStrecke'
+  if (
+    activeHunt &&
+    pathname === `/app/hunt/${activeHunt.id}` &&
+    searchParams.get('tab') === 'strecke'
+  ) {
+    return 'tagebuchOrStrecke'
+  }
+  // Du
+  if (pathname === '/app/du') return 'du'
+  // Chat
+  if (pathname.startsWith('/app/chat/')) return 'chat'
+  if (pathname === '/app' && searchParams.get('tab') === 'chats') return 'chat'
+  // Jagd
+  if (pathname.startsWith('/app/hunt/')) return 'jagd'
+  if (pathname === '/app') return 'jagd'
+  return null
+}
 
 export default function BottomTabBar() {
   const pathname = usePathname()
@@ -21,11 +49,22 @@ export default function BottomTabBar() {
   // Jagd-Tab: aktive Hunt → direkt dorthin, sonst Jagd-Liste
   const jagdHref = activeHunt ? `/app/hunt/${activeHunt.id}` : '/app?tab=jagden'
 
-  const linkTabs = [
-    { key: 'jagd', label: 'Jagd', icon: Crosshair, href: jagdHref },
-    { key: 'chat', label: 'Chat', icon: ChatCircle, href: '/app?tab=chats' },
-    { key: 'du', label: 'Du', icon: User, href: '/app/du' },
-  ] as const
+  // Slot 2: Live-Jagd → Strecke-Tab, sonst Tagebuch
+  const tagebuchOrStreckeHref = activeHunt
+    ? `/app/hunt/${activeHunt.id}?tab=strecke`
+    : '/app/du/tagebuch'
+  const tagebuchOrStreckeLabel = activeHunt ? 'Strecke' : 'Tagebuch'
+  const tagebuchOrStreckeIcon = activeHunt ? Stack : Notebook
+
+  const jagdTab = { key: 'jagd', label: 'Jagd', icon: Crosshair, href: jagdHref }
+  const tagebuchOrStreckeTab = {
+    key: 'tagebuchOrStrecke',
+    label: tagebuchOrStreckeLabel,
+    icon: tagebuchOrStreckeIcon,
+    href: tagebuchOrStreckeHref,
+  }
+  const chatTab = { key: 'chat', label: 'Chat', icon: ChatCircle, href: '/app?tab=chats' }
+  const duTab = { key: 'du', label: 'Du', icon: User, href: '/app/du' }
 
   // Keyboard-Visibility via Custom Event (Chat-Inputs dispatchen diese)
   useEffect(() => {
@@ -47,19 +86,7 @@ export default function BottomTabBar() {
   // Auf bestimmten Routes komplett ausblenden
   if (HIDE_ON_ROUTES.some(r => pathname.startsWith(r))) return null
 
-  // Aktiven Tab bestimmen
-  let activeKey: string
-  if (pathname === '/app/du') {
-    activeKey = 'du'
-  } else if (pathname.startsWith('/app/hunt/') || pathname.startsWith('/app/hunt')) {
-    activeKey = 'jagd'
-  } else if (pathname.startsWith('/app/chat/') || pathname.startsWith('/app/chat')) {
-    activeKey = 'chat'
-  } else if (pathname === '/app') {
-    activeKey = searchParams.get('tab') === 'chats' ? 'chat' : 'jagd'
-  } else {
-    activeKey = 'jagd' // Fallback
-  }
+  const activeKey = getActiveKey(pathname, searchParams, activeHunt)
 
   return (
     <>
@@ -81,10 +108,13 @@ export default function BottomTabBar() {
         }}
       >
         <div style={{ display: 'flex', height: '3.5rem' }}>
-          {/* Tab 1: Jagd */}
-          {renderLinkTab(linkTabs[0], activeKey)}
+          {/* Slot 1: Jagd */}
+          {renderLinkTab(jagdTab, activeKey)}
 
-          {/* Tab 2: Erlegung (Action-Button, Design-System §5.12: 56px FAB) */}
+          {/* Slot 2: Tagebuch (kein Live-Hunt) / Strecke (Live-Hunt) */}
+          {renderLinkTab(tagebuchOrStreckeTab, activeKey)}
+
+          {/* Slot 3: Erlegung (Action-Button, Design-System §5.12: 56px FAB) */}
           <button
             onClick={() => setErlegungOpen(true)}
             style={{
@@ -134,11 +164,11 @@ export default function BottomTabBar() {
             </span>
           </button>
 
-          {/* Tab 3: Chat */}
-          {renderLinkTab(linkTabs[1], activeKey)}
+          {/* Slot 4: Chat */}
+          {renderLinkTab(chatTab, activeKey)}
 
-          {/* Tab 4: Du */}
-          {renderLinkTab(linkTabs[2], activeKey)}
+          {/* Slot 5: Du */}
+          {renderLinkTab(duTab, activeKey)}
         </div>
       </nav>
 
@@ -149,7 +179,7 @@ export default function BottomTabBar() {
 
 function renderLinkTab(
   tab: { key: string; label: string; icon: React.ComponentType<{ size?: number; weight?: 'regular' | 'fill' | 'bold' }>; href: string },
-  activeKey: string,
+  activeKey: ActiveKey,
 ) {
   const isActive = activeKey === tab.key
   return (
