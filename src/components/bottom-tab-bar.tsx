@@ -6,7 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import BullseyeIcon from '@/components/icons/BullseyeIcon'
 import { Crosshair, ChatCircle, User, Notebook, Stack } from '@phosphor-icons/react'
 import { ErlegungSheet } from '@/components/erlegung/ErlegungSheet'
-import { useActiveHunt } from '@/hooks/useActiveHunt'
+import { useActiveHunt } from '@/contexts/ActiveHuntContext'
 
 // Vollbild-Aktionen: Tab-Bar ausblenden
 const HIDE_ON_ROUTES = ['/app/hunt/create']

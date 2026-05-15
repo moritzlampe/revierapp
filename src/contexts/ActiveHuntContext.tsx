@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -14,16 +14,22 @@ export interface ActiveHunt {
   last_activity_at: string | null
 }
 
+interface ActiveHuntContextValue {
+  activeHunt: ActiveHunt | null
+  loading: boolean
+}
+
+const ActiveHuntCtx = createContext<ActiveHuntContextValue | null>(null)
+
 /**
  * Liefert die aktuell aktive Hunt des eingeloggten Users (status='active'),
- * oder null wenn keine aktiv.
- * Bei mehreren aktiven Hunts: jüngste gewinnt.
+ * oder null wenn keine aktiv. Bei mehreren aktiven Hunts: jüngste gewinnt.
  *
  * Re-fetch bei Route-Wechsel (z.B. nach endHunt → router.push('/app'))
  * und wenn der Tab wieder sichtbar wird, damit `activeHunt` nicht auf
  * einer beendeten Jagd stehen bleibt, solange das Layout gemountet ist.
  */
-export function useActiveHunt() {
+export function ActiveHuntProvider({ children }: { children: React.ReactNode }) {
   const [activeHunt, setActiveHunt] = useState<ActiveHunt | null>(null)
   const [loading, setLoading] = useState(true)
   const pathname = usePathname()
@@ -33,7 +39,11 @@ export function useActiveHunt() {
     const supabase = createClient()
 
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      // getSession() liest nur das Cookie und macht KEINEN /auth/v1/user-Roundtrip.
+      // Für die nachfolgende hunts-Query reicht die userId — die korrekte
+      // Sichtbarkeit sichert die serverseitige RLS (hunts + hunt_participants).
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
       if (cancelled) return
       if (!user) {
         setActiveHunt(null)
@@ -77,5 +87,15 @@ export function useActiveHunt() {
     }
   }, [pathname])
 
-  return { activeHunt, loading }
+  return (
+    <ActiveHuntCtx.Provider value={{ activeHunt, loading }}>
+      {children}
+    </ActiveHuntCtx.Provider>
+  )
+}
+
+export function useActiveHunt() {
+  const ctx = useContext(ActiveHuntCtx)
+  if (!ctx) throw new Error('useActiveHunt must be used inside ActiveHuntProvider')
+  return ctx
 }
