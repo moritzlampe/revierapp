@@ -592,14 +592,20 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     }
   }, [])
 
-  // Chats immer beim Mount laden (nicht erst beim Tab-Wechsel)
+  // Beim Initial-Mount: Chats vorgewärmt laden (auch wenn activeTab !== 'chats'),
+  // damit ein späterer Wechsel zu 'chats' ohne Spinner ist und usePrefetchChats
+  // seinen Message-Cache füllen kann. Bei Folge-Renders: nur neu laden, wenn der
+  // Tab tatsächlich 'chats' ist (z.B. nach Wechsel von 'jagden' zurück) — sonst
+  // würde ein Tab-Switch zu 'jagden' einen unnötigen Refresh triggern.
+  // Pull bei Tab-Fokus deckt zusätzlich ab, dass ausgeblendete Chats per DB-Trigger
+  // unhidden worden sein können.
+  const chatsLoadedRef = useRef(false)
   useEffect(() => {
-    loadChats()
-  }, [loadChats])
-
-  // Pull bei Tab-Fokus: ausgeblendete Chats können per DB-Trigger (neue Message)
-  // unhidden worden sein — beim Tab-Switch auf "Chats" und beim Wechsel der App-Sichtbarkeit neu laden.
-  useEffect(() => {
+    if (!chatsLoadedRef.current) {
+      chatsLoadedRef.current = true
+      loadChats()
+      return
+    }
     if (activeTab === 'chats') loadChats()
   }, [activeTab, loadChats])
 
