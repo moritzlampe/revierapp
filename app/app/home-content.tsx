@@ -84,6 +84,29 @@ type ChatListItem = {
   avatarUrl: string | null
 }
 
+// Shape einer Row aus der get_my_chat_list-RPC. Die generierten DB-Types
+// markieren alle Felder als non-null; in Wahrheit sind hunt_id, last_message_*,
+// avatar_url und hidden_at nullable. Wir spiegeln das hier mit | null.
+type ChatListRow = {
+  id: string
+  name: string
+  kind: string
+  emoji: string
+  avatar_url: string | null
+  hunt_id: string | null
+  hunt_status: string | null
+  updated_at: string
+  last_message_content: string | null
+  last_message_type: string | null
+  last_message_created_at: string | null
+  last_message_sender_id: string | null
+  last_message_sender_name: string | null
+  members: unknown
+  my_last_read_at: string
+  hidden_at: string | null
+  unread_count: number
+}
+
 type Props = {
   displayName: string
   initialHunts: Hunt[]
@@ -435,143 +458,57 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   const loadChats = useCallback(async () => {
     setLoadingChats(true)
 
-    // Meine Gruppen laden
-    const { data: groups } = await supabase
-      .from('chat_groups')
-      .select('*')
-      .order('updated_at', { ascending: false })
+    // Eine einzige RPC-Anfrage statt n+1-Sequenz: liefert pro Gruppe alle
+    // Felder inkl. last-message, members[], my_last_read_at und unread_count.
+    // Filter (Mitglied + nicht hidden) + Sortierung (updated_at DESC) sitzen
+    // in der Function — hidden-Chats werden serverseitig ausgeblendet.
+    const { data: rows, error } = await supabase.rpc('get_my_chat_list')
 
-    if (!groups || groups.length === 0) {
+    if (error || !rows) {
       setChatItems([])
       setLoadingChats(false)
       return
     }
 
-    const groupIds = groups.map(g => g.id)
+    const items: ChatListItem[] = (rows as ChatListRow[]).map((row) => {
+      const members = (Array.isArray(row.members) ? row.members : []) as ChatMember[]
+      const displayInfo = getChatDisplayInfo(row.name, members, userId)
 
-    // Hunt-Status für Jagd-Chats laden
-    const huntIds = groups.filter(g => g.hunt_id).map(g => g.hunt_id!)
-    const huntStatusMap: Record<string, string> = {}
-    if (huntIds.length > 0) {
-      const { data: huntData } = await supabase
-        .from('hunts')
-        .select('id, status')
-        .in('id', huntIds)
-      huntData?.forEach(h => { huntStatusMap[h.id] = h.status })
-    }
-
-    // Meine Mitgliedschaften laden (für last_read_at + hidden_at)
-    const { data: memberships } = await supabase
-      .from('chat_group_members')
-      .select('group_id, last_read_at, hidden_at')
-      .eq('user_id', userId)
-      .in('group_id', groupIds)
-
-    const membershipMap: Record<string, { last_read_at: string | null; hidden_at: string | null }> = {}
-    memberships?.forEach(m => {
-      membershipMap[m.group_id] = { last_read_at: m.last_read_at, hidden_at: m.hidden_at }
-    })
-
-    // Alle Mitglieder aller Gruppen batch-laden (für 2er-Chat-Erkennung)
-    const { data: allMembers } = await supabase
-      .from('chat_group_members')
-      .select('group_id, user_id')
-      .in('group_id', groupIds)
-
-    // Profile separat laden (umgeht FK-Join-Probleme bei fehlender Profiles-RLS)
-    const allUserIds = [...new Set((allMembers || []).map(m => m.user_id))]
-    const profileMap: Record<string, string> = {}
-    if (allUserIds.length > 0) {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, display_name')
-        .in('id', allUserIds)
-      profiles?.forEach(p => { profileMap[p.id] = p.display_name })
-    }
-
-    const membersByGroup: Record<string, ChatMember[]> = {}
-    allMembers?.forEach((m: any) => {
-      if (!membersByGroup[m.group_id]) membersByGroup[m.group_id] = []
-      membersByGroup[m.group_id].push({
-        user_id: m.user_id,
-        display_name: profileMap[m.user_id] || 'Unbekannt',
-      })
-    })
-
-    // Letzte Nachricht pro Gruppe laden
-    const items: ChatListItem[] = []
-    for (const group of groups) {
-      // Letzte Nachricht
-      const { data: lastMsgs } = await supabase
-        .from('messages')
-        .select('content, type, created_at, sender_id, participant_id')
-        .eq('group_id', group.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-
-      const lastMsg = lastMsgs?.[0]
+      // Last-Message-Sender (Vorname) nur anzeigen, wenn jemand anderes geschrieben hat
       let lastMessageSender: string | null = null
-
-      if (lastMsg?.sender_id && lastMsg.sender_id !== userId) {
-        const { data: senderProfile } = await supabase
-          .from('profiles')
-          .select('display_name')
-          .eq('id', lastMsg.sender_id)
-          .single()
-        lastMessageSender = senderProfile?.display_name?.split(' ')[0] || null
+      if (row.last_message_sender_id && row.last_message_sender_id !== userId) {
+        lastMessageSender = row.last_message_sender_name?.split(' ')[0] || null
       }
 
-      // Ungelesen zählen
-      let unreadCount = 0
-      const lastReadAt = membershipMap[group.id]?.last_read_at
-      if (lastReadAt && lastMsg) {
-        const { count } = await supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('group_id', group.id)
-          .gt('created_at', lastReadAt)
-          .neq('sender_id', userId)
-
-        unreadCount = count || 0
-      }
-
+      // Preview-Text aus letzter Nachricht
       let msgPreview: string | null = null
-      if (lastMsg) {
-        if (lastMsg.type === 'photo') msgPreview = '📷 Foto'
-        else if (lastMsg.type === 'audio') msgPreview = '🎤 Sprachnachricht'
-        else msgPreview = lastMsg.content
+      if (row.last_message_created_at) {
+        if (row.last_message_type === 'photo') msgPreview = '📷 Foto'
+        else if (row.last_message_type === 'audio') msgPreview = '🎤 Sprachnachricht'
+        else msgPreview = row.last_message_content
       }
 
-      // 2er-Chat-Erkennung
-      const groupMembers = membersByGroup[group.id] || []
-      const displayInfo = getChatDisplayInfo(group.name, groupMembers, userId)
-
-      items.push({
-        id: group.id,
-        groupId: group.id,
-        name: group.hunt_id ? `🎯 ${group.name}` : displayInfo.displayName,
-        emoji: group.hunt_id ? '🎯' : group.emoji,
-        isHuntChat: !!group.hunt_id,
-        huntId: group.hunt_id,
-        huntStatus: group.hunt_id ? (huntStatusMap[group.hunt_id] || null) : null,
-        createdBy: group.created_by,
+      return {
+        id: row.id,
+        groupId: row.id,
+        name: row.hunt_id ? `🎯 ${row.name}` : displayInfo.displayName,
+        emoji: row.hunt_id ? '🎯' : row.emoji,
+        isHuntChat: !!row.hunt_id,
+        huntId: row.hunt_id,
+        huntStatus: row.hunt_id ? (row.hunt_status || null) : null,
+        createdBy: '',
         lastMessage: msgPreview,
         lastMessageSender,
-        lastMessageTime: lastMsg?.created_at || group.updated_at,
-        unreadCount,
+        lastMessageTime: row.last_message_created_at || row.updated_at,
+        unreadCount: row.unread_count,
         isDirect: displayInfo.isDirect,
         displayInitial: displayInfo.displayInitial,
-        avatarUrl: group.avatar_url,
-      })
-    }
-
-    // Ausgeblendete Chats rausfiltern (hidden_at gesetzt)
-    const filteredItems = items.filter(
-      item => !membershipMap[item.groupId]?.hidden_at
-    )
+        avatarUrl: row.avatar_url,
+      }
+    })
 
     // Sortierung: aktive Jagd-Chats gepinnt oben, Rest nach letzter Nachricht
-    filteredItems.sort((a, b) => {
+    items.sort((a, b) => {
       const aLive = a.isHuntChat && a.huntStatus === 'active'
       const bLive = b.isHuntChat && b.huntStatus === 'active'
       if (aLive && !bLive) return -1
@@ -581,7 +518,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       return timeB - timeA
     })
 
-    setChatItems(filteredItems)
+    setChatItems(items)
     setLoadingChats(false)
   }, [supabase, userId])
 

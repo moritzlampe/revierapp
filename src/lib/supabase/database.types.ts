@@ -1754,6 +1754,28 @@ export type Database = {
         }
       }
       generate_invite_code: { Args: never; Returns: string }
+      get_my_chat_list: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          emoji: string
+          hidden_at: string
+          hunt_id: string
+          hunt_status: string
+          id: string
+          kind: string
+          last_message_content: string
+          last_message_created_at: string
+          last_message_sender_id: string
+          last_message_sender_name: string
+          last_message_type: string
+          members: Json
+          my_last_read_at: string
+          name: string
+          unread_count: number
+          updated_at: string
+        }[]
+      }
       get_my_created_group_ids: { Args: never; Returns: string[] }
       get_my_group_ids: { Args: never; Returns: string[] }
       get_my_hunt_ids: { Args: never; Returns: string[] }
@@ -1772,9 +1794,12 @@ export type Database = {
       driven_hunt_status: "entwurf" | "einladung" | "aktiv" | "abgeschlossen"
       geschlecht: "maennlich" | "weiblich" | "unbekannt"
       hunt_kind: "group" | "solo"
-      // Manually patched for Sprint 58.1g.x — added 'auto_completed' (pg_cron job).
-      // Re-run `supabase gen types` to officially regenerate.
-      hunt_status: "draft" | "active" | "paused" | "completed" | "auto_completed"
+      hunt_status:
+        | "draft"
+        | "active"
+        | "paused"
+        | "completed"
+        | "auto_completed"
       hunt_type: "ansitz" | "pirsch" | "drueckjagd" | "erntejagd"
       jagdart: "ansitz" | "pirsch" | "drueckjagd" | "erntejagd"
       jes_status: "aktiv" | "abgelaufen" | "entzogen" | "pausiert"
@@ -1997,8 +2022,6 @@ export const Constants = {
       driven_hunt_status: ["entwurf", "einladung", "aktiv", "abgeschlossen"],
       geschlecht: ["maennlich", "weiblich", "unbekannt"],
       hunt_kind: ["group", "solo"],
-      // Manually patched for Sprint 58.1g.x — added 'auto_completed' (pg_cron job).
-      // Re-run `supabase gen types` to officially regenerate.
       hunt_status: ["draft", "active", "paused", "completed", "auto_completed"],
       hunt_type: ["ansitz", "pirsch", "drueckjagd", "erntejagd"],
       jagdart: ["ansitz", "pirsch", "drueckjagd", "erntejagd"],
