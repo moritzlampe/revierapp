@@ -785,6 +785,7 @@ export type Database = {
       hunts: {
         Row: {
           boundary: unknown
+          cover_photo_id: string | null
           created_at: string | null
           creator_id: string
           district_id: string | null
@@ -808,6 +809,7 @@ export type Database = {
         }
         Insert: {
           boundary?: unknown
+          cover_photo_id?: string | null
           created_at?: string | null
           creator_id: string
           district_id?: string | null
@@ -831,6 +833,7 @@ export type Database = {
         }
         Update: {
           boundary?: unknown
+          cover_photo_id?: string | null
           created_at?: string | null
           creator_id?: string
           district_id?: string | null
@@ -861,6 +864,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "hunts_cover_photo_id_fkey"
+            columns: ["cover_photo_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_photos"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "hunts_creator_id_fkey"
             columns: ["creator_id"]
             isOneToOne: false
@@ -887,6 +897,7 @@ export type Database = {
           freigabe_verkauf: boolean | null
           geschlecht: Database["public"]["Enums"]["geschlecht"] | null
           gewicht_kg: number | null
+          hit_location: Database["public"]["Enums"]["hit_location"] | null
           hochsitz_id: string | null
           hunt_id: string | null
           id: string
@@ -920,6 +931,7 @@ export type Database = {
           freigabe_verkauf?: boolean | null
           geschlecht?: Database["public"]["Enums"]["geschlecht"] | null
           gewicht_kg?: number | null
+          hit_location?: Database["public"]["Enums"]["hit_location"] | null
           hochsitz_id?: string | null
           hunt_id?: string | null
           id?: string
@@ -953,6 +965,7 @@ export type Database = {
           freigabe_verkauf?: boolean | null
           geschlecht?: Database["public"]["Enums"]["geschlecht"] | null
           gewicht_kg?: number | null
+          hit_location?: Database["public"]["Enums"]["hit_location"] | null
           hochsitz_id?: string | null
           hunt_id?: string | null
           id?: string
@@ -1793,6 +1806,14 @@ export type Database = {
     Enums: {
       driven_hunt_status: "entwurf" | "einladung" | "aktiv" | "abgeschlossen"
       geschlecht: "maennlich" | "weiblich" | "unbekannt"
+      hit_location:
+        | "kammer"
+        | "blattschuss"
+        | "traeger"
+        | "weidwund"
+        | "krellschuss"
+        | "lauf"
+        | "sonstige"
       hunt_kind: "group" | "solo"
       hunt_status:
         | "draft"
@@ -2021,6 +2042,15 @@ export const Constants = {
     Enums: {
       driven_hunt_status: ["entwurf", "einladung", "aktiv", "abgeschlossen"],
       geschlecht: ["maennlich", "weiblich", "unbekannt"],
+      hit_location: [
+        "kammer",
+        "blattschuss",
+        "traeger",
+        "weidwund",
+        "krellschuss",
+        "lauf",
+        "sonstige",
+      ],
       hunt_kind: ["group", "solo"],
       hunt_status: ["draft", "active", "paused", "completed", "auto_completed"],
       hunt_type: ["ansitz", "pirsch", "drueckjagd", "erntejagd"],
