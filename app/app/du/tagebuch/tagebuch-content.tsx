@@ -4,7 +4,7 @@ import type { Jagdjahr } from '@/lib/diary/season'
 import type { DiaryStats } from '@/lib/diary/queries'
 import type { TimelineItem } from '@/lib/diary/timeline'
 import DiaryHeader from '@/components/diary/DiaryHeader'
-import DiaryChipRow from '@/components/diary/DiaryChipRow'
+import DiaryFilterStack from '@/components/diary/DiaryFilterStack'
 import DiaryTimelineList from '@/components/diary/cards/DiaryTimelineList'
 
 interface Props {
@@ -59,7 +59,7 @@ export default function TagebuchContent({ jagdjahr, stats, items }: Props) {
 
       <DiaryHeader jagdjahr={jagdjahr} stats={stats} />
 
-      <DiaryChipRow />
+      <DiaryFilterStack />
 
       {isEmpty ? (
         <div

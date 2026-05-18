@@ -2362,3 +2362,66 @@ button:active {
 .tagebuch-surface .diary-card-link:active {
   opacity: 0.72;
 }
+
+/* ============================================================
+   Tagebuch-Filter — zwei orthogonale Chip-Reihen (Sprint 60.4
+   Phase 8c). Jagdart-Reihe (Slate-Edge) + Inhalt-Reihe
+   (Bronze-Edge), beide single-select, horizontal scrollbar.
+   ============================================================ */
+
+.tagebuch-surface .filter-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.1875rem 0 0.875rem;
+}
+
+.tagebuch-surface .chip-row {
+  display: flex;
+  gap: 0.4375rem;
+  padding: 0 1.5rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.tagebuch-surface .chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.tagebuch-surface .chip {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 1.125rem;
+  padding: 0.4375rem 0.75rem;
+  min-height: 2rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tagebuch-surface .chip.active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.tagebuch-surface .chip-row.jagdart .chip.active {
+  border-color: var(--slate-edge);
+}
+
+.tagebuch-surface .chip-row.inhalt .chip.active {
+  border-color: var(--bronze-edge);
+}
+
+.tagebuch-surface .chip:active {
+  opacity: 0.72;
+}

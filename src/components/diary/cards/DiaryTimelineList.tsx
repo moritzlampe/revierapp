@@ -3,7 +3,12 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { TimelineItem } from '@/lib/diary/timeline'
-import { type DiaryFilter, parseFilter, matchesFilter } from '@/lib/diary/filter'
+import {
+  parseJagdart,
+  parseInhalt,
+  matchesFilters,
+  buildEmptyText,
+} from '@/lib/diary/filter'
 import DiaryTimeline, { MonthLabel } from './DiaryTimeline'
 import ErlegungCard from './ErlegungCard'
 import AnblickCard from './AnblickCard'
@@ -44,11 +49,13 @@ interface Props {
  */
 export default function DiaryTimelineList({ items }: Props) {
   const searchParams = useSearchParams()
-  const filter: DiaryFilter = parseFilter(searchParams.get('filter'))
+  const legacy = searchParams.get('filter')
+  const jagdart = parseJagdart(searchParams.get('jagdart'), legacy)
+  const inhalt = parseInhalt(searchParams.get('inhalt'), legacy)
 
   const filtered = useMemo(
-    () => items.filter(i => matchesFilter(i, filter)),
-    [items, filter],
+    () => items.filter(i => matchesFilters(i, jagdart, inhalt)),
+    [items, jagdart, inhalt],
   )
 
   // Hunt-IDs that are independently represented as Strecke- or Gesell-Cards.
@@ -84,14 +91,11 @@ export default function DiaryTimelineList({ items }: Props) {
   }, [filtered])
 
   if (groups.length === 0) {
-    // 'alle' delegates to the container-level empty state in tagebuch-content.tsx
-    // (driven by Server-Stats). Filter-specific empties render an inline hint here.
-    if (filter === 'alle') return null
-    const emptyText =
-      filter === 'erlegungen' ? 'Keine Erlegungen in dieser Saison'
-      : filter === 'anblicke' ? 'Keine Anblicke notiert'
-      : filter === 'gesell' ? 'Keine Gesellschaftsjagden'
-      : 'Keine Solo-Einträge'
+    // 'alle'/'alle' delegates to the container-level empty state in
+    // tagebuch-content.tsx (driven by Server-Stats). Jede andere
+    // Filterkombination rendert einen spezifischen Inline-Hint hier.
+    if (jagdart === 'alle' && inhalt === 'alle') return null
+    const emptyText = buildEmptyText(jagdart, inhalt)
     return (
       <div
         style={{
