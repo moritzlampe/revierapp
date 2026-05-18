@@ -10,9 +10,10 @@ interface ChipDef {
 
 const CHIPS: ChipDef[] = [
   { value: 'alle',       label: 'Alle' },
+  { value: 'solo',       label: 'Solo' },
+  { value: 'gesell',     label: 'Gesell' },
   { value: 'erlegungen', label: 'Erlegungen' },
   { value: 'anblicke',   label: 'Anblicke' },
-  { value: 'gesell',     label: 'Gesell' },
 ]
 
 export default function DiaryChipRow() {

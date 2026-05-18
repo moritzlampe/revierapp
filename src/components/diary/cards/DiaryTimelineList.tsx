@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { TimelineItem } from '@/lib/diary/timeline'
-import { type DiaryFilter, parseFilter } from '@/lib/diary/filter'
+import { type DiaryFilter, parseFilter, matchesFilter } from '@/lib/diary/filter'
 import DiaryTimeline, { MonthLabel } from './DiaryTimeline'
 import ErlegungCard from './ErlegungCard'
 import AnblickCard from './AnblickCard'
@@ -46,18 +46,10 @@ export default function DiaryTimelineList({ items }: Props) {
   const searchParams = useSearchParams()
   const filter: DiaryFilter = parseFilter(searchParams.get('filter'))
 
-  const filtered = useMemo(() => {
-    if (filter === 'erlegungen') {
-      return items.filter(i => i.kind === 'erlegung' || i.kind === 'strecke')
-    }
-    if (filter === 'anblicke') {
-      return items.filter(i => i.kind === 'anblick')
-    }
-    if (filter === 'gesell') {
-      return items.filter(i => i.kind === 'gesell')
-    }
-    return items
-  }, [items, filter])
+  const filtered = useMemo(
+    () => items.filter(i => matchesFilter(i, filter)),
+    [items, filter],
+  )
 
   // Hunt-IDs that are independently represented as Strecke- or Gesell-Cards.
   // ErlegungCards belonging to such hunts must NOT show the breadcrumb
@@ -98,7 +90,8 @@ export default function DiaryTimelineList({ items }: Props) {
     const emptyText =
       filter === 'erlegungen' ? 'Keine Erlegungen in dieser Saison'
       : filter === 'anblicke' ? 'Keine Anblicke notiert'
-      : 'Keine Gesellschaftsjagden'
+      : filter === 'gesell' ? 'Keine Gesellschaftsjagden'
+      : 'Keine Solo-Einträge'
     return (
       <div
         style={{
