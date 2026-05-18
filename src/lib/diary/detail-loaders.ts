@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { berlinMidnight, toBerlinDateKey } from './time'
+import { pickCoverPhoto } from './cover-photo'
 import type {
   AnblickDetail,
   ErlegungDetail,
@@ -50,13 +51,27 @@ export async function getErlegungDetail(
     supabase.from('hunt_photos').select('*').contains('kill_ids', [killId]),
   ])
 
-  return {
-    kill,
-    hunt: (huntRes.data as Hunt | null) ?? null,
-    photos: ((photosRes.data ?? []) as HuntPhoto[]).slice().sort((a, b) =>
-      (a.created_at ?? '') < (b.created_at ?? '') ? -1 : 1,
-    ),
+  const hunt = (huntRes.data as Hunt | null) ?? null
+
+  // photos[0] = Hero, photos[1..] = "Weitere Fotos"-Stack (Phase 4).
+  // Default: ältestes kill-spezifisches Foto = Hero.
+  const photos = ((photosRes.data ?? []) as HuntPhoto[])
+    .slice()
+    .sort((a, b) => ((a.created_at ?? '') < (b.created_at ?? '') ? -1 : 1))
+
+  // 7.6: Hat der Jagdleiter ein Hunt-Cover gesetzt UND ist genau dieses
+  // Foto kill-spezifisch (also bereits in `photos`, da via kill_ids
+  // gefiltert), zieht es als Hero nach vorn — Konsistenz mit Gesell.
+  // Kein Zusatz-Query: hunt ist hier schon geladen.
+  if (hunt?.cover_photo_id) {
+    const i = photos.findIndex((p) => p.id === hunt.cover_photo_id)
+    if (i > 0) {
+      const [cover] = photos.splice(i, 1)
+      photos.unshift(cover)
+    }
   }
+
+  return { kill, hunt, photos }
 }
 
 // ---------- Gesell ----------
@@ -72,22 +87,6 @@ function cleanReporterName(displayName: string): string {
   if (n === '') return 'Unbekannt'
   if (n.includes('@')) return n.split('@')[0]
   return n
-}
-
-function pickCoverInline(
-  photos: HuntPhoto[],
-  customCoverId: string | null,
-): HuntPhoto | null {
-  if (photos.length === 0) return null
-  if (customCoverId) {
-    const found = photos.find((p) => p.id === customCoverId)
-    if (found) return found
-  }
-  const byAge = [...photos].sort((a, b) =>
-    (a.created_at ?? '') < (b.created_at ?? '') ? -1 : 1,
-  )
-  const stimmung = byAge.find((p) => !p.kill_ids || p.kill_ids.length === 0)
-  return stimmung ?? byAge[0]
 }
 
 export async function getGesellDetail(
@@ -155,7 +154,7 @@ export async function getGesellDetail(
     totalKills: killRows.length,
     userKills: killRows.filter((k) => k.reporter_id === userId).length,
     userRole: hunt.creator_id === userId ? 'Jagdleiter' : 'Schütze',
-    coverPhoto: pickCoverInline(photos, hunt.cover_photo_id),
+    coverPhoto: pickCoverPhoto(photos, hunt.cover_photo_id),
   }
 }
 
