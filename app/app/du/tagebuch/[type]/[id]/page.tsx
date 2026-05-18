@@ -5,6 +5,7 @@ import {
   getErlegungDetail,
   getGesellDetail,
 } from '@/lib/diary/detail-loaders'
+import { ErlegungDetailContent } from '@/components/diary/detail/ErlegungDetailContent'
 
 type Params = { type: string; id: string }
 
@@ -48,16 +49,24 @@ export default async function TagebuchDetailPage({
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  if (type === 'erlegung') {
+    const detail = await getErlegungDetail(id, user.id)
+    if (!detail) notFound()
+    return (
+      <div className="tagebuch-surface min-h-dvh">
+        <ErlegungDetailContent detail={detail} />
+      </div>
+    )
+  }
+
+  // gesell / anblick: JSON-Smoke-Output bis Phase 5/6 die Renderer liefern.
   const detail =
-    type === 'erlegung'
-      ? await getErlegungDetail(id, user.id)
-      : type === 'gesell'
-        ? await getGesellDetail(id, user.id)
-        : await getAnblickDetail(id, user.id)
+    type === 'gesell'
+      ? await getGesellDetail(id, user.id)
+      : await getAnblickDetail(id, user.id)
 
   if (!detail) notFound()
 
-  // Phase 2 Smoke-Test — Detail-Renderer kommen in Phase 4–6.
   return (
     <div className="tagebuch-surface min-h-dvh">
       <div style={{ padding: '1rem', fontFamily: 'var(--font-body)' }}>

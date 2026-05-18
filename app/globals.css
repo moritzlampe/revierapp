@@ -2023,3 +2023,125 @@ button:active {
   font: 500 14px/1.32 var(--font-body);
   color: var(--text-secondary);
 }
+
+/* --- Erlegungsdaten-Section: meta-tiers, photo-stack, note/map (Phase 4).
+   Mockup-Substitution: --bg-surface→--surface, --bg-divider→--border,
+   --text-tertiary→--text-dim. --bg-elevated/--text-secondary/-primary
+   existieren bereits im .tagebuch-surface-Block. */
+.tagebuch-surface .section {
+  padding: 22px 20px 0;
+}
+
+.tagebuch-surface .meta-tier + .meta-tier {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.tagebuch-surface .tier-grid-3,
+.tagebuch-surface .tier-grid-2 {
+  display: grid;
+  gap: 16px;
+}
+
+.tagebuch-surface .tier-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.tagebuch-surface .tier-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tagebuch-surface .photo-stack-wrap {
+  margin-top: 24px;
+}
+
+.tagebuch-surface .photo-stack {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tagebuch-surface .thumb {
+  width: 88px;
+  height: 88px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  background: linear-gradient(135deg, #2a231b, #16140f 72%);
+}
+
+.tagebuch-surface .thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.tagebuch-surface .thumb-fallback {
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(ellipse at 56% 50%, rgba(184, 137, 91, 0.21), transparent 36%),
+    linear-gradient(135deg, #2a231b, #16140f 72%);
+}
+
+.tagebuch-surface .thumb.more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: 600 14px var(--font-body);
+  line-height: 1.15;
+}
+
+.tagebuch-surface .thumb.more span:last-child {
+  margin-top: 3px;
+  font: 400 12px var(--font-body);
+  color: var(--text-dim);
+}
+
+.tagebuch-surface .note-card {
+  margin: 24px 20px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 20px;
+}
+
+.tagebuch-surface .note-card.forest,
+.tagebuch-surface .map-card.forest {
+  border-color: rgba(93, 122, 79, 0.34);
+}
+
+.tagebuch-surface .note-card p {
+  font: 400 16px/1.58 var(--font-body);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.tagebuch-surface .map-card {
+  margin: 14px 20px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.tagebuch-surface .map-card .map-value {
+  font: 500 14px var(--font-body);
+  color: var(--text-primary);
+}
+
+.tagebuch-surface .map-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font: 500 13px var(--font-body);
+  padding: 7px 10px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
