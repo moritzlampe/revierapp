@@ -1,4 +1,10 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import {
+  getAnblickDetail,
+  getErlegungDetail,
+  getGesellDetail,
+} from '@/lib/diary/detail-loaders'
 
 type Params = { type: string; id: string }
 
@@ -36,22 +42,51 @@ export default async function TagebuchDetailPage({
   if (!isValidType(type)) notFound()
   if (!isValidId(type, id)) notFound()
 
-  // Placeholder — wird in Phase 2 mit echten Loadern + Detail-Renderern ersetzt.
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const detail =
+    type === 'erlegung'
+      ? await getErlegungDetail(id, user.id)
+      : type === 'gesell'
+        ? await getGesellDetail(id, user.id)
+        : await getAnblickDetail(id, user.id)
+
+  if (!detail) notFound()
+
+  // Phase 2 Smoke-Test — Detail-Renderer kommen in Phase 4–6.
   return (
     <div className="tagebuch-surface min-h-dvh">
-      <div style={{ padding: '1.5rem', fontFamily: 'var(--font-body)' }}>
+      <div style={{ padding: '1rem', fontFamily: 'var(--font-body)' }}>
         <h1
           style={{
             fontFamily: 'var(--font-display)',
-            fontSize: '1.5rem',
+            fontSize: '1.25rem',
             color: 'var(--text)',
-            margin: 0,
+            margin: '0 0 0.5rem',
           }}
         >
-          Tagebuch Detail
+          {type} · {id}
         </h1>
-        <p style={{ color: 'var(--text-2)' }}>Type: {type}</p>
-        <p style={{ color: 'var(--text-2)' }}>ID: {id}</p>
+        <pre
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '11px',
+            color: 'var(--text-2)',
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            padding: '0.75rem',
+            overflowX: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {JSON.stringify(detail, null, 2)}
+        </pre>
       </div>
     </div>
   )
