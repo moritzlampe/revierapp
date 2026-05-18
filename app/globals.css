@@ -2145,3 +2145,72 @@ button:active {
   border-radius: 3px;
   white-space: nowrap;
 }
+
+/* Phase 4b Bug 2: lange echte Koordinaten + nowrap-Button → der
+   Text-Block muss schrumpfen dürfen (flex default min-width:auto
+   clippt sonst), der Button darf nicht schrumpfen. Kein visueller
+   Unterschied bei kurzen Werten — reine Robustheit. */
+.tagebuch-surface .map-card-info {
+  min-width: 0;
+}
+.tagebuch-surface .map-card .map-btn {
+  flex-shrink: 0;
+}
+
+/* Phase 4b Bug 5: Top-Bar (Mockup V3 .topbar). Unter
+   .tagebuch-surface gescoped — trifft keine anderen Topbars im Repo
+   (die liegen nicht in diesem Container). */
+.tagebuch-surface .topbar {
+  height: 56px;
+  background: var(--bg-base);
+  display: grid;
+  grid-template-columns: 56px 1fr 96px;
+  align-items: center;
+  padding: 0 4px;
+  position: relative;
+  z-index: 5;
+}
+
+.tagebuch-surface .top-title {
+  text-align: center;
+  font: 600 16px var(--font-body);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.tagebuch-surface .chrome-btn {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+}
+
+.tagebuch-surface .chrome-btn svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+}
+
+.tagebuch-surface .right-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+/* Phase 4b Bug 6: Detail-Seite muss den vollen Viewport (inkl.
+   iOS-Safe-Areas) mit --bg-base füllen, sonst blitzt der Theme-A-
+   Body-Background in Statusbar-/Home-Indicator-Bereich durch.
+   Detail-scoped (nicht .tagebuch-surface global) → keine Regression
+   auf der Tagebuch-Listenseite mit ihrem sticky Header. body bleibt
+   unangetastet. */
+.tagebuch-detail {
+  min-height: 100dvh;
+  background: var(--bg-base);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}

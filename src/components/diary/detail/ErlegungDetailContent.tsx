@@ -1,5 +1,6 @@
 import { DetailField } from './DetailField'
 import { DetailHero } from './DetailHero'
+import { DetailTopBar } from './DetailTopBar'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { HIT_LOCATION_LABEL, GESCHLECHT_LABEL } from '@/lib/diary/labels'
 import type { ErlegungDetail } from '@/lib/diary/detail-types'
@@ -45,10 +46,10 @@ function formatWeight(kg: number | null): string {
 }
 
 function buildSubtitle(kill: Kill, hunt: Hunt | null): string {
-  const datum = formatDateGerman(kill.erlegt_am)
-  const kontext =
-    hunt && hunt.kind === 'group' ? `Teil von ${hunt.name}` : 'Solo-Ansitz'
-  return `${datum} · ${kontext}`
+  // Hunt-Name enthält i.d.R. das Datum ("Jagd am 14.5.2026") — keine
+  // Datums-Doppelung. Solo: Datum + Kontext (kein hunt.name vorhanden).
+  if (hunt) return `Teil von ${hunt.name}`
+  return `${formatDateGerman(kill.erlegt_am)} · Solo-Ansitz`
 }
 
 type LatLng = { lat: number; lng: number }
@@ -104,6 +105,7 @@ export function ErlegungDetailContent({ detail }: { detail: ErlegungDetail }) {
 
   return (
     <>
+      <DetailTopBar title="Erlegung" />
       <DetailHero
         variant="erlegung"
         photoUrl={heroPhoto}
@@ -124,7 +126,9 @@ export function ErlegungDetailContent({ detail }: { detail: ErlegungDetail }) {
               <DetailField
                 label="Schussentfernung"
                 value={
-                  kill.distance_m !== null ? `${kill.distance_m} m` : DASH
+                  kill.distance_m !== null
+                    ? `ca. ${kill.distance_m} m`
+                    : DASH
                 }
                 emphasis="strong"
               />
@@ -219,7 +223,7 @@ export function ErlegungDetailContent({ detail }: { detail: ErlegungDetail }) {
 
       {latLng && (
         <section className="map-card" aria-label="Erlegungsort">
-          <div>
+          <div className="map-card-info">
             <div className="detail-field-label">Erlegungsort</div>
             <div className="map-value">
               {latLng.lat.toFixed(3)}, {latLng.lng.toFixed(3)}

@@ -53,7 +53,7 @@ export default async function TagebuchDetailPage({
     const detail = await getErlegungDetail(id, user.id)
     if (!detail) notFound()
     return (
-      <div className="tagebuch-surface min-h-dvh">
+      <div className="tagebuch-surface tagebuch-detail">
         <ErlegungDetailContent detail={detail} />
       </div>
     )
@@ -68,7 +68,7 @@ export default async function TagebuchDetailPage({
   if (!detail) notFound()
 
   return (
-    <div className="tagebuch-surface min-h-dvh">
+    <div className="tagebuch-surface tagebuch-detail">
       <div style={{ padding: '1rem', fontFamily: 'var(--font-body)' }}>
         <h1
           style={{
