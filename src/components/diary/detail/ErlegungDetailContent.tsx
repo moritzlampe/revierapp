@@ -229,7 +229,7 @@ export function ErlegungDetailContent({ detail }: { detail: ErlegungDetail }) {
               {latLng.lat.toFixed(3)}, {latLng.lng.toFixed(3)}
             </div>
           </div>
-          <button type="button" className="map-btn">
+          <button type="button" className="diary-map-btn">
             Auf Karte
           </button>
         </section>

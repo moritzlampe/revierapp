@@ -2136,7 +2136,14 @@ button:active {
   color: var(--text-primary);
 }
 
-.tagebuch-surface .map-btn {
+/* Phase 4c Bug 2: eigener Klassenname. Das globale .map-btn
+   (globals.css:549) ist ein position:absolute / z-index:1000 /
+   border-radius:50% Leaflet-Map-Control — es setzt position/width/
+   height/z-index, die unsere .tagebuch-surface .map-btn-Regel NICHT
+   überschrieb (höhere Spezifität nur für die gesetzten Props), also
+   floatete der Button als Kreis über Label+Wert. .diary-map-btn ist
+   konfliktfrei und zukunftssicher für Gesell/Anblick-Map-Cards. */
+.tagebuch-surface .diary-map-btn {
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);
@@ -2146,14 +2153,12 @@ button:active {
   white-space: nowrap;
 }
 
-/* Phase 4b Bug 2: lange echte Koordinaten + nowrap-Button → der
-   Text-Block muss schrumpfen dürfen (flex default min-width:auto
-   clippt sonst), der Button darf nicht schrumpfen. Kein visueller
-   Unterschied bei kurzen Werten — reine Robustheit. */
+/* Phase 4b Bug 2 (Robustheit, bleibt): Text-Block darf schrumpfen
+   (flex default min-width:auto clippt sonst), Button nicht. */
 .tagebuch-surface .map-card-info {
   min-width: 0;
 }
-.tagebuch-surface .map-card .map-btn {
+.tagebuch-surface .map-card .diary-map-btn {
   flex-shrink: 0;
 }
 
@@ -2209,6 +2214,7 @@ button:active {
    auf der Tagebuch-Listenseite mit ihrem sticky Header. body bleibt
    unangetastet. */
 .tagebuch-detail {
+  min-height: 100vh; /* Phase 4c: Fallback für iOS-Safari dvh-Quirk */
   min-height: 100dvh;
   background: var(--bg-base);
   padding-top: env(safe-area-inset-top);
