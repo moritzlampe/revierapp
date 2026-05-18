@@ -5,6 +5,7 @@ import {
   getErlegungDetail,
   getGesellDetail,
 } from '@/lib/diary/detail-loaders'
+import { AnblickDetailContent } from '@/components/diary/detail/AnblickDetailContent'
 import { ErlegungDetailContent } from '@/components/diary/detail/ErlegungDetailContent'
 import { GesellDetailContent } from '@/components/diary/detail/GesellDetailContent'
 
@@ -70,41 +71,12 @@ export default async function TagebuchDetailPage({
     )
   }
 
-  // anblick: JSON-Smoke-Output bis Phase 6 den Renderer liefert.
+  // anblick
   const detail = await getAnblickDetail(id, user.id)
-
   if (!detail) notFound()
-
   return (
     <div className="tagebuch-surface tagebuch-detail">
-      <div style={{ padding: '1rem', fontFamily: 'var(--font-body)' }}>
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '1.25rem',
-            color: 'var(--text)',
-            margin: '0 0 0.5rem',
-          }}
-        >
-          {type} · {id}
-        </h1>
-        <pre
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            color: 'var(--text-2)',
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            padding: '0.75rem',
-            overflowX: 'auto',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}
-        >
-          {JSON.stringify(detail, null, 2)}
-        </pre>
-      </div>
+      <AnblickDetailContent detail={detail} />
     </div>
   )
 }
