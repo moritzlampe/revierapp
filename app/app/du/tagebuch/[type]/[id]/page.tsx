@@ -6,6 +6,7 @@ import {
   getGesellDetail,
 } from '@/lib/diary/detail-loaders'
 import { ErlegungDetailContent } from '@/components/diary/detail/ErlegungDetailContent'
+import { GesellDetailContent } from '@/components/diary/detail/GesellDetailContent'
 
 type Params = { type: string; id: string }
 
@@ -59,11 +60,18 @@ export default async function TagebuchDetailPage({
     )
   }
 
-  // gesell / anblick: JSON-Smoke-Output bis Phase 5/6 die Renderer liefern.
-  const detail =
-    type === 'gesell'
-      ? await getGesellDetail(id, user.id)
-      : await getAnblickDetail(id, user.id)
+  if (type === 'gesell') {
+    const detail = await getGesellDetail(id, user.id)
+    if (!detail) notFound()
+    return (
+      <div className="tagebuch-surface tagebuch-detail">
+        <GesellDetailContent detail={detail} userId={user.id} />
+      </div>
+    )
+  }
+
+  // anblick: JSON-Smoke-Output bis Phase 6 den Renderer liefert.
+  const detail = await getAnblickDetail(id, user.id)
 
   if (!detail) notFound()
 

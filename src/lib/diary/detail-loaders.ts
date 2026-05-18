@@ -61,6 +61,19 @@ export async function getErlegungDetail(
 
 // ---------- Gesell ----------
 
+/**
+ * profiles hat nur display_name (NOT NULL) — kein full_name/email.
+ * Legacy-User haben display_name == Email (alter Profil-Trigger,
+ * CLAUDE.md known bug). UI will keinen Email-String: bei '@' den
+ * Local-Part nehmen. Leer → "Unbekannt".
+ */
+function cleanReporterName(displayName: string): string {
+  const n = displayName.trim()
+  if (n === '') return 'Unbekannt'
+  if (n.includes('@')) return n.split('@')[0]
+  return n
+}
+
 function pickCoverInline(
   photos: HuntPhoto[],
   customCoverId: string | null,
@@ -121,7 +134,7 @@ export async function getGesellDetail(
       id: string
       display_name: string
     }[]) {
-      nameById.set(p.id, p.display_name)
+      nameById.set(p.id, cleanReporterName(p.display_name))
     }
   }
 

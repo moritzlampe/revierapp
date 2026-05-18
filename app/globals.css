@@ -2220,3 +2220,125 @@ button:active {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* --- Gesell-Detail: hunt-card / kill-card / primary-action (Phase 5).
+   Mockup-Substitution: --bg-surface→--surface, --bg-divider→--border,
+   --text-tertiary→--text-dim. --bottom-nav-height existiert nicht
+   (Detailseite hat keine Bottom-Nav) → primary-action-Bottom-Margin
+   über safe-area-inset-bottom. */
+.tagebuch-surface .hunt-card,
+.tagebuch-surface .kill-card {
+  margin: 24px 20px 0;
+  background: var(--surface);
+  border: 1px solid rgba(110, 118, 129, 0.38);
+  padding: 20px;
+}
+
+.tagebuch-surface .hunt-label {
+  font: 500 9.5px var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+  color: var(--slate);
+}
+
+.tagebuch-surface .hunt-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.tagebuch-surface .hunt-summary-col + .hunt-summary-col {
+  border-left: 1px solid var(--border);
+  padding-left: 18px;
+}
+
+.tagebuch-surface .hunt-big {
+  font: 500 26px/1.12 var(--font-display);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  font-variation-settings: 'opsz' 144;
+}
+
+.tagebuch-surface .hunt-breakdown,
+.tagebuch-surface .hunt-sub {
+  margin-top: 6px;
+  font: 400 14px/1.45 var(--font-body);
+  color: var(--text-secondary);
+}
+
+.tagebuch-surface .hunt-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tagebuch-surface .kill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 10px;
+}
+
+.tagebuch-surface .kill-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 18px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+}
+
+.tagebuch-surface .kill-row:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.tagebuch-surface .kill-row:last-child {
+  padding-bottom: 0;
+}
+
+.tagebuch-surface .kill-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(110, 118, 129, 0.32), transparent 60%),
+    var(--bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tagebuch-surface .kill-title {
+  font: 600 15px/1.25 var(--font-body);
+  color: var(--text-primary);
+}
+
+.tagebuch-surface .kill-meta {
+  margin-top: 2px;
+  font: 400 13px/1.25 var(--font-body);
+  color: var(--text-secondary);
+}
+
+.tagebuch-surface .chevron {
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.tagebuch-surface .note-card.slate {
+  border-color: rgba(110, 118, 129, 0.32);
+}
+
+.tagebuch-surface .primary-action {
+  display: block;
+  margin: 32px 20px calc(env(safe-area-inset-bottom) + 24px);
+  width: calc(100% - 40px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--slate);
+  color: #fff;
+  padding: 14px;
+  border-radius: 4px;
+  font: 600 15px var(--font-body);
+  letter-spacing: -0.01em;
+}
