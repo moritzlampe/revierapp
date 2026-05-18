@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import {
   Scales,
   ArrowsHorizontal,
@@ -256,10 +257,14 @@ export default function ErlegungCard({ item, breadcrumbText }: Props) {
   )
 
   return (
-    <div data-card-kind="erlegung" style={CARD_BG}>
-      <span aria-hidden="true" style={TYPE_DOT} />
-      <div style={CARD_INNER}>
-        {item.fotoUrl ? (
+    <Link
+      href={`/app/du/tagebuch/erlegung/${item.killId}`}
+      className="diary-card-link"
+    >
+      <div data-card-kind="erlegung" style={CARD_BG}>
+        <span aria-hidden="true" style={TYPE_DOT} />
+        <div style={CARD_INNER}>
+          {item.fotoUrl ? (
           <div style={PHOTO_WRAPPER}>
             <div style={PHOTO_TILE}>
               {/* iOS Safari Bug: NEVER set loading="lazy" inside a deferred-visible
@@ -276,7 +281,8 @@ export default function ErlegungCard({ item, breadcrumbText }: Props) {
         ) : (
           body
         )}
+        </div>
       </div>
-    </div>
+    </Link>
   )
 }

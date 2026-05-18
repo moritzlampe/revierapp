@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import {
   Users,
   MagnifyingGlass,
@@ -180,7 +181,11 @@ export default function GesellCard({ item }: Props) {
   const note = isVisibleNote(item.notiz) ? item.notiz : null
 
   return (
-    <div data-card-kind="gesell" style={CARD_BG}>
+    <Link
+      href={`/app/du/tagebuch/gesell/${item.huntId}`}
+      className="diary-card-link"
+    >
+      <div data-card-kind="gesell" style={CARD_BG}>
       <span aria-hidden="true" style={TYPE_DOT} />
       <div style={CARD_INNER}>
         <div style={CARD_KIND}>Gesellschaftsjagd</div>
@@ -223,6 +228,7 @@ export default function GesellCard({ item }: Props) {
           <CaretRight size={14} weight="regular" color="var(--text-dim)" />
         </div>
       </div>
-    </div>
+      </div>
+    </Link>
   )
 }

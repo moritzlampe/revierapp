@@ -1,4 +1,6 @@
+import Link from 'next/link'
 import type { TimelineAnblick } from '@/lib/diary/timeline'
+import { toBerlinDateKey } from '@/lib/diary/time'
 import { getSpeciesLabel } from '@/lib/wildArt'
 import { JAGDART_LABEL } from '@/lib/jagdart'
 import { AutoCompletedChip } from '@/components/hunt/AutoCompletedChip'
@@ -168,8 +170,16 @@ export default function AnblickCard({ item }: Props) {
     </div>
   ) : null
 
+  // Hunt-Kontext → hunts.id (UUID); Solo-Tag → YYYY-MM-DD (mit Bindestrichen,
+  // wie /[type]/[id] es für anblick erwartet — item.id wäre dashless).
+  const routingKey = item.huntId ?? toBerlinDateKey(item.occurredAt)
+
   return (
-    <div data-card-kind="anblick" style={CARD_BG}>
+    <Link
+      href={`/app/du/tagebuch/anblick/${routingKey}`}
+      className="diary-card-link"
+    >
+      <div data-card-kind="anblick" style={CARD_BG}>
       <span aria-hidden="true" style={TYPE_DOT} />
       <div style={CARD_INNER}>
         <div style={CARD_KIND}>Anblick</div>
@@ -197,6 +207,7 @@ export default function AnblickCard({ item }: Props) {
 
         {note ? <div style={NOTE}>{note}</div> : null}
       </div>
-    </div>
+      </div>
+    </Link>
   )
 }

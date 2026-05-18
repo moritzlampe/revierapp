@@ -2342,3 +2342,23 @@ button:active {
   font: 600 15px var(--font-body);
   letter-spacing: -0.01em;
 }
+
+/* ============================================================
+   Tagebuch-Timeline — klickbare Cards (Sprint 60.4 Phase 8).
+   Transparente <Link>-Hülle um ErlegungCard / GesellCard /
+   AnblickCard. Card-Optik bleibt unverändert; nur dezentes
+   Tap-/Active-Feedback. StreckeCard bleibt unverlinkt (60.5a).
+   ============================================================ */
+
+.tagebuch-surface .diary-card-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 13px;
+  transition: opacity 0.12s ease;
+}
+
+.tagebuch-surface .diary-card-link:active {
+  opacity: 0.72;
+}
