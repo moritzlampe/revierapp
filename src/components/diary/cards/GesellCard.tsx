@@ -206,9 +206,11 @@ export default function GesellCard({ item }: Props) {
           <span style={TYPE_PILL}>{typeLabel}</span>
         </div>
 
-        <JagdtagBlock kills={item.deinAnteil} anblicke={item.deineAnblicke} />
-
+        {/* 60.5b: Gesamtstrecke oben (dominant), Jagdtag darunter —
+            spiegelt die Hierarchie der Detail-Seite. */}
         <TotalStrecke data={item.gesamtStrecke} />
+
+        <JagdtagBlock kills={item.deinAnteil} anblicke={item.deineAnblicke} />
 
         {note ? <div style={NOTE}>{note}</div> : null}
 

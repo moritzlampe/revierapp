@@ -14,10 +14,13 @@ interface Props {
   data: SpeciesCount[] | 'locked'
 }
 
+// 60.5b: jetzt erster Sub-Block (über JagdtagBlock) → solider
+// Section-Divider zum Type-Pill-Bereich. Der gestrichelte Inter-Block-
+// Trenner wandert an JagdtagBlock (zweiter Block). Inhalt unverändert.
 const BLOCK: React.CSSProperties = {
   marginTop: '0.5625rem',
   paddingTop: '0.5625rem',
-  borderTop: '1px dashed var(--border-2)',
+  borderTop: '1px solid var(--border)',
 }
 
 const LABEL: React.CSSProperties = {

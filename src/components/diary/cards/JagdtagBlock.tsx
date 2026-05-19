@@ -12,10 +12,12 @@ interface Props {
   anblicke: SpeciesCount[]
 }
 
+// 60.5b: jetzt zweiter Sub-Block (unter TotalStrecke) → gestrichelter
+// Inter-Block-Trenner zwischen Gesamtstrecke und Jagdtag.
 const BLOCK: React.CSSProperties = {
   marginTop: '0.5625rem',
   paddingTop: '0.5625rem',
-  borderTop: '1px solid var(--border)',
+  borderTop: '1px dashed var(--border-2)',
 }
 
 const LABEL: React.CSSProperties = {

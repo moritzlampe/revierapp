@@ -63,7 +63,11 @@ export interface TimelineGesell extends TimelineBase {
   deinAnteil: { species: WildArt; count: number }[]
   /** Nur User's eigene Sightings auf diesem Hunt, aggregiert nach species (Freitext) */
   deineAnblicke: { species: string; count: number }[]
-  /** 'locked' wenn share_total_strecke=false UND user !== creator_id */
+  /**
+   * Gesamtstrecke aller Schützen, aggregiert nach species.
+   * 'locked' wird seit 60.5b nicht mehr emittiert (share_total_strecke-
+   * Gating entfernt); Union bleibt für TotalStrecke-Kompat (out of scope).
+   */
   gesamtStrecke: { species: WildArt; count: number }[] | 'locked'
   startedAt: Date | null
   endedAt: Date | null
@@ -266,11 +270,13 @@ export async function getTimelineItems(
   const huntById = new Map<string, HuntRow>()
   for (const h of hunts) huntById.set(h.id, h)
 
-  // 7. Welche Gesell-Hunts dürfen Gesamtstrecke zeigen? -> alle Kills nur für die laden
+  // 7. Gesell-Hunts (>=2 Teilnehmer): Gesamtstrecke immer laden.
+  // share_total_strecke-Gating in 60.5b entfernt — Gesamtstrecke ist
+  // grundsätzlich für alle Mitjäger sichtbar.
   const visibleGesellHuntIds: string[] = []
   for (const h of hunts) {
     const pc = participantCount.get(h.id) ?? 0
-    if (pc >= 2 && (h.share_total_strecke === true || h.creator_id === userId)) {
+    if (pc >= 2) {
       visibleGesellHuntIds.push(h.id)
     }
   }
@@ -327,7 +333,6 @@ export async function getTimelineItems(
 
     if (pc >= 2) {
       // CASE A: Gesellschaftsjagd
-      const isVisible = hunt.share_total_strecke === true || hunt.creator_id === userId
       const deinAnteil = aggregateBySpecies(userKillsInHunt)
 
       const userSightingsInHunt = sightingsByHunt.get(hunt.id) ?? []
@@ -343,16 +348,11 @@ export async function getTimelineItems(
         ([species, count]) => ({ species, count }),
       )
 
-      let gesamtStrecke: { species: WildArt; count: number }[] | 'locked'
-      let nachsucheCount: number
-      if (isVisible) {
-        const allKills = allKillsByHunt.get(hunt.id) ?? []
-        gesamtStrecke = aggregateBySpecies(allKills)
-        nachsucheCount = allKills.filter(k => k.nachsuche === true).length
-      } else {
-        gesamtStrecke = 'locked'
-        nachsucheCount = userKillsInHunt.filter(k => k.nachsuche === true).length
-      }
+      // Gesamtstrecke immer aus allen Kills (Gating in 60.5b entfernt).
+      const allKills = allKillsByHunt.get(hunt.id) ?? []
+      const gesamtStrecke: { species: WildArt; count: number }[] | 'locked' =
+        aggregateBySpecies(allKills)
+      const nachsucheCount = allKills.filter(k => k.nachsuche === true).length
 
       items.push({
         kind: 'gesell',

@@ -109,9 +109,15 @@ export function GesellDetailContent({
   // Nur eigene Kills im "Deine Erlegungen"-Block (5.7).
   const ownKills = kills.filter((k) => k.reporter_id === userId)
 
+  // 60.5b Solo-Schütze: nur der Betrachter hat erlegt → "Deine Strecke"
+  // == Gesamtstrecke, zweite Zeile redundant und wird ausgeblendet.
+  // Bei 0 Kills (userKills === 0) bleibt die Zeile (0/0 ist ehrliche Aussage).
+  const distinctReporters = new Set(kills.map((k) => k.reporter_id)).size
+  const isSoloShooter = distinctReporters <= 1 && userKills > 0
+
   // 60.5b: Strecke auf Wildgruppen-Ebene aggregiert (Count desc,
   // Picker-Reihenfolge als Tie-Breaker). Gesamtstrecke immer sichtbar —
-  // share_total_strecke-Gating wird in 60.5b entfernt.
+  // share_total_strecke-Gating in 60.5b entfernt.
   const totalAgg = aggregateByWildGroup(
     kills.map((k) => ({ wild_art: k.wild_art })),
   )
@@ -172,11 +178,13 @@ export function GesellDetailContent({
             <div className="hunt-big">{totalKills} Stück</div>
             <GroupBreakdown items={totalAgg} />
           </div>
-          <div className="hunt-summary-row hunt-summary-row--own">
-            <div className="hunt-label">Deine Strecke</div>
-            <div className="hunt-medium">{userKills} Stück</div>
-            <GroupBreakdown items={ownAgg} />
-          </div>
+          {!isSoloShooter && (
+            <div className="hunt-summary-row hunt-summary-row--own">
+              <div className="hunt-label">Deine Strecke</div>
+              <div className="hunt-medium">{userKills} Stück</div>
+              <GroupBreakdown items={ownAgg} />
+            </div>
+          )}
         </div>
       </section>
 
