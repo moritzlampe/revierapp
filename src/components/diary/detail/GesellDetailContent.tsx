@@ -1,10 +1,12 @@
 import Link from 'next/link'
-import { LockSimple } from '@phosphor-icons/react/dist/ssr'
 import { DetailField } from './DetailField'
 import { DetailHero } from './DetailHero'
 import { DetailTopBar } from './DetailTopBar'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
-import { buildBreakdown } from '@/lib/diary/breakdown'
+import {
+  aggregateByWildGroup,
+  type WildGroupAggregateItem,
+} from '@/lib/species-config'
 import type { GesellDetail } from '@/lib/diary/detail-types'
 import type { Database } from '@/lib/supabase/database.types'
 
@@ -61,6 +63,27 @@ function buildHeroSubtitle(hunt: Hunt, participantCount: number): string {
 }
 
 /**
+ * Wildgruppen-Kurzform: "4× Schwarzwild · 1× Rehwild".
+ * Count+× fett (Mockup-V3-Pattern), Mittelpunkt als Separator.
+ * Leere Aggregation → nichts rendern.
+ */
+function GroupBreakdown({ items }: { items: WildGroupAggregateItem[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="hunt-breakdown">
+      {items.map((it, i) => (
+        <span key={it.groupKey}>
+          {i > 0 ? ' · ' : ''}
+          <strong>{it.count}×</strong>
+          {' '}
+          {it.groupLabel}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/**
  * Gesellschaftsjagd-Detailseite (Mockup V3, Sektion 2).
  * Server-kompatibel (DetailTopBar ist die einzige Client-Insel).
  * userId für Privacy-Logik + Eigene-Kills-Filter (Prop von page.tsx).
@@ -83,14 +106,16 @@ export function GesellDetailContent({
       ? 'abgeschlossen'
       : null
 
-  // Gesamtstrecke-Privacy (5.5): Jagdleiter sieht immer; sonst nur wenn
-  // share_total_strecke. Wir blenden die Zahl nur AUS, nicht der Loader.
-  const isCreator = userId === hunt.creator_id
-  const totalVisible = isCreator || hunt.share_total_strecke === true
-
   // Nur eigene Kills im "Deine Erlegungen"-Block (5.7).
   const ownKills = kills.filter((k) => k.reporter_id === userId)
-  const ownBreakdown = buildBreakdown(
+
+  // 60.5b: Strecke auf Wildgruppen-Ebene aggregiert (Count desc,
+  // Picker-Reihenfolge als Tie-Breaker). Gesamtstrecke immer sichtbar —
+  // share_total_strecke-Gating wird in 60.5b entfernt.
+  const totalAgg = aggregateByWildGroup(
+    kills.map((k) => ({ wild_art: k.wild_art })),
+  )
+  const ownAgg = aggregateByWildGroup(
     ownKills.map((k) => ({ wild_art: k.wild_art })),
   )
   const hasNotiz = !!hunt.notiz && hunt.notiz.trim() !== ''
@@ -141,31 +166,16 @@ export function GesellDetailContent({
       </section>
 
       <section className="hunt-card" aria-label="Strecke">
-        <div className="hunt-summary-grid">
-          <div className="hunt-summary-col">
-            <div className="hunt-label">Deine Strecke</div>
-            <div className="hunt-big">{userKills} Stück</div>
-            {ownBreakdown && (
-              <div className="hunt-breakdown">{ownBreakdown}</div>
-            )}
-          </div>
-          <div className="hunt-summary-col">
+        <div className="hunt-summary-stack">
+          <div className="hunt-summary-row hunt-summary-row--total">
             <div className="hunt-label">Gesamtstrecke aller Schützen</div>
-            {totalVisible ? (
-              <>
-                <div className="hunt-big">{totalKills} Stück</div>
-                {hunt.share_total_strecke && (
-                  <div className="hunt-sub">
-                    freigegeben durch die Jagdleitung
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="hunt-sub">
-                <LockSimple size={14} weight="regular" aria-hidden="true" />
-                vom Jagdleiter nicht geteilt
-              </div>
-            )}
+            <div className="hunt-big">{totalKills} Stück</div>
+            <GroupBreakdown items={totalAgg} />
+          </div>
+          <div className="hunt-summary-row hunt-summary-row--own">
+            <div className="hunt-label">Deine Strecke</div>
+            <div className="hunt-medium">{userKills} Stück</div>
+            <GroupBreakdown items={ownAgg} />
           </div>
         </div>
       </section>

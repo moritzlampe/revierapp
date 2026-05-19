@@ -181,3 +181,46 @@ export const FLAT_GROUP_TIERE: Partial<Record<WildGroup, DetailOption[]>> = {
  * gegen vergessene aggregatePerDay-Flags bei seltenen Wildarten.
  */
 export const SOLO_AGGREGATE_THRESHOLD = 5
+
+// Wildgruppen-Reihenfolge wie im Picker (WILD_GROUP_CONFIG-Array-Order).
+// Tie-Breaker für aggregateByWildGroup bei Count-Gleichstand.
+const GROUP_ORDER: WildGroup[] = WILD_GROUP_CONFIG.map(c => c.group)
+
+export interface WildGroupAggregateItem {
+  groupKey: WildGroup
+  groupLabel: string
+  count: number
+}
+
+/**
+ * Aggregiert eine Kill-Liste zu Wildgruppen-Summen (Sprint 60.5b).
+ *
+ * Mapping wild_art → Wildgruppe via WILD_ART_TO_GROUP; unbekannte
+ * wild_art-Werte (nicht im Mapping) fallen unter 'sonstiges'.
+ *
+ * Sortierung: Count absteigend, bei Gleichstand Picker-Reihenfolge
+ * (WILD_GROUP_CONFIG-Index aufsteigend) — stabil/reproduzierbar.
+ *
+ * Reine Funktion. Leeres Array → leeres Array.
+ */
+export function aggregateByWildGroup(
+  kills: Array<{ wild_art: string }>,
+): WildGroupAggregateItem[] {
+  const counts = new Map<WildGroup, number>()
+  for (const k of kills) {
+    const group = WILD_ART_TO_GROUP[k.wild_art as WildArt] ?? 'sonstiges'
+    counts.set(group, (counts.get(group) ?? 0) + 1)
+  }
+  return Array.from(counts.entries())
+    .map(([groupKey, count]) => ({
+      groupKey,
+      groupLabel:
+        WILD_GROUP_CONFIG.find(c => c.group === groupKey)?.label ?? groupKey,
+      count,
+    }))
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        GROUP_ORDER.indexOf(a.groupKey) - GROUP_ORDER.indexOf(b.groupKey),
+    )
+}

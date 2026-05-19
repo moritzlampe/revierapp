@@ -2242,15 +2242,18 @@ button:active {
   color: var(--slate);
 }
 
-.tagebuch-surface .hunt-summary-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
+/* 60.5b: 1-spaltiger Stack statt 2-Spalten-Grid. Gesamtstrecke oben
+   dominant (.hunt-big), Deine Strecke darunter dezent (.hunt-medium),
+   gestrichelt abgesetzt analog Mockup-V1.5 .total-strecke. */
+.tagebuch-surface .hunt-summary-stack {
+  display: flex;
+  flex-direction: column;
 }
 
-.tagebuch-surface .hunt-summary-col + .hunt-summary-col {
-  border-left: 1px solid var(--border);
-  padding-left: 18px;
+.tagebuch-surface .hunt-summary-row--own {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-2);
 }
 
 .tagebuch-surface .hunt-big {
@@ -2260,17 +2263,22 @@ button:active {
   font-variation-settings: 'opsz' 144;
 }
 
-.tagebuch-surface .hunt-breakdown,
-.tagebuch-surface .hunt-sub {
+.tagebuch-surface .hunt-medium {
+  font: 500 18px/1.2 var(--font-display);
+  color: var(--text-secondary);
+  letter-spacing: -0.01em;
+  font-variation-settings: 'opsz' 144;
+}
+
+.tagebuch-surface .hunt-breakdown {
   margin-top: 6px;
   font: 400 14px/1.45 var(--font-body);
   color: var(--text-secondary);
 }
 
-.tagebuch-surface .hunt-sub {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.tagebuch-surface .hunt-breakdown strong {
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .tagebuch-surface .kill-list {
