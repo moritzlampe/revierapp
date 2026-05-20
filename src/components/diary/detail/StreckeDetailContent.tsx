@@ -56,6 +56,16 @@ export function StreckeDetailContent({ detail }: { detail: StreckeDetail }) {
   const dateLong = formatDateLong(occurredOn)
   const subtitle = `${dateLong} · Teil von ${hunt.name}`
 
+  // Single-Wildart-Strecke → konkrete Wildart im Hero (z.B. "Hase" / "3 × Hase").
+  // Multi-Wildart → Wildgruppe (z.B. "5 × Federwild"). Single-Wildart-Aufschlüsselung
+  // ist im Übersichts-Block weiterhin sichtbar via "Wildgruppe"-Field.
+  const titleLabel =
+    speciesBreakdown.length === 1
+      ? getWildArtLabelSingle(speciesBreakdown[0].species)
+      : groupLabel
+  const heroTitle =
+    totalCount === 1 ? titleLabel : `${totalCount} × ${titleLabel}`
+
   const hasNotiz = !!hunt.notiz && hunt.notiz.trim() !== ''
 
   return (
@@ -65,7 +75,7 @@ export function StreckeDetailContent({ detail }: { detail: StreckeDetail }) {
         variant="neutral"
         photoUrl={heroPhoto}
         kicker="Strecke"
-        title={totalCount === 1 ? groupLabel : `${totalCount} × ${groupLabel}`}
+        title={heroTitle}
         subtitle={subtitle}
       />
 

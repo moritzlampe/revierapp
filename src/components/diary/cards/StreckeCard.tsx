@@ -144,7 +144,12 @@ const BREAKDOWN_SEP: React.CSSProperties = {
  *  - Sonst: "N× Label", Mittelpunkt als Separator
  */
 export default function StreckeCard({ item }: Props) {
-  const title = getWildGroupLabel(item.species_group)
+  // Single-Wildart-Strecke → konkrete Wildart als Title (z.B. "Hase").
+  // Multi-Wildart → abstrakte Wildgruppe (z.B. "Federwild" bei 3 Enten + 2 Tauben).
+  const title =
+    item.speciesBreakdown.length === 1
+      ? getWildArtLabelSingle(item.speciesBreakdown[0].species)
+      : getWildGroupLabel(item.species_group)
   const day = formatDay(item.occurredAt)
   const time = TIME_FMT.format(item.occurredAt)
   const place = item.huntName
