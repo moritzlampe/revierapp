@@ -1,12 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { berlinMidnight, toBerlinDateKey } from './time'
 import { pickCoverPhoto } from './cover-photo'
+import { aggregateBySpecies } from './breakdown'
 import type {
   AnblickDetail,
   ErlegungDetail,
   GesellDetail,
+  StreckeDetail,
 } from './detail-types'
 import type { Database } from '@/lib/supabase/database.types'
+import { WILD_GROUPS, type WildGroup } from '@/lib/species-config'
 
 type Kill = Database['public']['Tables']['kills']['Row']
 type Hunt = Database['public']['Tables']['hunts']['Row']
@@ -256,4 +259,89 @@ export async function getAnblickDetail(
   if (UUID_RE.test(id)) return getAnblickByHunt(id, userId)
   if (DATE_RE.test(id)) return getAnblickByDate(id, userId)
   return null
+}
+
+// ---------- Strecke ----------
+
+/**
+ * Lädt eine Strecke-Aggregation: alle Kills eines Hunts an einem Tag in
+ * einer Wildgruppe. Identifiziert über (huntId, dateKey, group) — der
+ * zusammengesetzte Card-Key aus timeline.ts. RLS regelt Sichtbarkeit
+ * der Kills (Reporter + Mitjäger). dateKey ist Berlin-Tag, group ist
+ * der WildGroup-Schlüssel.
+ *
+ * Liefert null, wenn (a) Hunt nicht sichtbar, (b) kein Kill für das
+ * (hunt × day × group)-Tripel existiert oder (c) der Caller dem Hunt
+ * als Reporter nicht zugeordnet ist (StreckeCard ist nutzer-eigene
+ * Solo-Aggregation — Mitjäger landen über Gesell-Pfad).
+ */
+export async function getStreckeDetail(
+  huntId: string,
+  dateKey: string,
+  group: WildGroup,
+  userId: string,
+): Promise<StreckeDetail | null> {
+  const supabase = await createClient()
+
+  const huntRes = await supabase
+    .from('hunts')
+    .select('*')
+    .eq('id', huntId)
+    .maybeSingle()
+
+  if (huntRes.error || !huntRes.data) return null
+  const hunt = huntRes.data as Hunt
+
+  const [y, m, d] = dateKey.split('-').map((n) => parseInt(n, 10))
+  if (!y || !m || !d) return null
+  const start = berlinMidnight(y, m - 1, d)
+  const end = berlinMidnight(y, m - 1, d + 1)
+
+  const wildArten = WILD_GROUPS[group]
+  if (!wildArten || wildArten.length === 0) return null
+
+  const [killsRes, photosRes] = await Promise.all([
+    supabase
+      .from('kills')
+      .select('id, wild_art, erlegt_am, distance_m, gewicht_kg')
+      .eq('hunt_id', huntId)
+      .eq('reporter_id', userId)
+      .in('wild_art', wildArten)
+      .gte('erlegt_am', start.toISOString())
+      .lt('erlegt_am', end.toISOString())
+      .order('erlegt_am', { ascending: true }),
+    supabase.from('hunt_photos').select('*').eq('hunt_id', huntId),
+  ])
+
+  type KillLite = Pick<
+    Kill,
+    'id' | 'wild_art' | 'erlegt_am' | 'distance_m' | 'gewicht_kg'
+  >
+  const kills = (killsRes.data ?? []) as KillLite[]
+  if (kills.length === 0) return null
+
+  const speciesBreakdown = aggregateBySpecies(kills).sort(
+    (a, b) => b.count - a.count || a.species.localeCompare(b.species),
+  )
+
+  const photos = ((photosRes.data ?? []) as HuntPhoto[])
+    .slice()
+    .sort((a, b) => ((a.created_at ?? '') < (b.created_at ?? '') ? -1 : 1))
+  if (hunt.cover_photo_id) {
+    const i = photos.findIndex((p) => p.id === hunt.cover_photo_id)
+    if (i > 0) {
+      const [cover] = photos.splice(i, 1)
+      photos.unshift(cover)
+    }
+  }
+
+  return {
+    hunt,
+    group,
+    occurredOn: dateKey,
+    kills,
+    totalCount: kills.length,
+    speciesBreakdown,
+    photos,
+  }
 }

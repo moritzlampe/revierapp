@@ -1,4 +1,5 @@
 import type { Database } from '@/lib/supabase/database.types'
+import type { WildArt, WildGroup } from '@/lib/species-config'
 
 type Kill = Database['public']['Tables']['kills']['Row']
 type Hunt = Database['public']['Tables']['hunts']['Row']
@@ -36,6 +37,33 @@ export type GesellDetail = {
   userKills: number
   userRole: 'Jagdleiter' | 'Schütze'
   coverPhoto: HuntPhoto | null
+}
+
+/**
+ * Strecke (TimelineStrecke → /du/tagebuch/strecke/[hunt_id]?d=YYYY-MM-DD&g=<group>).
+ *
+ * N-zu-1-Aggregat aus mehreren Solo-Kills derselben Wildgruppe an einem
+ * Tag (Schwelle via SOLO_AGGREGATE_THRESHOLD oder aggregatePerDay in
+ * species-config.ts). Aggregations-Mechanik analog zur Solo-Branch in
+ * timeline.ts, damit Card und Detail dieselben Zahlen zeigen.
+ */
+export type StreckeDetail = {
+  hunt: Hunt
+  /** Wildgruppe der Aggregation (URL-Param g) */
+  group: WildGroup
+  /** Tag der Aggregation (URL-Param d, YYYY-MM-DD Berlin) */
+  occurredOn: string
+  /** Alle Kills in (hunt × group × day), sortiert chronologisch */
+  kills: Pick<
+    Kill,
+    'id' | 'wild_art' | 'erlegt_am' | 'distance_m' | 'gewicht_kg'
+  >[]
+  /** Summe = kills.length */
+  totalCount: number
+  /** Pro wild_art aggregiert, absteigend nach count */
+  speciesBreakdown: { species: WildArt; count: number }[]
+  /** Hunt-bezogene Fotos (kein kill_ids-Filter — Hunt-Foto-Stack) */
+  photos: HuntPhoto[]
 }
 
 /**
