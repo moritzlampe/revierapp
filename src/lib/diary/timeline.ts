@@ -10,6 +10,7 @@ import {
 } from '@/lib/species-config'
 import type { Jagdjahr } from './season'
 import { toBerlinDateKey } from './time'
+import { aggregateBySpecies } from './breakdown'
 
 // ---------- Public types (UI contract) ----------
 
@@ -473,17 +474,6 @@ function buildErlegung(k: KillRow, huntName: string | null): TimelineErlegung {
     weatherSnapshot: parseWeather(k.weather_snapshot),
     place: huntName,
   }
-}
-
-function aggregateBySpecies(
-  rows: { wild_art: string }[],
-): { species: WildArt; count: number }[] {
-  const map = new Map<WildArt, number>()
-  for (const r of rows) {
-    const wa = r.wild_art as WildArt
-    map.set(wa, (map.get(wa) ?? 0) + 1)
-  }
-  return Array.from(map.entries()).map(([species, count]) => ({ species, count }))
 }
 
 /**
