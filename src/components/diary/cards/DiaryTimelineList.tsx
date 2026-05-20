@@ -13,6 +13,7 @@ import DiaryTimeline, { MonthLabel } from './DiaryTimeline'
 import ErlegungCard from './ErlegungCard'
 import AnblickCard from './AnblickCard'
 import GesellCard from './GesellCard'
+import StreckeCard from './StreckeCard'
 
 function assertNever(x: never): never {
   throw new Error(`Unhandled timeline item kind: ${JSON.stringify(x)}`)
@@ -44,8 +45,8 @@ interface Props {
  * Client wrapper that reads the URL filter param, applies it to the timeline
  * items, groups by month, and renders cards inside <DiaryTimeline>.
  *
- * Renders ErlegungCard, AnblickCard, GesellCard. StreckeCard (kind='strecke')
- * is reserved for a later sprint. Filter-aware empty states come in Phase 2.4.
+ * Renders ErlegungCard, AnblickCard, GesellCard, StreckeCard. Filter-aware
+ * empty states come in Phase 2.4.
  */
 export default function DiaryTimelineList({ items }: Props) {
   const searchParams = useSearchParams()
@@ -132,8 +133,7 @@ export default function DiaryTimelineList({ items }: Props) {
                 )
               }
               case 'strecke':
-                // TODO 60.3.x: StreckeCard
-                return null
+                return <StreckeCard key={item.id} item={item} />
               case 'gesell':
                 return <GesellCard key={item.id} item={item} />
               case 'anblick':
