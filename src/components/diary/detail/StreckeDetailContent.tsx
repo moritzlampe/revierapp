@@ -39,11 +39,9 @@ function teilnehmerCount(n: number): string {
 /**
  * Detailseite einer Strecke-Aggregation (Hunt × Tag × Wildgruppe).
  *
- * Hero-Variante: 'erlegung' (Bronze) — konsistent zur StreckeCard-Rail.
- * Brief-Decision 5 ("neutraler Hero") nicht umsetzbar: DetailHero hat
- * keine neutral-Variante, und das Mockup Strecke_Mockup_Sprint60_5a_V1
- * existiert nicht im Repo. Bronze-Hero ist die nächstbeste Option und
- * spiegelt die Card-Akzentfarbe.
+ * Hero-Variante: 'neutral' (Brief-Decision 5) — Akzent-Rail aus, damit
+ * künftige wildgruppen-spezifische Akzente vom Detail-Layout entkoppelt
+ * bleiben. Card behält Bronze-Rail als Sammel-Akzent für "Strecke".
  */
 export function StreckeDetailContent({ detail }: { detail: StreckeDetail }) {
   const { hunt, group, occurredOn, kills, totalCount, speciesBreakdown, photos } =
@@ -64,7 +62,7 @@ export function StreckeDetailContent({ detail }: { detail: StreckeDetail }) {
     <>
       <DetailTopBar title="Strecke" />
       <DetailHero
-        variant="erlegung"
+        variant="neutral"
         photoUrl={heroPhoto}
         kicker="Strecke"
         title={`${totalCount} × ${groupLabel}`}

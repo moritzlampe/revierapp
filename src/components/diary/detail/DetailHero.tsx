@@ -1,10 +1,12 @@
-type HeroVariant = 'erlegung' | 'gesell' | 'anblick'
+type HeroVariant = 'erlegung' | 'gesell' | 'anblick' | 'neutral'
 
 /**
- * Hero der Tagebuch-Detailseite. Drei Akzent-Varianten (Mockup V3):
+ * Hero der Tagebuch-Detailseite. Vier Akzent-Varianten:
  *  - erlegung → bronze (Default-Rail), 16:9, Foto oder Bronze-Fallback
  *  - gesell   → slate-Rail, 16:9, Foto oder Bronze-Fallback, Status-Chip
  *  - anblick  → forest (150px, kein Foto v1), Forest-Pattern-Overlay
+ *  - neutral  → kein Akzent-Rail, dezenter Kicker (Sprint 60.5a: StreckeDetail,
+ *               offen für künftige Wildgruppen-spezifische Akzente)
  *
  * Styles in globals.css unter .tagebuch-surface .hero*.
  */
@@ -30,7 +32,9 @@ export function DetailHero({
       ? 'hero slate'
       : variant === 'anblick'
         ? 'hero forest'
-        : 'hero'
+        : variant === 'neutral'
+          ? 'hero neutral'
+          : 'hero'
 
   return (
     <div className={heroClass}>

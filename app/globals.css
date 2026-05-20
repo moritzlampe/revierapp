@@ -1958,6 +1958,13 @@ button:active {
 
 .tagebuch-surface .hero.forest .hero-kicker { color: var(--forest); }
 
+/* 60.5a: neutral variant für StreckeDetail. Rail aus (kein Akzent-Bronze),
+   Kicker dezent — bewusst keine wildgruppen-spezifische Akzentfarbe, damit
+   künftige Wildgruppen-Akzente entkoppelt vom Detail-Layout entscheidbar
+   bleiben (Brief-Decision 5). */
+.tagebuch-surface .hero.neutral::before { display: none; }
+.tagebuch-surface .hero.neutral .hero-kicker { color: var(--text-dim); }
+
 .tagebuch-surface .forest-pattern {
   position: absolute;
   inset: 0;
