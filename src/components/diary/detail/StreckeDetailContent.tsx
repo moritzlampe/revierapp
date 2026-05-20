@@ -65,7 +65,7 @@ export function StreckeDetailContent({ detail }: { detail: StreckeDetail }) {
         variant="neutral"
         photoUrl={heroPhoto}
         kicker="Strecke"
-        title={`${totalCount} × ${groupLabel}`}
+        title={totalCount === 1 ? groupLabel : `${totalCount} × ${groupLabel}`}
         subtitle={subtitle}
       />
 

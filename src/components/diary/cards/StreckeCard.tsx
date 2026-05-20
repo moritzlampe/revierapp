@@ -106,7 +106,6 @@ const COUNT_UNIT: React.CSSProperties = {
   color: 'var(--text-dim)',
   marginLeft: '0.25rem',
   letterSpacing: '0.04em',
-  textTransform: 'lowercase',
 }
 
 const BREAKDOWN: React.CSSProperties = {
