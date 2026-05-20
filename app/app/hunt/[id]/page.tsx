@@ -285,6 +285,9 @@ export default function HuntPage() {
       if (!ok) return
     }
     await supabase.from('hunts').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', hunt.id)
+    // Router-Cache invalidieren, sonst zeigt das Tagebuch den Hunt
+    // weiterhin ohne 'auto_completed'/'completed'-Chip bis PWA-Neustart.
+    router.refresh()
     router.push('/app')
   }
 
@@ -302,6 +305,9 @@ export default function HuntPage() {
       .update({ status: 'left', left_at: new Date().toISOString() })
       .eq('hunt_id', hunt.id)
       .eq('user_id', userId)
+    // Participant-Count ändert sich → Solo/Gesell-Schwelle im Tagebuch
+    // muss neu berechnet werden.
+    router.refresh()
     router.push('/app')
   }
 

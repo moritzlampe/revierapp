@@ -247,6 +247,9 @@ export default function CreateHuntPage() {
         districtId: selectedDistrictId || null,
         name: finalName,
       })
+      // Router-Cache invalidieren, damit der neue Hunt im Tagebuch beim
+      // nächsten Aufruf sichtbar ist.
+      router.refresh()
       router.push(`/app/hunt/${id}`)
     } catch (err: any) {
       setError(err?.message ?? 'Einzeljagd konnte nicht erstellt werden.')
@@ -610,6 +613,9 @@ export default function CreateHuntPage() {
       await supabase.from('hunt_seat_assignments').insert(assignments)
     }
 
+    // Router-Cache invalidieren — neuer Gesell-Hunt + Participants müssen
+    // im Tagebuch beim nächsten Aufruf sichtbar sein.
+    router.refresh()
     router.push(`/app/hunt/${hunt.id}`)
   }
 

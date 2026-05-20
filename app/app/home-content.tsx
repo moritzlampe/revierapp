@@ -344,16 +344,20 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         .eq('id', huntId)
       if (!error) {
         setHunts(prev => prev.map(h => h.id === huntId ? { ...h, status: 'completed', ended_at: new Date().toISOString() } : h))
+        // Router-Cache invalidieren — Tagebuch zeigt sonst veralteten
+        // Hunt-Status bis PWA-Neustart.
+        router.refresh()
       }
     } else {
       // Hunt ohne Kills → komplett löschen
       const { error } = await supabase.from('hunts').delete().eq('id', huntId)
       if (!error) {
         setHunts(prev => prev.filter(h => h.id !== huntId))
+        router.refresh()
       }
     }
     setRemovingId(null)
-  }, [supabase, hunts])
+  }, [supabase, hunts, router])
 
   // Chat-Gruppe löschen
   const handleDeleteGroup = useCallback(async (groupId: string) => {

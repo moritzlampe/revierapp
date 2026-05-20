@@ -74,6 +74,10 @@ export default function JoinHuntPage() {
     })
 
     if (insertError) { setError(insertError.message); setJoining(false); return }
+    // Router-Cache invalidieren — der neue Participant ändert die Sicht-
+    // barkeit des Hunts (Solo→Gesell-Schwelle) und den Status für andere
+    // Routen wie das Tagebuch.
+    router.refresh()
     router.push(`/app/hunt/${huntId}`)
   }
 

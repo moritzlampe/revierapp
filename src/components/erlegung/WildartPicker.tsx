@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ArrowLeft } from '@phosphor-icons/react'
 import {
@@ -81,6 +82,7 @@ export function WildartPicker({
   onKillSuccess,
   gpsLoading,
 }: WildartPickerProps) {
+  const router = useRouter()
   const [step, setStep] = useState<'group' | 'detail' | 'flat'>('group')
   const [selectedGroup, setSelectedGroup] = useState<WildGroup | null>(null)
   const [selectedGeschlecht, setSelectedGeschlecht] = useState<Geschlecht | null>(null)
@@ -341,6 +343,12 @@ export function WildartPicker({
       const photosForParent = huntId ? [] : pendingPhotos
       setPendingPhotos([])
 
+      // Router-Cache invalidieren — sonst sieht das Tagebuch (und die
+      // Hunt-Strecke-Ansicht) den neuen Kill erst nach PWA-Neustart.
+      // Im Auto-Solo-Hunt-Flow ruft der Parent (ErlegungSheet) zusätzlich
+      // refresh nach createSoloHunt; doppelter Refresh ist harmlos.
+      router.refresh()
+
       if (onKillSuccess) {
         onKillSuccess(killIds, photosForParent)
       } else {
@@ -352,7 +360,7 @@ export function WildartPicker({
       setSubmitting(false)
       setUploadProgress(null)
     }
-  }, [pendingKills, pendingPhotos, submitting, huntId, userId, krankMode, handleClose, onKillSuccess])
+  }, [pendingKills, pendingPhotos, submitting, huntId, userId, krankMode, handleClose, onKillSuccess, router])
 
   // --- Abgeleitete Werte ---
   const groupConfig = selectedGroup

@@ -221,9 +221,13 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
         }
       }
 
-      // 2h: Ref setzen + Sheet schließen + Redirect
+      // 2h: Ref setzen + Sheet schließen + Cache invalidieren + Redirect.
+      // refresh() invalidiert den Router-Cache, damit Tagebuch/Hunt-Liste
+      // beim nächsten Aufruf die frischen Daten zeigen — sonst sind Solo-
+      // Hunt + Kills im Cache der ursprünglichen Route nicht enthalten.
       soloHuntIdRef.current = huntId
       onOpenChange(false)
+      router.refresh()
       router.push(`/app/hunt/${huntId}?afterKill=1`)
 
     } catch (err) {
