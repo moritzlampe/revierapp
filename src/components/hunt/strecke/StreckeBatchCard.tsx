@@ -5,13 +5,8 @@ import { Camera } from '@phosphor-icons/react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import type { HuntPhoto } from '@/lib/types/hunt-photo'
 import { getAvatarColor } from '@/lib/avatar-color'
-import {
-  WILD_GROUP_CONFIG,
-  WILD_GROUP_DETAILS,
-  FLAT_GROUP_TIERE,
-  type Geschlecht,
-  type WildArt,
-} from '@/lib/species-config'
+import type { Geschlecht } from '@/lib/species-config'
+import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
 import { deleteHuntPhoto } from '@/lib/photos/hunt-photos'
@@ -47,21 +42,6 @@ function initialsFrom(name: string): string {
   if (parts.length === 0) return '?'
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-}
-
-function wildArtLabel(wildArt: string): string {
-  for (const details of Object.values(WILD_GROUP_DETAILS)) {
-    if (!details) continue
-    const found = details.altersklassen.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  for (const list of Object.values(FLAT_GROUP_TIERE)) {
-    const found = list?.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === (wildArt as WildArt))
-  if (group) return group.label
-  return wildArt
 }
 
 function geschlechtLabel(g: Geschlecht | null | undefined): string | null {
@@ -281,7 +261,7 @@ function KillSubItem({
   isLast: boolean
 }) {
   const Icon = getSpeciesIcon(kill.wild_art)
-  const label = wildArtLabel(kill.wild_art)
+  const label = getWildArtLabelSingle(kill.wild_art)
   const details = detailsFor(kill)
   const isWounded = kill.status === 'wounded'
 

@@ -7,12 +7,7 @@ import { uploadPhoto } from '@/lib/photos/upload'
 import { insertHuntPhoto } from '@/lib/photos/hunt-photos'
 import { showToast } from '@/lib/erlegung/toast'
 import type { DisplayKill } from '@/lib/strecke/visibility'
-import {
-  WILD_GROUP_CONFIG,
-  WILD_GROUP_DETAILS,
-  FLAT_GROUP_TIERE,
-  type WildArt,
-} from '@/lib/species-config'
+import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 
 interface KillAuswahlSheetProps {
@@ -29,21 +24,6 @@ type Toggle = 'own' | 'all'
 function formatTime(iso: string): string {
   const d = new Date(iso)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-function wildArtLabel(wildArt: string): string {
-  for (const details of Object.values(WILD_GROUP_DETAILS)) {
-    if (!details) continue
-    const found = details.altersklassen.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  for (const list of Object.values(FLAT_GROUP_TIERE)) {
-    const found = list?.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === (wildArt as WildArt))
-  if (group) return group.label
-  return wildArt
 }
 
 function isHeic(file: File): boolean {
@@ -402,7 +382,7 @@ function KillRow({
             whiteSpace: 'nowrap',
           }}
         >
-          {wildArtLabel(kill.wild_art)}
+          {getWildArtLabelSingle(kill.wild_art)}
         </span>
         <span
           style={{

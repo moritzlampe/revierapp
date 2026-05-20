@@ -3,12 +3,7 @@
 import { forwardRef } from 'react'
 import { CaretRight as ChevronRight, MapPin } from '@phosphor-icons/react'
 import type { DisplayKill } from '@/lib/strecke/visibility'
-import {
-  WILD_GROUP_CONFIG,
-  WILD_GROUP_DETAILS,
-  FLAT_GROUP_TIERE,
-  type WildArt,
-} from '@/lib/species-config'
+import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 import AlertTriangleIcon from '@/components/icons/AlertTriangleIcon'
 
@@ -16,21 +11,6 @@ interface StreckeNachsucheSectionProps {
   kills: DisplayKill[]
   now?: number
   onKillTap?: (kill: DisplayKill) => void
-}
-
-function wildArtLabel(wildArt: string): string {
-  for (const details of Object.values(WILD_GROUP_DETAILS)) {
-    if (!details) continue
-    const found = details.altersklassen.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  for (const list of Object.values(FLAT_GROUP_TIERE)) {
-    const found = list?.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === (wildArt as WildArt))
-  if (group) return group.label
-  return wildArt
 }
 
 function formatDuration(fromIso: string, now: number): string {
@@ -106,7 +86,7 @@ function NachsucheCard({
   onTap?: () => void
 }) {
   const Icon = getSpeciesIcon(kill.wild_art)
-  const label = wildArtLabel(kill.wild_art)
+  const label = getWildArtLabelSingle(kill.wild_art)
   const hasPosition = Boolean(kill.position)
 
   return (

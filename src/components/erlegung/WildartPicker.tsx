@@ -14,6 +14,7 @@ import {
   type WildGroupConfig,
   type AltersklasseEntry,
 } from '@/lib/species-config'
+import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { insertKillBatch } from '@/lib/erlegung/insertKill'
 import { showToast } from '@/lib/erlegung/toast'
 import PhotoCapture from '@/components/photo/PhotoCapture'
@@ -26,21 +27,6 @@ const noSelectStyle: React.CSSProperties = {
   WebkitUserSelect: 'none',
   WebkitTouchCallout: 'none',
   WebkitTapHighlightColor: 'transparent',
-}
-
-function getWildArtLabel(wildArt: WildArt): string {
-  for (const details of Object.values(WILD_GROUP_DETAILS)) {
-    if (!details) continue
-    const found = details.altersklassen.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  for (const list of Object.values(FLAT_GROUP_TIERE)) {
-    const found = list?.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === wildArt)
-  if (group) return group.label
-  return wildArt
 }
 
 type PendingKill = {
@@ -335,7 +321,7 @@ export function WildartPicker({
       const uniqueArten = [...new Set(pendingKills.map(pk => pk.wild_art))]
       let subtext: string
       if (uniqueArten.length === 1) {
-        const label = getWildArtLabel(uniqueArten[0])
+        const label = getWildArtLabelSingle(uniqueArten[0])
         subtext = total === 1 ? label : `${total}× ${label}`
       } else {
         subtext = `${total} Stück`

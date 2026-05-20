@@ -7,11 +7,10 @@ import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
   WILD_ART_TO_GROUP,
   WILD_GROUP_CONFIG,
-  WILD_GROUP_DETAILS,
-  FLAT_GROUP_TIERE,
   type Geschlecht,
   type WildArt,
 } from '@/lib/species-config'
+import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { getSpeciesIcon } from '@/components/icons/SpeciesIcons'
 import PinIcon from '@/components/icons/PinIcon'
 import BullseyeIcon from '@/components/icons/BullseyeIcon'
@@ -64,21 +63,6 @@ function extractLatLng(position: unknown): LatLng | null {
     }
   }
   return null
-}
-
-function wildArtLabel(wildArt: string): string {
-  for (const details of Object.values(WILD_GROUP_DETAILS)) {
-    if (!details) continue
-    const found = details.altersklassen.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  for (const list of Object.values(FLAT_GROUP_TIERE)) {
-    const found = list?.find(a => a.value === wildArt)
-    if (found) return found.label
-  }
-  const group = WILD_GROUP_CONFIG.find(g => g.unspezValue === (wildArt as WildArt))
-  if (group) return group.label
-  return wildArt
 }
 
 function wildGroupLabel(wildArt: string): string {
@@ -176,7 +160,7 @@ export default function KillDetailContent({
 
   const latLng = extractLatLng(kill.position)
   const detailsTitle = [
-    wildArtLabel(kill.wild_art),
+    getWildArtLabelSingle(kill.wild_art),
     geschlechtLabel(kill.geschlecht),
   ]
     .filter(Boolean)
