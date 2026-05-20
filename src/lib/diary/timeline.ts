@@ -2,9 +2,11 @@ import { createClient } from '@/lib/supabase/server'
 import {
   type WildArt,
   type WildGroup,
+  type WildGroupAggregateItem,
   WILD_ART_TO_GROUP,
   WILD_GROUP_CONFIG,
   SOLO_AGGREGATE_THRESHOLD,
+  aggregateByWildGroup,
 } from '@/lib/species-config'
 import type { Jagdjahr } from './season'
 import { toBerlinDateKey } from './time'
@@ -64,11 +66,10 @@ export interface TimelineGesell extends TimelineBase {
   /** Nur User's eigene Sightings auf diesem Hunt, aggregiert nach species (Freitext) */
   deineAnblicke: { species: string; count: number }[]
   /**
-   * Gesamtstrecke aller Schützen, aggregiert nach species.
-   * 'locked' wird seit 60.5b nicht mehr emittiert (share_total_strecke-
-   * Gating entfernt); Union bleibt für TotalStrecke-Kompat (out of scope).
+   * Gesamtstrecke aller Schützen, aggregiert auf Wildgruppen-Ebene
+   * (Sprint 60.5c, parallel zur Detail-Seite aus 60.5b).
    */
-  gesamtStrecke: { species: WildArt; count: number }[] | 'locked'
+  gesamtStrecke: WildGroupAggregateItem[]
   startedAt: Date | null
   endedAt: Date | null
   notiz: string | null
@@ -271,8 +272,6 @@ export async function getTimelineItems(
   for (const h of hunts) huntById.set(h.id, h)
 
   // 7. Gesell-Hunts (>=2 Teilnehmer): Gesamtstrecke immer laden.
-  // share_total_strecke-Gating in 60.5b entfernt — Gesamtstrecke ist
-  // grundsätzlich für alle Mitjäger sichtbar.
   const visibleGesellHuntIds: string[] = []
   for (const h of hunts) {
     const pc = participantCount.get(h.id) ?? 0
@@ -348,10 +347,9 @@ export async function getTimelineItems(
         ([species, count]) => ({ species, count }),
       )
 
-      // Gesamtstrecke immer aus allen Kills (Gating in 60.5b entfernt).
+      // Gesamtstrecke immer aus allen Kills, auf Wildgruppen-Ebene (60.5c).
       const allKills = allKillsByHunt.get(hunt.id) ?? []
-      const gesamtStrecke: { species: WildArt; count: number }[] | 'locked' =
-        aggregateBySpecies(allKills)
+      const gesamtStrecke = aggregateByWildGroup(allKills)
       const nachsucheCount = allKills.filter(k => k.nachsuche === true).length
 
       items.push({

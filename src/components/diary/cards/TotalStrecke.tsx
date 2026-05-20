@@ -1,17 +1,8 @@
-import { LockSimple } from '@phosphor-icons/react/dist/ssr'
-import { getSpeciesLabel } from '@/lib/wildArt'
-
-interface SpeciesCount {
-  species: string
-  count: number
-}
+import type { WildGroupAggregateItem } from '@/lib/species-config'
 
 interface Props {
-  /**
-   * Aggregierte Strecke aller Reporter, oder 'locked' wenn der Jagdleiter
-   * `share_total_strecke=false` gesetzt hat und der User nicht der Creator ist.
-   */
-  data: SpeciesCount[] | 'locked'
+  /** Aggregierte Strecke aller Reporter auf Wildgruppen-Ebene (Sprint 60.5c). */
+  data: WildGroupAggregateItem[]
 }
 
 // 60.5b: jetzt erster Sub-Block (über JagdtagBlock) → solider
@@ -71,19 +62,14 @@ export default function TotalStrecke({ data }: Props) {
   return (
     <div style={BLOCK}>
       <div style={LABEL}>Gesamtstrecke</div>
-      {data === 'locked' ? (
-        <div style={LOCKED}>
-          <LockSimple size={12} weight="regular" color="var(--text-faint)" />
-          vom Jagdleiter nicht geteilt
-        </div>
-      ) : data.length === 0 ? (
+      {data.length === 0 ? (
         <div style={LOCKED}>keine Strecke gemeldet</div>
       ) : (
         <div style={LIST}>
           {data.map((entry) => (
-            <span key={entry.species} style={ENTRY}>
+            <span key={entry.groupKey} style={ENTRY}>
               <span style={NUM}>{entry.count}×</span>
-              {getSpeciesLabel(entry.species)}
+              {entry.groupLabel}
             </span>
           ))}
         </div>
