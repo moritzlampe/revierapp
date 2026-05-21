@@ -28,16 +28,19 @@ COMMENT ON FUNCTION update_hunt_last_activity() IS
   'granularity to reduce write load from GPS pings.';
 
 -- positions_current: hunt_id NOT NULL, fires on every UPSERT
+DROP TRIGGER IF EXISTS trg_positions_current_activity ON positions_current;
 CREATE TRIGGER trg_positions_current_activity
   AFTER INSERT OR UPDATE ON positions_current
   FOR EACH ROW EXECUTE FUNCTION update_hunt_last_activity();
 
 -- messages: hunt_id nullable; trigger handles via IS NOT NULL check
+DROP TRIGGER IF EXISTS trg_messages_activity ON messages;
 CREATE TRIGGER trg_messages_activity
   AFTER INSERT ON messages
   FOR EACH ROW EXECUTE FUNCTION update_hunt_last_activity();
 
 -- kills: hunt_id nullable; trigger handles via IS NOT NULL check
+DROP TRIGGER IF EXISTS trg_kills_activity ON kills;
 CREATE TRIGGER trg_kills_activity
   AFTER INSERT OR UPDATE ON kills
   FOR EACH ROW EXECUTE FUNCTION update_hunt_last_activity();
