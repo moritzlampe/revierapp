@@ -54,5 +54,4 @@ scripts/
 
 # Recon reports & session artifacts
 BERICHT_*.md
-docs/recon/
 .recon_db

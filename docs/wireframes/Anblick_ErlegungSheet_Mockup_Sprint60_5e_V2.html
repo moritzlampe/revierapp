@@ -1,0 +1,923 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anblick · ErlegungSheet Mockup · Sprint 60.5e · V2</title>
+  <style>
+    :root {
+      --bg: #11140F;
+      --surface: #1A1E18;
+      --surface-2: #20251D;
+      --surface-3: #262B22;
+      --border: rgba(255,255,255,0.08);
+      --border-strong: rgba(255,255,255,0.14);
+      --text: rgba(255,255,255,0.92);
+      --text-dim: rgba(255,255,255,0.6);
+      --text-muted: rgba(255,255,255,0.4);
+      --bronze: #C08E48;
+      --forest: #6E8A52;
+      --slate: #8B8775;
+      --radius-card: 12px;
+      --phone-w: 393px;
+      --phone-h: 852px;
+      --serif: Fraunces, Georgia, 'Times New Roman', serif;
+      --sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(110,138,82,0.16), transparent 34rem),
+        radial-gradient(circle at 88% 12%, rgba(192,142,72,0.11), transparent 30rem),
+        #0B0D09;
+      color: var(--text);
+      font-family: var(--sans);
+      padding: 40px 28px 60px;
+    }
+
+    .page-header {
+      max-width: 1320px;
+      margin: 0 auto 28px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .kicker {
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .14em;
+      font-size: 11px;
+      color: var(--forest);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(32px, 4vw, 52px);
+      font-weight: 650;
+      letter-spacing: -0.035em;
+      line-height: .95;
+    }
+
+    .intro {
+      max-width: 850px;
+      margin: 0;
+      color: var(--text-dim);
+      line-height: 1.5;
+      font-size: 15px;
+    }
+
+    .mockup-grid {
+      max-width: 1380px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+      gap: 34px 30px;
+      align-items: start;
+    }
+
+    .mockup-unit {
+      display: grid;
+      grid-template-columns: minmax(0, var(--phone-w)) minmax(170px, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .caption {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+
+    .caption strong {
+      font-family: var(--serif);
+      font-size: 22px;
+      letter-spacing: -0.02em;
+      font-weight: 650;
+    }
+
+    .caption span {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      white-space: nowrap;
+    }
+
+    .phone {
+      width: var(--phone-w);
+      height: var(--phone-h);
+      border-radius: 36px;
+      background: #F7F5EC;
+      padding: 9px;
+      box-shadow: 0 24px 90px rgba(0,0,0,.46), inset 0 0 0 1px rgba(255,255,255,.28);
+      position: relative;
+    }
+
+    .screen {
+      height: 100%;
+      border-radius: 28px;
+      background: var(--bg);
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(0,0,0,.58);
+    }
+
+    .statusbar {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: rgba(255,255,255,.72);
+      letter-spacing: .02em;
+      position: relative;
+      z-index: 5;
+    }
+
+    .system-icons {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .dot, .bar, .battery { display: block; background: rgba(255,255,255,.66); }
+    .dot { width: 4px; height: 4px; border-radius: 99px; }
+    .bar { width: 12px; height: 7px; border-radius: 2px; }
+    .battery { width: 18px; height: 8px; border-radius: 2px; position: relative; }
+    .battery:after { content: ''; position: absolute; right: -3px; top: 2px; width: 2px; height: 4px; border-radius: 1px; background: rgba(255,255,255,.66); }
+
+    .app-bg {
+      position: absolute;
+      inset: 38px 0 0;
+      background:
+        linear-gradient(180deg, rgba(17,20,15,.20), var(--bg) 42%),
+        radial-gradient(circle at 64% 0%, rgba(110,138,82,.16), transparent 220px),
+        linear-gradient(130deg, rgba(255,255,255,.04), transparent 42%);
+      padding: 16px;
+    }
+
+    .app-topline {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+
+    .app-title {
+      margin-top: 8px;
+      font-family: var(--serif);
+      font-size: 28px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .fab-hint {
+      margin-top: 12px;
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 99px;
+      border: 1px solid rgba(192,142,72,.32);
+      background: rgba(192,142,72,.12);
+      color: var(--bronze);
+      font-family: var(--mono);
+      font-weight: 700;
+      margin-left: auto;
+    }
+
+    .bottom-sheet {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 85%;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.035), transparent 80px),
+        var(--surface);
+      border-top-left-radius: 24px;
+      border-top-right-radius: 24px;
+      box-shadow: 0 -22px 70px rgba(0,0,0,.46);
+      overflow: hidden;
+      border-top: 1px solid rgba(255,255,255,.10);
+    }
+
+    .sheet-handle {
+      width: 42px;
+      height: 4px;
+      border-radius: 99px;
+      background: rgba(255,255,255,.25);
+      margin: 10px auto 7px;
+    }
+
+    .sheet-header {
+      padding: 0 18px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .sheet-title {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: 26px;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .sheet-subtitle {
+      margin-top: 5px;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+
+    .close-x {
+      width: 34px;
+      height: 34px;
+      border-radius: 99px;
+      display: grid;
+      place-items: center;
+      color: var(--text-dim);
+      background: rgba(255,255,255,.055);
+      border: 1px solid var(--border);
+      font-size: 17px;
+    }
+
+    .sheet-body {
+      position: absolute;
+      top: 95px;
+      left: 0;
+      right: 0;
+      bottom: 136px;
+      overflow: hidden;
+      padding: 14px 18px 8px;
+    }
+
+    .field-stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field-section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--text-muted);
+    }
+
+    .field-label .hint {
+      text-transform: none;
+      letter-spacing: 0;
+      font-family: var(--sans);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .wild-card {
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      gap: 11px;
+      align-items: center;
+      min-height: 66px;
+      border-radius: var(--radius-card);
+      background: rgba(255,255,255,.045);
+      border: 1px solid var(--border);
+      padding: 10px;
+    }
+
+    .wild-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 30% 20%, rgba(255,255,255,.12), transparent 22px),
+        rgba(139,135,117,.18);
+      border: 1px solid rgba(139,135,117,.28);
+      color: var(--slate);
+      font-family: var(--serif);
+      font-size: 20px;
+      font-weight: 650;
+    }
+
+    .wild-main {
+      font-weight: 650;
+      font-size: 15px;
+      line-height: 1.15;
+    }
+
+    .wild-sub {
+      margin-top: 3px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .edit-link {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+    .input-card {
+      min-height: 50px;
+      border-radius: var(--radius-card);
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.04);
+      padding: 10px 11px;
+      display: grid;
+      gap: 3px;
+      align-content: center;
+    }
+
+    .input-card .input-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .input-card .input-value {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .input-card.empty .input-value {
+      color: var(--text-muted);
+      font-family: var(--mono);
+    }
+
+    .photo-tile {
+      min-height: 56px;
+      border-radius: var(--radius-card);
+      border: 1px dashed rgba(255,255,255,.18);
+      background: rgba(255,255,255,.032);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .photo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: rgba(255,255,255,.06);
+      border: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 15px;
+    }
+
+    .note-box {
+      min-height: 66px;
+      border-radius: var(--radius-card);
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.04);
+      padding: 12px;
+      color: var(--text-dim);
+      font-size: 13px;
+      line-height: 1.38;
+    }
+
+    .note-box.placeholder { color: var(--text-muted); }
+
+    .timestamp-row,
+    .location-row {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-radius: var(--radius-card);
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.035);
+      padding: 0 12px;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+
+    .timestamp-row strong,
+    .location-row strong {
+      font-weight: 500;
+      color: var(--text-dim);
+    }
+
+    .location-copy {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .location-dot {
+      color: var(--text-muted);
+      font-size: 13px;
+      transform: translateY(-1px);
+    }
+
+    .text-link {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .text-link.bronze { color: var(--bronze); }
+    .text-link.forest { color: var(--forest); }
+
+    .count-stepper {
+      border-radius: 16px;
+      border: 1px solid rgba(110,138,82,.24);
+      background:
+        radial-gradient(circle at 52% 0%, rgba(110,138,82,.16), transparent 130px),
+        rgba(255,255,255,.035);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .stepper-row {
+      display: grid;
+      grid-template-columns: 44px 1fr 44px;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .step-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      background: rgba(110,138,82,.12);
+      border: 1px solid rgba(110,138,82,.28);
+      color: var(--forest);
+      font-size: 24px;
+      line-height: 1;
+      font-family: var(--mono);
+    }
+
+    .count-center {
+      display: grid;
+      place-items: center;
+      gap: 1px;
+    }
+
+    .count-number {
+      font-family: var(--mono);
+      font-size: 36px;
+      line-height: .95;
+      color: var(--text);
+      letter-spacing: -0.06em;
+      min-height: 44px;
+      display: grid;
+      place-items: center;
+    }
+
+    .count-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .14em;
+      color: var(--text-muted);
+    }
+
+    .tap-hint {
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: rgba(255,255,255,.36);
+      letter-spacing: .04em;
+    }
+
+    .sheet-footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      min-height: 136px;
+      padding: 13px 18px 18px;
+      border-top: 1px solid var(--border);
+      background:
+        linear-gradient(180deg, rgba(26,30,24,.88), rgba(26,30,24,.98) 30%),
+        var(--surface);
+      box-shadow: 0 -14px 28px rgba(0,0,0,.20);
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .segmented {
+      min-height: 44px;
+      border-radius: 14px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid var(--border);
+      padding: 4px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+    }
+
+    .seg-btn {
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      min-height: 36px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .04em;
+    }
+
+    .seg-btn.active-bronze {
+      background: rgba(192,142,72,.20);
+      color: var(--bronze);
+      box-shadow: inset 0 0 0 1px rgba(192,142,72,.34);
+    }
+
+    .seg-btn.active-forest {
+      background: rgba(110,138,82,.20);
+      color: var(--forest);
+      box-shadow: inset 0 0 0 1px rgba(110,138,82,.34);
+    }
+
+    .submit {
+      min-height: 50px;
+      border-radius: 15px;
+      display: grid;
+      place-items: center;
+      color: rgba(17,20,15,.96);
+      font-weight: 760;
+      letter-spacing: -0.01em;
+      font-size: 15px;
+      box-shadow: 0 14px 30px rgba(0,0,0,.22);
+    }
+
+    .submit.bronze { background: linear-gradient(180deg, #D3A15E, var(--bronze)); }
+    .submit.forest { background: linear-gradient(180deg, #86A469, var(--forest)); }
+
+    .annotations {
+      display: grid;
+      gap: 10px;
+      align-self: start;
+    }
+
+    .decision-tag,
+    .route-note,
+    .variant-caption {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255,255,255,.04);
+      padding: 12px;
+      color: var(--text-dim);
+      font-size: 12px;
+      line-height: 1.42;
+    }
+
+    .decision-tag strong,
+    .route-note strong,
+    .variant-caption strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+
+    .decision-tag.bronze { border-color: rgba(192,142,72,.24); background: rgba(192,142,72,.055); }
+    .decision-tag.forest { border-color: rgba(110,138,82,.28); background: rgba(110,138,82,.06); }
+    .decision-tag.slate { border-color: rgba(139,135,117,.28); background: rgba(139,135,117,.06); }
+
+    .required-note {
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .07em;
+    }
+
+    @media (max-width: 920px) {
+      body { padding: 26px 16px 40px; }
+      .mockup-grid { grid-template-columns: 1fr; }
+      .mockup-unit { grid-template-columns: 1fr; }
+      .caption { max-width: var(--phone-w); }
+      .annotations { max-width: var(--phone-w); }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="kicker">QuickHunt · Sprint 60.5e · Anblick-Erfassung · Iteration 2</div>
+    <h1>Erfassung bleibt eine Maske. Der Footer entscheidet den Modus.</h1>
+    <p class="intro">Die Erlegungs- und Anblick-Erfassung nutzt dieselben Detailfelder. Nur der Anzahl-Stepper ist konditional sichtbar. Der Modus-Toggle sitzt direkt über dem Submit-Button, der Sheet-Header bleibt bewusst konstant.</p>
+  </header>
+
+  <main class="mockup-grid">
+    <section class="mockup-unit">
+      <div class="caption">
+        <strong>Variante 1 — Erlegungs-Modus</strong>
+        <span>default · bronze</span>
+      </div>
+
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar"><span>21:34</span><span class="system-icons"><i class="dot"></i><i class="bar"></i><i class="battery"></i></span></div>
+          <div class="app-bg">
+            <div class="app-topline"><span>Tagebuch</span><span>Revier Brockwinkel</span></div>
+            <div class="app-title">Abendansitz<br>am Wechsel</div>
+            <div class="fab-hint">+</div>
+          </div>
+
+          <div class="bottom-sheet">
+            <div class="sheet-handle"></div>
+            <header class="sheet-header">
+              <div>
+                <h2 class="sheet-title">Erfassen</h2>
+                <div class="sheet-subtitle">Wildart wählen, Details optional</div>
+              </div>
+              <div class="close-x">×</div>
+            </header>
+
+            <div class="sheet-body">
+              <div class="field-stack">
+                <section class="field-section">
+                  <div class="field-label"><span>Wildart</span><span class="hint">gewählt</span></div>
+                  <div class="wild-card">
+                    <div class="wild-icon">S</div>
+                    <div><div class="wild-main">Schwarzwild</div><div class="wild-sub">Überläufer</div></div>
+                    <div class="edit-link">ändern</div>
+                  </div>
+                </section>
+
+                <section class="grid-2">
+                  <div class="input-card"><div class="input-label">Geschlecht</div><div class="input-value">weiblich</div></div>
+                  <div class="input-card"><div class="input-label">Alter</div><div class="input-value">Überläufer</div></div>
+                </section>
+
+                <section class="grid-3">
+                  <div class="input-card"><div class="input-label">Entfernung</div><div class="input-value">42 m</div></div>
+                  <div class="input-card"><div class="input-label">Treffer</div><div class="input-value">Kammer</div></div>
+                  <div class="input-card"><div class="input-label">Gewicht</div><div class="input-value">35 kg</div></div>
+                </section>
+
+                <section class="field-section">
+                  <div class="field-label"><span>Foto</span><span class="hint">optional</span></div>
+                  <div class="photo-tile"><span class="photo-icon">⌁</span><span>Foto hinzufügen</span></div>
+                </section>
+
+                <section class="field-section">
+                  <div class="field-label"><span>Notiz</span><span class="hint">optional</span></div>
+                  <div class="note-box placeholder">Notiz hinzufügen …</div>
+                </section>
+
+                <div class="timestamp-row"><strong>Zeitstempel</strong><span>Jetzt · 21:34</span></div>
+                <div class="location-row"><div class="location-copy"><span class="location-dot">📍</span><strong>Auto-erfasst</strong></div><span class="text-link bronze">Standort ändern</span></div>
+              </div>
+            </div>
+
+            <footer class="sheet-footer">
+              <div class="segmented">
+                <div class="seg-btn active-bronze">Erlegung</div>
+                <div class="seg-btn">Nur gesehen</div>
+              </div>
+              <div class="submit bronze">Erlegung melden</div>
+            </footer>
+          </div>
+        </div>
+      </div>
+
+      <aside class="annotations">
+        <div class="decision-tag bronze"><strong>Keine Pflichtfelder</strong>Wildart genügt zum Speichern. Geschlecht, Alter, Schussdaten, Gewicht, Foto und Notiz sind bewusst Datenqualitätsangebote.</div>
+        <div class="decision-tag slate"><strong>Header konstant</strong>Der Sheet-Header bleibt „Erfassen“. Der Submit-Button macht den Modus eindeutig.</div>
+        <div class="decision-tag bronze"><strong>Toggle im Footer</strong>Modus-Entscheidung am Ende, direkt über dem Submit — nicht direkt nach der Wildart.</div>
+      </aside>
+    </section>
+
+    <section class="mockup-unit">
+      <div class="caption">
+        <strong>Variante 2 — Anblick-Modus</strong>
+        <span>gleiche Details · forest</span>
+      </div>
+
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar"><span>21:36</span><span class="system-icons"><i class="dot"></i><i class="bar"></i><i class="battery"></i></span></div>
+          <div class="app-bg">
+            <div class="app-topline"><span>Tagebuch</span><span>Revier Brockwinkel</span></div>
+            <div class="app-title">Abendansitz<br>am Wechsel</div>
+            <div class="fab-hint">+</div>
+          </div>
+
+          <div class="bottom-sheet">
+            <div class="sheet-handle"></div>
+            <header class="sheet-header">
+              <div>
+                <h2 class="sheet-title">Erfassen</h2>
+                <div class="sheet-subtitle">Wildart wählen, Details optional</div>
+              </div>
+              <div class="close-x">×</div>
+            </header>
+
+            <div class="sheet-body">
+              <div class="field-stack">
+                <section class="field-section">
+                  <div class="field-label"><span>Wildart</span><span class="hint">gewählt</span></div>
+                  <div class="wild-card">
+                    <div class="wild-icon">S</div>
+                    <div><div class="wild-main">Schwarzwild</div><div class="wild-sub">Überläufer</div></div>
+                    <div class="edit-link">ändern</div>
+                  </div>
+                </section>
+
+                <section class="grid-2">
+                  <div class="input-card"><div class="input-label">Geschlecht</div><div class="input-value">weiblich</div></div>
+                  <div class="input-card"><div class="input-label">Alter</div><div class="input-value">Überläufer</div></div>
+                </section>
+
+                <section class="grid-3">
+                  <div class="input-card empty"><div class="input-label">Entfernung</div><div class="input-value">—</div></div>
+                  <div class="input-card empty"><div class="input-label">Treffer</div><div class="input-value">—</div></div>
+                  <div class="input-card"><div class="input-label">Gewicht</div><div class="input-value">35 kg geschätzt</div></div>
+                </section>
+
+                <section class="field-section">
+                  <div class="field-label"><span>Foto</span><span class="hint">optional</span></div>
+                  <div class="photo-tile"><span class="photo-icon">⌁</span><span>Foto hinzufügen</span></div>
+                </section>
+
+                <section class="field-section">
+                  <div class="field-label"><span>Notiz</span><span class="hint">optional</span></div>
+                  <div class="note-box">Schwarz-weiß gezeichnet, kreuzte den Wechsel Richtung Süd</div>
+                </section>
+
+                <div class="count-stepper">
+                  <div class="field-label"><span>Anzahl</span><span class="hint">nur Anblick</span></div>
+                  <div class="stepper-row">
+                    <div class="step-btn">−</div>
+                    <div class="count-center"><div class="count-number">1</div><div class="count-label">Stück</div></div>
+                    <div class="step-btn">+</div>
+                  </div>
+                  <div class="tap-hint">Tap auf Zahl · direkte Eingabe</div>
+                </div>
+
+                <div class="timestamp-row"><strong>Zeitstempel</strong><span>Jetzt · 21:36</span></div>
+                <div class="location-row"><div class="location-copy"><span class="location-dot">📍</span><strong>Auto-erfasst</strong></div><span class="text-link forest">Standort ändern</span></div>
+              </div>
+            </div>
+
+            <footer class="sheet-footer">
+              <div class="segmented">
+                <div class="seg-btn">Erlegung</div>
+                <div class="seg-btn active-forest">Nur gesehen</div>
+              </div>
+              <div class="submit forest">Anblick speichern</div>
+            </footer>
+          </div>
+        </div>
+      </div>
+
+      <aside class="annotations">
+        <div class="decision-tag forest"><strong>Datenqualität bleibt</strong>Auch Anblicke dürfen Geschlecht, Alter und geschätztes Gewicht enthalten. Schussdaten bleiben sichtbar, können aber leer bleiben.</div>
+        <div class="decision-tag forest"><strong>Anzahl konditional</strong>Der Stepper erscheint nur im Anblick-Modus. Erlegung bleibt semantisch 1 Stück = 1 Eintrag.</div>
+        <div class="decision-tag slate"><strong>Standort symmetrisch</strong>Auto-GPS in beiden Modi; Korrektur erfolgt über dieselbe Vollbild-Karte.</div>
+      </aside>
+    </section>
+
+    <section class="mockup-unit">
+      <div class="caption">
+        <strong>Variante 3 — Anblick Rudel-Fall</strong>
+        <span>count = 12 · optionalfelder leer</span>
+      </div>
+
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar"><span>06:48</span><span class="system-icons"><i class="dot"></i><i class="bar"></i><i class="battery"></i></span></div>
+          <div class="app-bg">
+            <div class="app-topline"><span>Tagebuch</span><span>Revier Brockwinkel</span></div>
+            <div class="app-title">Morgenrunde<br>am Waldrand</div>
+            <div class="fab-hint">+</div>
+          </div>
+
+          <div class="bottom-sheet">
+            <div class="sheet-handle"></div>
+            <header class="sheet-header">
+              <div>
+                <h2 class="sheet-title">Erfassen</h2>
+                <div class="sheet-subtitle">Wildart wählen, Details optional</div>
+              </div>
+              <div class="close-x">×</div>
+            </header>
+
+            <div class="sheet-body">
+              <div class="field-stack">
+                <section class="field-section">
+                  <div class="field-label"><span>Wildart</span><span class="hint">gewählt</span></div>
+                  <div class="wild-card">
+                    <div class="wild-icon">D</div>
+                    <div><div class="wild-main">Damwild</div><div class="wild-sub">Damtier</div></div>
+                    <div class="edit-link">ändern</div>
+                  </div>
+                </section>
+
+                <section class="grid-2">
+                  <div class="input-card empty"><div class="input-label">Geschlecht</div><div class="input-value">—</div></div>
+                  <div class="input-card empty"><div class="input-label">Alter</div><div class="input-value">—</div></div>
+                </section>
+
+                <section class="grid-3">
+                  <div class="input-card empty"><div class="input-label">Entfernung</div><div class="input-value">—</div></div>
+                  <div class="input-card empty"><div class="input-label">Treffer</div><div class="input-value">—</div></div>
+                  <div class="input-card empty"><div class="input-label">Gewicht</div><div class="input-value">—</div></div>
+                </section>
+
+                <section class="field-section">
+                  <div class="field-label"><span>Foto</span><span class="hint">optional</span></div>
+                  <div class="photo-tile"><span class="photo-icon">⌁</span><span>Foto hinzufügen</span></div>
+                </section>
+
+                <section class="field-section">
+                  <div class="field-label"><span>Notiz</span><span class="hint">optional</span></div>
+                  <div class="note-box">Rudel zog ruhig Richtung Nordost, ca. 12 Stück inkl. Kälber</div>
+                </section>
+
+                <div class="count-stepper">
+                  <div class="field-label"><span>Anzahl</span><span class="hint">nur Anblick</span></div>
+                  <div class="stepper-row">
+                    <div class="step-btn">−</div>
+                    <div class="count-center"><div class="count-number">12</div><div class="count-label">Stück</div></div>
+                    <div class="step-btn">+</div>
+                  </div>
+                  <div class="tap-hint">Tap auf Zahl · direkte Eingabe</div>
+                </div>
+
+                <div class="timestamp-row"><strong>Zeitstempel</strong><span>Heute · 06:48</span></div>
+                <div class="location-row"><div class="location-copy"><span class="location-dot">📍</span><strong>Manuell gesetzt</strong></div><span class="text-link forest">Standort ändern</span></div>
+              </div>
+            </div>
+
+            <footer class="sheet-footer">
+              <div class="segmented">
+                <div class="seg-btn">Erlegung</div>
+                <div class="seg-btn active-forest">Nur gesehen</div>
+              </div>
+              <div class="submit forest">Anblick speichern</div>
+            </footer>
+          </div>
+        </div>
+      </div>
+
+      <aside class="annotations">
+        <div class="decision-tag forest"><strong>Rudel-Logik</strong>Bei Rudeln macht count=N Sinn. Der Anzahl-Stepper bleibt nur im Anblick-Modus sichtbar.</div>
+        <div class="decision-tag slate"><strong>Optionale Felder</strong>Leere Werte werden als „—“ dargestellt. Keine künstlichen Pflichtfeld-Hürden bei schneller Sichtung.</div>
+        <div class="decision-tag forest"><strong>Manuell gesetzter Standort</strong>„Manuell gesetzt“ zeigt, dass der Pin in der Vollbild-Karte korrigiert wurde.</div>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>
