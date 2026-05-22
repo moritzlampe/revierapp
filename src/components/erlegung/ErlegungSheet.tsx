@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { CircleNotch } from '@phosphor-icons/react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { WildartPicker } from './WildartPicker'
+import { WildartPicker, type ErfassungsModus } from './WildartPicker'
 import { useActiveHunt } from '@/contexts/ActiveHuntContext'
 import { createClient } from '@/lib/supabase/client'
 import { waitForAccurateGpsFix } from '@/lib/geo/wait-for-gps-fix'
@@ -40,6 +40,9 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
   const router = useRouter()
 
   const [phase, setPhase] = useState<Phase>('wildart')
+
+  // Erfassungs-Modus — Toggle zwischen Erlegung und Anblick (Sprint 60.5e)
+  const [mode, setMode] = useState<ErfassungsModus>('erlegung')
 
   // GPS-Position via watchPosition solange Sheet offen (für WildartPicker)
   const [gpsPosition, setGpsPosition] = useState<{
@@ -110,6 +113,7 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
       }
       setPhase('wildart')
       setPhotoProgress(null)
+      setMode('erlegung')
     }
     // districtPickerState bewusst nicht in deps — nur auf open-Change reagieren
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,6 +258,9 @@ export function ErlegungSheet({ open, onOpenChange }: ErlegungSheetProps) {
         onOpenChange={onOpenChange}
         position={gpsPosition}
         huntId={effectiveHuntId}
+        sightingHuntId={activeHunt?.id ?? null}
+        mode={mode}
+        onModeChange={setMode}
         gpsLoading={gpsLoading}
         onKillSuccess={handleKillSuccess}
       />

@@ -17,6 +17,7 @@ import {
 } from '@/lib/species-config'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { insertKillBatch } from '@/lib/erlegung/insertKill'
+import { insertSighting } from '@/lib/erlegung/insertSighting'
 import { showToast } from '@/lib/erlegung/toast'
 import PhotoCapture from '@/components/photo/PhotoCapture'
 import { uploadPendingPhotosForHunt } from '@/lib/photos/upload-batch'
@@ -64,11 +65,20 @@ function CounterBadge({ count }: { count: number }) {
   )
 }
 
+/** Erfassungs-Modus des Pickers: Erlegung (Batch-Tap) oder Anblick (Single-Select). */
+export type ErfassungsModus = 'erlegung' | 'sighting'
+
 interface WildartPickerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   position?: { lat: number; lng: number; accuracy?: number; captured_at?: string } | null
   huntId?: string | null
+  /** Hunt-Zuordnung für Anblicke — activeHunt?.id ?? null. KEIN Auto-Solo-Hunt. */
+  sightingHuntId?: string | null
+  /** Aktueller Erfassungs-Modus. Default 'erlegung'. */
+  mode?: ErfassungsModus
+  /** Setzt der Parent den Modus-Toggle. Fehlt der Handler, gibt es keinen Toggle. */
+  onModeChange?: (mode: ErfassungsModus) => void
   onSuccess?: (killId: string) => void
   onKillSuccess?: (killIds: string[], pendingPhotos: File[]) => void
   gpsLoading?: boolean
@@ -79,6 +89,9 @@ export function WildartPicker({
   onOpenChange,
   position = null,
   huntId = null,
+  sightingHuntId = null,
+  mode = 'erlegung',
+  onModeChange,
   onKillSuccess,
   gpsLoading,
 }: WildartPickerProps) {
@@ -94,6 +107,8 @@ export function WildartPicker({
   const [photoUploading, setPhotoUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  // Anblick-Modus: Anzahl beobachteter Stücke (1 wild_events-Row mit count=N)
+  const [sightingCount, setSightingCount] = useState(1)
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressFired = useRef(false)
@@ -121,12 +136,28 @@ export function WildartPicker({
       setPendingPhotos([])
       setPhotoUploading(false)
       setUploadProgress(null)
+      setSightingCount(1)
     }
   }, [open])
 
   const handleClose = useCallback(() => {
     onOpenChange(false)
   }, [onOpenChange])
+
+  // --- Modus-Wechsel (nur im sauberen Einstiegszustand erreichbar) ---
+  const handleModeChange = useCallback((next: ErfassungsModus) => {
+    if (next === mode) return
+    // Defensiver Reset des Picker-States — verhindert Mid-Flow-Reste
+    setStep('group')
+    setSelectedGroup(null)
+    setSelectedGeschlecht(null)
+    setSelectedWildArt(null)
+    setKrankMode(false)
+    setSightingCount(1)
+    setPendingKills([])
+    setPendingPhotos([])
+    onModeChange?.(next)
+  }, [mode, onModeChange])
 
   // --- Counter-Helpers ---
   const addPendingKill = useCallback((wildArt: WildArt, geschlecht: Geschlecht | null) => {
@@ -183,7 +214,12 @@ export function WildartPicker({
       return
     }
     if (config.group === 'sonstiges') {
-      addPendingKill('sonstiges', null)
+      if (mode === 'sighting') {
+        // Single-Select: Tap toggelt die Auswahl (keine weitere Stufe, kein Zurück)
+        setSelectedWildArt(prev => (prev === 'sonstiges' ? null : 'sonstiges'))
+      } else {
+        addPendingKill('sonstiges', null)
+      }
       return
     }
     if (config.hasGeschlecht) {
@@ -195,10 +231,11 @@ export function WildartPicker({
       setSelectedGroup(config.group)
       setStep('flat')
     }
-  }, [addPendingKill])
+  }, [addPendingKill, mode])
 
   // --- Stufe 1: Wildgruppen-Tile: Long-Press ---
   const handleGroupLongPressStart = useCallback((config: WildGroupConfig) => {
+    if (mode === 'sighting') return  // Long-Press hat im Anblick-Modus keine Funktion
     longPressFired.current = false
     longPressTimer.current = setTimeout(() => {
       if (config.unspezValue) {
@@ -212,49 +249,64 @@ export function WildartPicker({
       }
       // Flat-Gruppen ohne unspezValue: longPressFired bleibt false → normaler Tap navigiert
     }, 500)
-  }, [addPendingKill])
+  }, [addPendingKill, mode])
 
   // --- Stufe 2a: Geschlecht (manuell) ---
   const handleGeschlechtSelect = useCallback((g: Geschlecht) => {
     setSelectedGeschlecht(prev => prev === g ? null : g)
   }, [])
 
-  // --- Stufe 2a: Altersklasse Tap (addiert zum Counter) ---
+  // --- Stufe 2a: Altersklasse Tap (Erlegung: zählt — Anblick: selektiert) ---
   const handleAltersklasseTap = useCallback((entry: AltersklasseEntry) => {
     const geschlecht = entry.impliedGeschlecht ?? selectedGeschlecht
+    if (mode === 'sighting') {
+      // Single-Select: Tap selektiert die Wildart, zählt nicht
+      setSelectedWildArt(entry.value)
+      if (entry.impliedGeschlecht) {
+        setSelectedGeschlecht(entry.impliedGeschlecht)
+      }
+      return
+    }
     addPendingKill(entry.value, geschlecht)
     if (entry.impliedGeschlecht) {
       setSelectedGeschlecht(entry.impliedGeschlecht)
     }
     setSelectedWildArt(entry.value)
-  }, [selectedGeschlecht, addPendingKill])
+  }, [selectedGeschlecht, addPendingKill, mode])
 
   // --- Stufe 2a: Altersklasse Long-Press (Decrement) ---
   const handleAltersklasseLongPressStart = useCallback((entry: AltersklasseEntry) => {
+    if (mode === 'sighting') return  // Long-Press hat im Anblick-Modus keine Funktion
     longPressFired.current = false
     longPressTimer.current = setTimeout(() => {
       longPressFired.current = true
       removePendingKillByWildArt(entry.value)
     }, 500)
-  }, [removePendingKillByWildArt])
+  }, [removePendingKillByWildArt, mode])
 
-  // --- Stufe 2b: Flat Tier Tap (addiert zum Counter) ---
+  // --- Stufe 2b: Flat Tier Tap (Erlegung: zählt — Anblick: selektiert) ---
   const handleFlatTierTap = useCallback((wildArt: WildArt) => {
     if (longPressFired.current) {
       longPressFired.current = false
       return
     }
+    if (mode === 'sighting') {
+      // Single-Select: Tap toggelt die Auswahl
+      setSelectedWildArt(prev => (prev === wildArt ? null : wildArt))
+      return
+    }
     addPendingKill(wildArt, null)
-  }, [addPendingKill])
+  }, [addPendingKill, mode])
 
   // --- Stufe 2b: Flat Tier Long-Press (Decrement) ---
   const handleFlatLongPressStart = useCallback((wildArt: WildArt) => {
+    if (mode === 'sighting') return  // Long-Press hat im Anblick-Modus keine Funktion
     longPressFired.current = false
     longPressTimer.current = setTimeout(() => {
       longPressFired.current = true
       removePendingKillByWildArt(wildArt)
     }, 500)
-  }, [removePendingKillByWildArt])
+  }, [removePendingKillByWildArt, mode])
 
   // --- Zurück (pendingKills + krankMode bleiben erhalten) ---
   const handleBack = useCallback(() => {
@@ -362,6 +414,41 @@ export function WildartPicker({
     }
   }, [pendingKills, pendingPhotos, submitting, huntId, userId, krankMode, handleClose, onKillSuccess, router])
 
+  // --- Anblick Confirm ---
+  const handleConfirmSighting = useCallback(async () => {
+    if (!selectedWildArt || submitting) return
+    if (!position) {
+      showToast('Warte auf GPS…', 'warning')
+      return
+    }
+    setSubmitting(true)
+
+    try {
+      await insertSighting({
+        species: selectedWildArt,
+        count: sightingCount,
+        huntId: sightingHuntId ?? null,
+        location: { lat: position.lat, lng: position.lng },
+      })
+
+      const label = getWildArtLabelSingle(selectedWildArt)
+      showToast(
+        'Anblick gespeichert',
+        'success',
+        sightingCount === 1 ? label : `${sightingCount}× ${label}`,
+      )
+
+      // Router-Cache invalidieren, damit die AnblickCard im Tagebuch sofort
+      // erscheint (Lehre aus Sprint 60.5a) — vor dem Schließen aufrufen.
+      router.refresh()
+      handleClose()
+    } catch (err) {
+      console.error('[WildartPicker] sighting insert failed', err)
+      showToast('Fehler beim Speichern', 'warning', err instanceof Error ? err.message : 'Unbekannter Fehler')
+      setSubmitting(false)
+    }
+  }, [selectedWildArt, sightingCount, position, sightingHuntId, submitting, handleClose, router])
+
   // --- Abgeleitete Werte ---
   const groupConfig = selectedGroup
     ? WILD_GROUP_CONFIG.find(g => g.group === selectedGroup)
@@ -377,6 +464,17 @@ export function WildartPicker({
   const impliedForSelected = selectedWildArt
     ? altersklassen.find(a => a.value === selectedWildArt)?.impliedGeschlecht ?? null
     : null
+
+  // --- Modus-abhängige Sticky-Bar-Sichtbarkeit ---
+  const wildartSelected = selectedWildArt !== null
+  // Toggle nur im sauberen Einstiegszustand: Stufe 1, nichts getippt, nichts selektiert
+  const showToggle =
+    !!onModeChange && step === 'group' && totalCount === 0 && !wildartSelected
+  const showErlegungActions = mode === 'erlegung' && totalCount > 0
+  const showSightingActions = mode === 'sighting' && wildartSelected
+  const stickyVisible = showToggle || showErlegungActions || showSightingActions
+  // Auswahl-Akzent: Erlegung = Moos-Grün (wie bisher), Anblick = Forest
+  const selectAccent = mode === 'sighting' ? 'var(--forest)' : 'var(--green)'
 
   return (
     <Sheet open={open} onOpenChange={(o) => { if (!o) handleClose() }}>
@@ -440,6 +538,10 @@ export function WildartPicker({
               }}>
                 {WILD_GROUP_CONFIG.map(config => {
                   const Icon = getGroupIcon(config.group)
+                  // Anblick-Modus: 'Sonstiges' bleibt auf Stufe 1 selektierbar
+                  const groupTileSelected =
+                    mode === 'sighting' && config.group === 'sonstiges'
+                    && selectedWildArt === 'sonstiges'
                   return (
                   <button
                     key={config.group}
@@ -461,8 +563,8 @@ export function WildartPicker({
                       justifyContent: 'center',
                       gap: '0.375rem',
                       padding: '0.75rem 0.25rem',
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--border)',
+                      background: groupTileSelected ? 'var(--surface-3)' : 'var(--surface-2)',
+                      border: '1px solid ' + (groupTileSelected ? selectAccent : 'var(--border)'),
                       borderRadius: 'var(--radius)',
                       cursor: 'pointer',
                       minHeight: '4.5rem',
@@ -538,7 +640,7 @@ export function WildartPicker({
                           padding: '0.5rem 1rem',
                           borderRadius: 'var(--radius)',
                           border: '2px solid ' + (selectedWildArt === a.value
-                            ? 'var(--green)'
+                            ? selectAccent
                             : 'transparent'),
                           background: selectedWildArt === a.value
                             ? 'var(--surface-3)'
@@ -643,7 +745,11 @@ export function WildartPicker({
                 gridTemplateColumns: 'repeat(3, 1fr)',
                 gap: '0.625rem',
               }}>
-                {flatTiere.map(tier => (
+                {flatTiere.map(tier => {
+                  // Anblick-Modus: Single-Select markiert die getippte Wildart
+                  const flatTileSelected =
+                    mode === 'sighting' && selectedWildArt === tier.value
+                  return (
                   <button
                     key={tier.value}
                     disabled={submitting}
@@ -662,21 +768,25 @@ export function WildartPicker({
                       alignItems: 'center',
                       justifyContent: 'center',
                       padding: '0.75rem 0.5rem',
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--border)',
+                      background: flatTileSelected ? 'var(--surface-3)' : 'var(--surface-2)',
+                      border: flatTileSelected
+                        ? '2px solid ' + selectAccent
+                        : '1px solid var(--border)',
                       borderRadius: 'var(--radius)',
                       cursor: 'pointer',
                       minHeight: '2.75rem',
                       touchAction: 'manipulation',
                       opacity: submitting ? 0.5 : 1,
                       fontSize: '0.875rem',
+                      fontWeight: flatTileSelected ? 600 : 400,
                       color: 'var(--text)',
                     }}
                   >
                     <CounterBadge count={countFor(tier.value)} />
                     {tier.label}
                   </button>
-                ))}
+                  )
+                })}
               </div>
               <p style={{
                 fontSize: '0.625rem',
@@ -690,15 +800,62 @@ export function WildartPicker({
           )}
         </div>
 
-        {/* === Sticky Bottom Bar — immer gerendert, visibility steuert Sichtbarkeit === */}
+        {/* === Sticky Bottom Bar — immer gerendert, visibility steuert Sichtbarkeit ===
+            Drei sich gegenseitig ausschließende Zustände:
+            Modus-Toggle (sauberer Einstieg) · Erlegung-Aktionen · Anblick-Aktionen */}
         <div style={{
-          borderTop: totalCount > 0 ? '1px solid var(--border)' : '1px solid transparent',
+          borderTop: stickyVisible ? '1px solid var(--border)' : '1px solid transparent',
           padding: '0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom))',
           display: 'flex',
           alignItems: 'center',
           gap: '0.5rem',
-          visibility: totalCount > 0 ? 'visible' : 'hidden',
+          visibility: stickyVisible ? 'visible' : 'hidden',
         }}>
+            {/* --- Modus-Toggle: kompaktes Segmented Control --- */}
+            {showToggle && (
+              <div style={{
+                display: 'flex',
+                flex: 1,
+                gap: '0.1875rem',
+                padding: '0.1875rem',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                borderRadius: '0.625rem',
+              }}>
+                {([
+                  { value: 'erlegung' as const, label: 'Erlegung', accent: 'var(--green)' },
+                  { value: 'sighting' as const, label: 'Nur gesehen', accent: 'var(--forest)' },
+                ]).map(opt => {
+                  const active = mode === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleModeChange(opt.value)}
+                      style={{
+                        flex: 1,
+                        minHeight: '2.75rem',
+                        padding: '0.5rem',
+                        borderRadius: '0.5rem',
+                        border: 'none',
+                        background: active ? opt.accent : 'transparent',
+                        color: active ? 'var(--text)' : 'var(--text-2)',
+                        fontSize: '0.875rem',
+                        fontWeight: active ? 600 : 500,
+                        cursor: 'pointer',
+                        transition: 'background 0.15s, color 0.15s',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* --- Erlegung-Aktionen (unverändert gegenüber Sprint 60.5d) --- */}
+            {showErlegungActions && (
+              <>
             {/* Krank-Toggle */}
             <button
               onClick={() => setKrankMode(m => !m)}
@@ -789,6 +946,88 @@ export function WildartPicker({
                     : 'Melde…')
                 : `${totalCount} Stück ${krankMode ? 'krank ' : ''}melden`}
             </button>
+              </>
+            )}
+
+            {/* --- Anblick-Aktionen: Count-Stepper + Speichern --- */}
+            {showSightingActions && (
+              <>
+                {/* Count-Stepper [−] N [+] */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.5rem',
+                  overflow: 'hidden',
+                }}>
+                  <button
+                    onClick={() => setSightingCount(c => Math.max(1, c - 1))}
+                    disabled={submitting || sightingCount <= 1}
+                    aria-label="Anzahl verringern"
+                    style={{
+                      minWidth: '2.75rem',
+                      minHeight: '2.75rem',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text)',
+                      fontSize: '1.25rem',
+                      lineHeight: 1,
+                      cursor: (submitting || sightingCount <= 1) ? 'not-allowed' : 'pointer',
+                      opacity: (submitting || sightingCount <= 1) ? 0.35 : 1,
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >−</button>
+                  <span style={{
+                    minWidth: '2.25rem',
+                    textAlign: 'center',
+                    fontSize: '1rem',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>{sightingCount}</span>
+                  <button
+                    onClick={() => setSightingCount(c => Math.min(99, c + 1))}
+                    disabled={submitting || sightingCount >= 99}
+                    aria-label="Anzahl erhöhen"
+                    style={{
+                      minWidth: '2.75rem',
+                      minHeight: '2.75rem',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text)',
+                      fontSize: '1.25rem',
+                      lineHeight: 1,
+                      cursor: (submitting || sightingCount >= 99) ? 'not-allowed' : 'pointer',
+                      opacity: (submitting || sightingCount >= 99) ? 0.35 : 1,
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >+</button>
+                </div>
+
+                {/* Anblick speichern — dominant, Forest */}
+                <button
+                  onClick={handleConfirmSighting}
+                  disabled={submitting}
+                  className="btn-primary-tap"
+                  style={{
+                    flex: 1,
+                    padding: '0.875rem 1rem',
+                    background: 'var(--forest)',
+                    color: 'var(--text)',
+                    border: 'none',
+                    borderRadius: '0.75rem',
+                    fontSize: '1rem',
+                    fontWeight: 600,
+                    minHeight: '2.75rem',
+                    opacity: submitting ? 0.6 : 1,
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                >
+                  {submitting ? 'Speichere…' : 'Anblick speichern'}
+                </button>
+              </>
+            )}
           </div>
       </SheetContent>
     </Sheet>

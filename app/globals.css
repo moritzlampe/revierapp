@@ -117,6 +117,13 @@
   --text-2: var(--text-secondary);
   --text-3: var(--text-muted);
 
+  /* Anblick-Akzent (Sprint 60.5e): Die Anblick-Erfassung lebt im global
+     gerenderten ErlegungSheet (Portal, außerhalb von .tagebuch-surface) und
+     braucht den Forest-Akzent daher app-weit. Spiegelt die Tagebuch-Anblick-
+     Farbe; .tagebuch-surface definiert dieselben Tokens lokal weiter. */
+  --forest: #6E8A52;
+  --forest-edge: rgba(110,138,82,0.55);
+
   /* Layout */
   --radius: 0.875rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
