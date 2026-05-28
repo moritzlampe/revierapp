@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BaseFieldSheet } from './BaseFieldSheet'
 import { updateWildEvent, validateWildEventUpdate } from '@/lib/erlegung/updateWildEvent'
 
@@ -26,9 +26,19 @@ export function DistanceSheet({
   onSaved,
   onCancel,
 }: DistanceSheetProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
   const [raw, setRaw] = useState<string>(currentValue !== null ? String(currentValue) : '')
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState<string | undefined>(undefined)
+
+  // iOS Safari overlaps the input with the on-screen keyboard. Wait for the
+  // keyboard slide-in (~300ms), then scroll the input into the center of the
+  // visible viewport so the user can see what they type. Ansatz A.
+  const handleFocus = () => {
+    setTimeout(() => {
+      inputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 300)
+  }
 
   useEffect(() => {
     if (open) {
@@ -102,6 +112,7 @@ export function DistanceSheet({
         }}
       >
         <input
+          ref={inputRef}
           id="distance-input"
           type="number"
           inputMode="numeric"
@@ -110,6 +121,7 @@ export function DistanceSheet({
           max="500"
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
+          onFocus={handleFocus}
           disabled={saving}
           placeholder="0"
           autoFocus
