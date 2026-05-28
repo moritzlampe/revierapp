@@ -819,7 +819,7 @@ export type Database = {
           id?: string
           invite_code: string
           kill_visibility?: Database["public"]["Enums"]["kill_visibility"]
-          kind?: Database["public"]["Enums"]["hunt_kind"]
+          kind: Database["public"]["Enums"]["hunt_kind"]
           last_activity_at?: string
           name: string
           notiz?: string | null
@@ -1658,40 +1658,55 @@ export type Database = {
       }
       wild_events: {
         Row: {
+          age_class: string | null
           count: number | null
           created_at: string | null
+          distance_m: number | null
+          gender: string | null
           hunt_id: string | null
           id: string
           location: unknown
           note: string | null
           occurred_at: string
+          photo_url: string | null
           species: string | null
           type: Database["public"]["Enums"]["wild_event_type"]
           user_id: string
+          weight_estimate_kg: number | null
         }
         Insert: {
+          age_class?: string | null
           count?: number | null
           created_at?: string | null
+          distance_m?: number | null
+          gender?: string | null
           hunt_id?: string | null
           id?: string
           location?: unknown
           note?: string | null
           occurred_at: string
+          photo_url?: string | null
           species?: string | null
           type: Database["public"]["Enums"]["wild_event_type"]
           user_id: string
+          weight_estimate_kg?: number | null
         }
         Update: {
+          age_class?: string | null
           count?: number | null
           created_at?: string | null
+          distance_m?: number | null
+          gender?: string | null
           hunt_id?: string | null
           id?: string
           location?: unknown
           note?: string | null
           occurred_at?: string
+          photo_url?: string | null
           species?: string | null
           type?: Database["public"]["Enums"]["wild_event_type"]
           user_id?: string
+          weight_estimate_kg?: number | null
         }
         Relationships: [
           {

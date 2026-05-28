@@ -117,12 +117,18 @@
   --text-2: var(--text-secondary);
   --text-3: var(--text-muted);
 
-  /* Anblick-Akzent (Sprint 60.5e): Die Anblick-Erfassung lebt im global
-     gerenderten ErlegungSheet (Portal, außerhalb von .tagebuch-surface) und
-     braucht den Forest-Akzent daher app-weit. Spiegelt die Tagebuch-Anblick-
-     Farbe; .tagebuch-surface definiert dieselben Tokens lokal weiter. */
+  /* Tagebuch-Akzente (Sprint 60.5e / 60.5e-2): Forest (Anblick), Bronze
+     (Erlegung) und Slate (Gesellschaft / Ghost-Buttons) sind app-weit
+     verfügbar, weil ErlegungSheet und Field-Sheets via Portal außerhalb von
+     .tagebuch-surface rendern. AutoCompletedChip nutzt Slate ebenfalls
+     außerhalb des Containers. */
   --forest: #6E8A52;
   --forest-edge: rgba(110,138,82,0.55);
+  --bronze: #C08E48;
+  --bronze-dim: #8a6532;
+  --bronze-edge: rgba(192,142,72,0.55);
+  --slate: #8B8775;
+  --slate-edge: rgba(139,135,117,0.45);
 
   /* Layout */
   --radius: 0.875rem;
@@ -141,8 +147,9 @@
    Editorial-warmer Dark-Container für das Jagdtagebuch. Tokens werden
    NUR innerhalb dieses Containers neu definiert, sodass app-weite
    Werkzeug-Surfaces (Karte, Hunt, Chat) Theme A "Moos auf Papier"
-   behalten. Eigene Akzente (--bronze/--forest/--slate) bleiben
-   tagebuch-lokal — sie sollen nirgendwo sonst auftauchen.
+   behalten. Akzente --bronze, --forest und --slate sind in :root promoted,
+   weil Portal-Sheets sie außerhalb des Containers brauchen (Slate auch von
+   AutoCompletedChip außerhalb von Tagebuch).
 
    Re-Definitions-Strategie: ALLE relevanten Theme-A-Tokens (Active +
    Legacy-Aliases inkl. Akzentfarben) werden mit-überschrieben. Sonst
@@ -169,14 +176,9 @@
   --text-dim:     rgba(239,235,219,0.48);
   --text-faint:   rgba(239,235,219,0.22);
 
-  /* Tagebuch-Akzente: Erlegung / Anblick / Gesellschaft */
-  --bronze:       #C08E48;
-  --bronze-dim:   #8a6532;
-  --bronze-edge:  rgba(192,142,72,0.55);
-  --forest:       #6E8A52;
-  --forest-edge:  rgba(110,138,82,0.55);
-  --slate:        #8B8775;
-  --slate-edge:   rgba(139,135,117,0.45);
+  /* Tagebuch-Akzente: Bronze (Erlegung), Forest (Anblick) und Slate sind alle
+     in :root promoted, weil Portal-Sheets sie außerhalb von .tagebuch-surface
+     brauchen. Hier keine lokale Re-Definition nötig. */
 
   /* Re-Definition Theme-A Active-Tokens auf Tagebuch-Werte.
      Komponenten, die direkt --bg-base / --bg-elevated / --bg-sunken /
@@ -2446,4 +2448,76 @@ button:active {
 
 .tagebuch-surface .chip:active {
   opacity: 0.72;
+}
+
+/* ============================================================
+   Anblick Edit-Tiles (Sprint 60.5e-2)
+   Tap-Targets für gender / weight / distance / photo auf der
+   AnblickDetail-Seite. Nur bei N=1 sichtbar. Lebt im
+   .tagebuch-surface DOM-Subtree — Tokens lokal aufgelöst.
+   ============================================================ */
+.tagebuch-surface .anblick-edit-tiles {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.625rem;
+}
+@media (min-width: 30rem) {
+  .tagebuch-surface .anblick-edit-tiles {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.tagebuch-surface .anblick-edit-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.tagebuch-surface .anblick-edit-tile:hover,
+.tagebuch-surface .anblick-edit-tile:focus-visible {
+  border-color: var(--bronze-edge);
+}
+.tagebuch-surface .anblick-edit-tile:active {
+  background: color-mix(in srgb, var(--bronze) 8%, var(--surface));
+  border-color: var(--bronze-edge);
+}
+
+.tagebuch-surface .anblick-edit-tile-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03125rem;
+}
+
+.tagebuch-surface .anblick-edit-tile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2rem;
+}
+
+.tagebuch-surface .anblick-edit-tile-value {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.tagebuch-surface .anblick-edit-tile-action {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--bronze);
+  text-transform: lowercase;
 }
