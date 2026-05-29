@@ -137,7 +137,7 @@ Rollen ERWEITERN, schränken NICHT ein. Jeder sieht die volle Jagd.
 │   └── supabase/
 │       ├── client.ts           # Browser-Client (createBrowserClient)
 │       └── server.ts           # Server-Client (createServerClient mit Cookies)
-├── middleware.ts                # Session-Refresh + Route-Schutz
+├── proxy.ts                # Session-Refresh + Route-Schutz (Next.js 16, ex middleware.ts)
 ├── supabase/
 │   └── migrations/
 │       ├── 001_initial_schema.sql      # Alt (Archiv)
@@ -226,7 +226,7 @@ Schlechte Messungen (>10m Genauigkeit) werden komplett verworfen. Fallback nach 
 |---|---|
 | Styling/Dark Theme greift nicht | app/globals.css + app/layout.tsx |
 | Tailwind-Klassen funktionieren nicht | tailwind.config.ts + app/globals.css (Tailwind v4 nutzt @import) |
-| Auth/Login funktioniert nicht | lib/supabase/server.ts + middleware.ts |
+| Auth/Login funktioniert nicht | lib/supabase/server.ts + proxy.ts |
 | RLS-Rekursion / infinite recursion | 003_quickhunt_schema.sql (get_my_hunt_ids Funktion) |
 | Jagd erstellen schlägt fehl | app/app/hunt/create/page.tsx + hunts/hunt_participants RLS-Policies |
 | Gast-Beitritt geht nicht | app/join/[code]/page.tsx + hunt_participants RLS-Policies |
@@ -327,4 +327,3 @@ ssh -i ~/.ssh/revierapp_hetzner root@46.225.149.118
 ### Offene Bugs
 - Profil-Name zeigt "Jäger" bei Moritz (alter User, Trigger existierte beim Registrieren noch nicht). Fix: `UPDATE profiles SET display_name = 'Moritz' WHERE display_name LIKE '%@%' OR display_name = 'Jäger'`
 - Playwright MCP nicht konfiguriert in Claude Code
-- Next.js 16 Middleware-Warnung (deprecated, auf "proxy" umbauen)
