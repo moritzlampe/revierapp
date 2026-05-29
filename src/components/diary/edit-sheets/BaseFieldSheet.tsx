@@ -34,10 +34,11 @@ export function BaseFieldSheet({
 }: BaseFieldSheetProps) {
   // iOS overlaps a `position: fixed; bottom: 0` popup with the on-screen
   // keyboard. visualViewport.height shrinks by exactly the keyboard height,
-  // so we lift the whole popup by that amount — input AND footer stay above
-  // the keyboard. Lifting the popup (not padding the content) is the fix
-  // because the popup itself is what iOS would otherwise hide. (Ansatz B)
-  const [keyboardOffset, setKeyboardOffset] = useState(0)
+  // so we lift the whole popup by that amount via translateY — input AND
+  // footer stay above the keyboard. Lifting the popup (not padding the
+  // content) is the fix because the popup itself is what iOS would otherwise
+  // hide. (Ansatz B)
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return
@@ -45,9 +46,9 @@ export function BaseFieldSheet({
     const vv = window.visualViewport
 
     const handleResize = () => {
-      const keyboardHeight = window.innerHeight - vv.height
+      const kbHeight = window.innerHeight - vv.height
       // 100px threshold: real keyboard only, not URL-bar shifts.
-      setKeyboardOffset(keyboardHeight > 100 ? keyboardHeight : 0)
+      setKeyboardHeight(kbHeight > 100 ? kbHeight : 0)
     }
 
     vv.addEventListener('resize', handleResize)
@@ -77,9 +78,13 @@ export function BaseFieldSheet({
           color: 'var(--text)',
           display: 'flex',
           flexDirection: 'column',
-          // Lift the whole popup over the keyboard. Overrides the popup's
-          // `bottom: 0` only when a keyboard is actually open.
-          bottom: keyboardOffset > 0 ? `${keyboardOffset}px` : undefined,
+          // Lift the whole fixed popup over the keyboard. Only set transform
+          // when a keyboard is open — otherwise base-ui's own enter/exit
+          // translate classes must stay in control. No inline `transition`:
+          // the popup already carries Tailwind's `transition duration-200`,
+          // which animates transform AND the open/close opacity fade. An
+          // inline `transition: transform …` would kill that fade.
+          transform: keyboardHeight > 0 ? `translateY(-${keyboardHeight}px)` : undefined,
         }}
       >
         {/* Sticky header. base-ui's built-in X (top-3 right-3) sits over it. */}
