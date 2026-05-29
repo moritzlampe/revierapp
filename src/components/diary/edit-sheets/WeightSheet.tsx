@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BaseFieldSheet } from './BaseFieldSheet'
 import { updateWildEvent, validateWildEventUpdate } from '@/lib/erlegung/updateWildEvent'
 
@@ -27,19 +27,9 @@ export function WeightSheet({
   onCancel,
 }: WeightSheetProps) {
   // Local input as string so the user can type freely (including empty / "0.").
-  const inputRef = useRef<HTMLInputElement>(null)
   const [raw, setRaw] = useState<string>(currentValue !== null ? String(currentValue) : '')
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState<string | undefined>(undefined)
-
-  // iOS Safari overlaps the input with the on-screen keyboard. Wait for the
-  // keyboard slide-in (~300ms), then scroll the input into the center of the
-  // visible viewport so the user can see what they type. Ansatz A.
-  const handleFocus = () => {
-    setTimeout(() => {
-      inputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    }, 300)
-  }
 
   useEffect(() => {
     if (open) {
@@ -113,7 +103,6 @@ export function WeightSheet({
         }}
       >
         <input
-          ref={inputRef}
           id="weight-input"
           type="number"
           inputMode="decimal"
@@ -122,7 +111,6 @@ export function WeightSheet({
           max="300"
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
-          onFocus={handleFocus}
           disabled={saving}
           placeholder="0,0"
           autoFocus
