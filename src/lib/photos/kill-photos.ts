@@ -1,7 +1,11 @@
 import { createClient } from '@/lib/supabase/client'
-import type { HuntPhoto } from '@/lib/types/hunt-photo'
+import type { Database } from '@/lib/supabase/database.types'
 import { uploadPhoto } from './upload'
 import { insertHuntPhoto } from './hunt-photos'
+
+// Generierter Row-Typ (taken_at/created_at nullable) — deckungsgleich mit
+// ErlegungDetail.photos aus detail-types, damit der Editor-State ohne Cast passt.
+type HuntPhoto = Database['public']['Tables']['hunt_photos']['Row']
 
 /**
  * Foto an eine Erlegung (kill) anhängen — Tagebuch-Erlegungs-Detail.

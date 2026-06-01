@@ -1,8 +1,12 @@
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Camera } from '@phosphor-icons/react'
 import { DetailField } from './DetailField'
 import { DetailHero } from './DetailHero'
 import { DetailTopBar } from './DetailTopBar'
+import { KillPhotoEditor } from './KillPhotoEditor'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { HIT_LOCATION_LABEL, GESCHLECHT_LABEL } from '@/lib/diary/labels'
 import type { ErlegungDetail } from '@/lib/diary/detail-types'
@@ -89,15 +93,31 @@ function extractLatLng(position: unknown): LatLng | null {
  */
 export function ErlegungDetailContent({
   detail,
-  // userId wird in Phase 2 für den Foto-Editor genutzt (Add/Remove); in
-  // dieser Phase bereits durchgereicht, aber noch ungenutzt.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   userId,
 }: {
   detail: ErlegungDetail
   userId: string
 }) {
-  const { kill, hunt, photos } = detail
+  const router = useRouter()
+  const { kill, hunt } = detail
+
+  // Lokaler Foto-State für Sofort-Commit-Edits. Add/Remove pflegen ihn direkt.
+  // detail.photos ist die Server-Wahrheit; nach router.refresh() (Editor-Close)
+  // kommt eine neue Referenz mit frischer Hero/Cover-Sortierung — wir spiegeln
+  // sie per „adjust state during render"-Pattern (kein Effect → kein
+  // kaskadierender Re-Render), siehe react.dev/learn/you-might-not-need-an-effect.
+  const [serverPhotos, setServerPhotos] = useState(detail.photos)
+  const [photos, setPhotos] = useState(detail.photos)
+  if (serverPhotos !== detail.photos) {
+    setServerPhotos(detail.photos)
+    setPhotos(detail.photos)
+  }
+
+  const [editorOpen, setEditorOpen] = useState(false)
+
+  // Foto-Bearbeiten braucht einen Hunt-Anker (hunt_photos.hunt_id ist NOT
+  // NULL). hunt_id == null ist in der Praxis ~nie (count=0) — defensiv (E4).
+  const canEditPhotos = kill.hunt_id !== null
 
   const heroPhoto = photos[0]?.url ?? null
   const weitereFotos = photos.slice(1)
@@ -223,6 +243,32 @@ export function ErlegungDetailContent({
             </div>
           </div>
         )}
+
+        {canEditPhotos && (
+          <button
+            type="button"
+            className="anblick-edit-tile"
+            onClick={() => setEditorOpen(true)}
+            aria-label={photos.length === 0 ? 'Foto hinzufügen' : 'Fotos bearbeiten'}
+            style={{ marginTop: weitereFotos.length > 0 ? '0.875rem' : undefined }}
+          >
+            <div className="anblick-edit-tile-label">Fotos</div>
+            <div className="anblick-edit-tile-row">
+              <div
+                className="anblick-edit-tile-value"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              >
+                <Camera size={20} weight="duotone" style={{ color: 'var(--bronze)' }} />
+                {photos.length === 0
+                  ? 'Foto hinzufügen'
+                  : `${photos.length} Foto${photos.length === 1 ? '' : 's'}`}
+              </div>
+              <span className="anblick-edit-tile-action">
+                {photos.length === 0 ? 'hinzufügen' : 'bearbeiten'}
+              </span>
+            </div>
+          </button>
+        )}
       </section>
 
       {hasNotiz && (
@@ -244,6 +290,23 @@ export function ErlegungDetailContent({
             Auf Karte
           </button>
         </section>
+      )}
+
+      {kill.hunt_id && (
+        <KillPhotoEditor
+          open={editorOpen}
+          onOpenChange={(o) => {
+            setEditorOpen(o)
+            // Beim Schließen Server-Stand synchronisieren (Hero/Cover-Sortierung).
+            if (!o) router.refresh()
+          }}
+          photos={photos}
+          killId={kill.id}
+          huntId={kill.hunt_id}
+          userId={userId}
+          onAdded={(p) => setPhotos((prev) => [...prev, p])}
+          onRemoved={(id) => setPhotos((prev) => prev.filter((x) => x.id !== id))}
+        />
       )}
     </>
   )
