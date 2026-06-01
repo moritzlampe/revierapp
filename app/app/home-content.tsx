@@ -668,7 +668,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
               </button>
             ))
           ) : (
-            (['alle', 'live', 'geplant', 'vergangen'] as const).map(f => (
+            (['alle', 'live', 'vergangen'] as const).map(f => (
               <button
                 key={f}
                 onClick={() => setJagdFilter(f)}
@@ -686,7 +686,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                   minHeight: '2.25rem',
                 }}
               >
-                {f === 'alle' ? 'Alle' : f === 'live' ? 'Live' : f === 'geplant' ? 'Geplant' : 'Vergangen'}
+                {f === 'alle' ? 'Alle' : f === 'live' ? 'Live' : 'Vergangen'}
               </button>
             ))
           )}
