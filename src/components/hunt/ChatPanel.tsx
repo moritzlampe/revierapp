@@ -123,8 +123,9 @@ async function compressImage(file: File, maxWidth = 1200): Promise<Blob> {
 function sendPushNotification(params: {
   huntId?: string
   groupId?: string
-  title: string
-  body: string
+  messageText: string
+  isDirect: boolean
+  chatName: string
   senderUserId: string
   url: string
 }) {
@@ -273,14 +274,6 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     })
     return map
   }, [participants, isGroupChat, groupMembers])
-
-  // Eigener Anzeigename (für Push-Notification Body)
-  const mySenderName = useMemo(() => {
-    if (!userId) return undefined
-    if (isGroupChat) return participantMap[userId]?.name
-    const p = participants.find(p => p.user_id === userId)
-    return p ? participantMap[p.id]?.name : undefined
-  }, [userId, isGroupChat, participantMap, participants])
 
   // Prüft ob Nachricht vom aktuellen User ist
   const isMyMessage = useCallback((msg: Message) => {
@@ -649,23 +642,18 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     } else {
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'sent' as const } : m))
       if (userId) {
-        const pushTitle = isDirect && mySenderName
-          ? mySenderName
-          : chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat')
-        const pushBody = isDirect
-          ? text.substring(0, 100)
-          : (mySenderName ? `${mySenderName}: ${text.substring(0, 100)}` : text.substring(0, 100))
         sendPushNotification({
           huntId: huntId || undefined,
           groupId: groupId || undefined,
-          title: pushTitle,
-          body: pushBody,
+          messageText: text.substring(0, 100),
+          isDirect,
+          chatName: chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat'),
           senderUserId: userId,
           url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
         })
       }
     }
-  }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase, chatName, mySenderName, isDirect, replyingTo])
+  }, [inputText, myParticipantId, huntId, groupId, userId, isGroupChat, supabase, chatName, isDirect, replyingTo])
 
   // === Foto senden ===
 
@@ -728,17 +716,12 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
       } else {
         setMessages(prev => prev.map(m => m.id === msgId ? { ...m, _status: 'sent' as const } : m))
         if (userId) {
-        const pushTitle = isDirect && mySenderName
-          ? mySenderName
-          : chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat')
-        const pushBody = isDirect
-          ? '📷 Foto'
-          : (mySenderName ? `${mySenderName}: 📷 Foto` : '📷 Foto')
         sendPushNotification({
           huntId: huntId || undefined,
           groupId: groupId || undefined,
-          title: pushTitle,
-          body: pushBody,
+          messageText: '📷 Foto',
+          isDirect,
+          chatName: chatName || (groupId ? 'Gruppenchat' : 'Jagd-Chat'),
           senderUserId: userId,
           url: groupId ? `/app/chat/${groupId}` : `/app/hunt/${huntId}?tab=chat`,
         })

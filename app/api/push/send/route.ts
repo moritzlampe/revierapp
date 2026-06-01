@@ -12,10 +12,10 @@ webpush.setVapidDetails(VAPID_CONTACT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
 
 export async function POST(request: Request) {
   try {
-    const { huntId, groupId, title, body, senderUserId, url } = await request.json()
+    const { huntId, groupId, messageText, isDirect, chatName, senderUserId, url } = await request.json()
 
-    if (!title || !body || !senderUserId) {
-      return NextResponse.json({ error: 'title, body, senderUserId sind Pflicht' }, { status: 400 })
+    if (!messageText || !senderUserId) {
+      return NextResponse.json({ error: 'messageText, senderUserId sind Pflicht' }, { status: 400 })
     }
 
     // Service-Role-Client: kann alle Subscriptions lesen (kein RLS)
@@ -58,6 +58,25 @@ export async function POST(request: Request) {
 
     if (!subscriptions || subscriptions.length === 0) {
       return NextResponse.json({ sent: 0 })
+    }
+
+    // Absendername autoritativ aus profiles auflösen (race-frei, Service-Role)
+    const { data: senderProfile } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', senderUserId)
+      .single()
+    const displayName = senderProfile?.display_name || ''
+
+    // title/body serverseitig bauen (Graceful Degradation: ohne Name → wie bisher)
+    let title: string
+    let body: string
+    if (isDirect) {
+      title = displayName || chatName || 'QuickHunt'
+      body = messageText
+    } else {
+      title = chatName || 'QuickHunt'
+      body = displayName ? `${displayName}: ${messageText}` : messageText
     }
 
     // Push an jede Subscription senden
