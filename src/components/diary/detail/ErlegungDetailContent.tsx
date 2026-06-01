@@ -1,3 +1,5 @@
+'use client'
+
 import { DetailField } from './DetailField'
 import { DetailHero } from './DetailHero'
 import { DetailTopBar } from './DetailTopBar'
@@ -85,7 +87,16 @@ function extractLatLng(position: unknown): LatLng | null {
  * Foto-Konvention (Phase 4, Phase 7 verfeinert): photos[0] = Hero,
  * photos[1..] = "Weitere Fotos"-Stack (kein Doppel-Render des Hero-Fotos).
  */
-export function ErlegungDetailContent({ detail }: { detail: ErlegungDetail }) {
+export function ErlegungDetailContent({
+  detail,
+  // userId wird in Phase 2 für den Foto-Editor genutzt (Add/Remove); in
+  // dieser Phase bereits durchgereicht, aber noch ungenutzt.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  userId,
+}: {
+  detail: ErlegungDetail
+  userId: string
+}) {
   const { kill, hunt, photos } = detail
 
   const heroPhoto = photos[0]?.url ?? null

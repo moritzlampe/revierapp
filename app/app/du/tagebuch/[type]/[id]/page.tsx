@@ -56,7 +56,7 @@ export default async function TagebuchDetailPage({
     if (!detail) notFound()
     return (
       <div className="tagebuch-surface tagebuch-detail">
-        <ErlegungDetailContent detail={detail} />
+        <ErlegungDetailContent detail={detail} userId={user.id} />
       </div>
     )
   }
