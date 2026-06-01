@@ -732,7 +732,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
     } finally {
       setUploading(false)
     }
-  }, [myParticipantId, huntId, groupId, userId, isGroupChat, channelId, supabase])
+  }, [myParticipantId, huntId, groupId, userId, isGroupChat, channelId, supabase, isDirect, chatName])
 
   // Enter-Taste zum Senden
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
