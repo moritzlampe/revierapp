@@ -132,6 +132,7 @@
 
   /* Layout */
   --radius: 0.875rem;
+  --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --keyboard-offset: 0px;
   /* Abstand unter Content: Tab-Bar-Höhe + Safe-Area, entfällt bei Tastatur */
