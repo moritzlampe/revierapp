@@ -570,7 +570,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   return (
     <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between" style={{ padding: '0.75rem 1.25rem 0.625rem' }}>
+      <div className="flex items-center justify-between" style={{ paddingTop: 'calc(0.75rem + var(--safe-top))', paddingRight: '1.25rem', paddingBottom: '0.625rem', paddingLeft: '1.25rem' }}>
         <h1 style={{
           fontFamily: 'var(--font-display)',
           fontSize: '2rem',

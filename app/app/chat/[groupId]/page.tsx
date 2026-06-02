@@ -153,7 +153,7 @@ export default function GroupChatPage() {
     return (
       <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
         <div className="flex items-center gap-2.5 px-3 py-2.5 flex-shrink-0"
-          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)', paddingTop: 'calc(0.625rem + var(--safe-top))' }}>
           <button onClick={() => router.back()} className="flex items-center justify-center rounded-lg"
             style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
           <div className="flex-1 min-w-0 flex items-center gap-2.5">
@@ -188,7 +188,7 @@ export default function GroupChatPage() {
     <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
       {/* Header */}
       <div className="flex items-center gap-2.5 px-3 py-2.5 flex-shrink-0"
-        style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
+        style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)', paddingTop: 'calc(0.625rem + var(--safe-top))' }}>
         <button onClick={() => router.back()} className="flex items-center justify-center rounded-lg"
           style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
         <div className="flex-1 min-w-0 flex items-center gap-2.5 cursor-pointer"

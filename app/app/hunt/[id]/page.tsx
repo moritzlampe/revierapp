@@ -336,7 +336,7 @@ export default function HuntPage() {
     <div className="h-viewport flex flex-col" style={{ background: 'var(--bg)', paddingBottom: 'var(--bottom-bar-space)' }}>
       {/* Top Bar */}
       <div className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
-        style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
+        style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)', paddingTop: 'calc(0.625rem + var(--safe-top))' }}>
         <button onClick={() => router.push('/app?tab=jagden')} className="flex items-center justify-center rounded-lg"
           style={{ background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
         <div className="flex-1 min-w-0">
