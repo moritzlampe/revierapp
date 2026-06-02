@@ -26,6 +26,9 @@ export default function TagebuchContent({ jagdjahr, stats, items }: Props) {
           borderBottom: '1px solid var(--border)',
           background: 'var(--surface)',
           minHeight: '3.5rem',
+          // Safe-Area-Inset oben (PWA-Standalone, black-translucent Statusbar).
+          // BASIS padding-top = 0 (Höhe via minHeight + items-center), daher nur var(--safe-top).
+          paddingTop: 'var(--safe-top)',
           position: 'sticky',
           top: 0,
           zIndex: 10,
