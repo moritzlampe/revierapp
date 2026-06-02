@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { Camera, Info } from '@phosphor-icons/react'
 import { DetailField } from './DetailField'
@@ -12,7 +13,18 @@ import { DistanceSheet } from '@/components/diary/edit-sheets/DistanceSheet'
 import { PhotoSheet } from '@/components/diary/edit-sheets/PhotoSheet'
 import { getSpeciesLabel } from '@/lib/wildArt'
 import { extractLatLng } from '@/lib/diary/geo'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import type { AnblickDetail } from '@/lib/diary/detail-types'
+
+// Leaflet/react-leaflet sind SSR-inkompatibel → nur clientseitig laden.
+const PointMap = dynamic(() => import('@/components/map/PointMap'), {
+  ssr: false,
+})
 
 const DATE_FMT = new Intl.DateTimeFormat('de-DE', {
   day: 'numeric',
@@ -100,6 +112,7 @@ function formatDistance(value: number | null): string {
 export function AnblickDetailContent({ detail }: { detail: AnblickDetail }) {
   const router = useRouter()
   const [editingField, setEditingField] = useState<EditField>(null)
+  const [mapOpen, setMapOpen] = useState(false)
 
   const sightings = detail.sightings
   const hasSingle = sightings.length === 1
@@ -219,17 +232,45 @@ export function AnblickDetailContent({ detail }: { detail: AnblickDetail }) {
       )}
 
       {latLng && (
-        <section className="map-card forest" aria-label="Beobachtungsort">
-          <div className="map-card-info">
-            <div className="detail-field-label">Beobachtungsort</div>
-            <div className="map-value">
-              {latLng.lat.toFixed(3)}, {latLng.lng.toFixed(3)}
+        <>
+          <section className="map-card forest" aria-label="Beobachtungsort">
+            <div className="map-card-info">
+              <div className="detail-field-label">Beobachtungsort</div>
+              <div className="map-value">
+                {latLng.lat.toFixed(3)}, {latLng.lng.toFixed(3)}
+              </div>
             </div>
-          </div>
-          <button type="button" className="diary-map-btn">
-            Auf Karte
-          </button>
-        </section>
+            <button
+              type="button"
+              className="diary-map-btn"
+              onClick={() => setMapOpen(true)}
+            >
+              Auf Karte
+            </button>
+          </section>
+
+          <Sheet open={mapOpen} onOpenChange={setMapOpen}>
+            <SheetContent
+              side="bottom"
+              style={{ height: '85dvh', maxHeight: '90dvh', padding: 0 }}
+            >
+              <SheetHeader>
+                <SheetTitle>Beobachtungsort</SheetTitle>
+              </SheetHeader>
+              {/* Karte nur mounten, wenn offen → kein 0×0-Leaflet im
+                  versteckten Container, eine Instanz weniger im Hintergrund. */}
+              <div style={{ flex: 1, minHeight: 0 }}>
+                {mapOpen && (
+                  <PointMap
+                    lat={latLng.lat}
+                    lng={latLng.lng}
+                    markerColor="#6E8A52"
+                  />
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </>
       )}
 
       {/* Field-Sheets — mounted only when N=1, conditional on editingField */}

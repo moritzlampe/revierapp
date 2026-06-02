@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { Camera } from '@phosphor-icons/react'
 import { DetailField } from './DetailField'
@@ -10,8 +11,19 @@ import { KillPhotoEditor } from './KillPhotoEditor'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { HIT_LOCATION_LABEL, GESCHLECHT_LABEL } from '@/lib/diary/labels'
 import { extractLatLng } from '@/lib/diary/geo'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import type { ErlegungDetail } from '@/lib/diary/detail-types'
 import type { Database } from '@/lib/supabase/database.types'
+
+// Leaflet/react-leaflet sind SSR-inkompatibel → nur clientseitig laden.
+const PointMap = dynamic(() => import('@/components/map/PointMap'), {
+  ssr: false,
+})
 
 type Kill = Database['public']['Tables']['kills']['Row']
 type Hunt = Database['public']['Tables']['hunts']['Row']
@@ -90,6 +102,7 @@ export function ErlegungDetailContent({
   }
 
   const [editorOpen, setEditorOpen] = useState(false)
+  const [mapOpen, setMapOpen] = useState(false)
 
   // Foto-Bearbeiten braucht einen Hunt-Anker (hunt_photos.hunt_id ist NOT
   // NULL). hunt_id == null ist in der Praxis ~nie (count=0) — defensiv (E4).
@@ -255,17 +268,45 @@ export function ErlegungDetailContent({
       )}
 
       {latLng && (
-        <section className="map-card" aria-label="Erlegungsort">
-          <div className="map-card-info">
-            <div className="detail-field-label">Erlegungsort</div>
-            <div className="map-value">
-              {latLng.lat.toFixed(3)}, {latLng.lng.toFixed(3)}
+        <>
+          <section className="map-card" aria-label="Erlegungsort">
+            <div className="map-card-info">
+              <div className="detail-field-label">Erlegungsort</div>
+              <div className="map-value">
+                {latLng.lat.toFixed(3)}, {latLng.lng.toFixed(3)}
+              </div>
             </div>
-          </div>
-          <button type="button" className="diary-map-btn">
-            Auf Karte
-          </button>
-        </section>
+            <button
+              type="button"
+              className="diary-map-btn"
+              onClick={() => setMapOpen(true)}
+            >
+              Auf Karte
+            </button>
+          </section>
+
+          <Sheet open={mapOpen} onOpenChange={setMapOpen}>
+            <SheetContent
+              side="bottom"
+              style={{ height: '85dvh', maxHeight: '90dvh', padding: 0 }}
+            >
+              <SheetHeader>
+                <SheetTitle>Erlegungsort</SheetTitle>
+              </SheetHeader>
+              {/* Karte nur mounten, wenn offen → kein 0×0-Leaflet im
+                  versteckten Container, eine Instanz weniger im Hintergrund. */}
+              <div style={{ flex: 1, minHeight: 0 }}>
+                {mapOpen && (
+                  <PointMap
+                    lat={latLng.lat}
+                    lng={latLng.lng}
+                    markerColor="#C08E48"
+                  />
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </>
       )}
 
       {kill.hunt_id && (
