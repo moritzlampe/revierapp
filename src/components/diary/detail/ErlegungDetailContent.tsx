@@ -9,6 +9,7 @@ import { DetailTopBar } from './DetailTopBar'
 import { KillPhotoEditor } from './KillPhotoEditor'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { HIT_LOCATION_LABEL, GESCHLECHT_LABEL } from '@/lib/diary/labels'
+import { extractLatLng } from '@/lib/diary/geo'
 import type { ErlegungDetail } from '@/lib/diary/detail-types'
 import type { Database } from '@/lib/supabase/database.types'
 
@@ -56,31 +57,6 @@ function buildSubtitle(kill: Kill, hunt: Hunt | null): string {
   // Datums-Doppelung. Solo: Datum + Kontext (kein hunt.name vorhanden).
   if (hunt) return `Teil von ${hunt.name}`
   return `${formatDateGerman(kill.erlegt_am)} · Solo-Ansitz`
-}
-
-type LatLng = { lat: number; lng: number }
-
-function extractLatLng(position: unknown): LatLng | null {
-  if (!position || typeof position !== 'object') return null
-  if ('coordinates' in position) {
-    const c = (position as { coordinates?: unknown }).coordinates
-    if (
-      Array.isArray(c) &&
-      c.length >= 2 &&
-      typeof c[0] === 'number' &&
-      typeof c[1] === 'number'
-    ) {
-      // GeoJSON Point: [lng, lat]
-      return { lat: c[1], lng: c[0] }
-    }
-  }
-  if ('lat' in position && 'lng' in position) {
-    const p = position as { lat?: unknown; lng?: unknown }
-    if (typeof p.lat === 'number' && typeof p.lng === 'number') {
-      return { lat: p.lat, lng: p.lng }
-    }
-  }
-  return null
 }
 
 /**

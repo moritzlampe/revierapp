@@ -11,6 +11,7 @@ import { WeightSheet } from '@/components/diary/edit-sheets/WeightSheet'
 import { DistanceSheet } from '@/components/diary/edit-sheets/DistanceSheet'
 import { PhotoSheet } from '@/components/diary/edit-sheets/PhotoSheet'
 import { getSpeciesLabel } from '@/lib/wildArt'
+import { extractLatLng } from '@/lib/diary/geo'
 import type { AnblickDetail } from '@/lib/diary/detail-types'
 
 const DATE_FMT = new Intl.DateTimeFormat('de-DE', {
@@ -62,30 +63,6 @@ function buildWildartValue(detail: AnblickDetail): string {
   if (bd.length === 0) return '—'
   if (bd.length === 1) return speciesLabel(bd[0].species)
   return bd.map((s) => speciesLabel(s.species)).join(' · ')
-}
-
-type LatLng = { lat: number; lng: number }
-
-function extractLatLng(position: unknown): LatLng | null {
-  if (!position || typeof position !== 'object') return null
-  if ('coordinates' in position) {
-    const c = (position as { coordinates?: unknown }).coordinates
-    if (
-      Array.isArray(c) &&
-      c.length >= 2 &&
-      typeof c[0] === 'number' &&
-      typeof c[1] === 'number'
-    ) {
-      return { lat: c[1], lng: c[0] }
-    }
-  }
-  if ('lat' in position && 'lng' in position) {
-    const p = position as { lat?: unknown; lng?: unknown }
-    if (typeof p.lat === 'number' && typeof p.lng === 'number') {
-      return { lat: p.lat, lng: p.lng }
-    }
-  }
-  return null
 }
 
 const NOTE_TIME: React.CSSProperties = {
