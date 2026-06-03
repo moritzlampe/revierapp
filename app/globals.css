@@ -141,6 +141,13 @@
   --sheet-max-height: 85dvh;
 }
 
+/* WildIcon (Sprint 60.5f): Default-Farbe Bronze via currentColor. :where()
+   hat Spezifität 0,0,0 — eine Text-Farb-Klasse am Icon (≥0,1,0) gewinnt
+   immer, unabhängig von der Quellreihenfolge. Bronze ist :root-promoted. */
+:where(.wild-icon) {
+  color: var(--bronze);
+}
+
 /* ============================================================
    Sprint 60.2: Tagebuch-Theme — gescopt, NICHT in :root.
    Siehe Sprint_60_Konzept_V3 §6.
