@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { CaretRight as ChevronRight } from '@phosphor-icons/react'
 import { WILD_ART_TO_GROUP, WILD_GROUP_CONFIG, type WildArt, type WildGroup } from '@/lib/species-config'
 import type { DisplayKill } from '@/lib/strecke/visibility'
-import { getGroupIcon } from '@/components/icons/SpeciesIcons'
+import { WildIcon } from '@/components/icons/WildIcon'
 import AlertTriangleIcon from '@/components/icons/AlertTriangleIcon'
 
 // Jagdliche Streckenlegungs-Konvention
@@ -121,7 +121,6 @@ function CompactHero({ total, aggregates }: { total: number; aggregates: GroupAg
           <span style={{ color: 'var(--text-secondary)' }}>·</span>
           <div style={{ display: 'flex', gap: '0.625rem', flexWrap: 'wrap' }}>
             {aggregates.map(agg => {
-              const Icon = getGroupIcon(agg.group)
               return (
                 <span
                   key={agg.group}
@@ -133,7 +132,7 @@ function CompactHero({ total, aggregates }: { total: number; aggregates: GroupAg
                     gap: '0.375rem',
                   }}
                 >
-                  <Icon size={20} />
+                  <WildIcon type={agg.group} size={20} style={{ color: 'var(--text-primary)' }} />
                   <span>×{agg.count}</span>
                 </span>
               )
@@ -210,7 +209,6 @@ function FullHero({
             const hasChevron = agg.count >= CHEVRON_THRESHOLD
             const isActive = activeGroupFilter === agg.group
             const tappable = hasChevron && Boolean(onGroupTap)
-            const Icon = getGroupIcon(agg.group)
             return (
               <button
                 key={agg.group}
@@ -233,8 +231,9 @@ function FullHero({
                   transition: 'opacity 150ms ease, background-color 100ms ease-out',
                 }}
               >
-                <Icon
-                  size={20}
+                <WildIcon
+                  type={agg.group}
+                  size={24}
                   style={{
                     color: isActive ? 'var(--accent-primary)' : 'var(--text-primary)',
                     flexShrink: 0,

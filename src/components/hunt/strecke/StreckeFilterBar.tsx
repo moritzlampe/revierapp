@@ -2,7 +2,7 @@
 
 import { Camera } from '@phosphor-icons/react'
 import { WILD_GROUP_CONFIG, type WildGroup } from '@/lib/species-config'
-import { getGroupIcon } from '@/components/icons/SpeciesIcons'
+import { WildIcon } from '@/components/icons/WildIcon'
 
 export type StreckeFilter =
   | { kind: 'all' }
@@ -95,7 +95,6 @@ export default function StreckeFilterBar({
       >
         {pills.map(pill => {
           const isActive = filtersEqual(pill.filter, active)
-          const Icon = pill.group ? getGroupIcon(pill.group) : null
           return (
             <button
               key={pill.id}
@@ -124,7 +123,13 @@ export default function StreckeFilterBar({
                 transform: isActive ? 'scale(1.05)' : 'scale(1)',
               }}
             >
-              {Icon && <Icon size={16} />}
+              {pill.group && (
+                <WildIcon
+                  type={pill.group}
+                  size={16}
+                  style={{ color: isActive ? '#FFFFFF' : 'var(--text-secondary)' }}
+                />
+              )}
               <span>{pill.label}</span>
               <span
                 style={{
