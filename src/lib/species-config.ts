@@ -224,3 +224,25 @@ export function aggregateByWildGroup(
         GROUP_ORDER.indexOf(a.groupKey) - GROUP_ORDER.indexOf(b.groupKey),
     )
 }
+
+/**
+ * Wie aggregateByWildGroup, aber liefert IMMER alle 8 Wildgruppen in fester
+ * Picker-Reihenfolge (WILD_GROUP_CONFIG-Order) mit Zero-Fill für Gruppen ohne
+ * Erlegung. Für das Bestiarium-Grid (Sprint 60.5f): feste Kachel-Positionen
+ * (Muscle Memory, 1:1 zum Picker), Null-Gruppen werden ausgegraut statt
+ * weggelassen. Reine Funktion. Leeres Array → alle 8 mit count 0.
+ */
+export function aggregateWildGroupsFull(
+  kills: Array<{ wild_art: string }>,
+): WildGroupAggregateItem[] {
+  const counts = new Map<WildGroup, number>()
+  for (const k of kills) {
+    const group = WILD_ART_TO_GROUP[k.wild_art as WildArt] ?? 'sonstiges'
+    counts.set(group, (counts.get(group) ?? 0) + 1)
+  }
+  return WILD_GROUP_CONFIG.map(c => ({
+    groupKey: c.group,
+    groupLabel: c.label,
+    count: counts.get(c.group) ?? 0,
+  }))
+}

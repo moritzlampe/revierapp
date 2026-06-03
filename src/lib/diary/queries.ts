@@ -106,3 +106,30 @@ export async function getDiaryStats(
 
   return { jagdtage, erlegungen, stundenImRevier }
 }
+
+/**
+ * Liefert die wild_art aller eigenen Erlegungen eines Users im Jagdjahr
+ * (Bestiarium-Grid, Sprint 60.5f). Quelle ist bewusst die `kills`-Tabelle
+ * mit `reporter_id` — identisch zur Timeline-Quelle (getTimelineItems), damit
+ * die Grid-Counts 1:1 zu den sichtbaren Strecke/Erlegung-Cards passen (NICHT
+ * `wild_events`/getDiaryStats, das wäre eine andere Tabelle und könnte
+ * abweichen). Aggregation erfolgt im Caller via aggregateWildGroupsFull.
+ */
+export async function getSeasonKillArten(
+  userId: string,
+  jagdjahr: Jagdjahr,
+): Promise<{ wild_art: string }[]> {
+  const supabase = await createClient()
+
+  const res = await supabase
+    .from('kills')
+    .select('wild_art')
+    .eq('reporter_id', userId)
+    .gte('erlegt_am', jagdjahr.start.toISOString())
+    .lt('erlegt_am', jagdjahr.end.toISOString())
+
+  if (res.error) {
+    throw new Error(`getSeasonKillArten: query failed: ${res.error.message}`)
+  }
+  return (res.data ?? []) as { wild_art: string }[]
+}

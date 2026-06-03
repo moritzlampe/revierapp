@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getJagdjahr, jagdjahrFromKey } from '@/lib/diary/season'
-import { getDiaryStats } from '@/lib/diary/queries'
+import { getDiaryStats, getSeasonKillArten } from '@/lib/diary/queries'
 import { getTimelineItems } from '@/lib/diary/timeline'
+import { aggregateWildGroupsFull } from '@/lib/species-config'
 import TagebuchContent from './tagebuch-content'
 
 export default async function TagebuchPage({
@@ -22,10 +23,21 @@ export default async function TagebuchPage({
       ? jagdjahrFromKey(params.j)
       : getJagdjahr()
 
-  const [stats, items] = await Promise.all([
+  const [stats, items, seasonKills] = await Promise.all([
     getDiaryStats(user.id, jagdjahr),
     getTimelineItems(user.id, jagdjahr),
+    getSeasonKillArten(user.id, jagdjahr),
   ])
 
-  return <TagebuchContent jagdjahr={jagdjahr} stats={stats} items={items} />
+  // Bestiarium: alle 8 Wildgruppen in Picker-Reihenfolge mit Zero-Fill.
+  const bestiarium = aggregateWildGroupsFull(seasonKills)
+
+  return (
+    <TagebuchContent
+      jagdjahr={jagdjahr}
+      stats={stats}
+      items={items}
+      bestiarium={bestiarium}
+    />
+  )
 }

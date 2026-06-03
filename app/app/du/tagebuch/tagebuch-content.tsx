@@ -3,6 +3,7 @@ import { Notebook } from '@phosphor-icons/react/dist/ssr'
 import type { Jagdjahr } from '@/lib/diary/season'
 import type { DiaryStats } from '@/lib/diary/queries'
 import type { TimelineItem } from '@/lib/diary/timeline'
+import type { WildGroupAggregateItem } from '@/lib/species-config'
 import DiaryHeader from '@/components/diary/DiaryHeader'
 import DiaryFilterStack from '@/components/diary/DiaryFilterStack'
 import DiaryTimelineList from '@/components/diary/cards/DiaryTimelineList'
@@ -11,9 +12,11 @@ interface Props {
   jagdjahr: Jagdjahr
   stats: DiaryStats
   items: TimelineItem[]
+  /** Bestiarium-Aggregat: 8 Wildgruppen in Picker-Reihenfolge (Zero-Fill). */
+  bestiarium: WildGroupAggregateItem[]
 }
 
-export default function TagebuchContent({ jagdjahr, stats, items }: Props) {
+export default function TagebuchContent({ jagdjahr, stats, items, bestiarium }: Props) {
   const isEmpty = stats.erlegungen === 0 && stats.jagdtage === 0
 
   return (
@@ -99,7 +102,11 @@ export default function TagebuchContent({ jagdjahr, stats, items }: Props) {
         </div>
       ) : (
         <div className="flex-1" style={{ paddingBottom: '2rem' }}>
-          <DiaryTimelineList items={items} />
+          <DiaryTimelineList
+            items={items}
+            bestiarium={bestiarium}
+            jagdjahrKey={jagdjahr.key}
+          />
         </div>
       )}
     </div>

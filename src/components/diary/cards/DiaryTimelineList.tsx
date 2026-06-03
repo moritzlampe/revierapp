@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo } from 'react'
+import { Fragment, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { TimelineItem } from '@/lib/diary/timeline'
+import type { WildGroupAggregateItem } from '@/lib/species-config'
 import {
   parseJagdart,
   parseInhalt,
@@ -14,6 +15,7 @@ import ErlegungCard from './ErlegungCard'
 import AnblickCard from './AnblickCard'
 import GesellCard from './GesellCard'
 import StreckeCard from './StreckeCard'
+import BestiariumGrid from './BestiariumGrid'
 
 function assertNever(x: never): never {
   throw new Error(`Unhandled timeline item kind: ${JSON.stringify(x)}`)
@@ -39,6 +41,10 @@ function monthKey(d: Date): string {
 
 interface Props {
   items: TimelineItem[]
+  /** Bestiarium-Aggregat: 8 Wildgruppen in Picker-Reihenfolge (Zero-Fill). */
+  bestiarium: WildGroupAggregateItem[]
+  /** Aktuelles Jagdjahr (key) — an die Bestiarium-Detail-Route durchgereicht. */
+  jagdjahrKey: string
 }
 
 /**
@@ -47,8 +53,17 @@ interface Props {
  *
  * Renders ErlegungCard, AnblickCard, GesellCard, StreckeCard. Filter-aware
  * empty states come in Phase 2.4.
+ *
+ * Das Bestiarium-Grid (Saison-Aggregat) wird nach der ersten Monatsgruppe
+ * eingeschoben (Sprint 60.5f). Bewusst an die gerenderte Timeline gekoppelt:
+ * bei leerem Filter-Ergebnis (0 Gruppen) erscheint es nicht — akzeptierter
+ * Edge für 60.5f (möglicher Folgefix: filter-unabhängig rendern).
  */
-export default function DiaryTimelineList({ items }: Props) {
+export default function DiaryTimelineList({
+  items,
+  bestiarium,
+  jagdjahrKey,
+}: Props) {
   const searchParams = useSearchParams()
   const legacy = searchParams.get('filter')
   const jagdart = parseJagdart(searchParams.get('jagdart'), legacy)
@@ -114,8 +129,9 @@ export default function DiaryTimelineList({ items }: Props) {
 
   return (
     <DiaryTimeline>
-      {groups.map(group => (
-        <div key={group.key}>
+      {groups.map((group, gi) => (
+        <Fragment key={group.key}>
+        <div>
           <MonthLabel label={group.label} />
           {group.items.map(item => {
             switch (item.kind) {
@@ -143,6 +159,10 @@ export default function DiaryTimelineList({ items }: Props) {
             }
           })}
         </div>
+        {gi === 0 && (
+          <BestiariumGrid items={bestiarium} jagdjahrKey={jagdjahrKey} />
+        )}
+        </Fragment>
       ))}
     </DiaryTimeline>
   )

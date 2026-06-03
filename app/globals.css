@@ -2395,6 +2395,17 @@ button:active {
   opacity: 0.72;
 }
 
+/* Bestiarium-Kachel (Sprint 60.5f): dezenter :active-Scale statt opacity,
+   damit der Zero-State (opacity 0.5 inline) beim Tap nicht aufhellt. */
+.tagebuch-surface .bestiarium-tile {
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease;
+}
+
+.tagebuch-surface .bestiarium-tile:active {
+  transform: scale(0.97);
+}
+
 /* ============================================================
    Tagebuch-Filter — zwei orthogonale Chip-Reihen (Sprint 60.4
    Phase 8c). Jagdart-Reihe (Slate-Edge) + Inhalt-Reihe
