@@ -67,6 +67,26 @@ export type StreckeDetail = {
 }
 
 /**
+ * Bestiarium-Gruppe (BestiariumGrid-Kachel → /du/tagebuch/bestiarium/[group]?j=YYYY).
+ *
+ * Saison-Aggregat aller eigenen Erlegungen einer Wildgruppe, aufgeschlüsselt
+ * nach Wildart. Quelle ist die kills-Tabelle (reporter_id) — deckungsgleich
+ * mit dem Grid (Sprint 60.5f). totalCount 0 ist ein gültiger Zustand
+ * (Zero-State-Detailseite), kein Fehler.
+ */
+export type BestiariumDetail = {
+  group: WildGroup
+  /** Wildgruppen-Label (z. B. "Schwarzwild") */
+  label: string
+  /** Jagdjahr-Label für den Saison-Kontext im Header (z. B. "Jagdjahr 26/27") */
+  jagdjahrLabel: string
+  /** Summe = Anzahl Erlegungen der Gruppe in der Saison */
+  totalCount: number
+  /** Pro wild_art aggregiert, absteigend nach count */
+  speciesBreakdown: { species: WildArt; count: number }[]
+}
+
+/**
  * Anblick (TimelineAnblick → /du/tagebuch/anblick/[hunt_id|YYYY-MM-DD]).
  *
  * N-zu-1-Aggregat aus mehreren wild_events (kein einzelnes event_id).

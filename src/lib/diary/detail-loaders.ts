@@ -2,14 +2,17 @@ import { createClient } from '@/lib/supabase/server'
 import { berlinMidnight, toBerlinDateKey } from './time'
 import { pickCoverPhoto } from './cover-photo'
 import { aggregateBySpecies } from './breakdown'
+import type { Jagdjahr } from './season'
 import type {
   AnblickDetail,
+  BestiariumDetail,
   ErlegungDetail,
   GesellDetail,
   StreckeDetail,
 } from './detail-types'
 import type { Database } from '@/lib/supabase/database.types'
 import { WILD_GROUPS, type WildGroup } from '@/lib/species-config'
+import { getWildGroupLabel } from '@/lib/wildArt'
 
 type Kill = Database['public']['Tables']['kills']['Row']
 type Hunt = Database['public']['Tables']['hunts']['Row']
@@ -259,6 +262,52 @@ export async function getAnblickDetail(
   if (UUID_RE.test(id)) return getAnblickByHunt(id, userId)
   if (DATE_RE.test(id)) return getAnblickByDate(id, userId)
   return null
+}
+
+// ---------- Bestiarium ----------
+
+/**
+ * Lädt das Saison-Aggregat einer Wildgruppe (BestiariumGrid → Detail).
+ * Eigene Erlegungen (reporter_id) im Jagdjahr, gefiltert auf die wild_art-Werte
+ * der Gruppe (WILD_GROUPS[group]), aufgeschlüsselt nach Wildart. Identische
+ * Quelle/Filter-Logik wie das Grid (getSeasonKillArten + aggregateWildGroupsFull)
+ * und wie getStreckeDetail — damit die Detail-Zahlen 1:1 zur Grid-Kachel passen.
+ *
+ * totalCount 0 ist KEIN Fehler, sondern der Zero-State (saubere Leer-Ansicht).
+ * null nur bei ungültiger Gruppe oder Query-Fehler → Caller rendert notFound().
+ */
+export async function getBestiariumDetail(
+  group: WildGroup,
+  userId: string,
+  jagdjahr: Jagdjahr,
+): Promise<BestiariumDetail | null> {
+  const wildArten = WILD_GROUPS[group]
+  if (!wildArten || wildArten.length === 0) return null
+
+  const supabase = await createClient()
+
+  const res = await supabase
+    .from('kills')
+    .select('wild_art')
+    .eq('reporter_id', userId)
+    .in('wild_art', wildArten)
+    .gte('erlegt_am', jagdjahr.start.toISOString())
+    .lt('erlegt_am', jagdjahr.end.toISOString())
+
+  if (res.error) return null
+
+  const rows = (res.data ?? []) as { wild_art: string }[]
+  const speciesBreakdown = aggregateBySpecies(rows).sort(
+    (a, b) => b.count - a.count || a.species.localeCompare(b.species),
+  )
+
+  return {
+    group,
+    label: getWildGroupLabel(group),
+    jagdjahrLabel: jagdjahr.label,
+    totalCount: rows.length,
+    speciesBreakdown,
+  }
 }
 
 // ---------- Strecke ----------
