@@ -15,10 +15,18 @@ import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog, Megaphone, Stop } from '@phosphor-icons/react'
-import { RehwildIcon } from '@/components/icons/SpeciesIcons'
+import { WildIcon } from '@/components/icons/WildIcon'
 import type { ComponentType, SVGProps } from 'react'
 
 type TabIconComponent = ComponentType<{ size?: number; weight?: 'regular' | 'fill'; color?: string } & SVGProps<SVGSVGElement>>
+
+// Strecke-Tab-Glyph auf das neue WildIcon-Set (rehwild — Reh steht
+// stellvertretend fürs Wild). Reicht size durch; color:inherit lässt das Icon
+// der Active/Inactive-Farbe des Tab-Buttons folgen (Inline-Style schlägt die
+// globale :where(.wild-icon){color:bronze}-Regel).
+function RehwildTabIcon({ size = 18 }: { size?: number }) {
+  return <WildIcon type="rehwild" size={size} style={{ color: 'inherit' }} />
+}
 
 const VALID_TABS = ['karte', 'chat', 'nachsuche', 'strecke'] as const
 type TabKey = typeof VALID_TABS[number]
@@ -323,13 +331,13 @@ export default function HuntPage() {
     ? [
         { key: 'karte', label: 'Karte', icon: MapTrifold, iconKind: 'phosphor' },
         { key: 'nachsuche', label: 'Nachsuche', icon: WarningCircle, iconKind: 'phosphor', iconColor: 'var(--red)' },
-        { key: 'strecke', label: 'Strecke', icon: RehwildIcon as TabIconComponent, iconKind: 'species' },
+        { key: 'strecke', label: 'Strecke', icon: RehwildTabIcon as TabIconComponent, iconKind: 'species' },
       ]
     : [
         { key: 'karte', label: 'Karte', icon: MapTrifold, iconKind: 'phosphor' },
         { key: 'chat', label: 'Chat', icon: ChatCircle, iconKind: 'phosphor' },
         { key: 'nachsuche', label: 'Nachsuche', icon: WarningCircle, iconKind: 'phosphor', iconColor: 'var(--red)' },
-        { key: 'strecke', label: 'Strecke', icon: RehwildIcon as TabIconComponent, iconKind: 'species' },
+        { key: 'strecke', label: 'Strecke', icon: RehwildTabIcon as TabIconComponent, iconKind: 'species' },
       ]
 
   return (
