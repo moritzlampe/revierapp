@@ -22,7 +22,7 @@ import { showToast } from '@/lib/erlegung/toast'
 import PhotoCapture from '@/components/photo/PhotoCapture'
 import { uploadPendingPhotosForHunt } from '@/lib/photos/upload-batch'
 import { createClient } from '@/lib/supabase/client'
-import { getGroupIcon } from '@/components/icons/SpeciesIcons'
+import { WildIcon } from '@/components/icons/WildIcon'
 
 const noSelectStyle: React.CSSProperties = {
   userSelect: 'none',
@@ -503,10 +503,9 @@ export function WildartPicker({
                 'Wildart wählen'
               ) : (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                  {groupConfig && (() => {
-                    const Icon = getGroupIcon(groupConfig.group)
-                    return <Icon size={20} style={{ color: 'var(--accent-primary)' }} />
-                  })()}
+                  {groupConfig && (
+                    <WildIcon type={groupConfig.group} size={20} style={{ color: 'var(--accent-primary)' }} />
+                  )}
                   <span>{groupConfig?.label}</span>
                 </span>
               )}
@@ -537,7 +536,6 @@ export function WildartPicker({
                 marginTop: '0.25rem',
               }}>
                 {WILD_GROUP_CONFIG.map(config => {
-                  const Icon = getGroupIcon(config.group)
                   // Anblick-Modus: 'Sonstiges' bleibt auf Stufe 1 selektierbar
                   const groupTileSelected =
                     mode === 'sighting' && config.group === 'sonstiges'
@@ -578,7 +576,7 @@ export function WildartPicker({
                         ? countFor('sonstiges')
                         : countForGroup(config.group)
                     } />
-                    <Icon size={32} style={{ color: 'var(--text)' }} />
+                    <WildIcon type={config.group} size={32} style={{ color: 'var(--text)' }} />
                     <span style={{
                       fontSize: '0.6875rem',
                       color: 'var(--text-2)',
