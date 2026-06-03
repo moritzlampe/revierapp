@@ -10,7 +10,7 @@ import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
 import { parsePointHex } from '@/lib/geo-utils'
 import { createSoloHunt } from '@/lib/supabase/hunts'
 import { getAvatarColor } from '@/lib/avatar-color'
-import { getGroupIcon } from '@/components/icons/SpeciesIcons'
+import { WildIcon } from '@/components/icons/WildIcon'
 import type { WildGroup } from '@/lib/species-config'
 import { Star, Crosshair, UsersThree, Dog } from '@phosphor-icons/react'
 
@@ -1036,7 +1036,6 @@ export default function CreateHuntPage() {
           <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Wildarten für Schnellmeldung</label>
           <div className="flex gap-2 flex-wrap">
             {WILD_PRESETS.map(w => {
-              const Icon = getGroupIcon(w.group)
               const selected = wildPresets.includes(w.value)
               return (
                 <button key={w.value} type="button" onClick={() => toggleWild(w.value)}
@@ -1046,7 +1045,7 @@ export default function CreateHuntPage() {
                     background: selected ? 'rgba(107,159,58,0.1)' : 'var(--bg)',
                     color: selected ? 'var(--accent-primary)' : 'var(--text-3)',
                   }}>
-                  <Icon size={18} />
+                  <WildIcon type={w.group} size={18} style={{ color: selected ? 'var(--accent-primary)' : 'var(--text-3)' }} />
                   <span>{w.label}</span>
                 </button>
               )
