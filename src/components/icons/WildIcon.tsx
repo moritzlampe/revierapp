@@ -46,25 +46,35 @@ export interface WildIconProps {
   /** Kantenlänge in px (quadratisch). Default 48. */
   size?: number
   className?: string
+  /**
+   * Optionaler Inline-Style, gemerged über die Defaults. Wichtigster
+   * Anwendungsfall: `color` setzen — die globale `:where(.wild-icon){ color:
+   * var(--bronze) }`-Regel sitzt direkt auf dem Element und schlägt jede
+   * vererbte Button-/Container-Farbe, daher muss eine kontextabhängige Farbe
+   * explizit hier durchgereicht werden (currentColor → fill). Macht WildIcon
+   * API-symmetrisch zu SpeciesIcons. Bestiarium-Aufrufe (ohne style) bleiben
+   * unverändert Bronze.
+   */
+  style?: CSSProperties
 }
 
 /**
  * Wildgruppen-Icon. KEIN color-Prop — Farbe ausschließlich über currentColor
- * (CSS `color` / Text-Klasse). Default-Farbe Bronze kommt aus der globalen
- * `:where(.wild-icon){ color: var(--bronze) }`-Regel (niedrigste Spezifität,
- * via Text-Klasse überschreibbar). Zero-State im Grid dimmt per opacity, nicht
- * per Farbe — Bronze bleibt erhalten.
+ * (CSS `color` via `style`/Text-Klasse). Default-Farbe Bronze kommt aus der
+ * globalen `:where(.wild-icon){ color: var(--bronze) }`-Regel (niedrigste
+ * Spezifität, via style/Text-Klasse überschreibbar). Zero-State im Grid dimmt
+ * per opacity, nicht per Farbe — Bronze bleibt erhalten.
  */
-export function WildIcon({ type, size = 48, className }: WildIconProps) {
+export function WildIcon({ type, size = 48, className, style }: WildIconProps) {
   const cls = className ? `wild-icon ${className}` : 'wild-icon'
-  const style: CSSProperties = { display: 'block', flexShrink: 0 }
+  const mergedStyle: CSSProperties = { display: 'block', flexShrink: 0, ...style }
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 256 256"
       className={cls}
-      style={style}
+      style={mergedStyle}
       role="img"
       aria-label={LABELS[type]}
       focusable="false"
