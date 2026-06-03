@@ -26,14 +26,20 @@ interface GroupAggregate {
   group: WildGroup
   label: string
   count: number
+  /** Davon vom aktuellen Nutzer erlegt (reporter_id === userId). */
+  ownCount: number
 }
 
-function aggregateByGroup(kills: DisplayKill[]): GroupAggregate[] {
+function aggregateByGroup(kills: DisplayKill[], userId: string | null): GroupAggregate[] {
   const counts = new Map<WildGroup, number>()
+  const ownCounts = new Map<WildGroup, number>()
   for (const k of kills) {
     const group = WILD_ART_TO_GROUP[k.wild_art as WildArt]
     if (!group) continue
     counts.set(group, (counts.get(group) ?? 0) + 1)
+    if (userId !== null && k.reporter_id === userId) {
+      ownCounts.set(group, (ownCounts.get(group) ?? 0) + 1)
+    }
   }
   const result: GroupAggregate[] = []
   for (const group of WILD_GROUP_ORDER) {
@@ -41,14 +47,23 @@ function aggregateByGroup(kills: DisplayKill[]): GroupAggregate[] {
     if (count === 0) continue
     const config = WILD_GROUP_CONFIG.find(c => c.group === group)
     if (!config) continue
-    result.push({ group, label: config.label, count })
+    result.push({ group, label: config.label, count, ownCount: ownCounts.get(group) ?? 0 })
   }
   return result
+}
+
+// Eigene-Klammer nur zeigen, wenn ein TEIL der Gruppe eigen ist:
+// 0 eigene → nichts zu betonen; alles eigen → redundant (Brief D2).
+// Konsistent mit der "Eigene"-Filterpille (reporter_id === userId).
+function showOwnParen(agg: GroupAggregate): boolean {
+  return agg.ownCount > 0 && agg.ownCount < agg.count
 }
 
 interface StreckeHeroProps {
   /** Nur harvested-Kills — wounded zählen nicht zur offiziellen Strecke. */
   harvestedKills: DisplayKill[]
+  /** Aktueller Nutzer — für die Eigene-Stückzahl in Klammern (reporter_id-Vergleich). */
+  userId: string | null
   /** Anzahl offener Nachsuchen (wird nur gezeigt wenn showNachsucheWarning=true). */
   woundedCount: number
   /** Rollen-Check: Warnstreifen + Scroll-Ziel nur für Jagdleiter/Schütze/Hundeführer. */
@@ -63,13 +78,14 @@ interface StreckeHeroProps {
 
 export default function StreckeHero({
   harvestedKills,
+  userId,
   woundedCount,
   showNachsucheWarning,
   activeGroupFilter,
   onGroupTap,
   onNachsucheTap,
 }: StreckeHeroProps) {
-  const aggregates = useMemo(() => aggregateByGroup(harvestedKills), [harvestedKills])
+  const aggregates = useMemo(() => aggregateByGroup(harvestedKills, userId), [harvestedKills, userId])
   const total = harvestedKills.length
   const useFullHero = total >= FULL_HERO_THRESHOLD
 
@@ -133,7 +149,14 @@ function CompactHero({ total, aggregates }: { total: number; aggregates: GroupAg
                   }}
                 >
                   <WildIcon type={agg.group} size={20} style={{ color: 'var(--text-primary)' }} />
-                  <span>×{agg.count}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.1875rem' }}>
+                    <span>×{agg.count}</span>
+                    {showOwnParen(agg) && (
+                      <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                        ({agg.ownCount})
+                      </span>
+                    )}
+                  </span>
                 </span>
               )
             })}
@@ -155,6 +178,9 @@ function FullHero({
   activeGroupFilter: WildGroup | null
   onGroupTap?: (group: WildGroup) => void
 }) {
+  // Reserviert die Eigene-Spalte für ALLE Zeilen, sobald mindestens eine
+  // Gruppe gemischt ist — so bleiben die Labels über alle Zeilen bündig.
+  const anyOwn = aggregates.some(showOwnParen)
   return (
     <div
       style={{
@@ -241,17 +267,33 @@ function FullHero({
                     height: '1.5rem',
                   }}
                 />
-                <span
-                  style={{
-                    fontSize: '1rem',
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    minWidth: '1.75rem',
-                    textAlign: 'right',
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {agg.count}
+                <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.25rem' }}>
+                  <span
+                    style={{
+                      fontSize: '1rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      minWidth: '1.75rem',
+                      textAlign: 'right',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {agg.count}
+                  </span>
+                  {anyOwn && (
+                    <span
+                      style={{
+                        fontSize: '0.8125rem',
+                        fontWeight: 500,
+                        color: 'var(--text-secondary)',
+                        minWidth: '1.5rem',
+                        textAlign: 'left',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {showOwnParen(agg) ? `(${agg.ownCount})` : ''}
+                    </span>
+                  )}
                 </span>
                 <span
                   style={{

@@ -332,6 +332,7 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
       <div style={{ padding: '1rem 0.75rem 0' }}>
         <StreckeHero
           harvestedKills={harvestedKills}
+          userId={userId}
           woundedCount={woundedKills.length}
           showNachsucheWarning={canSeeNachsuche && filter.kind !== 'nachsuche'}
           activeGroupFilter={filter.kind === 'group' ? filter.group : null}
