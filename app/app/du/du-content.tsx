@@ -12,6 +12,7 @@ import {
   Bell,
   Palette,
   EnvelopeSimple as Mail,
+  EnvelopeOpen,
   Lock,
   SignOut as LogOut,
   X,
@@ -34,6 +35,7 @@ type Props = {
   avatarUrl: string | null
   initialStatus: string
   districts: { id: string; name: string }[]
+  invitationCount: number
 }
 
 export default function DuContent({
@@ -43,6 +45,7 @@ export default function DuContent({
   avatarUrl,
   initialStatus,
   districts,
+  invitationCount,
 }: Props) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
@@ -187,6 +190,16 @@ export default function DuContent({
 
         {/* === Sektion: QuickHunt === */}
         <Section title="QuickHunt">
+          {invitationCount > 0 && (
+            <Link href="/app/du/einladungen" style={{ textDecoration: 'none', color: 'inherit' }}>
+              <MenuItem
+                icon={<EnvelopeOpen size={18} />}
+                label="Einladungen"
+                sublabel={`${invitationCount} offen`}
+                badge={invitationCount}
+              />
+            </Link>
+          )}
           <MenuItem
             icon={<UserPlus size={18} />}
             label="Freunde einladen"
@@ -421,11 +434,13 @@ function MenuItem({
   label,
   sublabel,
   onClick,
+  badge,
 }: {
   icon: React.ReactNode
   label: string
   sublabel?: string
   onClick?: () => void
+  badge?: number
 }) {
   const Tag = onClick ? 'button' : 'div'
   return (
@@ -452,6 +467,15 @@ function MenuItem({
           </p>
         )}
       </div>
+      {badge != null && badge > 0 && (
+        <span className="flex items-center justify-center flex-shrink-0" style={{
+          minWidth: '1.25rem', height: '1.25rem', borderRadius: '0.625rem',
+          background: 'var(--green)', color: 'white',
+          fontSize: '0.6875rem', fontWeight: 700, padding: '0 0.3125rem',
+        }}>
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
       <ChevronRight size={16} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
     </Tag>
   )

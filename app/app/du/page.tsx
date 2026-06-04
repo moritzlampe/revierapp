@@ -20,6 +20,10 @@ export default async function DuPage() {
     .eq('owner_id', user.id)
     .order('name')
 
+  // Offene Einladungen zählen (für Menü-Eintrag + Badge)
+  const { data: invitations } = await supabase.rpc('get_my_invitations')
+  const invitationCount = Array.isArray(invitations) ? invitations.length : 0
+
   return (
     <DuContent
       userId={user.id}
@@ -28,6 +32,7 @@ export default async function DuPage() {
       avatarUrl={profile?.avatar_url || null}
       initialStatus={profile?.availability_status || 'available'}
       districts={districts || []}
+      invitationCount={invitationCount}
     />
   )
 }
