@@ -8,7 +8,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { usePrefetchChats } from '@/hooks/usePrefetchChats'
 import SwipeToAction from '@/components/ui/swipe-to-action'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
-import { MagnifyingGlass, Plus, Star, Crosshair, EyeSlash } from '@phosphor-icons/react'
+import { MagnifyingGlass, Plus, Star, Crosshair, EyeSlash, EnvelopeSimple } from '@phosphor-icons/react'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { isHuntEnded } from '@/lib/hunt/status'
@@ -54,6 +54,8 @@ type Hunt = {
   district_id: string | null
   district_name: string | null
   myRole: string
+  // Teilnehmer-Status der EIGENEN Zeile (nicht der hunt.status): 'joined' | 'invited'
+  participationStatus: string
 }
 
 type ChatGroup = {
@@ -209,14 +211,14 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     const { data: myParticipations } = await supabase
       .from('hunt_participants')
       .select(`
-        hunt_id, role,
+        hunt_id, role, status,
         hunts (
           id, name, type, kind, status, invite_code, started_at, ended_at, created_at, creator_id, district_id,
           districts (id, name)
         )
       `)
       .eq('user_id', userId)
-      .eq('status', 'joined')
+      .in('status', ['joined', 'invited'])
       .order('created_at', { ascending: false })
       .limit(200)
 
@@ -226,6 +228,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
         .map((p: any) => ({
           ...p.hunts,
           myRole: p.role,
+          participationStatus: p.status,
           district_name: p.hunts?.districts?.name ?? null,
         }))
       setHunts(freshHunts)
@@ -793,6 +796,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                 {filteredHunts.map((hunt) => {
                   const isOwner = hunt.creator_id === userId
                   const isLive = hunt.status === 'active'
+                  // Eigener Teilnehmer-Status: invited = noch nicht zugesagt.
+                  // Solche Zeilen sind reine Einladungen → kein Hunt-Zugriff,
+                  // Tap führt auf die Einladungsseite (Annehmen/Ablehnen).
+                  const isInvited = hunt.participationStatus === 'invited'
                   return (
                     <div
                       key={hunt.id}
@@ -801,7 +808,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                       <SwipeToAction
                         actionIcon="🗑️"
                         actionColor="var(--red)"
-                        disabled={!isOwner}
+                        disabled={!isOwner || isInvited}
                         onAction={() => setConfirmDialog({ type: 'delete-hunt', id: hunt.id, name: hunt.name })}
                         onSwipeOpen={(closeFn) => {
                           if (activeCloseRef.current?.id !== hunt.id) {
@@ -810,10 +817,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                           activeCloseRef.current = { id: hunt.id, close: closeFn }
                         }}
                       >
-                        <Link href={`/app/hunt/${hunt.id}`}
+                        <Link href={isInvited ? '/app/du/einladungen' : `/app/hunt/${hunt.id}`}
                           className="block rounded-2xl p-3.5" style={{
                             background: 'var(--surface)',
-                            border: '1px solid var(--border)',
+                            border: isInvited ? '1px solid var(--blue)' : '1px solid var(--border)',
                           }}>
                           {/* Kicker: Status als Small-Caps */}
                           <div style={{
@@ -824,18 +831,29 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             fontWeight: 600,
                             letterSpacing: '0.08em',
                             textTransform: 'uppercase',
-                            color: isLive
-                              ? 'var(--accent-primary)'
-                              : 'var(--text-3)',
+                            color: isInvited
+                              ? 'var(--blue)'
+                              : isLive
+                                ? 'var(--accent-primary)'
+                                : 'var(--text-3)',
                             marginBottom: '0.25rem',
                           }}>
-                            {isLive && <span className="live-dot" />}
-                            {isLive
-                              ? 'Live'
-                              : isHuntEnded(hunt.status)
-                                ? 'Beendet'
-                                : 'Geplant'}
-                            <AutoCompletedChip status={hunt.status} />
+                            {isInvited ? (
+                              <>
+                                <EnvelopeSimple size={13} weight="fill" />
+                                Einladung
+                              </>
+                            ) : (
+                              <>
+                                {isLive && <span className="live-dot" />}
+                                {isLive
+                                  ? 'Live'
+                                  : isHuntEnded(hunt.status)
+                                    ? 'Beendet'
+                                    : 'Geplant'}
+                                <AutoCompletedChip status={hunt.status} />
+                              </>
+                            )}
                           </div>
                           <div style={{
                             fontFamily: 'var(--font-display)',
@@ -846,25 +864,31 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                             marginBottom: '0.375rem',
                           }}>{hunt.name}</div>
                           <div className="flex gap-3.5 text-xs" style={{ color: 'var(--text-2)' }}>
-                            {isLive && hunt.started_at && (
-                              <span>Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                            {isInvited ? (
+                              <span style={{ color: 'var(--blue)', fontWeight: 600 }}>Tippen zum Annehmen →</span>
+                            ) : (
+                              <>
+                                {isLive && hunt.started_at && (
+                                  <span>Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                                )}
+                                {isHuntEnded(hunt.status) && hunt.ended_at && (
+                                  <span>{new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}</span>
+                                )}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  {hunt.myRole === 'jagdleiter' ? (
+                                    <>
+                                      <Star size={12} weight="fill" color="var(--accent-gold)" />
+                                      Jagdleiter
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Crosshair size={12} />
+                                      Schütze
+                                    </>
+                                  )}
+                                </span>
+                              </>
                             )}
-                            {isHuntEnded(hunt.status) && hunt.ended_at && (
-                              <span>{new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}</span>
-                            )}
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                              {hunt.myRole === 'jagdleiter' ? (
-                                <>
-                                  <Star size={12} weight="fill" color="var(--accent-gold)" />
-                                  Jagdleiter
-                                </>
-                              ) : (
-                                <>
-                                  <Crosshair size={12} />
-                                  Schütze
-                                </>
-                              )}
-                            </span>
                           </div>
                         </Link>
                       </SwipeToAction>

@@ -15,14 +15,14 @@ export default async function AppPage() {
   const { data: myParticipations } = await supabase
     .from('hunt_participants')
     .select(`
-      hunt_id, role,
+      hunt_id, role, status,
       hunts (
         id, name, type, kind, status, invite_code, started_at, ended_at, created_at, creator_id, district_id,
         districts (id, name)
       )
     `)
     .eq('user_id', user.id)
-    .eq('status', 'joined')
+    .in('status', ['joined', 'invited'])
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -31,6 +31,7 @@ export default async function AppPage() {
     .map((p: any) => ({
       ...(p.hunts as any),
       myRole: p.role,
+      participationStatus: p.status,
       district_name: p.hunts?.districts?.name ?? null,
     }))
 
