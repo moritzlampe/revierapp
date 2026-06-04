@@ -548,13 +548,13 @@ export default function CreateHuntPage() {
       .single()
 
     if (chatGroup) {
-      const chatMembers = [
-        { group_id: chatGroup.id, user_id: currentUser.id },
-        ...selectedContacts
-          .filter(c => c.inApp)
-          .map(c => ({ group_id: chatGroup.id, user_id: c.id })),
-      ]
-      await supabase.from('chat_group_members').insert(chatMembers)
+      // Nur status='joined'-Teilnehmer kommen in chat_group_members. Beim
+      // Erstellen ist das ausschliesslich der Ersteller — invited-Kontakte
+      // werden erst beim Annehmen (RPC accept_hunt_invitation, Migration 049)
+      // eingetragen. Schliesst den Chat-/Profil-Zweitpfad fuer invited (Sprint B, G1).
+      await supabase
+        .from('chat_group_members')
+        .insert({ group_id: chatGroup.id, user_id: currentUser.id })
     }
 
     // Karten-basierte Zuweisungen speichern
