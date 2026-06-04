@@ -33,11 +33,14 @@ export async function POST(request: Request) {
 
       recipientUserIds = (members || []).map(m => m.user_id)
     } else if (huntId) {
-      // Jagd-Chat: alle Teilnehmer mit user_id
+      // Jagd-Chat: nur ZUGESAGTE Teilnehmer (status='joined') mit user_id.
+      // invited-User sind nicht im Hunt-Chat und dürfen keine Push-Vorschau
+      // der Chat-Nachricht bekommen (Sprint B Privacy-Fix).
       const { data: participants } = await supabase
         .from('hunt_participants')
         .select('user_id')
         .eq('hunt_id', huntId)
+        .eq('status', 'joined')
         .not('user_id', 'is', null)
 
       recipientUserIds = (participants || []).map(p => p.user_id)

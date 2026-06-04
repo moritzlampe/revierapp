@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import BullseyeIcon from '@/components/icons/BullseyeIcon'
 import { Crosshair, ChatCircle, User, Notebook, Stack } from '@phosphor-icons/react'
 import { ErlegungSheet } from '@/components/erlegung/ErlegungSheet'
 import { useActiveHunt } from '@/contexts/ActiveHuntContext'
+import { createClient } from '@/lib/supabase/client'
 
 // Vollbild-Aktionen: Tab-Bar ausblenden
 const HIDE_ON_ROUTES = ['/app/hunt/create']
@@ -44,7 +45,19 @@ export default function BottomTabBar() {
   const searchParams = useSearchParams()
   const [keyboardOpen, setKeyboardOpen] = useState(false)
   const [erlegungOpen, setErlegungOpen] = useState(false)
+  const [invitationCount, setInvitationCount] = useState(0)
   const { activeHunt } = useActiveHunt()
+  const supabase = useMemo(() => createClient(), [])
+
+  // Offene Einladungen für das Jagd-Tab-Badge. Refetch bei Navigation,
+  // damit das Badge nach Annehmen/Ablehnen (Routenwechsel) aktuell ist.
+  useEffect(() => {
+    let cancelled = false
+    supabase.rpc('get_my_invitations').then(({ data }) => {
+      if (!cancelled) setInvitationCount(Array.isArray(data) ? data.length : 0)
+    })
+    return () => { cancelled = true }
+  }, [supabase, pathname])
 
   // Jagd-Tab: aktive Hunt → direkt dorthin, sonst Jagd-Liste
   const jagdHref = activeHunt ? `/app/hunt/${activeHunt.id}` : '/app?tab=jagden'
@@ -56,7 +69,7 @@ export default function BottomTabBar() {
   const tagebuchOrStreckeLabel = activeHunt ? 'Strecke' : 'Tagebuch'
   const tagebuchOrStreckeIcon = activeHunt ? Stack : Notebook
 
-  const jagdTab = { key: 'jagd', label: 'Jagd', icon: Crosshair, href: jagdHref }
+  const jagdTab = { key: 'jagd', label: 'Jagd', icon: Crosshair, href: jagdHref, badge: invitationCount }
   const tagebuchOrStreckeTab = {
     key: 'tagebuchOrStrecke',
     label: tagebuchOrStreckeLabel,
@@ -178,10 +191,11 @@ export default function BottomTabBar() {
 }
 
 function renderLinkTab(
-  tab: { key: string; label: string; icon: React.ComponentType<{ size?: number; weight?: 'regular' | 'fill' | 'bold' }>; href: string },
+  tab: { key: string; label: string; icon: React.ComponentType<{ size?: number; weight?: 'regular' | 'fill' | 'bold' }>; href: string; badge?: number },
   activeKey: ActiveKey,
 ) {
   const isActive = activeKey === tab.key
+  const showBadge = tab.badge != null && tab.badge > 0
   return (
     <Link
       key={tab.key}
@@ -201,10 +215,32 @@ function renderLinkTab(
         minWidth: '2.75rem',
       }}
     >
-      <tab.icon
-        size={22}
-        weight={isActive ? 'fill' : 'regular'}
-      />
+      <span style={{ position: 'relative', display: 'inline-flex' }}>
+        <tab.icon
+          size={22}
+          weight={isActive ? 'fill' : 'regular'}
+        />
+        {showBadge && (
+          <span style={{
+            position: 'absolute',
+            top: '-0.375rem',
+            left: '0.9375rem',
+            minWidth: '1rem',
+            height: '1rem',
+            borderRadius: '0.5rem',
+            background: 'var(--green)',
+            color: 'white',
+            fontSize: '0.625rem',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 0.25rem',
+          }}>
+            {tab.badge! > 9 ? '9+' : tab.badge}
+          </span>
+        )}
+      </span>
       <span style={{ fontSize: '0.75rem', fontWeight: isActive ? 700 : 500 }}>
         {tab.label}
       </span>

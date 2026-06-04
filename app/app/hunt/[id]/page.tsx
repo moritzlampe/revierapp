@@ -458,16 +458,29 @@ export default function HuntPage() {
       {activeTab === 'karte' && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
           style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-light)' }}>
-          {participants.map((p) => (
-            <div key={p.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full flex-shrink-0"
-              style={{ background: 'var(--surface-2)', border: p.role === 'jagdleiter' ? '1px solid var(--accent-gold)' : '1px solid var(--border)' }}>
-              <div className="avatar-xs" style={{ background: getAvatarColor(p.id), color: '#fff' }}>{getInitials(pName(p))}</div>
-              <span className="text-xs font-medium">{p.user_id === userId ? 'Du' : pName(p).split(' ')[0]}</span>
-              {p.role === 'jagdleiter' && <Star size={12} weight="fill" color="var(--accent-gold)" />}
-              {p.tags?.includes('gruppenleiter') && <UsersThree size={12} color="var(--text-secondary)" />}
-              {p.tags?.includes('hundefuehrer') && <Dog size={12} color="var(--text-secondary)" />}
-            </div>
-          ))}
+          {participants.map((p) => {
+            // invited = eingeladen, noch nicht zugesagt → optisch abgesetzt
+            // (gedimmt, gestrichelter Rahmen), damit zugesagt vs. eingeladen
+            // auf einen Blick erkennbar ist (Sprint B, Befund 2).
+            const isInvited = p.status === 'invited'
+            return (
+              <div key={p.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full flex-shrink-0"
+                style={{
+                  background: 'var(--surface-2)',
+                  border: isInvited
+                    ? '1px dashed var(--border)'
+                    : p.role === 'jagdleiter' ? '1px solid var(--accent-gold)' : '1px solid var(--border)',
+                  opacity: isInvited ? 0.55 : 1,
+                }}>
+                <div className="avatar-xs" style={{ background: getAvatarColor(p.id), color: '#fff' }}>{getInitials(pName(p))}</div>
+                <span className="text-xs font-medium">{p.user_id === userId ? 'Du' : pName(p).split(' ')[0]}</span>
+                {isInvited && <span className="text-xs" style={{ color: 'var(--text-3)' }}>eingeladen</span>}
+                {!isInvited && p.role === 'jagdleiter' && <Star size={12} weight="fill" color="var(--accent-gold)" />}
+                {!isInvited && p.tags?.includes('gruppenleiter') && <UsersThree size={12} color="var(--text-secondary)" />}
+                {!isInvited && p.tags?.includes('hundefuehrer') && <Dog size={12} color="var(--text-secondary)" />}
+              </div>
+            )
+          })}
         </div>
       )}
 

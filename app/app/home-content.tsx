@@ -278,7 +278,10 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   // "Ohne Revier" ist eine normale Option (value: 'ohne_revier'), konkurriert mit Revieren um Top 5.
   const revierOptions = useMemo(() => {
     const freq: Record<string, { label: string; value: string; count: number }> = {}
-    hunts.forEach(h => {
+    // invited-Jagden ausnehmen: deren District ist per RLS nicht lesbar
+    // (district_name null) → würde sonst ein Phantom "Unbekanntes Revier"
+    // in den Filter spülen.
+    hunts.filter(h => h.participationStatus !== 'invited').forEach(h => {
       const key = h.district_id ?? 'ohne_revier'
       const label = h.district_id ? (h.district_name || 'Unbekanntes Revier') : 'Ohne Revier'
       if (!freq[key]) freq[key] = { label, value: key, count: 0 }
@@ -292,6 +295,9 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
   }, [hunts])
 
   const filtersActive = jagdFilter !== 'alle' || jagdKindFilter !== 'alle' || jagdRevierFilter !== null
+
+  // Offene Einladungen (eigene invited-Zeilen) — für den Filterzeilen-Einstieg
+  const invitedCount = useMemo(() => hunts.filter(h => h.participationStatus === 'invited').length, [hunts])
 
   // Gefilterte Chat-Liste
   const filteredChats = useMemo(() => {
@@ -671,27 +677,60 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
               </button>
             ))
           ) : (
-            (['alle', 'live', 'vergangen'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setJagdFilter(f)}
-                style={{
-                  padding: '0.5rem 0.875rem',
-                  borderRadius: '9999px',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  background: jagdFilter === f ? 'var(--green)' : 'transparent',
-                  color: jagdFilter === f ? 'white' : 'var(--text-2)',
-                  border: jagdFilter === f ? 'none' : '1px solid var(--border)',
-                  opacity: searchQuery ? 0.5 : 1,
-                  pointerEvents: searchQuery ? 'none' : 'auto',
-                  minHeight: '2.25rem',
-                }}
-              >
-                {f === 'alle' ? 'Alle' : f === 'live' ? 'Live' : 'Vergangen'}
-              </button>
-            ))
+            <>
+              {(['alle', 'live', 'vergangen'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setJagdFilter(f)}
+                  style={{
+                    padding: '0.5rem 0.875rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    background: jagdFilter === f ? 'var(--green)' : 'transparent',
+                    color: jagdFilter === f ? 'white' : 'var(--text-2)',
+                    border: jagdFilter === f ? 'none' : '1px solid var(--border)',
+                    opacity: searchQuery ? 0.5 : 1,
+                    pointerEvents: searchQuery ? 'none' : 'auto',
+                    minHeight: '2.25rem',
+                  }}
+                >
+                  {f === 'alle' ? 'Alle' : f === 'live' ? 'Live' : 'Vergangen'}
+                </button>
+              ))}
+              {/* Einstieg zur Einladungsseite — nur wenn offene Einladungen da sind */}
+              {invitedCount > 0 && (
+                <Link
+                  href="/app/du/einladungen"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.375rem',
+                    padding: '0.5rem 0.875rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    background: 'transparent',
+                    color: 'var(--blue)',
+                    border: '1px solid var(--blue)',
+                    textDecoration: 'none',
+                    minHeight: '2.25rem',
+                  }}
+                >
+                  <EnvelopeSimple size={14} weight="fill" />
+                  Einladungen
+                  <span style={{
+                    minWidth: '1.125rem', height: '1.125rem', borderRadius: '0.5625rem',
+                    background: 'var(--blue)', color: 'white', fontSize: '0.625rem', fontWeight: 700,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 0.25rem',
+                  }}>
+                    {invitedCount > 99 ? '99+' : invitedCount}
+                  </span>
+                </Link>
+              )}
+            </>
           )}
         </div>
       </div>
