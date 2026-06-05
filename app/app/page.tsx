@@ -17,7 +17,7 @@ export default async function AppPage() {
     .select(`
       hunt_id, role, status,
       hunts (
-        id, name, type, kind, status, invite_code, started_at, ended_at, created_at, creator_id, district_id,
+        id, name, type, kind, status, invite_code, started_at, scheduled_for, ended_at, created_at, creator_id, district_id,
         districts (id, name)
       )
     `)

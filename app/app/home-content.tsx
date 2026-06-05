@@ -11,7 +11,7 @@ import { getChatDisplayInfo } from '@/lib/chat-utils'
 import { MagnifyingGlass, Plus, Star, Crosshair, EyeSlash, EnvelopeSimple } from '@phosphor-icons/react'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
-import { isHuntEnded } from '@/lib/hunt/status'
+import { isHuntEnded, isHuntScheduled } from '@/lib/hunt/status'
 import { AutoCompletedChip } from '@/components/hunt/AutoCompletedChip'
 
 function getInitials(name: string) {
@@ -48,6 +48,7 @@ type Hunt = {
   status: string
   invite_code: string
   started_at: string
+  scheduled_for: string | null
   ended_at: string | null
   created_at: string
   creator_id: string
@@ -213,7 +214,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
       .select(`
         hunt_id, role, status,
         hunts (
-          id, name, type, kind, status, invite_code, started_at, ended_at, created_at, creator_id, district_id,
+          id, name, type, kind, status, invite_code, started_at, scheduled_for, ended_at, created_at, creator_id, district_id,
           districts (id, name)
         )
       `)
@@ -250,7 +251,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
     } else {
       // Filter nur wenn keine Suche aktiv
       if (jagdFilter === 'live') list = list.filter(h => h.status === 'active')
-      else if (jagdFilter === 'geplant') list = list.filter(h => h.status === 'planned')
+      else if (jagdFilter === 'geplant') list = list.filter(h => isHuntScheduled(h.status))
       else if (jagdFilter === 'vergangen') list = list.filter(h => isHuntEnded(h.status))
 
       if (jagdKindFilter !== 'alle') {
@@ -909,6 +910,11 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                               <>
                                 {isLive && hunt.started_at && (
                                   <span>Seit {new Date(hunt.started_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                                )}
+                                {isHuntScheduled(hunt.status) && hunt.scheduled_for && (
+                                  <span>
+                                    {new Date(hunt.scheduled_for).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}, {new Date(hunt.scheduled_for).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
+                                  </span>
                                 )}
                                 {isHuntEnded(hunt.status) && hunt.ended_at && (
                                   <span>{new Date(hunt.ended_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}</span>
