@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createAuthClient } from '@/lib/supabase/server'
 import webpush from 'web-push'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -12,33 +13,62 @@ webpush.setVapidDetails(VAPID_CONTACT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
 
 export async function POST(request: Request) {
   try {
-    const { huntId, groupId, messageText, isDirect, chatName, senderUserId, url, recipientUserId, kind } = await request.json()
+    const { huntId, groupId, messageText, isDirect, chatName, url, recipientUserId, kind } = await request.json()
 
-    if (!messageText || !senderUserId) {
-      return NextResponse.json({ error: 'messageText, senderUserId sind Pflicht' }, { status: 400 })
+    if (!messageText) {
+      return NextResponse.json({ error: 'messageText ist Pflicht' }, { status: 400 })
     }
+
+    // Authentifizierung serverseitig — der Sender wird NIE aus dem Body
+    // übernommen (sonst beliebiges Push-Spoofing/-Spam). senderId = eingeloggter User.
+    const authClient = await createAuthClient()
+    const { data: { user } } = await authClient.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Nicht authentifiziert' }, { status: 401 })
+    }
+    const senderId = user.id
 
     // Service-Role-Client: kann alle Subscriptions lesen (kein RLS)
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
-    // Empfänger ermitteln
+    // Empfänger ermitteln (jeweils mit Autorisierung)
     let recipientUserIds: string[] = []
 
     if (recipientUserId) {
-      // Gezielter Einzel-Empfänger (Sprint C: RSVP-Push an den Jagdleiter).
+      // RSVP-Push (Sprint C): NUR an den Jagdleiter der referenzierten Jagd und
+      // NUR wenn notify_on_rsvp='each'. Inhalt server-seitig auf zwei feste Verben
+      // begrenzt (kein Freitext spoofbar; der Name kommt aus senderId via profiles).
+      // Bewusst KEIN Teilnehmer-Check: decline löscht die invited-Zeile vor dem
+      // Push (Race) — die Begrenzung auf creator_id + festes Verb + aufgelösten
+      // Namen neutralisiert das Spoofing bereits.
+      if (kind !== 'rsvp' || !huntId || (messageText !== 'hat zugesagt' && messageText !== 'hat abgesagt')) {
+        return NextResponse.json({ error: 'Ungültige RSVP-Anfrage' }, { status: 400 })
+      }
+      const { data: hunt } = await supabase
+        .from('hunts')
+        .select('creator_id, notify_on_rsvp')
+        .eq('id', huntId)
+        .single()
+      if (!hunt || hunt.creator_id !== recipientUserId || hunt.notify_on_rsvp !== 'each') {
+        return NextResponse.json({ sent: 0 })
+      }
       recipientUserIds = [recipientUserId]
     } else if (groupId) {
-      // Gruppenchat: alle Mitglieder
+      // Gruppenchat: alle Mitglieder — der Sender muss selbst Mitglied sein.
       const { data: members } = await supabase
         .from('chat_group_members')
         .select('user_id')
         .eq('group_id', groupId)
 
       recipientUserIds = (members || []).map(m => m.user_id)
+      if (!recipientUserIds.includes(senderId)) {
+        return NextResponse.json({ sent: 0 })
+      }
     } else if (huntId) {
       // Jagd-Chat: nur ZUGESAGTE Teilnehmer (status='joined') mit user_id.
       // invited-User sind nicht im Hunt-Chat und dürfen keine Push-Vorschau
-      // der Chat-Nachricht bekommen (Sprint B Privacy-Fix).
+      // der Chat-Nachricht bekommen (Sprint B Privacy-Fix). Der Sender muss
+      // selbst zugesagter Teilnehmer sein.
       const { data: participants } = await supabase
         .from('hunt_participants')
         .select('user_id')
@@ -47,10 +77,15 @@ export async function POST(request: Request) {
         .not('user_id', 'is', null)
 
       recipientUserIds = (participants || []).map(p => p.user_id)
+      if (!recipientUserIds.includes(senderId)) {
+        return NextResponse.json({ sent: 0 })
+      }
+    } else {
+      return NextResponse.json({ error: 'huntId, groupId oder recipientUserId nötig' }, { status: 400 })
     }
 
     // Sender rausfiltern (keine Benachrichtigung an sich selbst)
-    recipientUserIds = recipientUserIds.filter(id => id !== senderUserId)
+    recipientUserIds = recipientUserIds.filter(id => id !== senderId)
 
     if (recipientUserIds.length === 0) {
       return NextResponse.json({ sent: 0 })
@@ -70,7 +105,7 @@ export async function POST(request: Request) {
     const { data: senderProfile } = await supabase
       .from('profiles')
       .select('display_name')
-      .eq('id', senderUserId)
+      .eq('id', senderId)
       .single()
     const displayName = senderProfile?.display_name || ''
 
@@ -89,8 +124,12 @@ export async function POST(request: Request) {
       body = displayName ? `${displayName}: ${messageText}` : messageText
     }
 
+    // url auf same-origin-relativen Pfad beschränken (kein Open-Redirect/
+    // Phishing über die Push-Notification: muss mit '/' beginnen, nicht '//').
+    const safeUrl = typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') ? url : '/'
+
     // Push an jede Subscription senden
-    const payload = JSON.stringify({ title, body, url: url || '/', tag: groupId || huntId || recipientUserId || 'chat' })
+    const payload = JSON.stringify({ title, body, url: safeUrl, tag: groupId || huntId || recipientUserId || 'chat' })
     const expiredIds: string[] = []
     let sent = 0
 
