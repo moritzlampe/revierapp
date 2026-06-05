@@ -51,6 +51,10 @@ type Props = {
   onUnreadChange: (count: number) => void
   /** Wenn true, darf der User ALLE Nachrichten löschen (Gruppen-/Jagd-Ersteller) */
   canDeleteAll?: boolean
+  /** Sprint C: Schreibsperre (z.B. geplante Jagd, Chat noch nicht freigegeben).
+   *  Reine UI-Spiegelung der RLS (messages_insert_member) — die DB ist die Wahrheit. */
+  sendDisabled?: boolean
+  sendDisabledHint?: string
 }
 
 // === Konstanten ===
@@ -165,7 +169,7 @@ function renderMessageContent(content: string) {
 
 // === Komponente ===
 
-export default function ChatPanel({ huntId, groupId, chatName, isDirect = false, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange, canDeleteAll = false }: Props) {
+export default function ChatPanel({ huntId, groupId, chatName, isDirect = false, participants = [], userId, myParticipantId, supabase, isActive, onUnreadChange, canDeleteAll = false, sendDisabled = false, sendDisabledHint }: Props) {
   // Gruppenchat-Modus: Mitglieder als "Participants" laden
   const [groupMembers, setGroupMembers] = useState<Record<string, { name: string; color: string }>>({})
   const isGroupChat = !!groupId && !huntId
@@ -1004,7 +1008,14 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
         )
       })()}
 
-      {/* Eingabeleiste */}
+      {/* Eingabeleiste — bei Schreibsperre (Sprint C) durch Hinweis ersetzt */}
+      {sendDisabled ? (
+        <div className="chat-input-bar" style={{ justifyContent: 'center' }}>
+          <p style={{ color: 'var(--text-3)', fontSize: '0.8125rem', textAlign: 'center', padding: '0.25rem 0.75rem', lineHeight: 1.35 }}>
+            🔒 {sendDisabledHint || 'Schreiben ist aktuell gesperrt.'}
+          </p>
+        </div>
+      ) : (
       <div className="chat-input-bar">
         <button
           className="chat-icon-btn cam"
@@ -1049,6 +1060,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
           </button>
         )}
       </div>
+      )}
 
       {/* Fullscreen Foto-Overlay */}
       {fullscreenPhoto && (
