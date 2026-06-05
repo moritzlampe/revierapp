@@ -12,3 +12,9 @@ export function isHuntEnded(status: string | null | undefined): boolean {
 export function isHuntAutoCompleted(status: string | null | undefined): boolean {
   return status === 'auto_completed'
 }
+
+// Geplante Jagd (Sprint C): wartet auf scheduled_for, geht erst dann live.
+// scheduled ist NICHT "live" — Karte/Strecke/Nachsuche/GPS sind gesperrt.
+export function isHuntScheduled(status: string | null | undefined): boolean {
+  return status === 'scheduled'
+}

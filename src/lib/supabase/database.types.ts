@@ -785,6 +785,7 @@ export type Database = {
       hunts: {
         Row: {
           boundary: unknown
+          chat_open: boolean
           cover_photo_id: string | null
           created_at: string | null
           creator_id: string
@@ -798,7 +799,9 @@ export type Database = {
           kind: Database["public"]["Enums"]["hunt_kind"]
           last_activity_at: string
           name: string
+          notify_on_rsvp: Database["public"]["Enums"]["notify_on_rsvp"]
           notiz: string | null
+          scheduled_for: string | null
           share_total_strecke: boolean
           signal_mode: string | null
           started_at: string | null
@@ -809,6 +812,7 @@ export type Database = {
         }
         Insert: {
           boundary?: unknown
+          chat_open?: boolean
           cover_photo_id?: string | null
           created_at?: string | null
           creator_id: string
@@ -822,7 +826,9 @@ export type Database = {
           kind: Database["public"]["Enums"]["hunt_kind"]
           last_activity_at?: string
           name: string
+          notify_on_rsvp?: Database["public"]["Enums"]["notify_on_rsvp"]
           notiz?: string | null
+          scheduled_for?: string | null
           share_total_strecke?: boolean
           signal_mode?: string | null
           started_at?: string | null
@@ -833,6 +839,7 @@ export type Database = {
         }
         Update: {
           boundary?: unknown
+          chat_open?: boolean
           cover_photo_id?: string | null
           created_at?: string | null
           creator_id?: string
@@ -846,7 +853,9 @@ export type Database = {
           kind?: Database["public"]["Enums"]["hunt_kind"]
           last_activity_at?: string
           name?: string
+          notify_on_rsvp?: Database["public"]["Enums"]["notify_on_rsvp"]
           notiz?: string | null
+          scheduled_for?: string | null
           share_total_strecke?: boolean
           signal_mode?: string | null
           started_at?: string | null
@@ -1836,6 +1845,7 @@ export type Database = {
         | "paused"
         | "completed"
         | "auto_completed"
+        | "scheduled"
       hunt_type: "ansitz" | "pirsch" | "drueckjagd" | "erntejagd"
       jagdart: "ansitz" | "pirsch" | "drueckjagd" | "erntejagd"
       jes_status: "aktiv" | "abgelaufen" | "entzogen" | "pausiert"
@@ -1857,6 +1867,7 @@ export type Database = {
         | "signal"
         | "kill_report"
         | "tracking"
+      notify_on_rsvp: "none" | "each" | "digest"
       observation_type:
         | "wildschaden"
         | "auffaelliges_wild"
@@ -2067,7 +2078,14 @@ export const Constants = {
         "sonstige",
       ],
       hunt_kind: ["group", "solo"],
-      hunt_status: ["draft", "active", "paused", "completed", "auto_completed"],
+      hunt_status: [
+        "draft",
+        "active",
+        "paused",
+        "completed",
+        "auto_completed",
+        "scheduled",
+      ],
       hunt_type: ["ansitz", "pirsch", "drueckjagd", "erntejagd"],
       jagdart: ["ansitz", "pirsch", "drueckjagd", "erntejagd"],
       jes_status: ["aktiv", "abgelaufen", "entzogen", "pausiert"],
@@ -2091,6 +2109,7 @@ export const Constants = {
         "kill_report",
         "tracking",
       ],
+      notify_on_rsvp: ["none", "each", "digest"],
       observation_type: [
         "wildschaden",
         "auffaelliges_wild",
