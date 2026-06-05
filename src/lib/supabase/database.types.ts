@@ -798,6 +798,7 @@ export type Database = {
           kill_visibility: Database["public"]["Enums"]["kill_visibility"]
           kind: Database["public"]["Enums"]["hunt_kind"]
           last_activity_at: string
+          map_open: boolean
           name: string
           notify_on_rsvp: Database["public"]["Enums"]["notify_on_rsvp"]
           notiz: string | null
@@ -825,6 +826,7 @@ export type Database = {
           kill_visibility?: Database["public"]["Enums"]["kill_visibility"]
           kind: Database["public"]["Enums"]["hunt_kind"]
           last_activity_at?: string
+          map_open?: boolean
           name: string
           notify_on_rsvp?: Database["public"]["Enums"]["notify_on_rsvp"]
           notiz?: string | null
@@ -852,6 +854,7 @@ export type Database = {
           kill_visibility?: Database["public"]["Enums"]["kill_visibility"]
           kind?: Database["public"]["Enums"]["hunt_kind"]
           last_activity_at?: string
+          map_open?: boolean
           name?: string
           notify_on_rsvp?: Database["public"]["Enums"]["notify_on_rsvp"]
           notiz?: string | null
