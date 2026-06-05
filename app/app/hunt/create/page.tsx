@@ -60,6 +60,9 @@ export default function CreateHuntPage() {
   const [huntKind, setHuntKind] = useState<'group' | 'solo'>('group')
   const [name, setName] = useState('')
   const [type, setType] = useState<'ansitz' | 'drueckjagd'>('ansitz')
+  // Sprint C: Sofort vs. geplant. Default 'sofort' = heutiges Verhalten.
+  const [startMode, setStartMode] = useState<'sofort' | 'geplant'>('sofort')
+  const [scheduledFor, setScheduledFor] = useState('') // datetime-local "YYYY-MM-DDTHH:mm"
   const [wildPresets, setWildPresets] = useState<string[]>(['schwarzwild', 'rehwild', 'fuchs'])
   const [contacts, setContacts] = useState<Contact[]>([])
   const [search, setSearch] = useState('')
@@ -488,6 +491,12 @@ export default function CreateHuntPage() {
       localStorage.removeItem('last_selected_revier_id')
     }
 
+    // Sofort vs. geplant: nur ein Zukunfts-Zeitpunkt macht die Jagd 'scheduled'.
+    // Leer/Vergangenheit -> sofort aktiv (byte-identisch zum bisherigen Pfad).
+    // started_at bleibt bei scheduled NULL (Go-Live-Anker setzt erst der Cron).
+    const plannedTs = startMode === 'geplant' && scheduledFor ? new Date(scheduledFor) : null
+    const isScheduled = plannedTs !== null && plannedTs.getTime() > Date.now()
+
     const { data: hunt, error: insertError } = await supabase
       .from('hunts')
       .insert({
@@ -499,11 +508,12 @@ export default function CreateHuntPage() {
         // (Solo-Routing in handleContinue). Hardcoded statt huntKind,
         // damit ein Routing-Drift sichtbar wird.
         kind: 'group' as const,
-        status: 'active',
+        status: isScheduled ? 'scheduled' : 'active',
         invite_code: inviteCode,
         wild_presets: allWild,
         signal_mode: type === 'drueckjagd' ? 'loud' : 'silent',
-        started_at: new Date().toISOString(),
+        started_at: isScheduled ? null : new Date().toISOString(),
+        scheduled_for: isScheduled && plannedTs ? plannedTs.toISOString() : null,
       })
       .select('id')
       .single()
@@ -980,6 +990,63 @@ export default function CreateHuntPage() {
                 Drückjagd
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Zeitpunkt: Sofort vs. geplant (nur Gruppenjagd) */}
+        {huntKind === 'group' && (
+          <div>
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Zeitpunkt</label>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem',
+              padding: '0.25rem', borderRadius: 'var(--radius)',
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+            }}>
+              <button
+                type="button"
+                onClick={() => setStartMode('sofort')}
+                style={{
+                  height: '2.75rem', borderRadius: 'calc(var(--radius) - 4px)',
+                  fontSize: '0.9375rem', fontWeight: 600,
+                  background: startMode === 'sofort' ? 'var(--green)' : 'transparent',
+                  color: startMode === 'sofort' ? '#fff' : 'var(--text-2)',
+                  transition: 'background 120ms, color 120ms',
+                }}
+              >
+                Sofort starten
+              </button>
+              <button
+                type="button"
+                onClick={() => setStartMode('geplant')}
+                style={{
+                  height: '2.75rem', borderRadius: 'calc(var(--radius) - 4px)',
+                  fontSize: '0.9375rem', fontWeight: 600,
+                  background: startMode === 'geplant' ? 'var(--green)' : 'transparent',
+                  color: startMode === 'geplant' ? '#fff' : 'var(--text-2)',
+                  transition: 'background 120ms, color 120ms',
+                }}
+              >
+                Planen
+              </button>
+            </div>
+            {startMode === 'geplant' && (
+              <div style={{ marginTop: '0.75rem' }}>
+                <input
+                  type="datetime-local"
+                  value={scheduledFor}
+                  onChange={(e) => setScheduledFor(e.target.value)}
+                  style={{
+                    width: '100%', height: '3rem', padding: '0 0.875rem',
+                    borderRadius: 'var(--radius)',
+                    border: `1.5px solid ${scheduledFor ? 'var(--green)' : 'var(--border)'}`,
+                    background: 'var(--surface)', color: 'var(--text)', fontSize: '0.9375rem',
+                  }}
+                />
+                <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
+                  Die Jagd geht erst zum gewählten Zeitpunkt live. Bis dahin: Einladungen sammeln, Chat optional freigeben.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
