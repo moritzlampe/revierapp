@@ -44,7 +44,47 @@ function formatPlanDateTime(iso: string) {
   return `${datum} · ${zeit} Uhr`
 }
 
-type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; scheduled_for: string | null; chat_open: boolean; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
+// Sprint C2: Freigabe-Toggle für Karte + Chat (optisch ein Paar). L5-Konvention:
+// der Titel zeigt den ZUSTAND ("Karte offen"/"Chat geschlossen"), der Button die
+// AKTION ("Schließen"/"Freischalten"). Geschlossen → grüner CTA zum Freischalten,
+// offen → dezenter Outline-Button zum Schließen.
+function FreigabeToggle({ noun, hint, open, busy, onToggle, Icon }: {
+  noun: string
+  hint: string
+  open: boolean
+  busy: boolean
+  onToggle: () => void
+  Icon: TabIconComponent
+}) {
+  return (
+    <div className="rounded-2xl p-4 flex items-center justify-between gap-3"
+      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 font-semibold text-sm">
+          <Icon size={16} weight="fill" color={open ? 'var(--green)' : 'var(--text-3)'} />
+          <span>{noun} {open ? 'offen' : 'geschlossen'}</span>
+        </div>
+        <div className="text-xs" style={{ color: 'var(--text-3)' }}>{hint}</div>
+      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={busy}
+        className="font-bold text-sm transition disabled:opacity-50"
+        style={{
+          flexShrink: 0, height: '2.5rem', padding: '0 1.25rem', borderRadius: 'var(--radius)',
+          border: `1.5px solid ${open ? 'var(--border)' : 'var(--green)'}`,
+          background: open ? 'transparent' : 'var(--green)',
+          color: open ? 'var(--text-2)' : '#fff',
+        }}
+      >
+        {open ? 'Schließen' : 'Freischalten'}
+      </button>
+    </div>
+  )
+}
+
+type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; scheduled_for: string | null; chat_open: boolean; map_open: boolean; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string; anonymize_kills: boolean } | null }
 type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null; adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null }
 
@@ -70,12 +110,15 @@ export default function HuntPage() {
   const [chatUnread, setChatUnread] = useState(0)
   const [seatAssignments, setSeatAssignments] = useState<SeatAssignment[]>([])
   const [showEndHuntPrompt, setShowEndHuntPrompt] = useState(false)
-  // Sprint C: scheduled-Detail (Plan/Chat-Subtabs + Einladungsverwaltung)
-  const [scheduledTab, setScheduledTab] = useState<'plan' | 'chat'>('plan')
+  // Sprint C: scheduled-Detail (Plan/Karte/Chat-Subtabs + Einladungsverwaltung).
+  // C2: Karte-Subtab kommt hinzu, wenn der Jagdleiter sie freigibt (map_open)
+  // bzw. immer für den Ersteller selbst (Planungsarbeit vor Go-Live).
+  const [scheduledTab, setScheduledTab] = useState<'plan' | 'karte' | 'chat'>('plan')
   const [inviteContacts, setInviteContacts] = useState<{ id: string; display_name: string }[]>([])
   const [inviteSearch, setInviteSearch] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [chatOpenBusy, setChatOpenBusy] = useState(false)
+  const [mapOpenBusy, setMapOpenBusy] = useState(false)
   // "Jetzt"-Snapshot für die Chat-Schreibsperre (Date.now() gehört nicht in den
   // Render — Purity). Auf Mount gesetzt; der ~1-Min-Edge bis zum Cron-Flip ist egal.
   const [nowMs, setNowMs] = useState(0)
@@ -409,6 +452,22 @@ export default function HuntPage() {
     router.refresh()
   }
 
+  // C2: Karten-Freigabe — symmetrisch zu toggleChatOpen. Setzt hunts.map_open;
+  // joined-Mitglieder sehen die Karte erst danach (nur lesen, kein Einzeichnen).
+  async function toggleMapOpen() {
+    if (!hunt || mapOpenBusy) return
+    setMapOpenBusy(true)
+    const next = !hunt.map_open
+    const { error } = await supabase.from('hunts').update({ map_open: next }).eq('id', hunt.id)
+    setMapOpenBusy(false)
+    if (error) {
+      window.dispatchEvent(new CustomEvent('quickhunt:toast', { detail: { message: 'Konnte Karten-Freigabe nicht ändern', type: 'warning' } }))
+      return
+    }
+    setHunt({ ...hunt, map_open: next })
+    router.refresh()
+  }
+
   if (loading) return <div className="min-h-dvh flex items-center justify-center" style={{ background: 'var(--bg)' }}><p style={{ color: 'var(--text-3)' }}>Lädt...</p></div>
   if (!hunt) return null
 
@@ -428,6 +487,13 @@ export default function HuntPage() {
     const chatWritable = isJagdleiter
       || hunt.chat_open
       || (hunt.scheduled_for != null && nowMs > 0 && nowMs >= new Date(hunt.scheduled_for).getTime())
+    // C2: Karte ist vor Go-Live für den Ersteller immer sichtbar (Planungsarbeit —
+    // Treiben/Stände einzeichnen), für andere joined erst nach Freigabe (map_open).
+    // Live (status='active') landet nie in diesem Branch → kein Live-Zweig nötig (L3).
+    const mapVisible = isCreator || hunt.map_open
+    const scheduledTabs: Array<'plan' | 'karte' | 'chat'> = mapVisible
+      ? ['plan', 'karte', 'chat']
+      : ['plan', 'chat']
     const invitable = inviteContacts
       .filter(c => !participants.some(p => p.user_id === c.id))
       .filter(c => !inviteSearch || c.display_name.toLowerCase().includes(inviteSearch.toLowerCase()))
@@ -461,10 +527,12 @@ export default function HuntPage() {
           />
         </div>
 
-        {/* Sub-Tabs: Plan | Chat */}
+        {/* Sub-Tabs: Plan | (Karte) | Chat — Karte nur wenn freigegeben/Ersteller */}
         <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid var(--border-light)' }}>
-          {(['plan', 'chat'] as const).map(t => {
+          {scheduledTabs.map(t => {
             const active = scheduledTab === t
+            const Icon = t === 'plan' ? CalendarBlank : t === 'karte' ? MapTrifold : ChatCircle
+            const label = t === 'plan' ? 'Plan' : t === 'karte' ? 'Karte' : 'Chat'
             return (
               <button key={t} onClick={() => setScheduledTab(t)}
                 className="flex-1 py-2.5 text-xs font-semibold transition"
@@ -473,10 +541,8 @@ export default function HuntPage() {
                   borderBottom: active ? '2px solid var(--green)' : '2px solid transparent',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.375rem',
                 }}>
-                {t === 'plan'
-                  ? <CalendarBlank size={16} weight={active ? 'fill' : 'regular'} />
-                  : <ChatCircle size={16} weight={active ? 'fill' : 'regular'} />}
-                <span>{t === 'plan' ? 'Plan' : 'Chat'}</span>
+                <Icon size={16} weight={active ? 'fill' : 'regular'} />
+                <span>{label}</span>
                 {t === 'chat' && chatUnread > 0 && (
                   <span className="tab-badge">{chatUnread > 99 ? '99+' : chatUnread}</span>
                 )}
@@ -504,6 +570,35 @@ export default function HuntPage() {
             />
           </div>
 
+          {/* Karte — nur gemountet, wenn sichtbar (Ersteller immer, sonst map_open).
+              Editieren bleibt creator-only: isJagdleiter={isCreator},
+              isGruppenleiter={false} → Schütze sieht nur, zeichnet nicht (L2). */}
+          {mapVisible && (
+            <div style={{ position: 'absolute', inset: 0, display: scheduledTab === 'karte' ? 'block' : 'none' }}>
+              <MapView
+                isVisible={scheduledTab === 'karte'}
+                geoState={geoState}
+                participants={otherPositions}
+                boundary={boundary}
+                stands={allStands}
+                participantStands={allParticipantStands}
+                freePositions={freePositions}
+                standAssignedNames={standAssignedNames}
+                districtId={hunt.district_id}
+                districtName={districtName}
+                huntId={hunt.id}
+                huntParticipants={participants}
+                seatAssignments={seatAssignments}
+                isJagdleiter={isCreator}
+                isGruppenleiter={false}
+                currentUserId={userId}
+                onStandsChanged={handleStandsChanged}
+                onBoundaryChanged={handleBoundaryChanged}
+                onSeatAssignmentsChanged={setSeatAssignments}
+              />
+            </div>
+          )}
+
           {/* Plan-Tab */}
           {scheduledTab === 'plan' && (
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -522,34 +617,31 @@ export default function HuntPage() {
                   letterSpacing: '-0.01em', color: 'var(--text)', marginBottom: '0.5rem',
                 }}>{hunt.scheduled_for ? formatPlanDateTime(hunt.scheduled_for) : 'Kein Datum gesetzt'}</div>
                 <p className="text-xs" style={{ color: 'var(--text-3)', lineHeight: 1.4 }}>
-                  Die Jagd geht automatisch zum Zeitpunkt live. Karte, Strecke und Nachsuche sind bis dahin gesperrt.
+                  Die Jagd geht automatisch zum geplanten Zeitpunkt live. Strecke und Nachsuche sind bis dahin gesperrt.
                 </p>
               </div>
 
-              {/* Chat-Freigabe (nur Jagdleiter) */}
-              {isJagdleiter && (
-                <div className="rounded-2xl p-4 flex items-center justify-between gap-3"
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-sm">Chat freigeben</div>
-                    <div className="text-xs" style={{ color: 'var(--text-3)' }}>
-                      Lässt alle Zugesagten schon vor dem Start schreiben.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={toggleChatOpen}
-                    disabled={chatOpenBusy}
-                    className="font-bold text-sm transition disabled:opacity-50"
-                    style={{
-                      flexShrink: 0, height: '2.5rem', padding: '0 1.25rem', borderRadius: 'var(--radius)',
-                      border: `1.5px solid ${hunt.chat_open ? 'var(--green)' : 'var(--border)'}`,
-                      background: hunt.chat_open ? 'var(--green)' : 'transparent',
-                      color: hunt.chat_open ? '#fff' : 'var(--text-2)',
-                    }}
-                  >
-                    {hunt.chat_open ? 'Offen' : 'Zu'}
-                  </button>
+              {/* Freigaben (nur Jagdleiter) — Karte + Chat als optisches Paar (L5):
+                  Titel = Zustand, Button = Aktion. */}
+              {isCreator && (
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold" style={{ color: 'var(--text-2)' }}>Vor dem Start freigeben</div>
+                  <FreigabeToggle
+                    noun="Karte"
+                    hint="Zugesagte sehen die geplanten Stände & Treiben (nur ansehen)."
+                    open={hunt.map_open}
+                    busy={mapOpenBusy}
+                    onToggle={toggleMapOpen}
+                    Icon={MapTrifold}
+                  />
+                  <FreigabeToggle
+                    noun="Chat"
+                    hint="Zugesagte können schon vor dem Start schreiben."
+                    open={hunt.chat_open}
+                    busy={chatOpenBusy}
+                    onToggle={toggleChatOpen}
+                    Icon={ChatCircle}
+                  />
                 </div>
               )}
 
