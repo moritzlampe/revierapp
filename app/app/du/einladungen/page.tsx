@@ -11,5 +11,5 @@ export default async function EinladungenPage() {
   // profiles-Sperre aus Migration 048, ohne sie zu durchlöchern).
   const { data: invitations } = await supabase.rpc('get_my_invitations')
 
-  return <EinladungenContent initialInvitations={(invitations as Invitation[]) ?? []} />
+  return <EinladungenContent initialInvitations={(invitations as Invitation[]) ?? []} userId={user.id} />
 }

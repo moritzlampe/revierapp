@@ -16,7 +16,7 @@ export type Invitation = {
   invited_at: string | null
 }
 
-export default function EinladungenContent({ initialInvitations }: { initialInvitations: Invitation[] }) {
+export default function EinladungenContent({ initialInvitations, userId }: { initialInvitations: Invitation[]; userId: string }) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const [invitations, setInvitations] = useState<Invitation[]>(initialInvitations)
@@ -26,18 +26,50 @@ export default function EinladungenContent({ initialInvitations }: { initialInvi
     window.dispatchEvent(new CustomEvent('quickhunt:toast', { detail: { message, type: 'warning' } }))
   }
 
+  // 'each'-Push an den Jagdleiter (Sprint C). h wird VOR dem RPC geladen, weil
+  // decline die eigene invited-Zeile löscht und die Jagd danach nicht mehr
+  // lesbar ist. Best-effort: Fehler werden geschluckt (Push nur in Prod aktiv,
+  // Service-Role-Key fehlt lokal).
+  function notifyLeaderRsvp(
+    h: { creator_id: string | null; notify_on_rsvp: string } | null,
+    inv: Invitation,
+    verb: string,
+  ) {
+    if (!h || h.notify_on_rsvp !== 'each' || !h.creator_id || h.creator_id === userId) return
+    void fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'rsvp',
+        recipientUserId: h.creator_id,
+        senderUserId: userId,
+        chatName: inv.name,
+        messageText: verb,
+        huntId: inv.hunt_id,
+        url: `/app/hunt/${inv.hunt_id}`,
+      }),
+    }).catch(() => {})
+  }
+
   // Annehmen: invited -> joined + Chat-Eintrag (RPC, Migration 049). Danach
   // greifen die Sprint-A-Policies → volle Jagd. router.refresh() invalidiert
   // den Server-Cache (C3-Pattern), dann direkt in die Jagd.
   async function handleAccept(inv: Invitation) {
     if (processingId) return
     setProcessingId(inv.hunt_id)
+    // Jagdleiter-Daten vor dem RPC laden (für 'each'-Push).
+    const { data: h } = await supabase
+      .from('hunts')
+      .select('creator_id, notify_on_rsvp')
+      .eq('id', inv.hunt_id)
+      .single()
     const { error } = await supabase.rpc('accept_hunt_invitation', { p_hunt_id: inv.hunt_id })
     if (error) {
       setProcessingId(null)
       showToast('Annehmen fehlgeschlagen')
       return
     }
+    notifyLeaderRsvp(h, inv, 'hat zugesagt')
     router.refresh()
     router.push(`/app/hunt/${inv.hunt_id}`)
   }
@@ -46,12 +78,20 @@ export default function EinladungenContent({ initialInvitations }: { initialInvi
   async function handleDecline(inv: Invitation) {
     if (processingId) return
     setProcessingId(inv.hunt_id)
+    // Jagdleiter-Daten vor dem RPC laden — decline löscht die eigene Zeile,
+    // danach ist die Jagd nicht mehr lesbar.
+    const { data: h } = await supabase
+      .from('hunts')
+      .select('creator_id, notify_on_rsvp')
+      .eq('id', inv.hunt_id)
+      .single()
     const { error } = await supabase.rpc('decline_hunt_invitation', { p_hunt_id: inv.hunt_id })
     if (error) {
       setProcessingId(null)
       showToast('Ablehnen fehlgeschlagen')
       return
     }
+    notifyLeaderRsvp(h, inv, 'hat abgesagt')
     setInvitations(prev => prev.filter(i => i.hunt_id !== inv.hunt_id))
     setProcessingId(null)
     router.refresh()

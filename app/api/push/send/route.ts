@@ -12,7 +12,7 @@ webpush.setVapidDetails(VAPID_CONTACT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
 
 export async function POST(request: Request) {
   try {
-    const { huntId, groupId, messageText, isDirect, chatName, senderUserId, url } = await request.json()
+    const { huntId, groupId, messageText, isDirect, chatName, senderUserId, url, recipientUserId, kind } = await request.json()
 
     if (!messageText || !senderUserId) {
       return NextResponse.json({ error: 'messageText, senderUserId sind Pflicht' }, { status: 400 })
@@ -24,7 +24,10 @@ export async function POST(request: Request) {
     // Empfänger ermitteln
     let recipientUserIds: string[] = []
 
-    if (groupId) {
+    if (recipientUserId) {
+      // Gezielter Einzel-Empfänger (Sprint C: RSVP-Push an den Jagdleiter).
+      recipientUserIds = [recipientUserId]
+    } else if (groupId) {
       // Gruppenchat: alle Mitglieder
       const { data: members } = await supabase
         .from('chat_group_members')
@@ -74,7 +77,11 @@ export async function POST(request: Request) {
     // title/body serverseitig bauen (Graceful Degradation: ohne Name → wie bisher)
     let title: string
     let body: string
-    if (isDirect) {
+    if (kind === 'rsvp') {
+      // RSVP-Benachrichtigung: "Hans hat zugesagt" (messageText = "hat zugesagt").
+      title = chatName || 'QuickHunt'
+      body = displayName ? `${displayName} ${messageText}` : messageText
+    } else if (isDirect) {
       title = displayName || chatName || 'QuickHunt'
       body = messageText
     } else {
@@ -83,7 +90,7 @@ export async function POST(request: Request) {
     }
 
     // Push an jede Subscription senden
-    const payload = JSON.stringify({ title, body, url: url || '/', tag: groupId || huntId || 'chat' })
+    const payload = JSON.stringify({ title, body, url: url || '/', tag: groupId || huntId || recipientUserId || 'chat' })
     const expiredIds: string[] = []
     let sent = 0
 
