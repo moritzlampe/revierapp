@@ -93,6 +93,11 @@ export default function RevierContent({ district, objects: initialObjects, userI
   // Imperatives Karten-Schwenken nach GPS-Fix (nonce triggert erneut)
   const [centerTarget, setCenterTarget] = useState<{ lat: number; lng: number; nonce: number } | null>(null)
 
+  // Koordinaten-Eingabe (Copy-Paste aus Google Maps, awaiting-tap-Stage)
+  const [coordOpen, setCoordOpen] = useState(false)
+  const [coordInput, setCoordInput] = useState('')
+  const [coordError, setCoordError] = useState<string | null>(null)
+
   // Metadaten-Entwurf: überlebt positioning ↔ metadata Wechsel
   const [draftMetadata, setDraftMetadata] = useState<{ name: string; description: string }>({
     name: '',
@@ -213,6 +218,10 @@ export default function RevierContent({ district, objects: initialObjects, userI
       name: opt.defaultName,
       description: opt.defaultDescription || '',
     })
+    // Koordinaten-Eingabe für jeden neuen Flow zurücksetzen
+    setCoordOpen(false)
+    setCoordInput('')
+    setCoordError(null)
     setCreation({
       stage: 'awaiting-tap',
       type: opt.type,
@@ -254,6 +263,31 @@ export default function RevierContent({ district, objects: initialObjects, userI
       setGpsLoading(false)
     }
   }, [gpsLoading, handleMapClick, showToast])
+
+  // Eingegebene Koordinate (Google-Maps-Paste "lat, lng") → wie ein Karten-Tap
+  const handleCoordSubmit = useCallback(() => {
+    // Trenner Komma oder Semikolon; Dezimaltrenner immer Punkt (Google-Format)
+    const parts = coordInput.split(/[;,]/).map(s => s.trim()).filter(s => s.length > 0)
+    if (parts.length !== 2) {
+      setCoordError('Ungültige Koordinaten')
+      return
+    }
+    const lat = Number(parts[0])
+    const lng = Number(parts[1])
+    if (
+      !Number.isFinite(lat) || !Number.isFinite(lng) ||
+      lat < -90 || lat > 90 || lng < -180 || lng > 180
+    ) {
+      setCoordError('Ungültige Koordinaten')
+      return
+    }
+    // Reihenfolge: Eingabe ist [lat, lng]; handleMapClick erwartet [lat, lng]
+    handleMapClick([lat, lng])
+    setCenterTarget({ lat, lng, nonce: Date.now() })
+    setCoordOpen(false)
+    setCoordInput('')
+    setCoordError(null)
+  }, [coordInput, handleMapClick])
 
   // Objekte neu laden
   const refreshObjects = useCallback(async () => {
@@ -556,6 +590,120 @@ export default function RevierContent({ district, objects: initialObjects, userI
               </>
             )}
           </button>
+        )}
+
+        {/* Koordinaten-Eingabe (dezente dritte Option, nur awaiting-tap) */}
+        {creation.stage === 'awaiting-tap' && (
+          <div style={{
+            position: 'absolute',
+            top: '6.5rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1050,
+            width: coordOpen ? 'min(20rem, calc(100vw - 1.5rem))' : 'auto',
+            display: 'flex',
+            justifyContent: 'center',
+          }}>
+            {!coordOpen ? (
+              <button
+                onClick={() => setCoordOpen(true)}
+                style={{
+                  background: 'rgba(0,0,0,0.55)',
+                  backdropFilter: 'blur(8px)',
+                  border: 'none',
+                  borderRadius: '1.5rem',
+                  padding: '0.375rem 0.875rem',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: 'var(--text-2)',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                }}
+              >
+                Koordinaten eingeben
+              </button>
+            ) : (
+              <div style={{
+                width: '100%',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                padding: '0.75rem',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+              }}>
+                <input
+                  type="text"
+                  autoFocus
+                  value={coordInput}
+                  onChange={e => {
+                    setCoordInput(e.target.value)
+                    if (coordError) setCoordError(null)
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCoordSubmit() }}
+                  placeholder="53.1234, 10.5678"
+                  style={{
+                    width: '100%',
+                    padding: '0.625rem 0.75rem',
+                    background: 'var(--bg)',
+                    border: `1px solid ${coordError ? 'var(--red)' : 'var(--border)'}`,
+                    borderRadius: '0.625rem',
+                    color: 'var(--text)',
+                    fontSize: '0.9375rem',
+                  }}
+                />
+                <p style={{ fontSize: '0.6875rem', color: 'var(--text-3)', margin: '0.375rem 0 0' }}>
+                  Breitengrad, Längengrad — z.B. aus Google Maps kopiert
+                </p>
+                {coordError && (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--red)', margin: '0.375rem 0 0' }}>
+                    {coordError}
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.625rem' }}>
+                  <button
+                    onClick={() => {
+                      setCoordOpen(false)
+                      setCoordInput('')
+                      setCoordError(null)
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '0.625rem',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius)',
+                      color: 'var(--text-2)',
+                      fontSize: '0.8125rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      minHeight: '2.75rem',
+                    }}
+                  >
+                    Abbrechen
+                  </button>
+                  <button
+                    onClick={handleCoordSubmit}
+                    disabled={!coordInput.trim()}
+                    style={{
+                      flex: 1,
+                      padding: '0.625rem',
+                      background: coordInput.trim() ? 'var(--green)' : 'var(--green-dim)',
+                      border: 'none',
+                      borderRadius: 'var(--radius)',
+                      color: 'white',
+                      fontSize: '0.8125rem',
+                      fontWeight: 700,
+                      cursor: coordInput.trim() ? 'pointer' : 'default',
+                      opacity: coordInput.trim() ? 1 : 0.5,
+                      minHeight: '2.75rem',
+                    }}
+                  >
+                    Setzen
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* FAB (nicht im Boundary-Edit-Mode) */}
