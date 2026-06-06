@@ -82,6 +82,26 @@ function centroidFromBoundary(rings: [number, number][][]): [number, number] {
   return [sumLat / ring.length, sumLng / ring.length]
 }
 
+/**
+ * Smart-Paste: erkennt zwei Zahlen in einem Google-Maps-String und trennt sie.
+ * Klammern, Grad-Zeichen, Himmelsrichtungen etc. werden zu Trennern.
+ * Gibt { lat, lng } zurück wenn GENAU zwei Zahlen erkannt werden, sonst null
+ * (= Teil-Eingabe / manuelles Tippen, Feld bleibt unangetastet).
+ *   "(53.1234, 10.5678)" / "53.1234; 10.5678" / "53.1234 10.5678" → 53.1234 / 10.5678
+ */
+function parseCoordPaste(raw: string): { lat: string; lng: string } | null {
+  // Alles ausser Ziffern, Punkt, Minus und Trennern → Leerzeichen (= Trenner)
+  const cleaned = raw.replace(/[^0-9.\-,;\s]/g, ' ')
+  const tokens = cleaned
+    .split(/[,;\s]+/)
+    .map(t => t.trim())
+    .filter(t => t.length > 0)
+  if (tokens.length === 2 && Number.isFinite(Number(tokens[0])) && Number.isFinite(Number(tokens[1]))) {
+    return { lat: tokens[0], lng: tokens[1] }
+  }
+  return null
+}
+
 export default function RevierContent({ district, objects: initialObjects, userId }: Props) {
   const router = useRouter()
   const [objects, setObjects] = useState<MapObject[]>(initialObjects)
@@ -93,9 +113,10 @@ export default function RevierContent({ district, objects: initialObjects, userI
   // Imperatives Karten-Schwenken nach GPS-Fix (nonce triggert erneut)
   const [centerTarget, setCenterTarget] = useState<{ lat: number; lng: number; nonce: number } | null>(null)
 
-  // Koordinaten-Eingabe (Copy-Paste aus Google Maps, awaiting-tap-Stage)
+  // Koordinaten-Eingabe (zwei Felder + Smart-Paste, awaiting-tap-Stage)
   const [coordOpen, setCoordOpen] = useState(false)
-  const [coordInput, setCoordInput] = useState('')
+  const [coordLat, setCoordLat] = useState('')
+  const [coordLng, setCoordLng] = useState('')
   const [coordError, setCoordError] = useState<string | null>(null)
 
   // Metadaten-Entwurf: überlebt positioning ↔ metadata Wechsel
@@ -220,7 +241,8 @@ export default function RevierContent({ district, objects: initialObjects, userI
     })
     // Koordinaten-Eingabe für jeden neuen Flow zurücksetzen
     setCoordOpen(false)
-    setCoordInput('')
+    setCoordLat('')
+    setCoordLng('')
     setCoordError(null)
     setCreation({
       stage: 'awaiting-tap',
@@ -264,30 +286,43 @@ export default function RevierContent({ district, objects: initialObjects, userI
     }
   }, [gpsLoading, handleMapClick, showToast])
 
-  // Eingegebene Koordinate (Google-Maps-Paste "lat, lng") → wie ein Karten-Tap
-  const handleCoordSubmit = useCallback(() => {
-    // Trenner Komma oder Semikolon; Dezimaltrenner immer Punkt (Google-Format)
-    const parts = coordInput.split(/[;,]/).map(s => s.trim()).filter(s => s.length > 0)
-    if (parts.length !== 2) {
-      setCoordError('Ungültige Koordinaten')
+  // Feld-Änderung mit Smart-Paste: kompletter String in EIN Feld → auf beide verteilen
+  const handleCoordChange = useCallback((raw: string, field: 'lat' | 'lng') => {
+    setCoordError(null)
+    const parsed = parseCoordPaste(raw)
+    if (parsed) {
+      // Reihenfolge fix: Wert 1 = Breitengrad (lat), Wert 2 = Längengrad (lng)
+      setCoordLat(parsed.lat)
+      setCoordLng(parsed.lng)
       return
     }
-    const lat = Number(parts[0])
-    const lng = Number(parts[1])
+    // Einzelner/teilweiser Wert → nur das getippte Feld setzen, anderes unangetastet
+    if (field === 'lat') setCoordLat(raw)
+    else setCoordLng(raw)
+  }, [])
+
+  // Eingegebene Koordinate (zwei Felder) → wie ein Karten-Tap
+  const handleCoordSubmit = useCallback(() => {
+    const latStr = coordLat.trim()
+    const lngStr = coordLng.trim()
+    const lat = Number(latStr)
+    const lng = Number(lngStr)
     if (
+      latStr === '' || lngStr === '' ||
       !Number.isFinite(lat) || !Number.isFinite(lng) ||
       lat < -90 || lat > 90 || lng < -180 || lng > 180
     ) {
       setCoordError('Ungültige Koordinaten')
       return
     }
-    // Reihenfolge: Eingabe ist [lat, lng]; handleMapClick erwartet [lat, lng]
+    // Reihenfolge: [lat, lng]; EWKT (POINT(lng lat)) baut der bestehende Insert
     handleMapClick([lat, lng])
     setCenterTarget({ lat, lng, nonce: Date.now() })
     setCoordOpen(false)
-    setCoordInput('')
+    setCoordLat('')
+    setCoordLng('')
     setCoordError(null)
-  }, [coordInput, handleMapClick])
+  }, [coordLat, coordLng, handleMapClick])
 
   // Objekte neu laden
   const refreshObjects = useCallback(async () => {
@@ -631,28 +666,57 @@ export default function RevierContent({ district, objects: initialObjects, userI
                 padding: '0.75rem',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
               }}>
-                <input
-                  type="text"
-                  autoFocus
-                  value={coordInput}
-                  onChange={e => {
-                    setCoordInput(e.target.value)
-                    if (coordError) setCoordError(null)
-                  }}
-                  onKeyDown={e => { if (e.key === 'Enter') handleCoordSubmit() }}
-                  placeholder="53.1234, 10.5678"
-                  style={{
-                    width: '100%',
-                    padding: '0.625rem 0.75rem',
-                    background: 'var(--bg)',
-                    border: `1px solid ${coordError ? 'var(--red)' : 'var(--border)'}`,
-                    borderRadius: '0.625rem',
-                    color: 'var(--text)',
-                    fontSize: '0.9375rem',
-                  }}
-                />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {/* Breitengrad (Latitude) */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.25rem' }}>
+                      Breitengrad
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoFocus
+                      value={coordLat}
+                      onChange={e => handleCoordChange(e.target.value, 'lat')}
+                      onKeyDown={e => { if (e.key === 'Enter') handleCoordSubmit() }}
+                      placeholder="53.1234"
+                      style={{
+                        width: '100%',
+                        padding: '0.625rem 0.5rem',
+                        background: 'var(--bg)',
+                        border: `1px solid ${coordError ? 'var(--red)' : 'var(--border)'}`,
+                        borderRadius: '0.625rem',
+                        color: 'var(--text)',
+                        fontSize: '0.9375rem',
+                      }}
+                    />
+                  </div>
+                  {/* Längengrad (Longitude) */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.25rem' }}>
+                      Längengrad
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={coordLng}
+                      onChange={e => handleCoordChange(e.target.value, 'lng')}
+                      onKeyDown={e => { if (e.key === 'Enter') handleCoordSubmit() }}
+                      placeholder="10.5678"
+                      style={{
+                        width: '100%',
+                        padding: '0.625rem 0.5rem',
+                        background: 'var(--bg)',
+                        border: `1px solid ${coordError ? 'var(--red)' : 'var(--border)'}`,
+                        borderRadius: '0.625rem',
+                        color: 'var(--text)',
+                        fontSize: '0.9375rem',
+                      }}
+                    />
+                  </div>
+                </div>
                 <p style={{ fontSize: '0.6875rem', color: 'var(--text-3)', margin: '0.375rem 0 0' }}>
-                  Breitengrad, Längengrad — z.B. aus Google Maps kopiert
+                  Aus Google Maps kopieren — ganzer String in ein Feld genügt
                 </p>
                 {coordError && (
                   <p style={{ fontSize: '0.75rem', color: 'var(--red)', margin: '0.375rem 0 0' }}>
@@ -663,7 +727,8 @@ export default function RevierContent({ district, objects: initialObjects, userI
                   <button
                     onClick={() => {
                       setCoordOpen(false)
-                      setCoordInput('')
+                      setCoordLat('')
+                      setCoordLng('')
                       setCoordError(null)
                     }}
                     style={{
@@ -683,18 +748,18 @@ export default function RevierContent({ district, objects: initialObjects, userI
                   </button>
                   <button
                     onClick={handleCoordSubmit}
-                    disabled={!coordInput.trim()}
+                    disabled={!coordLat.trim() && !coordLng.trim()}
                     style={{
                       flex: 1,
                       padding: '0.625rem',
-                      background: coordInput.trim() ? 'var(--green)' : 'var(--green-dim)',
+                      background: (coordLat.trim() || coordLng.trim()) ? 'var(--green)' : 'var(--green-dim)',
                       border: 'none',
                       borderRadius: 'var(--radius)',
                       color: 'white',
                       fontSize: '0.8125rem',
                       fontWeight: 700,
-                      cursor: coordInput.trim() ? 'pointer' : 'default',
-                      opacity: coordInput.trim() ? 1 : 0.5,
+                      cursor: (coordLat.trim() || coordLng.trim()) ? 'pointer' : 'default',
+                      opacity: (coordLat.trim() || coordLng.trim()) ? 1 : 0.5,
                       minHeight: '2.75rem',
                     }}
                   >
