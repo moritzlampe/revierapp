@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import SwipeToAction from '@/components/ui/swipe-to-action'
 import {
   CaretRight as ChevronRight,
+  CaretDown,
   Copy,
   UserPlus,
   MapPin,
@@ -18,6 +20,7 @@ import {
   X,
   Camera,
   Eye,
+  EyeSlash,
   Notebook,
 } from '@phosphor-icons/react'
 type Status = 'available' | 'on_hunt' | 'do_not_disturb'
@@ -52,6 +55,9 @@ export default function DuContent({
   const [status, setStatus] = useState<Status>(initialStatus as Status)
   const [showInviteSheet, setShowInviteSheet] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [showHidden, setShowHidden] = useState(false)
+  // Offenen Swipe schliessen, sobald ein anderer aufgeht (ein offener Eintrag gleichzeitig)
+  const activeCloseRef = useRef<(() => void) | null>(null)
 
   function showToast(msg: string) {
     setToast(msg)
@@ -71,6 +77,34 @@ export default function DuContent({
       showToast('Fehler beim Speichern')
     }
   }, [supabase, userId, status])
+
+  // Revier ausblenden (soft-hide, reversibel — kein Datenverlust)
+  const handleHideDistrict = useCallback(async (id: string) => {
+    const { error } = await supabase
+      .from('districts')
+      .update({ hidden: true })
+      .eq('id', id)
+    if (error) {
+      console.error('Revier ausblenden fehlgeschlagen:', error.message)
+      showToast('Fehler beim Ausblenden')
+      return
+    }
+    router.refresh()
+  }, [supabase, router])
+
+  // Revier wieder einblenden
+  const handleUnhideDistrict = useCallback(async (id: string) => {
+    const { error } = await supabase
+      .from('districts')
+      .update({ hidden: false })
+      .eq('id', id)
+    if (error) {
+      console.error('Revier einblenden fehlgeschlagen:', error.message)
+      showToast('Fehler beim Einblenden')
+      return
+    }
+    router.refresh()
+  }, [supabase, router])
 
   // Abmelden
   async function handleLogout() {
@@ -96,6 +130,10 @@ export default function DuContent({
     .join('')
     .substring(0, 2)
     .toUpperCase()
+
+  // Reviere clientseitig in sichtbar / ausgeblendet splitten (eine Query)
+  const visibleDistricts = districts.filter(d => !d.hidden)
+  const hiddenDistricts = districts.filter(d => d.hidden)
 
   return (
     <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
@@ -205,24 +243,125 @@ export default function DuContent({
             label="Freunde einladen"
             onClick={() => setShowInviteSheet(true)}
           />
-          {districts.length > 0 ? (
-            districts.map(d => (
-              <Link key={d.id} href={`/app/du/revier/${d.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                <MenuItem
-                  icon={<MapPin size={18} />}
-                  label={d.name}
-                  sublabel="Revier-Einstellungen"
-                />
-              </Link>
+          {visibleDistricts.length > 0 ? (
+            visibleDistricts.map(d => (
+              <SwipeToAction
+                key={d.id}
+                actionIcon={<EyeSlash size={22} weight="regular" color="#fff" />}
+                actionColor="var(--text-muted)"
+                onAction={() => handleHideDistrict(d.id)}
+                onSwipeOpen={(closeFn) => {
+                  if (activeCloseRef.current && activeCloseRef.current !== closeFn) {
+                    activeCloseRef.current()
+                  }
+                  activeCloseRef.current = closeFn
+                }}
+              >
+                {/* Opaker Hintergrund (var(--surface)) deckt den var(--bg) des
+                    Swipe-Containers, damit der Eintrag in die Card-Optik passt */}
+                <Link href={`/app/du/revier/${d.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <MenuItem
+                    icon={<MapPin size={18} />}
+                    label={d.name}
+                    sublabel="Revier-Einstellungen"
+                    background="var(--surface)"
+                  />
+                </Link>
+              </SwipeToAction>
             ))
           ) : (
             <MenuItem
               icon={<MapPin size={18} />}
               label="Verknüpfte Reviere"
-              sublabel="Keine Reviere verknüpft"
+              sublabel={hiddenDistricts.length > 0 ? 'Alle Reviere ausgeblendet' : 'Keine Reviere verknüpft'}
             />
           )}
         </Section>
+
+        {/* === Ausgeblendete Reviere (nur wenn vorhanden) === */}
+        {hiddenDistricts.length > 0 && (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <button
+              onClick={() => setShowHidden(v => !v)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0 1.25rem',
+                marginBottom: '0.5rem',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
+                minHeight: '2.25rem',
+              }}
+            >
+              <CaretDown
+                size={16}
+                style={{
+                  color: 'var(--text-3)',
+                  transform: showHidden ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 0.15s',
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-3)' }}>
+                Ausgeblendete ({hiddenDistricts.length})
+              </span>
+            </button>
+            {showHidden && (
+              <div style={{
+                margin: '0 1.25rem',
+                background: 'var(--surface)',
+                borderRadius: 'var(--radius)',
+                overflow: 'hidden',
+                opacity: 0.75,
+              }}>
+                {hiddenDistricts.map(d => (
+                  <div
+                    key={d.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.875rem 1rem',
+                      borderBottom: '1px solid var(--border)',
+                      minHeight: '2.75rem',
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-3)', flexShrink: 0 }}>
+                      <MapPin size={18} />
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text-2)' }}>
+                      {d.name}
+                    </span>
+                    <button
+                      onClick={() => handleUnhideDistrict(d.id)}
+                      style={{
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.375rem',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '0.5rem',
+                        background: 'var(--surface-2)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-2)',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        minHeight: '2.25rem',
+                      }}
+                    >
+                      <Eye size={16} />
+                      Einblenden
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* === Sektion: Jagdtagebuch === */}
         <Section title="Jagdtagebuch">
@@ -435,12 +574,14 @@ function MenuItem({
   sublabel,
   onClick,
   badge,
+  background,
 }: {
   icon: React.ReactNode
   label: string
   sublabel?: string
   onClick?: () => void
   badge?: number
+  background?: string
 }) {
   const Tag = onClick ? 'button' : 'div'
   return (
@@ -456,6 +597,7 @@ function MenuItem({
         textAlign: 'left',
         minHeight: '2.75rem',
         cursor: onClick ? 'pointer' : 'default',
+        background,
       }}
     >
       <span style={{ color: 'var(--text-2)', flexShrink: 0 }}>{icon}</span>
