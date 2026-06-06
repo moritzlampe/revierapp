@@ -34,7 +34,7 @@ type Props = {
   displayName: string
   avatarUrl: string | null
   initialStatus: string
-  districts: { id: string; name: string }[]
+  districts: { id: string; name: string; hidden: boolean }[]
   invitationCount: number
 }
 

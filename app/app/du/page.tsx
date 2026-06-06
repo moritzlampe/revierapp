@@ -13,10 +13,10 @@ export default async function DuPage() {
     .eq('id', user.id)
     .single()
 
-  // Verknüpfte Reviere laden
+  // Verknüpfte Reviere laden (hidden für Ausblenden/Einblenden in der Liste)
   const { data: districts } = await supabase
     .from('districts')
-    .select('id, name')
+    .select('id, name, hidden')
     .eq('owner_id', user.id)
     .order('name')
 
