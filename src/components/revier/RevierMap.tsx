@@ -92,6 +92,27 @@ function ResizeHandler() {
   return null
 }
 
+// --- Imperatives Schwenken zu einer Koordinate (z.B. nach GPS-Fix) ---
+
+function CenterOnHandler({ target }: {
+  target: { lat: number; lng: number; nonce: number } | null | undefined
+}) {
+  const map = useMap()
+  const lastNonce = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!target) return
+    // nonce verhindert erneutes Schwenken bei identischem Ziel/Re-Render
+    if (lastNonce.current === target.nonce) return
+    lastNonce.current = target.nonce
+    // Auf Nahstufe zoomen, falls die Karte rausgezoomt ist
+    const targetZoom = Math.max(map.getZoom(), 17)
+    map.flyTo([target.lat, target.lng], targetZoom, { duration: 0.6 })
+  }, [target, map])
+
+  return null
+}
+
 // --- Map-Click-Handler ---
 
 function MapClickHandler({ onClick }: { onClick: (latlng: [number, number]) => void }) {
@@ -151,6 +172,8 @@ interface RevierMapProps {
   isOwner?: boolean
   /** Boundary-Editor Props (nur wenn isOwner) */
   boundaryEdit?: BoundaryEditProps
+  /** Imperatives Schwenken zur Koordinate (z.B. nach GPS-Fix); nonce triggert erneut */
+  centerOn?: { lat: number; lng: number; nonce: number } | null
 }
 
 export default function RevierMap({
@@ -164,6 +187,7 @@ export default function RevierMap({
   hiddenObjectId,
   isOwner,
   boundaryEdit,
+  centerOn,
 }: RevierMapProps) {
   // --- Orientierungs-Overlay (GPS + Kompass, on-demand) ---
   const [orientationActive, setOrientationActive] = useState(false)
@@ -313,6 +337,7 @@ export default function RevierMap({
 
       <InitialView center={center} zoom={zoom} boundary={boundary ?? null} />
       <ResizeHandler />
+      <CenterOnHandler target={centerOn} />
 
       {/* Objekt-Karten-Klick (nur wenn NICHT im Boundary-Edit-Mode) */}
       {onMapClick && !isEditing && <MapClickHandler onClick={onMapClick} />}
