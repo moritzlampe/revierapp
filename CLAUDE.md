@@ -255,7 +255,7 @@ git push
 # 3. Coolify deployt automatisch (oder manuell in Coolify Dashboard klicken)
 
 # 4. Live testen
-# Browser: http://d11fvwz5c1n65e871e5kbt3h.46.225.149.118.sslip.io
+# Browser: https://quickhunt.de
 ```
 
 ### Bei Problemen auf dem Server
@@ -278,7 +278,7 @@ ssh -i ~/.ssh/revierapp_hetzner root@46.225.149.118
 | Supabase | bzfevyqfkizmovoclysy.supabase.co |
 | Hetzner | 46.225.149.118 (CX22, Ubuntu 24.04, Coolify) |
 | SSH | `ssh -i ~/.ssh/revierapp_hetzner root@46.225.149.118` |
-| Live-URL | http://d11fvwz5c1n65e871e5kbt3h.46.225.149.118.sslip.io |
+| Live-URL | https://quickhunt.de |
 
 ---
 
