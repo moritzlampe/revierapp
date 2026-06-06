@@ -3,8 +3,10 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import { Crosshair, CircleNotch } from '@phosphor-icons/react'
 import { parsePolygonHex } from '@/lib/geo-utils'
 import { createClient } from '@/lib/supabase/client'
+import { waitForAccurateGpsFix } from '@/lib/geo/wait-for-gps-fix'
 import type { MapObject, ObjektType } from '@/lib/types/revier'
 import { parsePointHex } from '@/lib/geo-utils'
 import { useBoundaryEditor } from '@/hooks/useBoundaryEditor'
@@ -85,6 +87,11 @@ export default function RevierContent({ district, objects: initialObjects, userI
   const [objects, setObjects] = useState<MapObject[]>(initialObjects)
   const [creation, setCreation] = useState<CreationStage>({ stage: 'idle' })
   const [toast, setToast] = useState<string | null>(null)
+
+  // GPS-Standort-Capture (awaiting-tap-Stage)
+  const [gpsLoading, setGpsLoading] = useState(false)
+  // Imperatives Karten-Schwenken nach GPS-Fix (nonce triggert erneut)
+  const [centerTarget, setCenterTarget] = useState<{ lat: number; lng: number; nonce: number } | null>(null)
 
   // Metadaten-Entwurf: überlebt positioning ↔ metadata Wechsel
   const [draftMetadata, setDraftMetadata] = useState<{ name: string; description: string }>({
@@ -229,6 +236,24 @@ export default function RevierContent({ district, objects: initialObjects, userI
       return prev
     })
   }, [])
+
+  // GPS-Einzelmessung → speist Position wie ein Karten-Tap in die State-Machine
+  const handleUseGps = useCallback(async () => {
+    if (gpsLoading) return
+    setGpsLoading(true)
+    try {
+      // Großzügig für dichten Bestand; best-on-timeout greift ohnehin
+      const fix = await waitForAccurateGpsFix(12_000, 20)
+      // Wie ein Tap: awaiting-tap → positioning, Korrektur per Tap bleibt möglich
+      handleMapClick([fix.lat, fix.lng])
+      // Karte zum GPS-Punkt schwenken, sonst sieht der User den Pin nicht
+      setCenterTarget({ lat: fix.lat, lng: fix.lng, nonce: Date.now() })
+    } catch {
+      showToast('Standort nicht verfügbar. Tippe stattdessen auf die Karte.')
+    } finally {
+      setGpsLoading(false)
+    }
+  }, [gpsLoading, handleMapClick, showToast])
 
   // Objekte neu laden
   const refreshObjects = useCallback(async () => {
@@ -437,6 +462,7 @@ export default function RevierContent({ district, objects: initialObjects, userI
           onObjectClick={creation.stage === 'idle' && !bEditor.editMode ? handleObjectClick : undefined}
           previewPin={previewPin}
           hiddenObjectId={hiddenObjectId}
+          centerOn={centerTarget}
           isOwner={isOwner}
           boundaryEdit={{
             editMode: bEditor.editMode,
@@ -488,6 +514,48 @@ export default function RevierContent({ district, objects: initialObjects, userI
               ×
             </button>
           </div>
+        )}
+
+        {/* GPS-Standort-Button (nur awaiting-tap, sekundär zum Karten-Tap) */}
+        {creation.stage === 'awaiting-tap' && (
+          <button
+            onClick={handleUseGps}
+            disabled={gpsLoading}
+            style={{
+              position: 'absolute',
+              top: '3.5rem',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 1050,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              borderRadius: '2rem',
+              padding: '0.5rem 1rem',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'var(--text)',
+              cursor: gpsLoading ? 'default' : 'pointer',
+              opacity: gpsLoading ? 0.7 : 1,
+              minHeight: '2.75rem',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {gpsLoading ? (
+              <>
+                <CircleNotch size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                Standort wird ermittelt …
+              </>
+            ) : (
+              <>
+                <Crosshair size={16} weight="bold" />
+                Aktueller Standort
+              </>
+            )}
+          </button>
         )}
 
         {/* FAB (nicht im Boundary-Edit-Mode) */}
