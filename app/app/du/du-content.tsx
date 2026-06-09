@@ -138,7 +138,7 @@ export default function DuContent({
   return (
     <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
       {/* Scroll-Bereich mit Platz für Tab-Bar */}
-      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(3.5rem + var(--safe-bottom) + 1rem)' }}>
+      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(var(--bottom-bar-space) + 1rem)' }}>
 
         {/* === Profil-Header === */}
         <div style={{ padding: '2rem 1.25rem 1.5rem', textAlign: 'center' }}>
@@ -520,7 +520,7 @@ export default function DuContent({
       {toast && (
         <div style={{
           position: 'fixed',
-          bottom: 'calc(3.5rem + var(--safe-bottom) + 1rem)',
+          bottom: 'calc(var(--bottom-bar-space) + 1rem)',
           left: '50%',
           transform: 'translateX(-50%)',
           background: 'var(--surface-3)',
