@@ -637,7 +637,7 @@ export default function CreateHuntPage() {
     return (
       <div className="h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid var(--border-light)' }}>
+        <div className="flex items-center gap-3 px-4 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid var(--border-light)', paddingTop: 'calc(0.625rem + var(--safe-top))' }}>
           <button onClick={() => setStep(1)} className="flex items-center justify-center rounded-lg"
             style={{ color: 'var(--text-2)', background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
           <div className="flex-1 min-w-0">
@@ -903,7 +903,7 @@ export default function CreateHuntPage() {
   return (
     <div className="min-h-dvh flex flex-col" style={{ background: 'var(--bg)' }}>
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+      <div className="flex items-center gap-3 px-5 py-3" style={{ borderBottom: '1px solid var(--border-light)', paddingTop: 'calc(0.75rem + var(--safe-top))' }}>
         <button onClick={() => router.back()} className="flex items-center justify-center rounded-lg"
           style={{ color: 'var(--text-2)', background: 'var(--surface-2)', minWidth: '2.75rem', minHeight: '2.75rem', fontSize: '1.125rem' }}>←</button>
         <div>
