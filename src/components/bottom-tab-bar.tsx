@@ -9,8 +9,15 @@ import { ErlegungSheet } from '@/components/erlegung/ErlegungSheet'
 import { useActiveHunt } from '@/contexts/ActiveHuntContext'
 import { createClient } from '@/lib/supabase/client'
 
-// Vollbild-Aktionen: Tab-Bar ausblenden
-const HIDE_ON_ROUTES = ['/app/hunt/create']
+// Vollbild-Aktionen (Karten/Wizards): Tab-Bar ausblenden.
+// Strings matchen per Prefix; RegExp für Routen mit dynamischer ID in der Mitte.
+// Beide Revier-Karten-Routen haben einen Zurück-Button im Header, daher
+// ist das Ausblenden sicher (User sitzt nicht ohne Navigation fest).
+const HIDE_ON_ROUTES: (string | RegExp)[] = [
+  '/app/hunt/create',
+  '/app/du/revier/', // Revier-Editor (Vollbild-Karte), /app/du/revier/<id>
+  /^\/app\/revier\/[^/]+\/setup/, // Revier-Setup-Wizard, /app/revier/<id>/setup
+]
 
 type ActiveKey = 'jagd' | 'tagebuchOrStrecke' | 'chat' | 'du' | null
 
@@ -97,7 +104,7 @@ export default function BottomTabBar() {
   }, [])
 
   // Auf bestimmten Routes komplett ausblenden
-  if (HIDE_ON_ROUTES.some(r => pathname.startsWith(r))) return null
+  if (HIDE_ON_ROUTES.some(r => typeof r === 'string' ? pathname.startsWith(r) : r.test(pathname))) return null
 
   const activeKey = getActiveKey(pathname, searchParams, activeHunt)
 

@@ -507,6 +507,7 @@ export default function RevierContent({ district, objects: initialObjects, userI
           background: 'var(--surface)',
           zIndex: 1000,
           minHeight: '3.5rem',
+          paddingTop: 'var(--safe-top)',
         }}
       >
         <button

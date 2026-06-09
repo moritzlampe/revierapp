@@ -181,6 +181,7 @@ function RevierSetupContent() {
         borderBottom: '1px solid var(--border-light)',
         background: 'var(--surface)',
         zIndex: 1000,
+        paddingTop: 'calc(0.625rem + var(--safe-top))',
       }}>
         <button
           onClick={() => {
