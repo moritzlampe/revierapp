@@ -141,6 +141,33 @@ function makePreviewIcon(type: string, confirmed: boolean): L.DivIcon {
   })
 }
 
+// --- WMS Lade-Indikator (1:1 aus Hunt-Karte, oben-mittig statt oben-links) ---
+
+function WmsLoadingIndicator() {
+  return (
+    <div style={{
+      position: 'absolute',
+      top: 'calc(0.75rem + var(--safe-top))',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: 1000,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.375rem',
+      background: 'rgba(0, 0, 0, 0.6)',
+      backdropFilter: 'blur(8px)',
+      borderRadius: 'var(--radius)',
+      padding: '0.25rem 0.625rem',
+      fontSize: '0.6875rem',
+      color: 'var(--text-2)',
+      pointerEvents: 'none',
+    }}>
+      <span className="gps-spinner" />
+      Lade Kartendaten...
+    </div>
+  )
+}
+
 // --- Boundary-Edit Props ---
 
 export interface BoundaryEditProps {
@@ -194,6 +221,8 @@ export default function RevierMap({
   const [baseLayer, setBaseLayer] = useState<BaseLayerKey>('topo')
   const [cadastreEnabled, setCadastreEnabled] = useState(false)
   const [cadastreAvailable, setCadastreAvailable] = useState(true)
+  // Lade-Zustand des DOP20-Luftbild-WMS (nur Satellite feuert das Callback)
+  const [wmsLoading, setWmsLoading] = useState(false)
 
   // --- Orientierungs-Overlay (GPS + Kompass, on-demand) ---
   const [orientationActive, setOrientationActive] = useState(false)
@@ -235,6 +264,11 @@ export default function RevierMap({
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
+      {/* WMS Lade-Indikator (DOP20-Luftbild). Oben-mittig statt oben-links
+          wie auf der Hunt-Karte, weil dort der Kompass-Button sitzt; identische
+          Pill-Optik (.gps-spinner, dunkle Pill, gleicher Text). */}
+      {wmsLoading && <WmsLoadingIndicator />}
+
       {/* GPS-Badge (nur wenn Orientierung aktiv) */}
       {orientationActive && <GpsStatusBadge geo={geoState} />}
 
@@ -346,7 +380,7 @@ export default function RevierMap({
       attributionControl={false}
     >
       {/* Basiskarte (Topo / Luftbild) + optionales Kataster-Overlay */}
-      <BaseLayer activeLayer={baseLayer} />
+      <BaseLayer activeLayer={baseLayer} onWmsLoadingChange={setWmsLoading} />
       <CadastreOverlay
         enabled={cadastreEnabled}
         onUnavailable={() => {
