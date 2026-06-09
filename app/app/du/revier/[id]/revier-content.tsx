@@ -448,13 +448,24 @@ export default function RevierContent({ district, objects: initialObjects, userI
   const handleDetailDelete = useCallback(async () => {
     if (creation.stage !== 'detail') return
     const supabase = createClient()
-    const { error } = await supabase
+    // .select() ist nötig, um echte Löschungen von RLS-gefilterten zu trennen:
+    // .delete() ohne .select() liefert bei 0 betroffenen Zeilen { data: null,
+    // error: null } — sonst meldet die UI fälschlich Erfolg und das Objekt ist
+    // beim Reload wieder da.
+    const { data, error } = await supabase
       .from('map_objects')
       .delete()
       .eq('id', creation.object.id)
+      .select()
 
     if (error) {
       console.error('Löschen fehlgeschlagen:', error.message)
+      showToast('Löschen fehlgeschlagen')
+      return
+    }
+    if (!data || data.length === 0) {
+      // Keine Zeile gelöscht (RLS) → kein optimistisches Entfernen, kein Erfolg
+      showToast('Objekt konnte nicht gelöscht werden (keine Berechtigung).')
       return
     }
     setObjects(prev => prev.filter(o => o.id !== creation.object.id))
