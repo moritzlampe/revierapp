@@ -54,10 +54,11 @@ interface Props {
  * Renders ErlegungCard, AnblickCard, GesellCard, StreckeCard. Filter-aware
  * empty states come in Phase 2.4.
  *
- * Das Bestiarium-Grid (Saison-Aggregat) wird nach der ersten Monatsgruppe
- * eingeschoben (Sprint 60.5f). Bewusst an die gerenderte Timeline gekoppelt:
- * bei leerem Filter-Ergebnis (0 Gruppen) erscheint es nicht — akzeptierter
- * Edge für 60.5f (möglicher Folgefix: filter-unabhängig rendern).
+ * Das Bestiarium-Grid (Saison-Aggregat) wird nach der zweiten gerenderten
+ * Card eingeschoben — fixe Position, unabhängig von der Monatsgrenze (bei
+ * <2 sichtbaren Cards nach der letzten). Weiterhin an die gerenderte Timeline
+ * gekoppelt: bei leerem Filter-Ergebnis (0 Gruppen) erscheint es nicht —
+ * akzeptierter Edge (möglicher Folgefix: filter-unabhängig rendern).
  */
 export default function DiaryTimelineList({
   items,
@@ -127,42 +128,55 @@ export default function DiaryTimelineList({
     )
   }
 
+  // Bestiarium nach der N-ten gerenderten Card (fixe Position, nicht an die
+  // Monatsgrenze gekoppelt). Bei <2 sichtbaren Cards nach der letzten.
+  const insertAfter = Math.min(2, filtered.length)
+  let rendered = 0
+
   return (
     <DiaryTimeline>
-      {groups.map((group, gi) => (
-        <Fragment key={group.key}>
-        <div>
+      {groups.map(group => (
+        <div key={group.key}>
           <MonthLabel label={group.label} />
           {group.items.map(item => {
-            switch (item.kind) {
-              case 'erlegung': {
-                const breadcrumbText =
-                  item.huntId && !representedHuntIds.has(item.huntId)
-                    ? item.place
-                    : null
-                return (
-                  <ErlegungCard
-                    key={item.id}
-                    item={item}
-                    breadcrumbText={breadcrumbText}
-                  />
-                )
+            const card = (() => {
+              switch (item.kind) {
+                case 'erlegung': {
+                  const breadcrumbText =
+                    item.huntId && !representedHuntIds.has(item.huntId)
+                      ? item.place
+                      : null
+                  return (
+                    <ErlegungCard
+                      key={item.id}
+                      item={item}
+                      breadcrumbText={breadcrumbText}
+                    />
+                  )
+                }
+                case 'strecke':
+                  return <StreckeCard key={item.id} item={item} />
+                case 'gesell':
+                  return <GesellCard key={item.id} item={item} />
+                case 'anblick':
+                  return <AnblickCard key={item.id} item={item} />
+                default:
+                  return assertNever(item)
               }
-              case 'strecke':
-                return <StreckeCard key={item.id} item={item} />
-              case 'gesell':
-                return <GesellCard key={item.id} item={item} />
-              case 'anblick':
-                return <AnblickCard key={item.id} item={item} />
-              default:
-                return assertNever(item)
+            })()
+
+            rendered += 1
+            if (rendered === insertAfter) {
+              return (
+                <Fragment key={item.id}>
+                  {card}
+                  <BestiariumGrid items={bestiarium} jagdjahrKey={jagdjahrKey} />
+                </Fragment>
+              )
             }
+            return card
           })}
         </div>
-        {gi === 0 && (
-          <BestiariumGrid items={bestiarium} jagdjahrKey={jagdjahrKey} />
-        )}
-        </Fragment>
       ))}
     </DiaryTimeline>
   )
