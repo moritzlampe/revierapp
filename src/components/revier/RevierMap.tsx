@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import L from 'leaflet'
-import { MapContainer, TileLayer, Marker, Polygon, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, Marker, Polygon, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
+import { BaseLayer, CadastreOverlay, LayerSwitcher, type BaseLayerKey } from '@/components/map/base-layers'
 import { useInvalidateOnResize } from '@/hooks/useInvalidateOnResize'
 import { buildPinSvg, getPinVariant } from '@/lib/markers/pin-svg'
 import { parsePointHex } from '@/lib/geo-utils'
@@ -189,6 +190,11 @@ export default function RevierMap({
   boundaryEdit,
   centerOn,
 }: RevierMapProps) {
+  // --- Basiskarte + Kataster-Overlay (lokaler State, kein localStorage) ---
+  const [baseLayer, setBaseLayer] = useState<BaseLayerKey>('topo')
+  const [cadastreEnabled, setCadastreEnabled] = useState(false)
+  const [cadastreAvailable, setCadastreAvailable] = useState(true)
+
   // --- Orientierungs-Overlay (GPS + Kompass, on-demand) ---
   const [orientationActive, setOrientationActive] = useState(false)
   const ownPositionRef = useRef<OwnPositionMarkerHandle>(null)
@@ -239,6 +245,15 @@ export default function RevierMap({
         onToggle={handleOrientationToggle}
       />
 
+      {/* Layer-Switcher (oben-rechts, analog Hunt-Karte): Topo/Luftbild + Kataster */}
+      <LayerSwitcher
+        activeLayer={baseLayer}
+        onLayerChange={setBaseLayer}
+        cadastreEnabled={cadastreEnabled}
+        onCadastreToggle={() => setCadastreEnabled(v => !v)}
+        cadastreAvailable={cadastreAvailable}
+      />
+
       {/* Grenze-bearbeiten-Button (nur für Eigentümer, nicht während Objekt-Erstellung) */}
       {isOwner && boundaryEdit && (
         <button
@@ -275,10 +290,11 @@ export default function RevierMap({
         </div>
       )}
 
-      {/* Flächen-Anzeige im Zeichenmodus */}
+      {/* Flächen-Anzeige im Zeichenmodus (oben-links, damit der Layer-Switcher
+          oben-rechts frei bleibt) */}
       {isEditing && boundaryEdit && boundaryEdit.drawPoints.length >= 3 && (
         <div style={{
-          position: 'absolute', top: '0.75rem', right: '0.75rem', zIndex: 1000,
+          position: 'absolute', top: '0.75rem', left: '0.75rem', zIndex: 1000,
           display: 'flex', alignItems: 'center', gap: '0.375rem',
           background: 'rgba(255,143,0,0.15)', backdropFilter: 'blur(8px)',
           border: '1px solid rgba(255,143,0,0.3)', borderRadius: 'var(--radius)',
@@ -329,10 +345,14 @@ export default function RevierMap({
       zoomControl={false}
       attributionControl={false}
     >
-      <TileLayer
-        url="https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/web/default/WEBMERCATOR/{z}/{y}/{x}.png"
-        attribution='&copy; <a href="https://www.bkg.bund.de">BKG</a>'
-        maxZoom={18}
+      {/* Basiskarte (Topo / Luftbild) + optionales Kataster-Overlay */}
+      <BaseLayer activeLayer={baseLayer} />
+      <CadastreOverlay
+        enabled={cadastreEnabled}
+        onUnavailable={() => {
+          setCadastreAvailable(false)
+          setCadastreEnabled(false)
+        }}
       />
 
       <InitialView center={center} zoom={zoom} boundary={boundary ?? null} />
