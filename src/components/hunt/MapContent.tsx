@@ -1790,8 +1790,8 @@ export default function MapContent({
         </div>
       )}
 
-      {/* === Live-FAB: Adhoc-Stand erstellen (Jagdleiter oder Gruppenleiter, freie Jagd) === */}
-      {(isJagdleiter || isGruppenleiter) && huntId && !districtId && !isMovingActive && !drawingMode
+      {/* === Live-FAB: Adhoc-Stand erstellen (Jagdleiter oder Gruppenleiter; auch auf Revier-Jagden) === */}
+      {(isJagdleiter || isGruppenleiter) && huntId && !isMovingActive && !drawingMode
         && !assignStand && !detailStand && !awaitingAdhocPlacement
         && sheetMode === 'hidden' && boundarySheetMode === 'hidden' && (
         <button
