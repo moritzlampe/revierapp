@@ -228,11 +228,18 @@ export default function HuntPage() {
 
   const loadDistrictData = useCallback(async (districtId: string) => {
     // Reviergrenze + Name laden
-    const { data: district } = await supabase
+    const { data: district, error } = await supabase
       .from('districts')
       .select('boundary, name')
       .eq('id', districtId)
-      .single()
+      .maybeSingle()
+
+    // RLS-Lücken müssen laut sein, nicht kommentarlos grenzenlos rendern.
+    if (error) {
+      console.warn('[loadDistrictData] districts-Query fehlgeschlagen:', error)
+    } else if (!district) {
+      console.warn('[loadDistrictData] Keine districts-Zeile sichtbar (RLS?) für district_id:', districtId)
+    }
 
     if (district?.boundary) {
       const parsed = parsePolygonHex(district.boundary)
