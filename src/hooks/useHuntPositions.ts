@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parsePointHex } from '@/lib/geo-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
@@ -50,39 +50,47 @@ export function useHuntPositions(
   const participantsRef = useRef(participants)
   participantsRef.current = participants
 
-  // Initiales Laden aller aktuellen Positionen
-  useEffect(() => {
+  // Vollständigen Snapshot aller aktuellen Positionen ziehen (positions_current
+  // ist UPSERT → eine Zeile pro Teilnehmer, immer aktuell; Voll-Replace ist
+  // korrekt und deckt auch Deletes ab). Entkoppelt vom eigenen GPS-Tracking.
+  // Genutzt von: Mount-Snapshot, Resync-bei-(Re)Subscribe, Polling-Fallback.
+  const fetchSnapshot = useCallback(async () => {
     if (!huntId) return
 
-    async function fetchPositions() {
-      const { data, error } = await supabase
-        .from('positions_current')
-        .select('*')
-        .eq('hunt_id', huntId)
+    const { data, error } = await supabase
+      .from('positions_current')
+      .select('*')
+      .eq('hunt_id', huntId)
 
-      if (error || !data) return
-
-      const newPositions = new Map<string, RawPosition>()
-      for (const row of data) {
-        const coords = parsePointHex(row.location)
-        if (!coords) continue
-
-        newPositions.set(row.participant_id, {
-          participantId: row.participant_id,
-          lat: coords.lat,
-          lng: coords.lng,
-          accuracy: row.accuracy,
-          isLocked: row.is_locked ?? false,
-          updatedAt: new Date(row.updated_at),
-        })
-      }
-      setRawPositions(newPositions)
+    if (error) {
+      console.warn('[useHuntPositions] positions_current-Snapshot fehlgeschlagen:', error)
+      return
     }
+    if (!data) return
 
-    fetchPositions()
+    const newPositions = new Map<string, RawPosition>()
+    for (const row of data) {
+      const coords = parsePointHex(row.location)
+      if (!coords) continue
+
+      newPositions.set(row.participant_id, {
+        participantId: row.participant_id,
+        lat: coords.lat,
+        lng: coords.lng,
+        accuracy: row.accuracy,
+        isLocked: row.is_locked ?? false,
+        updatedAt: new Date(row.updated_at),
+      })
+    }
+    setRawPositions(newPositions)
   }, [huntId, supabase])
 
-  // Realtime Subscription
+  // Schicht 1: Initial-Snapshot beim Mount (unabhängig vom eigenen Tracking)
+  useEffect(() => {
+    fetchSnapshot()
+  }, [fetchSnapshot])
+
+  // Schicht 2: Realtime-Subscription + Resync bei jedem (Re)Connect
   useEffect(() => {
     if (!huntId) return
 
@@ -123,12 +131,29 @@ export function useHuntPositions(
           return next
         })
       })
-      .subscribe()
+      .subscribe((status) => {
+        // Bei (Re)Connect frischen Snapshot ziehen — fängt Events ab, die
+        // während Verbindungsaufbau/-lücke verpasst wurden (Realtime allein
+        // ist für sicherheitsrelevantes Live-GPS zu fragil).
+        if (status === 'SUBSCRIBED') {
+          fetchSnapshot()
+        }
+      })
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [huntId, supabase])
+  }, [huntId, supabase, fetchSnapshot])
+
+  // Schicht 3: Polling-Fallback (~20s) als Sicherheitsnetz gegen verpasste
+  // Realtime-Events. Leichtgewichtig — nur positions_current dieser Jagd.
+  useEffect(() => {
+    if (!huntId) return
+    const interval = setInterval(() => {
+      fetchSnapshot()
+    }, 20000)
+    return () => clearInterval(interval)
+  }, [huntId, fetchSnapshot])
 
   // Stale-Refresh: jede Minute Referenz erneuern für isStale-Berechnung im Rendering
   useEffect(() => {
