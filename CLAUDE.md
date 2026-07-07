@@ -1,5 +1,9 @@
 # RevierApp — Jagd-App für Gruppenkoordination
 
+## Arbeitsweise
+
+**Zu Session-Beginn bei komplexen Aufgaben (Feature, Bugfix, Migration, Analyse) einmal `DENKLOGIK.md` lesen und danach arbeiten.** Bei Konflikt gelten die Regeln in dieser Datei (CLAUDE.md).
+
 ## Projekt
 
 **Mobile-first Jagd-App** (QuickHunt) mit Desktop-Revierzentrale als Abo.
