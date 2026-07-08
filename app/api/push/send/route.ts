@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       // Treiben-Push (T0.C1 D4): gleiche Empfänger wie der Jagd-Chat — zugesagte
       // Teilnehmer der Jagd, Sender rausgefiltert. Der Sender muss selbst
       // zugesagter Teilnehmer sein (Spoofing-Schutz, wie im Jagd-Chat-Zweig).
-      if (!huntId || (event !== 'started' && event !== 'ended') || typeof driveName !== 'string' || !driveName.trim()) {
+      if (!huntId || (event !== 'started' && event !== 'ended' && event !== 'reopened') || typeof driveName !== 'string' || !driveName.trim()) {
         return NextResponse.json({ error: 'Ungültige Treiben-Anfrage' }, { status: 400 })
       }
       recipientUserIds = await resolveJoinedParticipantIds(supabase, huntId)
@@ -159,14 +159,21 @@ export async function POST(request: Request) {
     let title: string
     let body: string
     if (type === 'drive') {
-      // Treiben: feste Texte (kein Freitext, keine Emojis). driveName ist oben
-      // als nicht-leerer String validiert.
+      // Treiben: feste Texte je Event (kein Freitext, keine Emojis, bewusst
+      // kurz und ohne Treiben-Name). event ist oben validiert.
       if (event === 'started') {
-        title = 'Treiben gestartet'
-        body = `${driveName} läuft — Hahn in Ruh beachten`
+        title = 'Angeblasen'
+        body = 'Treiben startet – Weidmannsheil!'
+      } else if (event === 'ended') {
+        title = 'Treiben beendet'
+        body = 'Hahn in Ruh'
+      } else if (event === 'reopened') {
+        title = "Weiter geht's"
+        body = 'Zurück auf die Stände.'
       } else {
-        title = 'Hahn in Ruh'
-        body = `${driveName} ist beendet`
+        // Defensiver Fallback: sollte durch die Event-Validierung oben nie greifen.
+        title = 'Treiben'
+        body = 'Statusänderung im Treiben.'
       }
     } else if (kind === 'rsvp') {
       // RSVP-Benachrichtigung: "Hans hat zugesagt" (messageText = "hat zugesagt").
