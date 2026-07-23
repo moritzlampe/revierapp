@@ -56,3 +56,4 @@ scripts/
 # Recon reports & session artifacts
 BERICHT_*.md
 .recon_db
+.envrc
