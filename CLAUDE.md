@@ -1,5 +1,9 @@
 # RevierApp — Jagd-App für Gruppenkoordination
 
+> **Hinweis (Juli 2026):** Diese Datei beschreibt die PWA (Maintenance-Modus).
+> Projektweite Regeln, Konzepte und aktueller Stand liegen in
+> quickhunt-native: AGENTS.md + docs/. Bei Widerspruch gilt quickhunt-native.
+
 ## Arbeitsweise
 
 **Zu Session-Beginn bei komplexen Aufgaben (Feature, Bugfix, Migration, Analyse) einmal `DENKLOGIK.md` lesen und danach arbeiten.** Bei Konflikt gelten die Regeln in dieser Datei (CLAUDE.md).
@@ -17,14 +21,14 @@ Ziel: Kommerzielle SaaS-Lösung für Jagdpächter, Jagdleiter, Berufsjäger.
 **Sprache:** Deutsch (UI, Variablennamen deutsch, Code-Kommentare deutsch)
 **Stand:** April 2026
 
-### Aktueller Stand (01.04.2026)
+### Aktueller Stand (Juli 2026)
 
-- Auth funktioniert (Login, Registrierung, Profil-Trigger)
-- Jagd erstellen funktioniert (mit Kontakten, Rollen, Wildarten, Invite-Code)
-- Dark Theme v4 funktioniert (CSS-Variablen, DM Sans Font)
-- Deployed auf Hetzner via Coolify (Auto-Deploy aus GitHub)
-- 6 User registriert
-- **Nächster Schritt:** Live-Karte (Supabase Realtime + Leaflet + GPS-Positionen)
+- PWA im Maintenance-Modus; aktive Entwicklung läuft im Repo quickhunt-native
+- Dieses Repo bleibt Source of Truth für supabase/migrations/ (nächste freie: 062)
+- Alle Migrationen additiv + rückwärtskompatibel — beide Clients teilen die DB
+- PWA-Folgesprints (nach Native-Launch): Theme-A v2, Wildart-Icons v2,
+  Multi-Photo wild_events (Migration 048), age_class artspezifisch
+- Aktueller Gesamtstand: quickhunt-native/docs/uebergaben/ (neueste Übergabe)
 
 ---
 
@@ -35,7 +39,8 @@ Ziel: Kommerzielle SaaS-Lösung für Jagdpächter, Jagdleiter, Berufsjäger.
 - **Backend:** Supabase (PostgreSQL + PostGIS, Auth, Realtime, Storage)
 - **Design:** Dark Theme, DM Sans Font, CSS-Variablen (kein Tailwind-Farbsystem)
 - **Auth:** Supabase Auth (aktuell E-Mail+Passwort, später Telefon+SMS)
-- **Hosting:** Hetzner CX22 (46.225.149.118), Coolify, GitHub Auto-Deploy
+- **Hosting:** Hetzner CX22 (46.225.149.118), Coolify — Auto-Webhook DEFEKT,
+  nach jedem Push manuell im Dashboard redeployen
 - **Lokal:** `npm run dev` → `http://localhost:3000`
 - **API-Keys:** In `.env.local` (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 
@@ -256,7 +261,8 @@ git add -A
 git commit -m "Beschreibung"
 git push
 
-# 3. Coolify deployt automatisch (oder manuell in Coolify Dashboard klicken)
+# 3. Coolify: Auto-Webhook DEFEKT — nach jedem Push manuell im Dashboard
+#    redeployen. Feature-Branch-Tests: Branch im Dashboard explizit umstellen.
 
 # 4. Live testen
 # Browser: https://quickhunt.de
@@ -312,22 +318,6 @@ ssh -i ~/.ssh/revierapp_hetzner root@46.225.149.118
 
 ## Nächste Schritte
 
-### Spur 1 — Dark Theme / Design fixen
-1. CSS-Variablen aus globals.css zum Laufen bringen (Tailwind v4 Kompatibilität prüfen)
-2. Alle Seiten auf v4-Prototyp-Design bringen
-3. DM Sans Font laden und anwenden
-
-### Spur 2 — QuickHunt-Kern funktional
-1. Live-Karte: Supabase Realtime + Leaflet + GPS-Positionen
-2. Chat: Supabase Realtime + Text + Fotos (Supabase Storage)
-3. Strecke melden: Schnellmeldung-Buttons → kills-Tabelle
-4. Nachsuche melden: Formular → tracking_requests
-
-### Spur 3 — Polish + Revier
-1. Revier verknüpfen (Hochsitze + Grenzen auf Karte)
-2. Push-Benachrichtigungen (Einladung, Signale, Nachsuche)
-3. Mobile PWA (installierbar)
-
-### Offene Bugs
-- Profil-Name zeigt "Jäger" bei Moritz (alter User, Trigger existierte beim Registrieren noch nicht). Fix: `UPDATE profiles SET display_name = 'Moritz' WHERE display_name LIKE '%@%' OR display_name = 'Jäger'`
-- Playwright MCP nicht konfiguriert in Claude Code
+Siehe quickhunt-native/docs/QuickHunt_Backlog.md und die neueste Übergabe
+in quickhunt-native/docs/uebergaben/. Dieser Abschnitt wird hier nicht
+mehr gepflegt.
