@@ -73,7 +73,7 @@ export default function SignupPage() {
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg" style={{ background: 'linear-gradient(135deg, var(--green), var(--green-dim))' }}>🌲</div>
           <span className="text-xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>
-            Revier<span style={{ color: 'var(--accent-primary)' }}>App</span>
+            Quick<span style={{ color: 'var(--accent-primary)' }}>Hunt</span>
           </span>
         </div>
 

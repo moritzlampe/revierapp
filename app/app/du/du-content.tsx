@@ -472,7 +472,7 @@ export default function DuContent({
             </div>
 
             <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', marginBottom: '1rem' }}>
-              Teile diesen Code, damit Freunde der RevierApp beitreten können.
+              Teile diesen Code, damit Freunde QuickHunt beitreten können.
             </p>
 
             {/* Einladungscode */}
