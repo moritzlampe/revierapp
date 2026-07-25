@@ -35,12 +35,11 @@ export default function RootLayout({
     <html lang="de">
       <body className="antialiased">
         <ServiceWorkerRegistration />
-        <div className="min-h-viewport app-mobile-wrapper" style={{
-          margin: '0 auto',
-          position: 'relative',
-        }}>
-          {children}
-        </div>
+        {/* Der Mobile-Wrapper (max-width 430px) sitzt bewusst NICHT mehr hier,
+            sondern in app/app/layout.tsx. Sonst zwängt er jede Route in eine
+            Handy-Spalte — auch die Revierzentrale unter /zentrale, die die volle
+            Breite braucht. Siehe AGENTS.md, Abschnitt Portal-Track. */}
+        {children}
       </body>
     </html>
   )

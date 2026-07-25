@@ -41,9 +41,11 @@ export async function proxy(request: NextRequest) {
   // Redirect-Response. Ohne das gehen rotierte Auth-Tokens verloren, da
   // NextResponse.redirect() eine frische Response ohne diese Cookies ist
   // (Logout-Loop-Keim).
-  const redirectMitCookies = (pathname: string) => {
+  const redirectMitCookies = (pathname: string, next?: string) => {
     const url = request.nextUrl.clone()
     url.pathname = pathname
+    url.search = ''
+    if (next) url.searchParams.set('next', next)
     const redirectResponse = NextResponse.redirect(url)
     supabaseResponse.cookies.getAll().forEach((cookie) =>
       redirectResponse.cookies.set(cookie)
@@ -51,13 +53,27 @@ export async function proxy(request: NextRequest) {
     return redirectResponse
   }
 
-  if (!user && !isPublicRoute) {
-    return redirectMitCookies('/login')
+  // `next` kommt aus der URL und ist damit nicht vertrauenswürdig: nur
+  // repo-interne Pfade zulassen. '//host' und 'http://host' wären sonst eine
+  // offene Weiterleitung, '\' umgeht in manchen Parsern die Slash-Prüfung.
+  const sicheresZiel = (kandidat: string | null): string | null => {
+    if (!kandidat) return null
+    if (!kandidat.startsWith('/')) return null
+    if (kandidat.startsWith('//') || kandidat.includes('\\')) return null
+    return kandidat
   }
 
-  // Eingeloggt + auf Login-Seite → weiter zur App
+  if (!user && !isPublicRoute) {
+    // Wunschziel mitnehmen, damit der Login danach dorthin zurückführen kann
+    return redirectMitCookies('/login', request.nextUrl.pathname)
+  }
+
+  // Eingeloggt + auf Login-Seite → weiter zum Wunschziel, sonst in die Feld-App.
+  // Die Weiche existiert, damit ein Desktop-Login unter /zentrale nicht in der
+  // Handy-PWA landet (siehe AGENTS.md, Abschnitt Portal-Track).
   if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')) {
-    return redirectMitCookies('/app')
+    const ziel = sicheresZiel(request.nextUrl.searchParams.get('next'))
+    return redirectMitCookies(ziel ?? '/app')
   }
 
   return supabaseResponse

@@ -1,0 +1,141 @@
+/* Revierzentrale — Portal-Palette und Shell.
+   Gelockt in quickhunt-native/docs/konzepte/QuickHunt_Konzept_Revierzentrale_V1.md §2.
+
+   Bewusste Abweichung vom Feld-Designsystem: Am Handy ist --bg-elevated DUNKLER
+   als der Grund (Karten sinken ein) — eine Sonnenlicht-Entscheidung, die auf
+   1440px zu einem schweren Block addiert. Hier steigen Karten zum Licht.
+   Farbfamilie und --accent-primary bleiben, damit es dieselbe Anwendung bleibt.
+
+   Alles unter .zentrale gescopet, damit globals.css unangetastet bleibt (R1). */
+
+.zentrale {
+  --z-bg-base: #EDE8DA;
+  --z-bg-elevated: #FAF7F0;
+  --z-bg-sunken: #E3DDCB;
+  --z-surface-hero: #C6CFB2;
+  --z-text-primary: #1F2618;
+  --z-text-secondary: #575E48;
+  --z-accent: #4A5A2A;
+  --z-accent-hover: #5E6F38;
+  --z-border: #D2CAB5;
+  --z-border-strong: #B4AB93;
+  --z-on-accent: #FFFFFF;
+
+  --z-sidebar: 248px;
+  --z-row: 40px;
+
+  min-height: 100vh;
+  background: var(--z-bg-base);
+  color: var(--z-text-primary);
+  font-size: 15px;
+  line-height: 1.5;
+  display: grid;
+  grid-template-columns: var(--z-sidebar) 1fr;
+}
+
+/* ponytail: Dunkelmodus fehlt noch. Laut Konzept §2.1 gilt dafür Theme C
+   unverändert — greifen kann das erst, wenn die PWA überhaupt einen
+   Theme-Umschalter hat. Nachziehen, sobald Theme C aktiv ist. */
+
+.zentrale-side {
+  background: var(--z-bg-elevated);
+  border-right: 1px solid var(--z-border);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.zentrale-wordmark {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+  padding: 0 20px;
+}
+
+.zentrale-switch {
+  margin: 0 12px;
+  padding: 9px 12px;
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border);
+  border-radius: 8px;
+  text-align: left;
+}
+.zentrale-switch .lbl {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+  margin-bottom: 2px;
+}
+.zentrale-switch .val { font-weight: 500; }
+
+.zentrale-nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
+.zentrale-nav a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--z-text-secondary);
+  text-decoration: none;
+  font-size: 0.9375rem;
+}
+.zentrale-nav a:hover { background: var(--z-bg-sunken); color: var(--z-text-primary); }
+.zentrale-nav a[aria-current='page'] {
+  background: var(--z-accent);
+  color: var(--z-on-accent);
+  font-weight: 500;
+}
+.zentrale-nav a:focus-visible,
+.zentrale-foot a:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+
+.zentrale-foot {
+  margin-top: auto;
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+.zentrale-foot a { color: var(--z-accent); text-decoration: none; }
+.zentrale-foot a:hover { text-decoration: underline; }
+
+.zentrale-main { min-width: 0; }
+.zentrale-wrap { max-width: 1200px; margin-inline: auto; padding: 28px 32px 64px; }
+.zentrale-wrap h1 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0 0 4px;
+  text-wrap: balance;
+}
+.zentrale-sub { color: var(--z-text-secondary); font-size: 0.875rem; margin: 0; }
+.zentrale-note {
+  margin-top: 24px;
+  max-width: 70ch;
+  font-size: 0.875rem;
+  color: var(--z-text-secondary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-left: 3px solid var(--z-accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.zentrale-note code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--z-bg-sunken);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
