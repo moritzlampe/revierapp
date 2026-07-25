@@ -99,6 +99,7 @@ export type Database = {
           boundary: unknown
           bundesland: string | null
           created_at: string | null
+          hidden: boolean
           id: string
           name: string
           owner_id: string
@@ -110,6 +111,7 @@ export type Database = {
           boundary?: unknown
           bundesland?: string | null
           created_at?: string | null
+          hidden?: boolean
           id?: string
           name: string
           owner_id: string
@@ -121,6 +123,7 @@ export type Database = {
           boundary?: unknown
           bundesland?: string | null
           created_at?: string | null
+          hidden?: boolean
           id?: string
           name?: string
           owner_id?: string
@@ -435,6 +438,112 @@ export type Database = {
           },
         ]
       }
+      hunt_drive_stands: {
+        Row: {
+          created_at: string
+          drive_id: string
+          id: string
+          map_object_id: string | null
+          participant_id: string | null
+          seat_assignment_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          drive_id: string
+          id?: string
+          map_object_id?: string | null
+          participant_id?: string | null
+          seat_assignment_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          drive_id?: string
+          id?: string
+          map_object_id?: string | null
+          participant_id?: string | null
+          seat_assignment_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_drive_stands_drive_id_fkey"
+            columns: ["drive_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_drives"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hunt_drive_stands_map_object_id_fkey"
+            columns: ["map_object_id"]
+            isOneToOne: false
+            referencedRelation: "map_objects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hunt_drive_stands_participant_id_fkey"
+            columns: ["participant_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_participants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hunt_drive_stands_seat_assignment_id_fkey"
+            columns: ["seat_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_seat_assignments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hunt_drives: {
+        Row: {
+          created_at: string
+          ended_at: string | null
+          hunt_id: string
+          id: string
+          name: string
+          planned_end: string | null
+          planned_start: string | null
+          polygon: unknown
+          sequence: number
+          started_at: string | null
+          status: Database["public"]["Enums"]["drive_status"]
+        }
+        Insert: {
+          created_at?: string
+          ended_at?: string | null
+          hunt_id: string
+          id?: string
+          name: string
+          planned_end?: string | null
+          planned_start?: string | null
+          polygon?: unknown
+          sequence?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["drive_status"]
+        }
+        Update: {
+          created_at?: string
+          ended_at?: string | null
+          hunt_id?: string
+          id?: string
+          name?: string
+          planned_end?: string | null
+          planned_start?: string | null
+          polygon?: unknown
+          sequence?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["drive_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_drives_hunt_id_fkey"
+            columns: ["hunt_id"]
+            isOneToOne: false
+            referencedRelation: "hunts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hunt_group_members: {
         Row: {
           created_at: string | null
@@ -531,6 +640,7 @@ export type Database = {
           id: string
           joined_at: string | null
           left_at: string | null
+          position_consent: string | null
           role: Database["public"]["Enums"]["participant_role"] | null
           stand_id: string | null
           status: Database["public"]["Enums"]["participant_status"] | null
@@ -545,6 +655,7 @@ export type Database = {
           id?: string
           joined_at?: string | null
           left_at?: string | null
+          position_consent?: string | null
           role?: Database["public"]["Enums"]["participant_role"] | null
           stand_id?: string | null
           status?: Database["public"]["Enums"]["participant_status"] | null
@@ -559,6 +670,7 @@ export type Database = {
           id?: string
           joined_at?: string | null
           left_at?: string | null
+          position_consent?: string | null
           role?: Database["public"]["Enums"]["participant_role"] | null
           stand_id?: string | null
           status?: Database["public"]["Enums"]["participant_status"] | null
@@ -904,6 +1016,7 @@ export type Database = {
           created_at: string | null
           distance_m: number | null
           district_id: string | null
+          drive_id: string | null
           erlegt_am: string | null
           foto_url: string | null
           freigabe_verkauf: boolean | null
@@ -938,6 +1051,7 @@ export type Database = {
           created_at?: string | null
           distance_m?: number | null
           district_id?: string | null
+          drive_id?: string | null
           erlegt_am?: string | null
           foto_url?: string | null
           freigabe_verkauf?: boolean | null
@@ -972,6 +1086,7 @@ export type Database = {
           created_at?: string | null
           distance_m?: number | null
           district_id?: string | null
+          drive_id?: string | null
           erlegt_am?: string | null
           foto_url?: string | null
           freigabe_verkauf?: boolean | null
@@ -1007,6 +1122,13 @@ export type Database = {
             columns: ["district_id"]
             isOneToOne: false
             referencedRelation: "districts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kills_drive_id_fkey"
+            columns: ["drive_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_drives"
             referencedColumns: ["id"]
           },
           {
@@ -1462,18 +1584,21 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          kind: string
           subscription: Json
           user_id: string
         }
         Insert: {
           created_at?: string | null
           id?: string
+          kind?: string
           subscription: Json
           user_id: string
         }
         Update: {
           created_at?: string | null
           id?: string
+          kind?: string
           subscription?: Json
           user_id?: string
         }
@@ -1773,6 +1898,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_hunt_invitation: {
+        Args: { p_hunt_id: string }
+        Returns: undefined
+      }
+      decline_hunt_invitation: {
+        Args: { p_hunt_id: string }
+        Returns: undefined
+      }
       find_districts_for_point: {
         Args: { p_lat: number; p_lng: number }
         Returns: {
@@ -1780,6 +1913,7 @@ export type Database = {
           boundary: unknown
           bundesland: string | null
           created_at: string | null
+          hidden: boolean
           id: string
           name: string
           owner_id: string
@@ -1824,13 +1958,41 @@ export type Database = {
         Args: never
         Returns: string[]
       }
+      get_my_invitations: {
+        Args: never
+        Returns: {
+          creator_name: string
+          district_name: string
+          hunt_id: string
+          invited_at: string
+          kind: string
+          name: string
+          started_at: string
+          type: string
+        }[]
+      }
+      get_my_joined_hunt_ids: { Args: never; Returns: string[] }
+      get_my_joined_hunt_ids_as_leader: { Args: never; Returns: string[] }
+      get_my_joined_hunt_ids_as_leader_or_groupleader: {
+        Args: never
+        Returns: string[]
+      }
       get_or_create_direct_chat: {
         Args: { other_user_id: string }
         Returns: string
       }
       get_shooting_plan_actual: { Args: { plan_id: string }; Returns: number }
+      is_hunt_participant_of_district: {
+        Args: { d_id: string }
+        Returns: boolean
+      }
+      set_position_consent: {
+        Args: { p_consent: string; p_hunt_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
+      drive_status: "pending" | "active" | "completed"
       driven_hunt_status: "entwurf" | "einladung" | "aktiv" | "abgeschlossen"
       geschlecht: "maennlich" | "weiblich" | "unbekannt"
       hit_location:
@@ -1878,7 +2040,7 @@ export type Database = {
         | "wildkamera"
         | "infrastruktur"
         | "sonstiges"
-      participant_role: "jagdleiter" | "schuetze"
+      participant_role: "jagdleiter" | "schuetze" | "treiber"
       participant_status: "invited" | "joined" | "left"
       participant_tag: "gruppenleiter" | "hundefuehrer"
       rsvp_status: "offen" | "zugesagt" | "abgesagt"
@@ -2069,6 +2231,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      drive_status: ["pending", "active", "completed"],
       driven_hunt_status: ["entwurf", "einladung", "aktiv", "abgeschlossen"],
       geschlecht: ["maennlich", "weiblich", "unbekannt"],
       hit_location: [
@@ -2121,7 +2284,7 @@ export const Constants = {
         "infrastruktur",
         "sonstiges",
       ],
-      participant_role: ["jagdleiter", "schuetze"],
+      participant_role: ["jagdleiter", "schuetze", "treiber"],
       participant_status: ["invited", "joined", "left"],
       participant_tag: ["gruppenleiter", "hundefuehrer"],
       rsvp_status: ["offen", "zugesagt", "abgesagt"],
