@@ -97,6 +97,24 @@
   outline-offset: 2px;
 }
 
+/* Noch nicht gebaute Bereiche: sichtbar, damit die Struktur lesbar ist, aber
+   kein Link — sonst führen sie auf 404. Nicht per Farbe allein abgesetzt
+   (Designsystem §11.3), sondern zusätzlich durch den Zusatz "folgt". */
+.zentrale-nav-offen {
+  display: block;
+  padding: 8px 12px;
+  font-size: 0.9375rem;
+  color: var(--z-text-secondary);
+  opacity: 0.6;
+  cursor: default;
+}
+.zentrale-nav-offen::after {
+  content: ' · folgt';
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .zentrale-foot {
   margin-top: auto;
   padding: 0 20px;

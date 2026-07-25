@@ -1,24 +1,30 @@
 import type { Viewport } from 'next'
+import Link from 'next/link'
 import './zentrale.css'
 
-// Eigenes Viewport statt des Handy-Viewports aus dem Root-Layout: kein
-// userScalable:false (blockiert Browser-Zoom), kein viewportFit/cover, kein
-// interactiveWidget. Per-Segment-Override ist in diesem Repo etabliert,
-// siehe app/app/du/tagebuch/[type]/[id]/layout.tsx.
+// ACHTUNG: Next merged Viewports FELDWEISE mit dem Root-Layout. Felder einfach
+// wegzulassen genügt nicht — die Handy-Werte aus app/layout.tsx blieben sonst
+// erhalten, inklusive user-scalable=no. Jedes zu neutralisierende Feld muss
+// deshalb hier explizit gesetzt werden.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 5, // überschreibt maximumScale:1 → Browser-Zoom bleibt möglich
+  userScalable: true, // überschreibt userScalable:false
+  viewportFit: 'auto', // überschreibt 'cover' (Notch-Logik ist Handy-Sache)
+  interactiveWidget: 'resizes-visual', // überschreibt 'resizes-content'
   themeColor: '#EDE8DA',
 }
 
 // Fünf Bereiche, gelockt in QuickHunt_Konzept_Revierzentrale_V1.md §1.1.
 // Bewusst KEIN "Einstellungen" und KEIN eigener Drückjagd-Bereich.
+// `fertig` steuert, ob verlinkt wird — nicht gebaute Ziele wären sonst 404.
 const BEREICHE = [
-  { href: '/zentrale', label: 'Übersicht' },
-  { href: '/zentrale/revier', label: 'Revier' },
-  { href: '/zentrale/jagden', label: 'Jagden' },
-  { href: '/zentrale/dokumentation', label: 'Dokumentation' },
-  { href: '/zentrale/jagderlaubnisse', label: 'Jagderlaubnisse' },
+  { href: '/zentrale', label: 'Übersicht', fertig: true },
+  { href: '/zentrale/revier', label: 'Revier', fertig: false },
+  { href: '/zentrale/jagden', label: 'Jagden', fertig: false },
+  { href: '/zentrale/dokumentation', label: 'Dokumentation', fertig: false },
+  { href: '/zentrale/jagderlaubnisse', label: 'Jagderlaubnisse', fertig: false },
 ]
 
 export default function ZentraleLayout({ children }: { children: React.ReactNode }) {
@@ -34,15 +40,22 @@ export default function ZentraleLayout({ children }: { children: React.ReactNode
           <span className="val">—</span>
         </div>
 
-        <nav className="zentrale-nav">
-          {BEREICHE.map((b) => (
-            <a key={b.href} href={b.href}>
-              {b.label}
-            </a>
-          ))}
+        <nav className="zentrale-nav" aria-label="Revierzentrale">
+          {BEREICHE.map((b) =>
+            b.fertig ? (
+              <Link key={b.href} href={b.href} aria-current="page">
+                {b.label}
+              </Link>
+            ) : (
+              <span key={b.href} className="zentrale-nav-offen" aria-disabled="true">
+                {b.label}
+              </span>
+            )
+          )}
         </nav>
 
         <div className="zentrale-foot">
+          {/* Bewusst <a>: Wechsel in die Feld-App, eigener Layout-Baum. */}
           <a href="/app">Feld-App öffnen ↗</a>
         </div>
       </aside>

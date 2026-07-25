@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { safeNext } from '@/lib/safe-next'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -25,7 +26,14 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    router.push('/app')
+    // Wunschziel aus ?next= (vom Proxy gesetzt), damit ein Desktop-Login unter
+    // /zentrale nicht in der Handy-Feld-App landet. Bewusst über
+    // window.location statt useSearchParams: /login ist statisch vorgerendert,
+    // useSearchParams würde die Route dynamisch machen oder Suspense erzwingen.
+    // safeNext prüft gegen offene Weiterleitung — router.push würde sonst auch
+    // eine fremde Domain ansteuern.
+    const ziel = safeNext(new URLSearchParams(window.location.search).get('next'))
+    router.push(ziel ?? '/app')
     router.refresh()
   }
 

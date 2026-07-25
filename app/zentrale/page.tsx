@@ -8,8 +8,8 @@ export default function ZentraleUebersicht() {
         <p style={{ margin: 0 }}>
           Diese Schale beweist dreierlei: die Route ist erreichbar und durch den
           Auth-Guard geschützt, sie erbt nichts vom Handy-Shell (keine
-          BottomTabBar, keine 430-px-Spalte, Zoom funktioniert), und die
-          Portal-Palette greift.
+          BottomTabBar, keine 430-px-Spalte, Browser-Zoom nicht gesperrt), und
+          die Portal-Palette greift.
         </p>
         <p style={{ margin: '10px 0 0' }}>
           Als Nächstes Phase 2: Revier-Übersicht, ausschließlich lesend. Fahrplan
