@@ -243,24 +243,32 @@
 }
 .zentrale-leer { color: var(--z-text-secondary); font-size: 0.875rem; margin: 0; }
 
+/* Die Höhe sitzt bewusst am Kasten, nicht hier: der Kinomodus schaltet sie um,
+   und der Kasten ist die Komponente, die den Knopf dafür trägt. */
 .zentrale-karte {
-  height: 420px;
   border: 1px solid var(--z-border);
   border-radius: 10px;
   overflow: hidden;
 }
-/* Trägt den Vollbild-Knopf und ist selbst das Vollbild-Ziel. */
-.zentrale-karte-kasten { position: relative; height: 100%; width: 100%; }
+/* Trägt die Größenknöpfe und ist selbst das Vollbild-Ziel.
+   Drei Größen: eingebettet 420px · Kinomodus 78vh · Vollbild. */
+.zentrale-karte-kasten { position: relative; width: 100%; height: 420px; }
+.zentrale-karte-kasten.kino { height: 78vh; }
 .zentrale-karte-kasten:fullscreen {
   height: 100vh;
   width: 100vw;
   background: var(--z-bg-base);
 }
-.zentrale-karte-voll {
+
+.zentrale-karte-knoepfe {
   position: absolute;
   top: 10px;
   right: 10px;
   z-index: 1000; /* Leaflet-Controls liegen auf 1000, der Zoom sitzt links */
+  display: flex;
+  gap: 6px;
+}
+.zentrale-karte-knoepfe button {
   font: inherit;
   font-size: 0.8125rem;
   padding: 5px 10px;
@@ -270,8 +278,11 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.zentrale-karte-voll:hover { background: var(--z-bg-sunken); }
-.zentrale-karte-voll:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 2px; }
+.zentrale-karte-knoepfe button:hover { background: var(--z-bg-sunken); }
+.zentrale-karte-knoepfe button:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
 
 /* Objektnamen an der Karte. Ab NAMEN_AB_ZOOM dauerhaft, darunter beim
    Überfahren — deshalb bewusst leicht und ohne Schlagschatten, damit 196
@@ -291,6 +302,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
+  min-height: 420px; /* trägt den Leerfall, in dem gar kein Kasten gerendert wird */
   background: var(--z-bg-sunken);
   color: var(--z-text-secondary);
   font-size: 0.875rem;

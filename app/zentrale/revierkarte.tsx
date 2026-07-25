@@ -13,14 +13,17 @@ const Karte = dynamic(() => import('./revierkarte-map'), {
 })
 
 /**
- * Vollbild über die native Fullscreen-API statt über einen selbstgebauten
- * „Kinomodus": ESC zum Verlassen, Zustandsverwaltung und Bildschirmgröße macht
- * der Browser. Leaflet misst sich danach von allein neu — das erledigt
- * useInvalidateOnResize in der Karte über das resize-Ereignis.
+ * Drei Größen, wie bei YouTube: eingebettet · Kinomodus · Vollbild.
+ *
+ * Vollbild über die native Fullscreen-API — ESC, Zustandsverwaltung und
+ * Bildschirmgröße macht der Browser. Kinomodus ist dagegen bewusst nur eine
+ * CSS-Klasse: die Karte bleibt in der Seite, wird aber deutlich höher. Leaflet
+ * misst sich bei beidem über den ResizeObserver in der Karte neu.
  */
 export default function Revierkarte(props: KarteProps) {
   const kasten = useRef<HTMLDivElement>(null)
   const [voll, setVoll] = useState(false)
+  const [kino, setKino] = useState(false)
 
   // Nur abonnieren, nicht ableiten: der Zustand kommt aus dem Browser, auch
   // wenn ESC das Vollbild verlässt, ohne dass der Knopf beteiligt war.
@@ -41,10 +44,18 @@ export default function Revierkarte(props: KarteProps) {
   }
 
   return (
-    <div ref={kasten} className="zentrale-karte-kasten">
-      <button type="button" className="zentrale-karte-voll" onClick={umschalten}>
-        {voll ? 'Vollbild beenden' : 'Vollbild'}
-      </button>
+    <div ref={kasten} className={`zentrale-karte-kasten${kino ? ' kino' : ''}`}>
+      <div className="zentrale-karte-knoepfe">
+        {/* Im Vollbild sinnlos — die Zwischengröße ist dort keine Größe mehr. */}
+        {!voll && (
+          <button type="button" onClick={() => setKino((k) => !k)}>
+            {kino ? 'Kleiner' : 'Kinomodus'}
+          </button>
+        )}
+        <button type="button" onClick={umschalten}>
+          {voll ? 'Vollbild beenden' : 'Vollbild'}
+        </button>
+      </div>
       <Karte {...props} />
     </div>
   )

@@ -13,7 +13,6 @@ import {
 } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { BKG_TOPPLUS } from '@/lib/map/tiles'
-import { useInvalidateOnResize } from '@/hooks/useInvalidateOnResize'
 
 export type Punkt = { id: string; name: string; typ: string; lat: number; lng: number }
 
@@ -39,14 +38,25 @@ const NEUTRAL = '#8B8775'
 const NAMEN_AB_ZOOM = 16
 
 /**
- * Ausschnitt auf den vorhandenen Bestand legen. Zusätzlich invalidateSize(),
- * weil Leaflet beim Mount in einem noch nicht ausgemessenen Container sonst
- * bei 0×0 bleibt (graue Karte) — dasselbe Muster wie in PointMap. Der
- * Resize-Hook deckt danach Vollbild und Fensteränderungen ab.
+ * Ausschnitt auf den vorhandenen Bestand legen, und Leaflet neu vermessen,
+ * sobald sich der Container ändert.
+ *
+ * Bewusst ein ResizeObserver statt des sonst üblichen `useInvalidateOnResize`
+ * (window-resize): die Karte ändert ihre Größe hier auch ohne Fensteränderung.
+ * Der Kinomodus schaltet nur eine CSS-Höhe um, und Vollbild hängt am Element,
+ * nicht am Fenster — bei beidem feuert kein resize. Leaflet würde in den alten
+ * Ausmaßen weiterrendern (graue Streifen am Rand). Ein Observer deckt alle drei
+ * Fälle ab, inklusive Fensteränderung, und ist damit weniger, nicht mehr Code.
  */
 function Ausschnitt({ grenze, punkte }: KarteProps) {
   const map = useMap()
-  useInvalidateOnResize(map)
+
+  useEffect(() => {
+    const beobachter = new ResizeObserver(() => map.invalidateSize({ animate: false }))
+    beobachter.observe(map.getContainer())
+    return () => beobachter.disconnect()
+  }, [map])
+
   useEffect(() => {
     map.invalidateSize()
     // Grenze UND Objekte: Stände können außerhalb der gezeichneten Grenze
