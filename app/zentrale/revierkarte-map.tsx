@@ -1,10 +1,19 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import L from 'leaflet'
-import { MapContainer, TileLayer, Polygon, CircleMarker, Tooltip, useMap } from 'react-leaflet'
+import {
+  MapContainer,
+  TileLayer,
+  Polygon,
+  CircleMarker,
+  Tooltip,
+  useMap,
+  useMapEvents,
+} from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { BKG_TOPPLUS } from '@/lib/map/tiles'
+import { useInvalidateOnResize } from '@/hooks/useInvalidateOnResize'
 
 export type Punkt = { id: string; name: string; typ: string; lat: number; lng: number }
 
@@ -21,12 +30,23 @@ const ACCENT = '#4A5A2A'
 const NEUTRAL = '#8B8775'
 
 /**
+ * Ab dieser Zoomstufe stehen die Namen dauerhaft an den Punkten, darunter nur
+ * beim Überfahren. Grund: Revier Söder hat 196 Objekte — dauerhaft beschriftet
+ * wäre die Übersicht ein Schrifthaufen, in dem nichts mehr lesbar ist.
+ * ponytail: Schwelle nach Augenmaß gesetzt. Hier drehen, wenn es zu dicht oder
+ * zu spät wirkt — 15 zeigt früher, 17 später.
+ */
+const NAMEN_AB_ZOOM = 16
+
+/**
  * Ausschnitt auf den vorhandenen Bestand legen. Zusätzlich invalidateSize(),
  * weil Leaflet beim Mount in einem noch nicht ausgemessenen Container sonst
- * bei 0×0 bleibt (graue Karte) — dasselbe Muster wie in PointMap.
+ * bei 0×0 bleibt (graue Karte) — dasselbe Muster wie in PointMap. Der
+ * Resize-Hook deckt danach Vollbild und Fensteränderungen ab.
  */
 function Ausschnitt({ grenze, punkte }: KarteProps) {
   const map = useMap()
+  useInvalidateOnResize(map)
   useEffect(() => {
     map.invalidateSize()
     // Grenze UND Objekte: Stände können außerhalb der gezeichneten Grenze
@@ -44,10 +64,52 @@ function Ausschnitt({ grenze, punkte }: KarteProps) {
 }
 
 /**
+ * Eigene Komponente, weil `useMapEvents` einen Kartenkontext braucht — den gibt
+ * es erst unterhalb von MapContainer, nicht in RevierkarteMap selbst.
+ */
+function Objekte({ punkte }: { punkte: Punkt[] }) {
+  const map = useMap()
+  const [zoom, setZoom] = useState(() => map.getZoom())
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) })
+
+  const namenFest = zoom >= NAMEN_AB_ZOOM
+
+  return (
+    <>
+      {punkte.map((p) => (
+        <CircleMarker
+          key={p.id}
+          center={[p.lat, p.lng]}
+          radius={5}
+          pathOptions={{
+            color: '#FFFFFF',
+            weight: 1.5,
+            fillColor: STAND_TYPEN.has(p.typ) ? ACCENT : NEUTRAL,
+            fillOpacity: 0.9,
+          }}
+        >
+          {/* Das `key` erzwingt ein Neubinden: Leaflet liest `permanent` nur
+              beim Anlegen des Tooltips, ein bloßer Prop-Wechsel bliebe wirkungslos. */}
+          <Tooltip
+            key={namenFest ? 'fest' : 'hover'}
+            permanent={namenFest}
+            direction="top"
+            offset={[0, -6]}
+            className="zentrale-karte-label"
+          >
+            {p.name}
+          </Tooltip>
+        </CircleMarker>
+      ))}
+    </>
+  )
+}
+
+/**
  * Revierkarte der Übersicht: reine Anzeige. Kein Zeichnen, kein Verschieben,
  * keine Auswahl — Bearbeiten ist Phase 3. Deshalb CircleMarker statt der
  * SVG-Pins: bei 196 Objekten (Revier Söder) ist das spürbar billiger und der
- * Pin trägt hier keine Information, die der Tooltip nicht auch trägt.
+ * Pin trägt hier keine Information, die der Name nicht auch trägt.
  *
  * Einbindung über revierkarte.tsx (dynamic, ssr:false) — react-leaflet fasst
  * beim Import `window` an.
@@ -58,10 +120,10 @@ export default function RevierkarteMap({ grenze, punkte }: KarteProps) {
       center={[51.2, 10.4]} // Platzhalter bis Ausschnitt greift
       zoom={6}
       zoomControl
-      // Kein Wheel-Zoom: die Karte ist ein 420px-Block in einer scrollenden
-      // Seite. Zwei Finger auf dem Trackpad würden sonst die Seite anhalten
-      // und stattdessen zoomen. Gezoomt wird über +/−.
-      scrollWheelZoom={false}
+      // Wheel-Zoom an. War kurzzeitig aus, um das Seiten-Scrollen zu schützen —
+      // ein Problem, das niemand hatte, gegen ein Zoom-Problem, das jeder sofort
+      // hatte. Karten zoomen am Rad, das ist die Erwartung.
+      scrollWheelZoom
       style={{ height: '100%', width: '100%' }}
     >
       <TileLayer
@@ -77,24 +139,7 @@ export default function RevierkarteMap({ grenze, punkte }: KarteProps) {
         />
       )}
 
-      {punkte.map((p) => (
-        <CircleMarker
-          key={p.id}
-          center={[p.lat, p.lng]}
-          radius={5}
-          pathOptions={{
-            color: '#FFFFFF',
-            weight: 1.5,
-            fillColor: STAND_TYPEN.has(p.typ) ? ACCENT : NEUTRAL,
-            fillOpacity: 0.9,
-          }}
-        >
-          <Tooltip direction="top" offset={[0, -6]}>
-            {p.name}
-          </Tooltip>
-        </CircleMarker>
-      ))}
-
+      <Objekte punkte={punkte} />
       <Ausschnitt grenze={grenze} punkte={punkte} />
     </MapContainer>
   )

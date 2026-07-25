@@ -249,6 +249,43 @@
   border-radius: 10px;
   overflow: hidden;
 }
+/* Trägt den Vollbild-Knopf und ist selbst das Vollbild-Ziel. */
+.zentrale-karte-kasten { position: relative; height: 100%; width: 100%; }
+.zentrale-karte-kasten:fullscreen {
+  height: 100vh;
+  width: 100vw;
+  background: var(--z-bg-base);
+}
+.zentrale-karte-voll {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000; /* Leaflet-Controls liegen auf 1000, der Zoom sitzt links */
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 5px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zentrale-karte-voll:hover { background: var(--z-bg-sunken); }
+.zentrale-karte-voll:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 2px; }
+
+/* Objektnamen an der Karte. Ab NAMEN_AB_ZOOM dauerhaft, darunter beim
+   Überfahren — deshalb bewusst leicht und ohne Schlagschatten, damit 196
+   Beschriftungen die Karte nicht zudecken. */
+.zentrale .leaflet-tooltip.zentrale-karte-label {
+  padding: 1px 5px;
+  font-size: 11px;
+  color: var(--z-text-primary);
+  background: color-mix(in srgb, #FAF7F0 88%, transparent);
+  border: 1px solid var(--z-border);
+  box-shadow: none;
+  pointer-events: none;
+}
+
 .zentrale-karte-lade {
   display: flex;
   align-items: center;
@@ -265,8 +302,9 @@
    `.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom` (Spezifität 0,3,0)
    — die globals.css-Zeile ist gar nicht die wirksame Regel, und sie zu
    überschreiben wäre falsch: der Wert ist Absicht, Leaflet zieht die Gesten
-   selbst. Der echte Desktop-Ärger ist Wheel-Zoom, der die Seite am Scrollen
-   hindert; dagegen steht scrollWheelZoom={false} in revierkarte-map.tsx. */
+   selbst. Wheel-Zoom war kurzzeitig abgeschaltet, um das Seiten-Scrollen zu
+   schützen — zurückgenommen am 25.07. nach Moritz' Test: das Scroll-Problem
+   hatte niemand, das Zoom-Problem sofort jeder. Karten zoomen am Rad. */
 
 .zentrale-tabelle {
   width: 100%;
