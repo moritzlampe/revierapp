@@ -75,6 +75,31 @@
   margin-bottom: 2px;
 }
 .zentrale-switch .val { font-weight: 500; }
+/* Natives <select>: entkleidet, damit es wie Text im Kasten sitzt. Tastatur-
+   und Screenreader-Verhalten bleibt dabei geschenkt. */
+.zentrale-switch select.val {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.zentrale-switch select.val:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 3px; }
+
+.zentrale-knopf {
+  font: inherit;
+  padding: 6px 14px;
+  color: var(--z-on-accent);
+  background: var(--z-accent);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.zentrale-knopf:hover { background: var(--z-accent-hover); }
+.zentrale-knopf:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 2px; }
 
 .zentrale-nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
 .zentrale-nav a {
@@ -156,4 +181,132 @@
   background: var(--z-bg-sunken);
   padding: 1px 5px;
   border-radius: 4px;
+}
+
+/* --- Übersicht (Phase 2) ------------------------------------------------ */
+
+/* Laufende Jagd: Hinweis, keine Live-Steuerung (§1.3). Neutrale Töne mit Gold,
+   kein Alarmrot — das bleibt der Nachsuche vorbehalten (§2.6). */
+.zentrale-live {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+  margin-top: 20px;
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-left: 3px solid #C08E48;
+  border-radius: 10px;
+}
+.zentrale-live a { color: var(--z-accent); }
+
+.zentrale-kennzahlen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.zentrale-kennzahl {
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.zentrale-kennzahl .lbl {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+}
+/* Zahlen strukturell in Mono mit tabular-nums (§2.2) — Kassenbuch, nicht Website. */
+.zentrale-kennzahl .wert {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.75rem;
+  line-height: 1.15;
+  margin: 6px 0 4px;
+}
+.zentrale-kennzahl .einheit { font-size: 0.9375rem; color: var(--z-text-secondary); }
+.zentrale-kennzahl .fuss { font-size: 0.75rem; color: var(--z-text-secondary); }
+
+.zentrale-block { margin-top: 32px; }
+.zentrale-block h2 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+  margin: 0 0 10px;
+}
+.zentrale-leer { color: var(--z-text-secondary); font-size: 0.875rem; margin: 0; }
+
+.zentrale-karte {
+  height: 420px;
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.zentrale-karte-lade {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--z-bg-sunken);
+  color: var(--z-text-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 0 24px;
+}
+/* Kein touch-action-Override, obwohl Konzept §2.5 einen fordert. Nachgemessen
+   am 25.07.: Leaflet setzt touch-action:none selbst, über
+   `.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom` (Spezifität 0,3,0)
+   — die globals.css-Zeile ist gar nicht die wirksame Regel, und sie zu
+   überschreiben wäre falsch: der Wert ist Absicht, Leaflet zieht die Gesten
+   selbst. Der echte Desktop-Ärger ist Wheel-Zoom, der die Seite am Scrollen
+   hindert; dagegen steht scrollWheelZoom={false} in revierkarte-map.tsx. */
+
+.zentrale-tabelle {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.zentrale-tabelle th {
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+  padding: 0 14px;
+  height: 36px;
+  border-bottom: 1px solid var(--z-border);
+}
+/* Keine Zebrastreifen, feine Linien, 40px Zeile (§2.4). */
+.zentrale-tabelle td {
+  padding: 0 14px;
+  height: var(--z-row);
+  border-bottom: 1px solid var(--z-border);
+}
+.zentrale-tabelle tr:last-child td { border-bottom: 0; }
+.zentrale-tabelle td.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+/* Status immer als Text-Pill, nie nur über Farbe (§2.4). */
+.zentrale-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  background: var(--z-bg-sunken);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 999px;
 }
