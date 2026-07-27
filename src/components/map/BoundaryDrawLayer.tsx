@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import L from 'leaflet'
 import { Polygon, Polyline, Marker, useMapEvents } from 'react-leaflet'
 import type { DrawPoint } from '@/hooks/useBoundaryEditor'
@@ -62,6 +62,26 @@ export default function BoundaryDrawLayer({
 }: BoundaryDrawLayerProps) {
   const { vertexIcon, firstVertexIcon, midpointIcon } = useDrawIcons()
 
+  // Ein Zwischenpunkt, der gerade gezogen wird. Nur zur Vorschau: erst beim
+  // Loslassen wird er über onMidpointInsert ein echter Punkt.
+  const [zug, setZug] = useState<{ nachIndex: number; punkt: DrawPoint } | null>(null)
+
+  /**
+   * Umriss für die Vorschau: während des Ziehens steckt der provisorische Punkt
+   * schon drin, damit die Linie dem Finger/Zeiger folgt. Ohne das zieht man
+   * einen Punkt und nichts bewegt sich — es sähe kaputt aus.
+   *
+   * Bewusst nur für Polygon und Linien. Die Griffe (Vertices, Zwischenpunkte)
+   * rendern weiter aus `drawPoints`, damit ihre Indizes stabil bleiben und die
+   * Handler nicht auf den falschen Punkt zeigen.
+   */
+  const umriss = useMemo(() => {
+    if (!zug) return drawPoints
+    const next = [...drawPoints]
+    next.splice(zug.nachIndex + 1, 0, zug.punkt)
+    return next
+  }, [drawPoints, zug])
+
   return (
     <>
       <DrawClickHandler onClick={onMapClick} />
@@ -69,9 +89,9 @@ export default function BoundaryDrawLayer({
       {drawPoints.length > 0 && (
         <>
           {/* Polygon-Füllung ab 3 Punkten */}
-          {drawPoints.length >= 3 && (
+          {umriss.length >= 3 && (
             <Polygon
-              positions={drawPoints.map(p => [p.lat, p.lng] as [number, number])}
+              positions={umriss.map(p => [p.lat, p.lng] as [number, number])}
               pathOptions={{
                 color: 'hsl(142, 70%, 45%)',
                 weight: 2,
@@ -82,9 +102,9 @@ export default function BoundaryDrawLayer({
           )}
 
           {/* Verbindungslinien zwischen Punkten */}
-          {drawPoints.length >= 2 && (
+          {umriss.length >= 2 && (
             <Polyline
-              positions={drawPoints.map(p => [p.lat, p.lng] as [number, number])}
+              positions={umriss.map(p => [p.lat, p.lng] as [number, number])}
               pathOptions={{
                 color: 'hsl(142, 70%, 45%)',
                 weight: 2.5,
@@ -93,11 +113,11 @@ export default function BoundaryDrawLayer({
           )}
 
           {/* Schliessende gestrichelte Linie (erster ↔ letzter Punkt) ab 3 Punkte */}
-          {drawPoints.length >= 3 && (
+          {umriss.length >= 3 && (
             <Polyline
               positions={[
-                [drawPoints[drawPoints.length - 1].lat, drawPoints[drawPoints.length - 1].lng],
-                [drawPoints[0].lat, drawPoints[0].lng],
+                [umriss[umriss.length - 1].lat, umriss[umriss.length - 1].lng],
+                [umriss[0].lat, umriss[0].lng],
               ]}
               pathOptions={{
                 color: 'hsl(142, 70%, 45%)',
@@ -130,7 +150,14 @@ export default function BoundaryDrawLayer({
             />
           ))}
 
-          {/* Midpoints (Punkte einfügen) — ab 3 Punkte */}
+          {/* Zwischenpunkte (Punkte einfügen) — ab 3 Punkte.
+              Zwei Wege, damit beide Erwartungen erfüllt sind:
+              - Antippen fügt genau in der Mitte ein (Handy, kleine Ziele).
+              - Ziehen fügt dort ein, wo losgelassen wird — der Zwischenpunkt
+                wird also in einer Geste zum echten Punkt. Das ist die Erwartung
+                vom Desktop und aus jedem Karteneditor.
+              Leaflet unterdrückt den click nach einem echten Drag selbst
+              (Marker prüft dragging.moved()), es fügt also nicht doppelt ein. */}
           {drawPoints.length >= 3 && drawPoints.map((p, i) => {
             const next = drawPoints[(i + 1) % drawPoints.length]
             const midLat = (p.lat + next.lat) / 2
@@ -140,10 +167,20 @@ export default function BoundaryDrawLayer({
                 key={`mid-${i}`}
                 position={[midLat, midLng]}
                 icon={midpointIcon}
+                draggable
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e)
                     onMidpointInsert(i, { lat: midLat, lng: midLng })
+                  },
+                  drag: (e) => {
+                    const ll = e.target.getLatLng()
+                    setZug({ nachIndex: i, punkt: { lat: ll.lat, lng: ll.lng } })
+                  },
+                  dragend: (e) => {
+                    const ll = e.target.getLatLng()
+                    setZug(null)
+                    onMidpointInsert(i, { lat: ll.lat, lng: ll.lng })
                   },
                 }}
               />
