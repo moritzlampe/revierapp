@@ -86,26 +86,20 @@ export default function Revierkarte({
   }
 
   /**
-   * Speichern. Drei Dinge bewusst anders als im mobilen Pfad:
+   * Speichern. Zwei Dinge bewusst anders als im mobilen Pfad:
    * - Vorher prüfen (Punktzahl, Selbstüberschneidung), statt PostGIS ein kaputtes
    *   Polygon zu geben.
-   * - `area_ha` mitschreiben. Kein Trigger rechnet sie, und **kein lebender
-   *   Codepfad** setzt sie beim Speichern — auch der Setup-Flow schreibt nur
-   *   `boundary`. Ohne diese Zeile zeigt die Kennzahl „Fläche" nach dem ersten
-   *   Bearbeiten dauerhaft die alte Zahl.
-   *
-   *   Achtung, gemessen am 27.07.2026: `polygonAreaHectares` rechnet auf der
-   *   Kugel (R = 6371 km), PostGIS `::geography` auf dem WGS84-Ellipsoid. Bei
-   *   53° N ergibt das konstant **−0,41 %** — über alle sieben echten Reviere
-   *   gleich, von 38 bis 1.404 ha. Die heute gespeicherten Werte stammen aus
-   *   einem serverseitigen Backfill und liegen deshalb 0,41 % höher als das, was
-   *   jeder Bildschirm der App anzeigt. Beim ersten Bearbeiten rückt die Spalte
-   *   also auf den App-Wert (Brockwinel 105,8 → 105,3). Bewusst so: die Spalte
-   *   soll mit der App übereinstimmen, nicht mit einem Backfill, den kein
-   *   Codepfad pflegt. Sauber wäre eine berechnete Spalte in der DB — das ist
-   *   DDL und damit nativer Track (R2).
    * - Bei Fehler **bleibt der Entwurf stehen** (Backlog E-R2). Im mobilen Pfad
    *   wird er verworfen und die gezeichnete Grenze ist weg.
+   *
+   * **`area_ha` wird nicht geschrieben und darf es nicht.** Die Spalte ist
+   * `GENERATED ALWAYS AS (st_area(boundary::geography) / 10000)` — Postgres
+   * lehnt jeden Schreibversuch mit
+   * `column "area_ha" can only be updated to DEFAULT` ab. Die Fläche rechnet
+   * damit die DB, geodätisch und immer passend zur Grenze; veralten kann sie
+   * nicht. Der Client-Helfer `polygonAreaHectares` rechnet auf der Kugel und
+   * liegt konstant 0,41 % darunter — er ist deshalb nur für die laufende Anzeige
+   * im Entwurf gut, nie für einen Schreibwert.
    */
   const speichern = async () => {
     const problem = pruefeGrenze(zeichner.drawPoints)
@@ -118,13 +112,12 @@ export default function Revierkarte({
     setFehler(null)
     try {
       const ewkt = ewktAus(zeichner.drawPoints)
-      const ha = Math.round(polygonAreaHectares(zeichner.drawPoints) * 10) / 10
       await schreibe(revierId, 'Reviergrenze', () =>
         createClient()
           .from('districts')
-          .update({ boundary: ewkt, area_ha: ha })
+          .update({ boundary: ewkt })
           .eq('id', revierId)
-          .select('id'),
+          .select('id, area_ha'),
       )
       zeichner.stopEditing()
       zeichner.reset()
@@ -139,7 +132,13 @@ export default function Revierkarte({
     }
   }
 
-  /** Löschen mit Rückfrage — im mobilen Pfad genügt ein Druck (Backlog E-R3). */
+  /**
+   * Löschen mit Rückfrage — im mobilen Pfad genügt ein Druck (Backlog E-R3).
+   *
+   * Nur `boundary`, nicht `area_ha`: die Spalte ist generiert und fällt von
+   * selbst auf NULL, wenn die Grenze weg ist. Der mobile Pfad setzt hier
+   * zusätzlich `area_ha: null` und **scheitert deshalb immer** — siehe Backlog.
+   */
   const loeschen = async () => {
     setLaeuft(true)
     setFehler(null)
@@ -147,9 +146,9 @@ export default function Revierkarte({
       await schreibe(revierId, 'Reviergrenze', () =>
         createClient()
           .from('districts')
-          .update({ boundary: null, area_ha: null })
+          .update({ boundary: null })
           .eq('id', revierId)
-          .select('id'),
+          .select('id, area_ha'),
       )
       setLoeschFrage(false)
       zeichner.stopEditing()
@@ -216,8 +215,13 @@ export default function Revierkarte({
         <p className="zentrale-karte-hinweis">
           In die Karte klicken setzt Punkte · Punkte ziehen verschiebt sie · kleine
           Punkte dazwischen fügen ein · Klick auf einen Punkt löscht ihn (ab 4)
+          {/* „≈", weil der Client-Helfer auf der Kugel rechnet und rund 0,4 %
+              unter dem geodätischen Wert liegt, den die generierte Spalte
+              `area_ha` nach dem Speichern anzeigt. Ohne das Zeichen sähe der
+              kleine Sprung beim Speichern wie ein Fehler aus. Genauer geht am
+              Entwurf nicht — die DB kennt ein ungespeichertes Polygon nicht. */}
           {zeichner.drawPoints.length >= 3 &&
-            ` · ${polygonAreaHectares(zeichner.drawPoints).toFixed(1)} ha`}
+            ` · ≈ ${polygonAreaHectares(zeichner.drawPoints).toFixed(1)} ha`}
         </p>
       )}
 
