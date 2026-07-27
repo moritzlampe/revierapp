@@ -146,12 +146,19 @@ export default function BoundaryDrawLayer({
 
           {/* Zwischenpunkte (Punkte einfügen) — ab 3 Punkte.
               Zwei Wege, damit beide Erwartungen erfüllt sind:
-              - Antippen fügt genau in der Mitte ein (Handy, kleine Ziele).
+              - Antippen fügt genau in der Mitte ein.
               - Ziehen fügt dort ein, wo losgelassen wird — der Zwischenpunkt
                 wird also in einer Geste zum echten Punkt. Das ist die Erwartung
                 vom Desktop und aus jedem Karteneditor.
               Leaflet unterdrückt den click nach einem echten Drag selbst
-              (Marker prüft dragging.moved()), es fügt also nicht doppelt ein. */}
+              (Marker prüft dragging.moved()), es fügt also nicht doppelt ein.
+
+              Am Gerät geprüft (27.07.2026): das Ziehen greift **nur am Desktop**.
+              Auf dem Handy bleibt es wirkungslos — 10 px sind kein Fingerziel,
+              die Berührung geht an die Karte und schiebt sie. Das ist in Ordnung
+              und ausdrücklich so abgenommen: am Handy ist Antippen die richtige
+              Geste, und weil kein Drag zustande kommt, entstehen dort auch keine
+              versehentlichen Punkte beim Kartenschieben. */}
           {drawPoints.length >= 3 && drawPoints.map((p, i) => {
             const next = drawPoints[(i + 1) % drawPoints.length]
             const midLat = (p.lat + next.lat) / 2
