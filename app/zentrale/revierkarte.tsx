@@ -9,6 +9,8 @@ import { useBoundaryEditor } from '@/hooks/useBoundaryEditor'
 import type { KarteProps } from './revierkarte-map'
 import { darfSchreiben, schreibe } from './schreiben'
 import { ewktAus, nurEinRing, pruefeGrenze } from './grenze'
+import { alsSpalten, type ObjektEntwurf } from './objekte'
+import ObjektInspektor from './objekt-inspektor'
 
 // react-leaflet fasst beim Import `window` an — ssr:false ist Pflicht, und
 // next/dynamic mit ssr:false geht nur aus einer Client-Komponente heraus.
@@ -67,6 +69,62 @@ export default function Revierkarte({
   )
   const aktuelleGrenze = gespeichert !== undefined ? gespeichert : grenze
 
+  const [auswahlId, setAuswahlId] = useState<string | null>(null)
+
+  /**
+   * Objekte, die in dieser Sitzung schon geschrieben wurden — aus demselben
+   * Grund wie `gespeichert` oben: `router.refresh()` ist nicht abwartbar, und
+   * bis die Server-Komponente nachgezogen hat, trüge die `punkte`-Prop noch den
+   * alten Namen. Ohne das läge im Inspektor unmittelbar nach dem Speichern
+   * wieder der alte Stand.
+   */
+  const [geaendert, setGeaendert] = useState<
+    Record<string, { name: string; type: string; description: string | null }>
+  >({})
+  const aktuellePunkte = punkte.map((p) => {
+    const neu = geaendert[p.id]
+    // Gemerkt wird, was wirklich in der Spalte steht — also der getrimmte Wert
+    // aus `alsSpalten`, nicht der rohe Formularinhalt. Sonst zeigte der
+    // Inspektor nach dem Speichern ein Leerzeichen, das die DB gar nicht hat.
+    return neu ? { ...p, name: neu.name, typ: neu.type, beschreibung: neu.description } : p
+  })
+
+  /**
+   * Den Zwischenspeicher leeren, sobald **überhaupt** neue Server-Daten da sind
+   * — nicht erst, wenn sie dem entsprechen, was hier geschrieben wurde.
+   *
+   * Der Unterschied ist der ganze Punkt (Codex, 27.07.2026): verglich man auf
+   * Gleichheit, blieb der Eintrag genau dann liegen, wenn die Feld-App
+   * zwischenzeitlich einen NEUEREN Stand geschrieben hatte. Der wäre dann bis
+   * zum Revierwechsel von der eigenen älteren Fassung verdeckt gewesen — und
+   * ein weiterer Write hätte auf dem veralteten Stand aufgesetzt.
+   *
+   * Die Prop wechselt ihre Referenz nur bei einer neuen Server-Auslieferung,
+   * nicht bei jedem Rendern dieser Komponente. Der Zwischenspeicher überbrückt
+   * also genau das, wofür er da ist: die Zeit bis `router.refresh()` ankommt.
+   * Danach hat der Server recht, wessen Änderung es auch war.
+   */
+  const ersterLauf = useRef(true)
+  useEffect(() => {
+    if (ersterLauf.current) {
+      ersterLauf.current = false
+      return
+    }
+    setGeaendert((v) => (Object.keys(v).length > 0 ? {} : v))
+  }, [punkte])
+
+  /**
+   * Wird gerade ein Objekt bearbeitet? Dann ist die Karte gesperrt.
+   *
+   * Symmetrisch zur umgekehrten Regel (beim Grenzenzeichnen verschwindet der
+   * Inspektor). Ohne die Sperre hängte ein Klick auf einen anderen Marker oder
+   * auf „Grenze bearbeiten" den Inspektor aus und verwarf den Entwurf
+   * kommentarlos — im schlimmsten Fall mitten in einem laufenden Write, dessen
+   * Fehlermeldung dann in einer nicht mehr sichtbaren Komponente landete. Für
+   * den Nutzer sähe das aus wie ein Erfolg. Von Codex gefunden, 27.07.2026.
+   */
+  const [objektBearbeitung, setObjektBearbeitung] = useState(false)
+
   // Nur abonnieren, nicht ableiten: der Zustand kommt aus dem Browser, auch
   // wenn ESC das Vollbild verlässt, ohne dass der Knopf beteiligt war.
   useEffect(() => {
@@ -99,6 +157,9 @@ export default function Revierkarte({
     }
     setFehler(null)
     setLoeschFrage(false)
+    // Auswahl fallen lassen: solange gezeichnet wird, ist der Inspektor weg und
+    // eine unsichtbar weiterlaufende Auswahl käme danach überraschend zurück.
+    setAuswahlId(null)
     zeichner.startEditing(aktuelleGrenze)
   }
 
@@ -190,11 +251,44 @@ export default function Revierkarte({
     }
   }
 
+  /**
+   * Ein Kartenobjekt speichern (Phase 3 Schritt 3a: Name, Typ, Notiz).
+   *
+   * Wirft bei Misserfolg — der Inspektor fängt es und lässt den Entwurf stehen.
+   *
+   * **`.eq('district_id', revierId)` ist nicht überflüssig.** Die R3-Allowlist in
+   * `schreibe()` prüft das *Revier*, nicht das Objekt: käme je eine fremde
+   * Objekt-ID in diesen Aufruf, ginge das Tor auf und der Write träfe ein Objekt
+   * in einem gesperrten Revier — RLS hielte ihn nicht auf, weil Moritz auch die
+   * Pilotreviere besitzt. Mit der zweiten Einschränkung trifft er 0 Zeilen, und
+   * 0 Zeilen sind in `ausWriteErgebnis` ein Fehler.
+   *
+   * `position` bleibt unangetastet: Verschieben ist Schritt 3b und bekommt einen
+   * eigenen Weg.
+   */
+  const objektSpeichern = async (id: string, entwurf: ObjektEntwurf) => {
+    const spalten = alsSpalten(entwurf)
+    await schreibe(revierId, 'Das Objekt', () =>
+      createClient()
+        .from('map_objects')
+        .update(spalten)
+        .eq('id', id)
+        .eq('district_id', revierId)
+        .select('id'),
+    )
+    setGeaendert((v) => ({ ...v, [id]: spalten }))
+    router.refresh()
+  }
+
   return (
     <div ref={kasten} className={`zentrale-karte-kasten${kino ? ' kino' : ''}`}>
+      {/* Die Bühne trägt Karte, Knöpfe und Meldungen. Sie ist nötig, seit rechts
+          der Inspektor steht: die Knöpfe sind absolut am Rand ihres Kastens
+          ausgerichtet und lägen sonst über dem Panel. */}
+      <div className="zentrale-karte-buehne">
       <div className="zentrale-karte-knoepfe">
         {offen && !zeichner.editMode && (
-          <button type="button" onClick={starten} disabled={laeuft}>
+          <button type="button" onClick={starten} disabled={laeuft || objektBearbeitung}>
             {aktuelleGrenze ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
           </button>
         )}
@@ -262,7 +356,11 @@ export default function Revierkarte({
 
       <Karte
         grenze={aktuelleGrenze}
-        punkte={punkte}
+        punkte={aktuellePunkte}
+        auswahlId={auswahlId}
+        // Während einer Objektbearbeitung nicht wählbar — sonst verwirft der
+        // Klick den Entwurf, den er gar nicht sehen kann.
+        aufAuswahl={objektBearbeitung ? undefined : setAuswahlId}
         zeichnen={
           zeichner.editMode
             ? {
@@ -281,6 +379,20 @@ export default function Revierkarte({
             : undefined
         }
       />
+      </div>
+
+      {/* Beim Zeichnen weg: die Karte ist dann Werkzeug, kein Auswahlmittel, und
+          zwei gleichzeitig offene Bearbeitungen wären zwei Wahrheiten. */}
+      {!zeichner.editMode && (
+        <ObjektInspektor
+          punkte={aktuellePunkte}
+          auswahlId={auswahlId}
+          aufAuswahl={setAuswahlId}
+          offen={offen}
+          aufSpeichern={objektSpeichern}
+          aufModus={setObjektBearbeitung}
+        />
+      )}
     </div>
   )
 }

@@ -251,14 +251,21 @@
   overflow: hidden;
 }
 /* Trägt die Größenknöpfe und ist selbst das Vollbild-Ziel.
-   Drei Größen: eingebettet 420px · Kinomodus 78vh · Vollbild. */
-.zentrale-karte-kasten { position: relative; width: 100%; height: 420px; }
+   Drei Größen: eingebettet 420px · Kinomodus 78vh · Vollbild.
+   Seit Schritt 3 eine Zeile aus Bühne und Inspektor — weil das Panel INNERHALB
+   des Vollbild-Ziels sitzt, gilt es in allen drei Größen ohne Sonderfall. */
+.zentrale-karte-kasten { display: flex; width: 100%; height: 420px; }
 .zentrale-karte-kasten.kino { height: 78vh; }
 .zentrale-karte-kasten:fullscreen {
   height: 100vh;
   width: 100vw;
   background: var(--z-bg-base);
 }
+
+/* Die Karte samt ihrer absolut gesetzten Knöpfe und Meldungen. `min-width: 0`
+   ist tragend: ohne das weigert sich ein Flex-Kind, unter seine Inhaltsbreite zu
+   schrumpfen, und der Inspektor würde aus dem Kasten gedrückt. */
+.zentrale-karte-buehne { position: relative; flex: 1; min-width: 0; }
 
 .zentrale-karte-knoepfe {
   position: absolute;
@@ -388,3 +395,193 @@
   border: 1px solid var(--z-border-strong);
   border-radius: 999px;
 }
+
+/* --- Objekt-Inspektor (Phase 3 Schritt 3) ------------------------------------
+   Feste Spalte rechts im Kartenkasten. Feste Breite statt Prozent: der Inhalt
+   ist ein Formular, und ein Formular soll bei jeder Kartengröße gleich breit
+   sein — im Vollbild wäre ein Drittel Bildschirm für drei Felder absurd.
+   ponytail: keine Media Query. Das Portal ist per Login-Weiche desktop-only,
+   am Handy landet man in /app. Nachziehen, falls das je fällt. */
+.zentrale-inspektor {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* sonst wächst die Spalte statt zu scrollen */
+  border-left: 1px solid var(--z-border);
+  background: var(--z-bg-elevated);
+}
+
+.zentrale-inspektor-kopf {
+  flex: none;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--z-border);
+}
+.zentrale-inspektor-kopf h3 {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-kopf h3 .zahl { color: var(--z-text-primary); }
+.zentrale-inspektor-kopf input[type='search'] {
+  font: inherit;
+  font-size: 0.875rem;
+  width: 100%;
+  padding: 5px 8px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+.zentrale-inspektor-kopf .zurueck {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0;
+  color: var(--z-text-secondary);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.zentrale-inspektor-kopf .zurueck:hover { color: var(--z-text-primary); }
+.zentrale-inspektor-kopf .zurueck:disabled { opacity: 0.5; cursor: default; }
+
+/* Das einzige scrollende Stück: Kopf und Fußzeile bleiben stehen, damit
+   „Speichern" auch bei langer Notiz erreichbar ist, ohne zu scrollen. */
+.zentrale-inspektor-koerper {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.zentrale-inspektor-liste { list-style: none; margin: 0; padding: 0; }
+.zentrale-inspektor-liste button {
+  font: inherit;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  color: var(--z-text-primary);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zentrale-inspektor-liste button:hover { background: var(--z-bg-sunken); }
+.zentrale-inspektor-liste button:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: -2px;
+}
+.zentrale-inspektor-liste .nam { font-size: 0.875rem; }
+.zentrale-inspektor-liste .typ {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+
+.zentrale-inspektor-leer,
+.zentrale-inspektor-notiz.leer {
+  color: var(--z-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.zentrale-inspektor-name {
+  margin: 0 0 2px;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.zentrale-inspektor-typ {
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-notiz {
+  margin: 0 0 12px;
+  font-size: 0.875rem;
+  white-space: pre-wrap; /* Notizen aus der Feld-App tragen Zeilenumbrüche */
+}
+.zentrale-inspektor-foto {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--z-border);
+  border-radius: 6px;
+}
+.zentrale-inspektor-koord {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+
+.zentrale-inspektor-feld label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-feld input,
+.zentrale-inspektor-feld select,
+.zentrale-inspektor-feld textarea {
+  font: inherit;
+  font-size: 0.875rem;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 6px 8px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+.zentrale-inspektor-feld textarea { resize: vertical; }
+.zentrale-inspektor-feld :disabled { opacity: 0.6; }
+
+/* Wie beim Grenzen-Fehler kein Alarmrot: „Objekt braucht einen Namen" ist ein
+   Datenhinweis, kein Feldalarm (Konzept §2.6). */
+.zentrale-inspektor-fehler {
+  flex: none;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border-top: 1px solid var(--z-accent);
+}
+
+.zentrale-inspektor-fuss {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--z-border);
+}
+.zentrale-inspektor-fuss button {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 6px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zentrale-inspektor-fuss button.haupt {
+  color: var(--z-on-accent);
+  background: var(--z-accent);
+  border-color: var(--z-accent);
+}
+.zentrale-inspektor-fuss button.haupt:hover { background: var(--z-accent-hover); }
+.zentrale-inspektor-fuss button:hover:not(.haupt) { background: var(--z-bg-sunken); }
+.zentrale-inspektor-fuss button:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+.zentrale-inspektor-fuss button:disabled { opacity: 0.5; cursor: default; }
