@@ -19,6 +19,8 @@ const TYPE_LABELS: Record<ObjektType, string> = {
   kirrung: 'Kirrung',
   salzlecke: 'Salzlecke',
   wildkamera: 'Wildkamera',
+  wildacker: 'Wildacker',
+  notfall_treffpunkt: 'Notfall-Treffpunkt',
   sonstiges: 'Sonstiges',
 }
 

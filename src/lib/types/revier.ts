@@ -1,4 +1,8 @@
-export type ObjektType = "hochsitz" | "kanzel" | "drueckjagdstand" | "parkplatz" | "kirrung" | "salzlecke" | "wildkamera" | "sonstiges";
+// Handgepflegte Spiegelung des DB-Enums map_object_type — und das bleibt sie
+// bewusst: gerade WEIL Record<ObjektType, …> beim Bauen meckert, wenn ein neuer
+// Wert kein Label hat, faellt es hier auf und nicht dem Nutzer als leere Zeile.
+// Zuletzt nachgezogen: Migration 063 (wildacker, notfall_treffpunkt).
+export type ObjektType = "hochsitz" | "kanzel" | "drueckjagdstand" | "parkplatz" | "kirrung" | "salzlecke" | "wildkamera" | "wildacker" | "notfall_treffpunkt" | "sonstiges";
 export type ZoneType = "jagdzone" | "ruhezone" | "wildschaden";
 
 export type Revier = {

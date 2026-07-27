@@ -23,6 +23,8 @@ const SONSTIGES_OPTIONS: TypeOption[] = [
   { type: 'kirrung', label: 'Kirrung', icon: '🌾', defaultName: 'Kirrung' },
   { type: 'wildkamera', label: 'Wildkamera', icon: '📷', defaultName: 'Wildkamera' },
   { type: 'parkplatz', label: 'Parkplatz', icon: '🅿️', defaultName: 'Parkplatz' },
+  { type: 'wildacker', label: 'Wildacker', icon: '🌱', defaultName: 'Wildacker' },
+  { type: 'notfall_treffpunkt', label: 'Notfall-Treffpunkt', icon: '🚑', defaultName: 'Notfall-Treffpunkt' },
   { type: 'sonstiges', label: 'Sonstiges', icon: '📌', defaultName: '' },
 ]
 

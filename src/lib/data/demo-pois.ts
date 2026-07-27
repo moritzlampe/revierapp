@@ -30,7 +30,8 @@ export function getMarkerColor(type: ObjektType): string {
     case "salzlecke": return "#B0BEC5";
     case "wildkamera": return "#757575";
     case "drueckjagdstand": return "#C62828";
-    case "sonstiges": return "#9E9E9E";
+    case "sonstiges":
+    default: return "#9E9E9E";
   }
 }
 
@@ -43,7 +44,8 @@ export function getEmoji(type: ObjektType): string {
     case "salzlecke": return "\u{1F9C2}";
     case "wildkamera": return "\u{1F4F7}";
     case "drueckjagdstand": return "\u{1F3AF}";
-    case "sonstiges": return "\u{1F4CD}";
+    case "sonstiges":
+    default: return "\u{1F4CD}";
   }
 }
 
@@ -56,7 +58,8 @@ export function getIconBg(type: ObjektType): string {
     case "salzlecke": return "bg-gray-50";
     case "wildkamera": return "bg-gray-100";
     case "drueckjagdstand": return "bg-red-50";
-    case "sonstiges": return "bg-gray-50";
+    case "sonstiges":
+    default: return "bg-gray-50";
   }
 }
 
@@ -69,7 +72,8 @@ export function getTypLabel(type: ObjektType): string {
     case "salzlecke": return "Salzlecke";
     case "wildkamera": return "Wildkamera";
     case "drueckjagdstand": return "Dr\u00FCckjagdstand";
-    case "sonstiges": return "Sonstiges";
+    case "sonstiges":
+    default: return "Sonstiges";
   }
 }
 

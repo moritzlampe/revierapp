@@ -1,0 +1,41 @@
+-- 063_map_object_type_wildacker_treffpunkt.sql
+--
+-- Zwei neue Werte für map_object_type: 'wildacker' und 'notfall_treffpunkt'.
+--
+-- Konzept: quickhunt-native/docs/konzepte/QuickHunt_Konzept_Kartenlesbarkeit_V1.md,
+-- Lock L7 („Was wird überhaupt zusammengefasst?"). Vorstufe zu K5 (Legende).
+--
+-- Anlass, gemessen am 27.07.2026 auf der Produktion: das Revier Söder hat 196
+-- Objekte — 155 drueckjagdstand + 17 kanzel (die 172 Stände) und 24 übrige, die
+-- ALLE als 'sonstiges' liegen. Die Importquelle hatte keine Typen; die Bedeutung
+-- steckt bis heute im Namen („Wildacker", „Notfall-Treffpunkt", „Wendeplatz").
+-- Eine Legende hätte damit zwei Schalter, und „Futterstellen ausblenden" wäre
+-- keiner davon.
+--
+-- Warum nur ZWEI Werte und nicht die fünf Legendenkategorien aus dem Konzept:
+-- Legendenkategorien sind eine Gruppierung im Client, keine Enum-Werte.
+-- 'kirrung', 'salzlecke', 'wildkamera' und 'parkplatz' gibt es längst — die
+-- Legende fasst sie zusammen. Es fehlen genau die zwei hier. Dazu kommt, dass
+-- frei definierbare eigene Kategorien geplant sind (Moritz, 27.07.); die werden
+-- eine Tabelle, kein Enum. Jeder Enum-Wert, den wir heute auf Vorrat anlegen,
+-- wäre dann Ballast.
+--
+-- Kompatibilität (beide Clients teilen die DB):
+--   * Rein additiv, keine bestehende Zeile ändert sich.
+--   * Die PWA verträgt unbekannte Werte zur Laufzeit: getPinVariant() in
+--     src/lib/markers/pin-svg.ts nimmt einen freien String und endet mit
+--     `return { kind: 'sonstiges' }`. Die switch-Blöcke laufen über eine interne
+--     Union, nicht über den DB-Typ.
+--   * ABER: TYPE_LABELS in ObjektDetailSheet.tsx und ObjektEditSheet.tsx sind
+--     Record<ObjektType, string> über die HANDGEPFLEGTE Union in
+--     src/lib/types/revier.ts. Ein neuer Typ hätte dort kein Label, und
+--     TypeSheet.tsx böte ihn beim Anlegen nicht an. Diese drei Dateien werden
+--     im selben Arbeitsgang nachgezogen.
+--
+-- Das Umtypen der betroffenen Zeilen steht in 064 — ein neuer Enum-Wert darf in
+-- derselben Transaktion, in der er entsteht, noch nicht BENUTZT werden.
+--
+-- Idempotent per IF NOT EXISTS (Lehre aus 039, das nicht re-runbar war).
+
+ALTER TYPE map_object_type ADD VALUE IF NOT EXISTS 'wildacker';
+ALTER TYPE map_object_type ADD VALUE IF NOT EXISTS 'notfall_treffpunkt';
