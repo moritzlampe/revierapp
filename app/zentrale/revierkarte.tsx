@@ -18,6 +18,10 @@ const Karte = dynamic(() => import('./revierkarte-map'), {
   loading: () => <div className="zentrale-karte-lade">Karte lädt …</div>,
 })
 
+/** Handler-Platzhalter, während ein Write läuft — der Entwurf bleibt sichtbar,
+ *  darf sich aber nicht mehr ändern. Modulweit, damit die Referenz stabil ist. */
+const nichts = () => {}
+
 /**
  * Drei Größen, wie bei YouTube: eingebettet · Kinomodus · Vollbild.
  *
@@ -44,6 +48,25 @@ export default function Revierkarte({
   const [laeuft, setLaeuft] = useState(false)
   const [loeschFrage, setLoeschFrage] = useState(false)
 
+  /**
+   * Was zuletzt erfolgreich geschrieben wurde — `undefined` heißt „noch nichts".
+   *
+   * `router.refresh()` gibt kein Promise zurück, das Nachziehen der
+   * Server-Komponente ist also nicht abwartbar. Ohne diesen Zwischenspeicher
+   * zeigte die `grenze`-Prop unmittelbar nach dem Speichern noch den **alten**
+   * Stand: ein sofortiger Klick auf „Grenze bearbeiten" lud die alte Geometrie,
+   * und das nächste „Fertig" hätte den eigenen Speichervorgang zurückgedreht.
+   * Nach einem Löschen hätte derselbe Ablauf die Grenze wieder auferstehen
+   * lassen. Von Codex gefunden, 27.07.2026.
+   *
+   * Ein Revierwechsel setzt das zurück, weil `page.tsx` die Komponente mit
+   * `key={revier.id}` neu aufbaut.
+   */
+  const [gespeichert, setGespeichert] = useState<[number, number][][] | null | undefined>(
+    undefined,
+  )
+  const aktuelleGrenze = gespeichert !== undefined ? gespeichert : grenze
+
   // Nur abonnieren, nicht ableiten: der Zustand kommt aus dem Browser, auch
   // wenn ESC das Vollbild verlässt, ohne dass der Knopf beteiligt war.
   useEffect(() => {
@@ -67,7 +90,7 @@ export default function Revierkarte({
   const starten = () => {
     // Mehrringige Grenzen kann der Zeichen-Hook nicht — er nähme nur den ersten
     // Ring und würde die Enklaven beim Speichern verlieren. Lieber ablehnen.
-    if (!nurEinRing(grenze)) {
+    if (!nurEinRing(aktuelleGrenze)) {
       setFehler(
         'Diese Grenze enthält Enklaven (mehrere Ringe). Der Editor kann bisher nur ' +
           'einen Ring und würde die Löcher beim Speichern verlieren.',
@@ -76,7 +99,7 @@ export default function Revierkarte({
     }
     setFehler(null)
     setLoeschFrage(false)
-    zeichner.startEditing(grenze)
+    zeichner.startEditing(aktuelleGrenze)
   }
 
   const abbrechen = () => {
@@ -119,11 +142,16 @@ export default function Revierkarte({
           .eq('id', revierId)
           .select('id, area_ha'),
       )
+      // Erst den Zwischenspeicher setzen, dann zurücksetzen: ab hier ist die neue
+      // Grenze die Wahrheit, auch wenn die Server-Komponente noch nachzieht.
+      const ring = [...zeichner.drawPoints, zeichner.drawPoints[0]].map(
+        (p) => [p.lat, p.lng] as [number, number],
+      )
+      setGespeichert([ring])
       zeichner.stopEditing()
       zeichner.reset()
-      // Die Zahlen und die Grenze kommen aus der Server-Komponente — sie neu
-      // rechnen zu lassen ist billiger und ehrlicher, als hier einen zweiten
-      // Zustand mitzuführen, der auseinanderlaufen kann.
+      // Die Kennzahlen kommen aus der Server-Komponente — die muss nachrechnen,
+      // insbesondere `area_ha`, das die DB selbst erzeugt.
       router.refresh()
     } catch (e) {
       setFehler(e instanceof Error ? e.message : 'Unbekannter Fehler beim Speichern.')
@@ -150,6 +178,7 @@ export default function Revierkarte({
           .eq('id', revierId)
           .select('id, area_ha'),
       )
+      setGespeichert(null)
       setLoeschFrage(false)
       zeichner.stopEditing()
       zeichner.reset()
@@ -166,7 +195,7 @@ export default function Revierkarte({
       <div className="zentrale-karte-knoepfe">
         {offen && !zeichner.editMode && (
           <button type="button" onClick={starten} disabled={laeuft}>
-            {grenze ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
+            {aktuelleGrenze ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
           </button>
         )}
 
@@ -184,12 +213,12 @@ export default function Revierkarte({
           </>
         )}
 
-        {offen && !zeichner.editMode && grenze && !loeschFrage && (
+        {offen && !zeichner.editMode && aktuelleGrenze && !loeschFrage && (
           <button type="button" onClick={() => setLoeschFrage(true)} disabled={laeuft}>
             Grenze löschen
           </button>
         )}
-        {offen && !zeichner.editMode && grenze && loeschFrage && (
+        {offen && !zeichner.editMode && aktuelleGrenze && loeschFrage && (
           <>
             <button type="button" onClick={loeschen} disabled={laeuft}>
               {laeuft ? 'Löscht …' : 'Wirklich löschen'}
@@ -232,16 +261,22 @@ export default function Revierkarte({
       )}
 
       <Karte
-        grenze={grenze}
+        grenze={aktuelleGrenze}
         punkte={punkte}
         zeichnen={
           zeichner.editMode
             ? {
                 punkte: zeichner.drawPoints,
-                aufKlick: zeichner.addPoint,
-                aufZug: zeichner.dragVertex,
-                aufLoeschen: zeichner.deleteVertex,
-                aufEinfuegen: zeichner.insertMidpoint,
+                // Während eines laufenden Writes bleibt der Entwurf sichtbar, ist
+                // aber eingefroren. `laeuft` sperrte vorher nur die Knöpfe: wer bei
+                // langsamer Verbindung nach „Fertig" noch einen Punkt zog, sah
+                // seine Änderung anschließend kommentarlos verschwinden, weil das
+                // EWKT den Stand von vorher trug und danach alles zurückgesetzt
+                // wurde. Von Codex gefunden, 27.07.2026.
+                aufKlick: laeuft ? nichts : zeichner.addPoint,
+                aufZug: laeuft ? nichts : zeichner.dragVertex,
+                aufLoeschen: laeuft ? nichts : zeichner.deleteVertex,
+                aufEinfuegen: laeuft ? nichts : zeichner.insertMidpoint,
               }
             : undefined
         }

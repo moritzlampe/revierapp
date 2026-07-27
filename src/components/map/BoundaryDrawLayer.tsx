@@ -62,20 +62,6 @@ export default function BoundaryDrawLayer({
 }: BoundaryDrawLayerProps) {
   const { vertexIcon, firstVertexIcon, midpointIcon } = useDrawIcons()
 
-  /**
-   * KEINE Live-Vorschau während des Ziehens — bewusst, nach einem Fehlversuch am
-   * 27.07.2026: ein React-State-Update pro `drag`-Event lässt react-leaflet den
-   * gezogenen Marker neu positionieren, während Leaflet ihn noch selbst
-   * verschiebt. Die beiden überschreiben sich gegenseitig und der Punkt landet
-   * an einer falschen Stelle.
-   *
-   * ponytail: der Umriss folgt deshalb erst beim Loslassen. Wer die Vorschau
-   * doch will, darf während des Ziehens nicht rendern — der Weg wäre eine
-   * referenzstabile `position` für jeden Marker (react-leaflet vergleicht sie per
-   * Referenz und ruft dann kein `setLatLng`). Das hängt an einem Interna-Detail
-   * von react-leaflet und ist die Vorschau nicht wert.
-   */
-
   return (
     <>
       <DrawClickHandler onClick={onMapClick} />
@@ -144,21 +130,13 @@ export default function BoundaryDrawLayer({
             />
           ))}
 
-          {/* Zwischenpunkte (Punkte einfügen) — ab 3 Punkte.
-              Zwei Wege, damit beide Erwartungen erfüllt sind:
-              - Antippen fügt genau in der Mitte ein.
-              - Ziehen fügt dort ein, wo losgelassen wird — der Zwischenpunkt
-                wird also in einer Geste zum echten Punkt. Das ist die Erwartung
-                vom Desktop und aus jedem Karteneditor.
-              Leaflet unterdrückt den click nach einem echten Drag selbst
-              (Marker prüft dragging.moved()), es fügt also nicht doppelt ein.
-
-              Am Gerät geprüft (27.07.2026): das Ziehen greift **nur am Desktop**.
-              Auf dem Handy bleibt es wirkungslos — 10 px sind kein Fingerziel,
-              die Berührung geht an die Karte und schiebt sie. Das ist in Ordnung
-              und ausdrücklich so abgenommen: am Handy ist Antippen die richtige
-              Geste, und weil kein Drag zustande kommt, entstehen dort auch keine
-              versehentlichen Punkte beim Kartenschieben. */}
+          {/* Zwischenpunkte, zwei Wege: Antippen fügt in der Mitte ein, Ziehen
+              dort, wo losgelassen wird. Nur auf `dragend` aktualisieren — ein
+              State-Update pro `drag` würde react-leaflet den gezogenen Marker
+              neu positionieren, während Leaflet ihn noch selbst verschiebt.
+              Leaflet unterdrückt den Folge-`click` nach einem echten Drag selbst.
+              Das Ziehen greift praktisch nur am Desktop; 10 px sind kein
+              Fingerziel, am Handy bleibt es beim Antippen (so abgenommen). */}
           {drawPoints.length >= 3 && drawPoints.map((p, i) => {
             const next = drawPoints[(i + 1) % drawPoints.length]
             const midLat = (p.lat + next.lat) / 2

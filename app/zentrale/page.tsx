@@ -187,7 +187,12 @@ export default async function ZentraleUebersicht({
   return (
     <div className="zentrale-wrap">
       <h1>{revier.name}</h1>
-      <p className="zentrale-sub">Übersicht · nur lesend</p>
+      {/* Seit Phase 3 stimmt „nur lesend" nicht mehr pauschal: im Testrevier ist
+          die Grenze bearbeitbar. Die Zeile sagt jetzt, was für dieses Revier gilt,
+          statt eine Eigenschaft der Seite zu behaupten. */}
+      <p className="zentrale-sub">
+        {darfSchreiben(revier.id) ? 'Übersicht · Grenze bearbeitbar' : 'Übersicht · nur lesend'}
+      </p>
 
       {laufend && (
         <div className="zentrale-live">
@@ -225,7 +230,18 @@ export default async function ZentraleUebersicht({
               werden darf — sonst gäbe es keinen Ort, an dem die erste Grenze
               entstehen könnte. */}
           {grenze || punkte.length > 0 || darfSchreiben(revier.id) ? (
-            <Revierkarte grenze={grenze} punkte={punkte} revierId={revier.id} />
+            // `key` ist hier tragend, nicht Kosmetik: beim Revierwechsel ändert
+            // sich nur `?revier=`, Next behält dieselbe Client-Instanz und damit
+            // den Editierzustand. Ohne den key lag die halbfertige Zeichnung des
+            // Testreviers über der Karte des echten Reviers — und weil dort nicht
+            // geschrieben werden darf, verschwanden gleichzeitig „Fertig" und
+            // „Abbrechen": die Oberfläche steckte ohne Reload fest.
+            <Revierkarte
+              key={revier.id}
+              grenze={grenze}
+              punkte={punkte}
+              revierId={revier.id}
+            />
           ) : (
             <div className="zentrale-karte-lade">
               Für dieses Revier ist weder eine Grenze noch ein Objekt hinterlegt.

@@ -57,7 +57,38 @@ const fliege: Punkt[] = [
   { lat: 53.20, lng: 10.40 },
   { lat: 53.30, lng: 10.30 },
 ]
-assert.match(pruefeGrenze(fliege)!, /überschneidet sich selbst/)
+assert.match(pruefeGrenze(fliege)!, /überschneidet oder berührt sich selbst/)
+
+// Berührung, nicht Durchkreuzung: ein Vertex liegt GENAU auf einer anderen Kante.
+// Eine erste Fassung liess das durch (nur strikte Orientierungswechsel geprueft).
+// PostGIS nennt so ein Polygon ungueltig und die generierte area_ha rechnet
+// Unsinn — 3.718 ha fuer ein ~180-ha-Revier. Von Codex gefunden, 27.07.2026.
+assert.match(
+  pruefeGrenze([
+    { lat: 53.20, lng: 10.30 },
+    { lat: 53.20, lng: 10.40 },
+    { lat: 53.30, lng: 10.40 },
+    { lat: 53.20, lng: 10.35 }, // liegt mitten auf der ersten Kante
+    { lat: 53.30, lng: 10.30 },
+  ])!,
+  /überschneidet oder berührt sich selbst/,
+  'Vertex auf einer anderen Kante muss abgelehnt werden',
+)
+
+// Kollinear zur GERADEN einer fernen Kante, aber ausserhalb der Strecke: gueltig.
+// Das ist der Fall, den ein zu grosszuegiges "<= 0" faelschlich ablehnen wuerde.
+assert.equal(
+  pruefeGrenze([
+    { lat: 53.20, lng: 10.30 },
+    { lat: 53.20, lng: 10.34 },
+    { lat: 53.24, lng: 10.34 },
+    { lat: 53.24, lng: 10.40 }, // auf der Geraden lat=53.24, aber weit rechts
+    { lat: 53.28, lng: 10.40 },
+    { lat: 53.28, lng: 10.30 },
+  ]),
+  null,
+  'kollinear zur Geraden, aber aussterhalb der Strecke, ist gueltig',
+)
 
 // --- ewktAus: Ring schliessen, Reihenfolge lng lat ---
 const ewkt = ewktAus(quadrat)
