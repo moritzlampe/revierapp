@@ -128,6 +128,13 @@ export default function RevierContent({ district, objects: initialObjects, userI
   // Live-Boundary aus DB (aktualisiert sich nach Speichern)
   const [boundaryRaw, setBoundaryRaw] = useState<unknown>(district.boundary)
 
+  // Fläche ebenso live. `district.area_ha` ist eine Prop und bliebe nach dem
+  // Bearbeiten auf dem alten Wert stehen — der Speicherpfad lud die Zahl bisher
+  // schon, hat sie aber verworfen. Sichtbar wurde das erst, als das Löschen
+  // überhaupt funktionierte: sonst stand „Grenze entfernt" neben der alten
+  // Hektarzahl.
+  const [areaHa, setAreaHa] = useState<number | null>(district.area_ha)
+
   const boundary = useMemo(
     () => parsePolygonHex(boundaryRaw),
     [boundaryRaw],
@@ -168,14 +175,21 @@ export default function RevierContent({ district, objects: initialObjects, userI
     // Leeres Polygon → boundary NULL setzen
     if (points.length === 0) {
       const supabase = createClient()
+      // NUR boundary. `area_ha` ist
+      // GENERATED ALWAYS AS (st_area(boundary::geography) / 10000) und fällt von
+      // selbst auf NULL, wenn die Grenze weg ist. Ein Schreibversuch darauf
+      // scheitert immer mit `column "area_ha" can only be updated to DEFAULT` —
+      // und weil hier nur geloggt wird, schlug „Grenze entfernen" jahrelang
+      // still fehl (Backlog E-R6, gefunden 27.07.2026).
       const { error } = await supabase
         .from('districts')
-        .update({ boundary: null, area_ha: null })
+        .update({ boundary: null })
         .eq('id', district.id)
       if (error) {
         console.error('Boundary-Löschen fehlgeschlagen:', error.message)
       } else {
         setBoundaryRaw(null)
+        setAreaHa(null)
         showToast('Grenze entfernt')
       }
       bEditor.stopEditing()
@@ -210,6 +224,7 @@ export default function RevierContent({ district, objects: initialObjects, userI
         .single()
       if (data) {
         setBoundaryRaw(data.boundary)
+        setAreaHa(data.area_ha)
       }
       showToast('Grenze gespeichert')
     }
@@ -527,7 +542,7 @@ export default function RevierContent({ district, objects: initialObjects, userI
           <h1 className="text-base font-bold truncate">{district.name}</h1>
           <p className="text-xs" style={{ color: 'var(--text-3)' }}>
             {objects.length} {objects.length === 1 ? 'Objekt' : 'Objekte'}
-            {district.area_ha ? ` · ${Math.round(district.area_ha)} ha` : ''}
+            {areaHa ? ` · ${Math.round(areaHa)} ha` : ''}
           </p>
         </div>
       </div>
