@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { parsePointHex, parsePolygonHex } from '@/lib/geo-utils'
 import Revierkarte from './revierkarte'
 import type { Punkt } from './revierkarte-map'
+// Importierbar auch serverseitig: schreiben.ts hat bewusst keine Imports und
+// damit keine Browser-Abhängigkeit.
+import { darfSchreiben } from './schreiben'
 
 /** Alles, worauf ein Schütze sitzt. Kirrung, Salzlecke, Wildkamera,
  *  Parkplatz und Sonstiges zählen bewusst nicht als Sitz. */
@@ -218,8 +221,11 @@ export default async function ZentraleUebersicht({
       <section className="zentrale-block">
         <h2>Revierkarte</h2>
         <div className="zentrale-karte">
-          {grenze || punkte.length > 0 ? (
-            <Revierkarte grenze={grenze} punkte={punkte} />
+          {/* Auch bei völlig leerem Revier die Karte zeigen, sofern hineingeschrieben
+              werden darf — sonst gäbe es keinen Ort, an dem die erste Grenze
+              entstehen könnte. */}
+          {grenze || punkte.length > 0 || darfSchreiben(revier.id) ? (
+            <Revierkarte grenze={grenze} punkte={punkte} revierId={revier.id} />
           ) : (
             <div className="zentrale-karte-lade">
               Für dieses Revier ist weder eine Grenze noch ein Objekt hinterlegt.

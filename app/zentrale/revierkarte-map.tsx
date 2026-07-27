@@ -13,6 +13,8 @@ import {
 } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { BKG_TOPPLUS } from '@/lib/map/tiles'
+import BoundaryDrawLayer from '@/components/map/BoundaryDrawLayer'
+import type { DrawPoint } from '@/hooks/useBoundaryEditor'
 
 export type Punkt = { id: string; name: string; typ: string; lat: number; lng: number }
 
@@ -20,6 +22,18 @@ export type KarteProps = {
   /** Reviergrenze als Leaflet-Ringe ([lat,lng][]), serverseitig geparst. */
   grenze: [number, number][][] | null
   punkte: Punkt[]
+}
+
+/**
+ * Zeichenzustand, wenn die Grenze bearbeitet wird. Kommt aus `revierkarte.tsx`
+ * — die Karte hält keinen eigenen Editierzustand, sie stellt ihn nur dar.
+ */
+export type ZeichenProps = {
+  punkte: DrawPoint[]
+  aufKlick: (p: DrawPoint) => void
+  aufZug: (index: number, p: DrawPoint) => void
+  aufLoeschen: (index: number) => void
+  aufEinfuegen: (nachIndex: number, p: DrawPoint) => void
 }
 
 /** Alles, worauf ein Schütze sitzt — bekommt den Akzent, der Rest tritt zurück. */
@@ -116,15 +130,19 @@ function Objekte({ punkte }: { punkte: Punkt[] }) {
 }
 
 /**
- * Revierkarte der Übersicht: reine Anzeige. Kein Zeichnen, kein Verschieben,
- * keine Auswahl — Bearbeiten ist Phase 3. Deshalb CircleMarker statt der
- * SVG-Pins: bei 196 Objekten (Revier Söder) ist das spürbar billiger und der
- * Pin trägt hier keine Information, die der Name nicht auch trägt.
+ * Revierkarte der Übersicht. Objekte sind CircleMarker statt SVG-Pins: bei 196
+ * Objekten (Revier Söder) ist das spürbar billiger, und der Pin trägt hier keine
+ * Information, die der Name nicht auch trägt. Objekte bearbeiten kommt später;
+ * hier ist bisher nur die Grenze editierbar.
  *
  * Einbindung über revierkarte.tsx (dynamic, ssr:false) — react-leaflet fasst
  * beim Import `window` an.
  */
-export default function RevierkarteMap({ grenze, punkte }: KarteProps) {
+export default function RevierkarteMap({
+  grenze,
+  punkte,
+  zeichnen,
+}: KarteProps & { zeichnen?: ZeichenProps }) {
   return (
     <MapContainer
       center={[51.2, 10.4]} // Platzhalter bis Ausschnitt greift
@@ -142,14 +160,29 @@ export default function RevierkarteMap({ grenze, punkte }: KarteProps) {
         maxZoom={BKG_TOPPLUS.maxZoom}
       />
 
-      {grenze && grenze.length > 0 && (
+      {/* Beim Bearbeiten zeigt der Zeichenlayer den Entwurf — die gespeicherte
+          Grenze daneben stehen zu lassen, wären zwei Wahrheiten in einem Bild. */}
+      {!zeichnen && grenze && grenze.length > 0 && (
         <Polygon
           positions={grenze as L.LatLngExpression[][]}
           pathOptions={{ color: ACCENT, weight: 2.5, fillColor: ACCENT, fillOpacity: 0.07 }}
         />
       )}
 
+      {zeichnen && (
+        <BoundaryDrawLayer
+          drawPoints={zeichnen.punkte}
+          onMapClick={zeichnen.aufKlick}
+          onVertexDrag={zeichnen.aufZug}
+          onVertexDelete={zeichnen.aufLoeschen}
+          onMidpointInsert={zeichnen.aufEinfuegen}
+        />
+      )}
+
       <Objekte punkte={punkte} />
+      {/* Bewusst nur die GESPEICHERTE Grenze und die Objekte: bekäme `Ausschnitt`
+          den Entwurf, liefe fitBounds bei jedem gesetzten Punkt erneut und die
+          Karte würde unter der Hand wegrutschen. */}
       <Ausschnitt grenze={grenze} punkte={punkte} />
     </MapContainer>
   )
