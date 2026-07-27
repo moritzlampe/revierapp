@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import L from 'leaflet'
 import { Polygon, Polyline, Marker, useMapEvents } from 'react-leaflet'
 import type { DrawPoint } from '@/hooks/useBoundaryEditor'
@@ -62,25 +62,19 @@ export default function BoundaryDrawLayer({
 }: BoundaryDrawLayerProps) {
   const { vertexIcon, firstVertexIcon, midpointIcon } = useDrawIcons()
 
-  // Ein Zwischenpunkt, der gerade gezogen wird. Nur zur Vorschau: erst beim
-  // Loslassen wird er über onMidpointInsert ein echter Punkt.
-  const [zug, setZug] = useState<{ nachIndex: number; punkt: DrawPoint } | null>(null)
-
   /**
-   * Umriss für die Vorschau: während des Ziehens steckt der provisorische Punkt
-   * schon drin, damit die Linie dem Finger/Zeiger folgt. Ohne das zieht man
-   * einen Punkt und nichts bewegt sich — es sähe kaputt aus.
+   * KEINE Live-Vorschau während des Ziehens — bewusst, nach einem Fehlversuch am
+   * 27.07.2026: ein React-State-Update pro `drag`-Event lässt react-leaflet den
+   * gezogenen Marker neu positionieren, während Leaflet ihn noch selbst
+   * verschiebt. Die beiden überschreiben sich gegenseitig und der Punkt landet
+   * an einer falschen Stelle.
    *
-   * Bewusst nur für Polygon und Linien. Die Griffe (Vertices, Zwischenpunkte)
-   * rendern weiter aus `drawPoints`, damit ihre Indizes stabil bleiben und die
-   * Handler nicht auf den falschen Punkt zeigen.
+   * ponytail: der Umriss folgt deshalb erst beim Loslassen. Wer die Vorschau
+   * doch will, darf während des Ziehens nicht rendern — der Weg wäre eine
+   * referenzstabile `position` für jeden Marker (react-leaflet vergleicht sie per
+   * Referenz und ruft dann kein `setLatLng`). Das hängt an einem Interna-Detail
+   * von react-leaflet und ist die Vorschau nicht wert.
    */
-  const umriss = useMemo(() => {
-    if (!zug) return drawPoints
-    const next = [...drawPoints]
-    next.splice(zug.nachIndex + 1, 0, zug.punkt)
-    return next
-  }, [drawPoints, zug])
 
   return (
     <>
@@ -89,9 +83,9 @@ export default function BoundaryDrawLayer({
       {drawPoints.length > 0 && (
         <>
           {/* Polygon-Füllung ab 3 Punkten */}
-          {umriss.length >= 3 && (
+          {drawPoints.length >= 3 && (
             <Polygon
-              positions={umriss.map(p => [p.lat, p.lng] as [number, number])}
+              positions={drawPoints.map(p => [p.lat, p.lng] as [number, number])}
               pathOptions={{
                 color: 'hsl(142, 70%, 45%)',
                 weight: 2,
@@ -102,9 +96,9 @@ export default function BoundaryDrawLayer({
           )}
 
           {/* Verbindungslinien zwischen Punkten */}
-          {umriss.length >= 2 && (
+          {drawPoints.length >= 2 && (
             <Polyline
-              positions={umriss.map(p => [p.lat, p.lng] as [number, number])}
+              positions={drawPoints.map(p => [p.lat, p.lng] as [number, number])}
               pathOptions={{
                 color: 'hsl(142, 70%, 45%)',
                 weight: 2.5,
@@ -113,11 +107,11 @@ export default function BoundaryDrawLayer({
           )}
 
           {/* Schliessende gestrichelte Linie (erster ↔ letzter Punkt) ab 3 Punkte */}
-          {umriss.length >= 3 && (
+          {drawPoints.length >= 3 && (
             <Polyline
               positions={[
-                [umriss[umriss.length - 1].lat, umriss[umriss.length - 1].lng],
-                [umriss[0].lat, umriss[0].lng],
+                [drawPoints[drawPoints.length - 1].lat, drawPoints[drawPoints.length - 1].lng],
+                [drawPoints[0].lat, drawPoints[0].lng],
               ]}
               pathOptions={{
                 color: 'hsl(142, 70%, 45%)',
@@ -173,13 +167,8 @@ export default function BoundaryDrawLayer({
                     L.DomEvent.stopPropagation(e)
                     onMidpointInsert(i, { lat: midLat, lng: midLng })
                   },
-                  drag: (e) => {
-                    const ll = e.target.getLatLng()
-                    setZug({ nachIndex: i, punkt: { lat: ll.lat, lng: ll.lng } })
-                  },
                   dragend: (e) => {
                     const ll = e.target.getLatLng()
-                    setZug(null)
                     onMidpointInsert(i, { lat: ll.lat, lng: ll.lng })
                   },
                 }}
