@@ -12,6 +12,7 @@ import {
   typLabel,
   unveraendert,
   type ObjektEntwurf,
+  type Setzen,
 } from './objekte'
 
 /**
@@ -42,6 +43,11 @@ export default function ObjektInspektor({
   suche,
   aufSuchfeldFokus,
   ausgeklappt,
+  setzen,
+  aufPositionStarten,
+  aufPositionSpeichern,
+  aufAnlegen,
+  aufSetzAbbrechen,
 }: {
   punkte: Punkt[]
   auswahlId: string | null
@@ -73,6 +79,14 @@ export default function ObjektInspektor({
    * Zuklappen überleben.
    */
   ausgeklappt: boolean
+  /** Der Setzmodus (Schritt 3b) — der Zustand liegt in `revierkarte.tsx`. */
+  setzen: Setzen | null
+  aufPositionStarten: (id: string) => void
+  /** Schreibt die Position und wirft bei Misserfolg — der Entwurf bleibt dann. */
+  aufPositionSpeichern: () => Promise<void>
+  /** Legt das Objekt an und wirft bei Misserfolg — der Entwurf bleibt dann. */
+  aufAnlegen: (entwurf: ObjektEntwurf) => Promise<void>
+  aufSetzAbbrechen: () => void
 }) {
   const gewaehlt = punkte.find((p) => p.id === auswahlId) ?? null
 
@@ -82,7 +96,15 @@ export default function ObjektInspektor({
       className={`zentrale-inspektor${ausgeklappt ? '' : ' zu'}`}
       aria-label="Kartenobjekte"
     >
-      {gewaehlt ? (
+      {/* Anlegen gewinnt vor der Auswahl: der Modus setzt sie ohnehin zurück,
+          und wäre beides zugleich möglich, stünden zwei Entwürfe offen. */}
+      {setzen?.art === 'neu' ? (
+        <NeuFormular
+          kandidat={setzen.kandidat}
+          aufAnlegen={aufAnlegen}
+          aufAbbrechen={aufSetzAbbrechen}
+        />
+      ) : gewaehlt ? (
         <Details
           // Objektwechsel baut das Formular neu auf. Ohne den key trüge ein
           // angefangener Entwurf auf das nächste Objekt über — dieselbe Falle,
@@ -96,11 +118,186 @@ export default function ObjektInspektor({
           }}
           aufSpeichern={aufSpeichern}
           aufModus={aufModus}
+          // Nur der eigene Positionsmodus zählt: gehörte er zu einem anderen
+          // Objekt, zeigte dieses hier sonst ein Feld, das nicht zu ihm gehört.
+          positioniert={
+            setzen?.art === 'position' && setzen.id === gewaehlt.id ? setzen : null
+          }
+          aufPositionStarten={aufPositionStarten}
+          aufPositionSpeichern={aufPositionSpeichern}
+          aufSetzAbbrechen={aufSetzAbbrechen}
         />
       ) : (
         <Liste punkte={punkte} aufAuswahl={aufAuswahl} suche={suche} />
       )}
     </aside>
+  )
+}
+
+/**
+ * Die drei Felder, die ein Objekt ausmachen — einmal für Bearbeiten UND Anlegen.
+ *
+ * Vorher standen sie nur im Bearbeiten-Zweig. Sie für das Anlegen zu kopieren
+ * hieße, die nächste Änderung an zwei Stellen machen zu müssen — und genau davon
+ * hat dieses Repo schon fünf Kopien der Typliste.
+ *
+ * Die Typauswahl kennt zwei Sonderzeilen, und beide leiten sich aus dem Wert ab
+ * statt aus einem Schalter:
+ * - **leer** → „Bitte wählen": nur beim Anlegen erreichbar. Ein stiller Start
+ *   auf „Hochsitz" würde falsch eingeordnete Objekte erzeugen, die niemand mehr
+ *   findet, weil sie in der Legende unter der falschen Kategorie stehen.
+ * - **unbekannt** → roh anzeigen: trägt der Bestand einen Typ, den das Enum hier
+ *   nicht kennt, wäre er ohne die Zeile beim Öffnen still auf den ersten Eintrag
+ *   gesprungen — und ein bloßes Speichern hätte ihn umgeschrieben.
+ */
+function Felder({
+  entwurf,
+  setEntwurf,
+  gesperrt,
+  fokus,
+}: {
+  entwurf: ObjektEntwurf
+  setEntwurf: (fort: (v: ObjektEntwurf) => ObjektEntwurf) => void
+  gesperrt: boolean
+  fokus: boolean
+}) {
+  return (
+    <div className="zentrale-inspektor-feld">
+      <label htmlFor="objekt-name">Name</label>
+      <input
+        id="objekt-name"
+        type="text"
+        value={entwurf.name}
+        onChange={(e) => setEntwurf((v) => ({ ...v, name: e.target.value }))}
+        disabled={gesperrt}
+        autoFocus={fokus}
+      />
+
+      <label htmlFor="objekt-typ">Typ</label>
+      <select
+        id="objekt-typ"
+        value={entwurf.typ}
+        onChange={(e) => setEntwurf((v) => ({ ...v, typ: e.target.value }))}
+        disabled={gesperrt}
+      >
+        {!entwurf.typ && <option value="">Bitte wählen …</option>}
+        {!!entwurf.typ && !OBJEKT_TYPEN.some((t) => t.wert === entwurf.typ) && (
+          <option value={entwurf.typ}>{entwurf.typ} (unbekannt)</option>
+        )}
+        {OBJEKT_TYPEN.map((t) => (
+          <option key={t.wert} value={t.wert}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+
+      <label htmlFor="objekt-notiz">Notiz</label>
+      <textarea
+        id="objekt-notiz"
+        rows={4}
+        value={entwurf.beschreibung}
+        onChange={(e) => setEntwurf((v) => ({ ...v, beschreibung: e.target.value }))}
+        disabled={gesperrt}
+        placeholder="z. B. Am Waldrand, 4 m"
+      />
+    </div>
+  )
+}
+
+/**
+ * Ein neues Objekt anlegen.
+ *
+ * **Kein Assistent in zwei Schritten**, obwohl `position` NOT NULL ist: Formular
+ * und Positionsstand stehen von Anfang an beide da, und „Objekt anlegen" bleibt
+ * gesperrt, bis in die Karte geklickt wurde. Das erzwingt dieselbe Bedingung wie
+ * eine Schrittfolge, lässt aber offen, ob man zuerst tippt oder zuerst klickt —
+ * und es kostet keinen zweiten Bildschirm für einen Zustand, in dem nichts
+ * anderes zu tun ist als zu klicken.
+ *
+ * Die Position steht bewusst OBEN: sie ist das Einzige, was hier fehlen kann.
+ */
+function NeuFormular({
+  kandidat,
+  aufAnlegen,
+  aufAbbrechen,
+}: {
+  kandidat: { lat: number; lng: number } | null
+  aufAnlegen: (entwurf: ObjektEntwurf) => Promise<void>
+  aufAbbrechen: () => void
+}) {
+  const [entwurf, setEntwurf] = useState<ObjektEntwurf>({
+    name: '',
+    typ: '',
+    beschreibung: '',
+  })
+  const [fehler, setFehler] = useState<string | null>(null)
+  const [laeuft, setLaeuft] = useState(false)
+
+  const anlegen = async () => {
+    const problem = pruefeObjekt(entwurf)
+    if (problem) {
+      setFehler(problem)
+      return
+    }
+    if (!kandidat) {
+      setFehler('Es ist noch keine Position gesetzt. In die Karte klicken.')
+      return
+    }
+
+    setLaeuft(true)
+    setFehler(null)
+    try {
+      await aufAnlegen(entwurf)
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : 'Unbekannter Fehler beim Anlegen.')
+    } finally {
+      setLaeuft(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="zentrale-inspektor-kopf">
+        <h3>Neues Objekt</h3>
+      </div>
+
+      <div className="zentrale-inspektor-koerper">
+        <p className={`zentrale-inspektor-koord${kandidat ? '' : ' leer'}`}>
+          {kandidat
+            ? `${kandidat.lat.toFixed(5)}, ${kandidat.lng.toFixed(5)}`
+            : 'Position: in die Karte klicken'}
+        </p>
+
+        <Felder
+          entwurf={entwurf}
+          setEntwurf={setEntwurf}
+          gesperrt={laeuft}
+          // Kein Autofokus: der erste Schritt ist der Kartenklick, und ein Feld,
+          // das den Fokus greift, sähe aus als wäre das Tippen gemeint.
+          fokus={false}
+        />
+      </div>
+
+      {fehler && (
+        <p className="zentrale-inspektor-fehler" role="alert">
+          {fehler}
+        </p>
+      )}
+
+      <div className="zentrale-inspektor-fuss">
+        <button
+          type="button"
+          className="haupt"
+          onClick={anlegen}
+          disabled={laeuft || !kandidat}
+        >
+          {laeuft ? 'Legt an …' : 'Objekt anlegen'}
+        </button>
+        <button type="button" onClick={aufAbbrechen} disabled={laeuft}>
+          Abbrechen
+        </button>
+      </div>
+    </>
   )
 }
 
@@ -300,12 +497,21 @@ function Details({
   aufZurueck,
   aufSpeichern,
   aufModus,
+  positioniert,
+  aufPositionStarten,
+  aufPositionSpeichern,
+  aufSetzAbbrechen,
 }: {
   objekt: Punkt
   offen: boolean
   aufZurueck: () => void
   aufSpeichern: (id: string, entwurf: ObjektEntwurf) => Promise<void>
   aufModus: (bearbeitet: boolean) => void
+  /** Gesetzt, solange DIESES Objekt verschoben wird. */
+  positioniert: { kandidat: { lat: number; lng: number } | null } | null
+  aufPositionStarten: (id: string) => void
+  aufPositionSpeichern: () => Promise<void>
+  aufSetzAbbrechen: () => void
 }) {
   const [bearbeiten, setBearbeiten] = useState(false)
   const [entwurf, setEntwurf] = useState<ObjektEntwurf>({
@@ -356,6 +562,24 @@ function Details({
   }
 
   /**
+   * Die Position schreiben. Der Write selbst liegt oben — hier bleibt nur, den
+   * Fehler dorthin zu bringen, wo der Nutzer ihn sieht, und den Modus dabei
+   * stehen zu lassen (Backlog E-R2: ein gescheiterter Write darf den Entwurf
+   * nicht mitnehmen).
+   */
+  const positionSichern = async () => {
+    setLaeuft(true)
+    setFehler(null)
+    try {
+      await aufPositionSpeichern()
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : 'Unbekannter Fehler beim Speichern.')
+    } finally {
+      setLaeuft(false)
+    }
+  }
+
+  /**
    * Speichern. Dieselben drei Lehren wie beim Grenzen-Slice:
    * vorher prüfen statt der DB einen ungültigen Wert geben · bei Fehler bleibt
    * der **vollständige** Entwurf im Editiermodus stehen · während des Schreibens
@@ -394,12 +618,14 @@ function Details({
       <div className="zentrale-inspektor-kopf">
         {/* Beim Bearbeiten gesperrt: der Weg zurück führt sonst am Entwurf
             vorbei und verwirft ihn stillschweigend. „Abbrechen" ist der
-            ausdrückliche Ausgang, und der steht direkt darunter. */}
+            ausdrückliche Ausgang, und der steht direkt darunter. Beim
+            Verschieben aus demselben Grund — dort ist der Entwurf die
+            ungespeicherte Position. */}
         <button
           type="button"
           className="zurueck"
           onClick={aufZurueck}
-          disabled={laeuft || bearbeiten}
+          disabled={laeuft || bearbeiten || !!positioniert}
         >
           ← Alle Objekte
         </button>
@@ -407,47 +633,7 @@ function Details({
 
       <div className="zentrale-inspektor-koerper">
         {bearbeiten ? (
-          <div className="zentrale-inspektor-feld">
-            <label htmlFor="objekt-name">Name</label>
-            <input
-              id="objekt-name"
-              type="text"
-              value={entwurf.name}
-              onChange={(e) => setEntwurf((v) => ({ ...v, name: e.target.value }))}
-              disabled={laeuft}
-              autoFocus
-            />
-
-            <label htmlFor="objekt-typ">Typ</label>
-            <select
-              id="objekt-typ"
-              value={entwurf.typ}
-              onChange={(e) => setEntwurf((v) => ({ ...v, typ: e.target.value }))}
-              disabled={laeuft}
-            >
-              {/* Trägt der Bestand einen Typ, den das Enum hier nicht kennt, wäre
-                  er ohne diese Zeile beim Öffnen still auf den ersten Eintrag
-                  gesprungen — und ein bloßes Speichern hätte ihn umgeschrieben. */}
-              {!OBJEKT_TYPEN.some((t) => t.wert === entwurf.typ) && (
-                <option value={entwurf.typ}>{entwurf.typ} (unbekannt)</option>
-              )}
-              {OBJEKT_TYPEN.map((t) => (
-                <option key={t.wert} value={t.wert}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-
-            <label htmlFor="objekt-notiz">Notiz</label>
-            <textarea
-              id="objekt-notiz"
-              rows={4}
-              value={entwurf.beschreibung}
-              onChange={(e) => setEntwurf((v) => ({ ...v, beschreibung: e.target.value }))}
-              disabled={laeuft}
-              placeholder="z. B. Am Waldrand, 4 m"
-            />
-          </div>
+          <Felder entwurf={entwurf} setEntwurf={setEntwurf} gesperrt={laeuft} fokus />
         ) : (
           <>
             {/* tabIndex -1: nicht in der Tabulatorfolge, aber programmatisch
@@ -475,9 +661,30 @@ function Details({
               />
             )}
 
+            {/* Beim Verschieben stehen beide Orte da, alt durchgestrichen.
+                Nur den neuen zu zeigen hieße, dass „Abbrechen" ins Dunkle
+                führt — man wüsste nicht mehr, wohin es zurückgeht. */}
             <p className="zentrale-inspektor-koord">
-              {objekt.lat.toFixed(5)}, {objekt.lng.toFixed(5)}
+              {positioniert?.kandidat ? (
+                <>
+                  <s>
+                    {objekt.lat.toFixed(5)}, {objekt.lng.toFixed(5)}
+                  </s>{' '}
+                  → {positioniert.kandidat.lat.toFixed(5)},{' '}
+                  {positioniert.kandidat.lng.toFixed(5)}
+                </>
+              ) : (
+                <>
+                  {objekt.lat.toFixed(5)}, {objekt.lng.toFixed(5)}
+                </>
+              )}
             </p>
+
+            {positioniert && !positioniert.kandidat && (
+              <p className="zentrale-inspektor-notiz leer">
+                In die Karte klicken setzt die neue Position.
+              </p>
+            )}
           </>
         )}
       </div>
@@ -489,7 +696,8 @@ function Details({
       )}
 
       {/* Nur zeigen, was jetzt geht: kein ausgegrauter Platzhalter für
-          Positionieren (3b) oder Löschen (3c). */}
+          Löschen (3c). Drei Zustände, weil es drei Aufgaben sind — und nie zwei
+          davon gleichzeitig, dafür sorgt der Setzzustand in `revierkarte.tsx`. */}
       {offen && (
         <div className="zentrale-inspektor-fuss">
           {bearbeiten ? (
@@ -501,10 +709,32 @@ function Details({
                 Abbrechen
               </button>
             </>
+          ) : positioniert ? (
+            <>
+              <button
+                type="button"
+                className="haupt"
+                onClick={positionSichern}
+                // Ohne Kandidat gibt es nichts zu speichern. `position` ist
+                // NOT NULL — ein leerer Write wäre kein „unverändert", sondern
+                // ein Constraint-Fehler.
+                disabled={laeuft || !positioniert.kandidat}
+              >
+                {laeuft ? 'Speichert …' : 'Position speichern'}
+              </button>
+              <button type="button" onClick={aufSetzAbbrechen} disabled={laeuft}>
+                Abbrechen
+              </button>
+            </>
           ) : (
-            <button type="button" onClick={starten}>
-              Bearbeiten
-            </button>
+            <>
+              <button type="button" onClick={starten}>
+                Bearbeiten
+              </button>
+              <button type="button" onClick={() => aufPositionStarten(objekt.id)}>
+                Position ändern
+              </button>
+            </>
           )}
         </div>
       )}

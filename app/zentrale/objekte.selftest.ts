@@ -9,15 +9,19 @@ import {
   OBJEKT_KATEGORIEN,
   OBJEKT_TYPEN,
   alsSpalten,
+  ewktPunkt,
   filterBaum,
   istObjektTyp,
   istStand,
+  ortUnveraendert,
   passtZurSuche,
   pruefeObjekt,
+  pruefeOrt,
   toggleKategorie,
   toggleTyp,
   typLabel,
   unveraendert,
+  wickleLaengengrad,
 } from './objekte.ts'
 
 // --- Die zehn Enum-Werte, in Enum-Reihenfolge ---
@@ -233,5 +237,68 @@ assert.equal(
 )
 assert.equal(passtZurSuche('Eicheneck', 'hochsitz', 'kanzel'), false)
 assert.equal(passtZurSuche('Eicheneck', 'hochsitz', ''), true, 'leerer Begriff trifft alles')
+
+// --- Position (Schritt 3b) ---
+
+// Der leere Typ ist eine eigene Meldung, nicht "Unbekannter Objekttyp ''".
+assert.equal(
+  pruefeObjekt({ name: 'Neuer Bock', typ: '', beschreibung: '' }),
+  'Bitte einen Objekttyp wählen.',
+)
+// Der Name wird vor dem Typ geprueft: ohne Namen ist die Typfrage zweitrangig.
+assert.equal(
+  pruefeObjekt({ name: '  ', typ: '', beschreibung: '' }),
+  'Ein Objekt braucht einen Namen.',
+)
+assert.equal(pruefeObjekt({ name: 'Neuer Bock', typ: 'kanzel', beschreibung: '' }), null)
+
+// wickleLaengengrad: der Normalfall bleibt unangetastet, die Weltumrundung nicht.
+assert.equal(wickleLaengengrad(10.5), 10.5)
+assert.equal(wickleLaengengrad(-10.5), -10.5)
+assert.equal(Math.abs(wickleLaengengrad(370) - 10) < 1e-9, true, '370 ist 10 nach einer Runde')
+assert.equal(Math.abs(wickleLaengengrad(-350) - 10) < 1e-9, true, 'auch nach Westen')
+assert.equal(wickleLaengengrad(180), 180, 'im Bereich heisst unangetastet, auch am Rand')
+assert.equal(wickleLaengengrad(-180), -180)
+assert.equal(wickleLaengengrad(540), -180, 'anderthalb Runden landen auf der Datumsgrenze')
+// Wertetreue im Normalfall: die Modulo-Kette liefert fuer 10.2 sonst
+// 10.200000000000045, und dann speichert jeder Write etwas anderes als geklickt.
+assert.equal(wickleLaengengrad(10.2), 10.2, 'exakt, nicht nur nahe dran')
+assert.equal(wickleLaengengrad(9.7345678901), 9.7345678901)
+
+// pruefeOrt: die vier Faelle, die wirklich vorkommen.
+assert.deepEqual(pruefeOrt(null), {
+  fehler: 'Es ist noch keine Position gesetzt. In die Karte klicken.',
+})
+assert.deepEqual(pruefeOrt({ lat: 52.1, lng: 10.2 }), { ort: { lat: 52.1, lng: 10.2 } })
+assert.deepEqual(
+  pruefeOrt({ lat: 52.1, lng: 370.2 }),
+  { ort: { lat: 52.1, lng: wickleLaengengrad(370.2) } },
+  'ein Klick nach der zweiten Weltumrundung ist gueltig, nur ungewickelt',
+)
+assert.equal('fehler' in pruefeOrt({ lat: Number.NaN, lng: 10 }), true)
+assert.equal('fehler' in pruefeOrt({ lat: 91, lng: 10 }), true, 'Breitengrad wird NICHT gewickelt')
+
+// ewktPunkt: lng vor lat. Der eine Fehler, der lautlos waere — beide Werte sind
+// in Deutschland plausibel, vertauscht landet das Objekt im Indischen Ozean.
+assert.equal(ewktPunkt({ lat: 52.1, lng: 10.2 }), 'SRID=4326;POINT(10.2 52.1)')
+assert.equal(
+  ewktPunkt({ lat: 52.1, lng: 10.2 }).indexOf('10.2') < ewktPunkt({ lat: 52.1, lng: 10.2 }).indexOf('52.1'),
+  true,
+  'Laenge steht vor Breite',
+)
+
+// ortUnveraendert: der Klick auf denselben Punkt ist keine Verschiebung, ein
+// Meter schon. 1e-6 Grad Breite sind rund 11 cm.
+assert.equal(ortUnveraendert({ lat: 52.1, lng: 10.2 }, { lat: 52.1, lng: 10.2 }), true)
+assert.equal(
+  ortUnveraendert({ lat: 52.1, lng: 10.2 }, { lat: 52.100000005, lng: 10.2 }),
+  true,
+  'unter 1 cm ist derselbe Klick, kein Verschieben',
+)
+assert.equal(
+  ortUnveraendert({ lat: 52.1, lng: 10.2 }, { lat: 52.10001, lng: 10.2 }),
+  false,
+  'rund 1 m ist eine echte Verschiebung',
+)
 
 console.log('zentrale/objekte: alle Faelle ok')

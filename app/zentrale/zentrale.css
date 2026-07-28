@@ -681,6 +681,23 @@
   font-size: 0.75rem;
   color: var(--z-text-secondary);
 }
+/* Beim Verschieben steht der alte Ort durchgestrichen neben dem neuen. Er tritt
+   zurück, verschwindet aber nicht — „Abbrechen" muss ein sichtbares Ziel haben. */
+.zentrale-inspektor-koord s {
+  opacity: 0.65;
+  text-decoration-thickness: 1px;
+}
+/* Noch keine Position gesetzt: das ist eine Aufforderung, keine Koordinate —
+   also nicht in der Monoschrift, in der sonst Zahlen stehen. */
+.zentrale-inspektor-koord.leer {
+  font-family: inherit;
+  font-style: italic;
+}
+/* Im Anlege-Formular steht die Position über den Feldern und braucht Abstand
+   nach unten; im Detailfuß steht sie zuletzt und braucht keinen. */
+.zentrale-inspektor-koerper > .zentrale-inspektor-koord:first-child {
+  margin-bottom: 12px;
+}
 
 .zentrale-inspektor-feld label {
   display: block;
