@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import {
   MapContainer,
@@ -15,8 +15,22 @@ import 'leaflet/dist/leaflet.css'
 import { BKG_TOPPLUS } from '@/lib/map/tiles'
 import BoundaryDrawLayer from '@/components/map/BoundaryDrawLayer'
 import type { DrawPoint } from '@/hooks/useBoundaryEditor'
+import { istStand } from './objekte'
 
-export type Punkt = { id: string; name: string; typ: string; lat: number; lng: number }
+/**
+ * Ein Kartenobjekt, so wie der Browser es braucht. Heißt weiter `Punkt`, weil es
+ * auf der Karte einer ist — trägt seit Schritt 3 aber alles, was der Inspektor
+ * anzeigt, damit es keine zweite Ladung und keine Parallelliste braucht.
+ */
+export type Punkt = {
+  id: string
+  name: string
+  typ: string
+  lat: number
+  lng: number
+  beschreibung: string | null
+  fotoUrl: string | null
+}
 
 export type KarteProps = {
   /** Reviergrenze als Leaflet-Ringe ([lat,lng][]), serverseitig geparst. */
@@ -36,11 +50,11 @@ export type ZeichenProps = {
   aufEinfuegen: (nachIndex: number, p: DrawPoint) => void
 }
 
-/** Alles, worauf ein Schütze sitzt — bekommt den Akzent, der Rest tritt zurück. */
-const STAND_TYPEN = new Set(['hochsitz', 'kanzel', 'drueckjagdstand'])
-
 const ACCENT = '#4A5A2A'
 const NEUTRAL = '#8B8775'
+/** Bronze aus den Design Locks. Bewusst nicht der Grün-Akzent: „ausgewählt" soll
+ *  sich von „ist ein Sitz" unterscheiden lassen, nicht mit ihm verschwimmen. */
+const BRONZE = '#C08E48'
 
 /**
  * Ab dieser Zoomstufe stehen die Namen dauerhaft an den Punkten, darunter nur
@@ -62,8 +76,13 @@ const NAMEN_AB_ZOOM = 16
  * Ausmaßen weiterrendern (graue Streifen am Rand). Ein Observer deckt alle drei
  * Fälle ab, inklusive Fensteränderung, und ist damit weniger, nicht mehr Code.
  */
-function Ausschnitt({ grenze, punkte }: KarteProps) {
+function Ausschnitt({
+  grenze,
+  punkte,
+  randRechts,
+}: KarteProps & { randRechts: number }) {
   const map = useMap()
+  const letzteLage = useRef('')
 
   useEffect(() => {
     const beobachter = new ResizeObserver(() => map.invalidateSize({ animate: false }))
@@ -80,10 +99,73 @@ function Ausschnitt({ grenze, punkte }: KarteProps) {
       ...(grenze?.flat() ?? []),
       ...punkte.map((p) => [p.lat, p.lng] as [number, number]),
     ]
-    if (ecken.length > 0) {
-      map.fitBounds(L.latLngBounds(ecken), { padding: [24, 24] })
-    }
-  }, [map, grenze, punkte])
+    if (ecken.length === 0) return
+
+    // Auf die LAGE prüfen, nicht auf die Objektidentität der Props. Nach jedem
+    // Speichern zieht `router.refresh()` die Server-Komponente nach und liefert
+    // frische Arrays — ein Effekt, der nur an `punkte` hängt, hätte die Karte
+    // seit Schritt 3 bei jedem umbenannten Objekt auf das ganze Revier
+    // zurückgeworfen, mitten aus dem Hineinzoomen heraus. Nur eine echte
+    // Ortsänderung darf den Ausschnitt neu setzen.
+    // Sortiert, nicht bloß verkettet: der `map_objects`-SELECT hat kein
+    // ORDER BY, Postgres darf die Zeilen also nach jedem Refresh anders
+    // liefern. Ohne die Sortierung änderte sich die Signatur allein durch die
+    // Reihenfolge — und ein bloßes Umbenennen hätte den Zoom des Nutzers
+    // zurückgesetzt, obwohl sich kein Punkt bewegt hat. Von Codex gefunden,
+    // 27.07.2026.
+    const lage = ecken
+      .map(([lat, lng]) => `${lat},${lng}`)
+      .sort()
+      .join(';')
+    if (lage === letzteLage.current) return
+    letzteLage.current = lage
+
+    // Rechts so viel aussparen, wie die Objektspalte überdeckt. Sie liegt seit
+    // dem 28.07.2026 ÜBER der Karte statt neben ihr — der Kartencontainer reicht
+    // also unter sie, und ohne diesen Zuschlag landete bei Söder ein gutes
+    // Sechstel der Stände hinter dem Panel.
+    //
+    // Gedeckelt, damit immer ein nutzbarer Streifen übrig bleibt: wäre das
+    // Padding breiter als der Container, rechnete Leaflet mit einer negativen
+    // Fläche und fitBounds könnte mit nicht-endlichen Werten scheitern (Codex,
+    // 28.07.2026). Der Aufrufer begrenzt schon, das hier ist der Riegel an der
+    // Stelle, an der es tatsächlich bräche.
+    const rand = Math.max(0, Math.min(randRechts, map.getSize().x - 80))
+    map.fitBounds(L.latLngBounds(ecken), {
+      paddingTopLeft: [24, 24],
+      paddingBottomRight: [24 + rand, 24],
+    })
+    // `randRechts` steht in den Abhängigkeiten, ändert aber nichts: die
+    // Lageprüfung oben bricht vorher ab. Genau so gewollt — eine reine
+    // Breitenänderung (klappen, ziehen) darf den Ausschnitt NICHT neu setzen.
+    // Codex hat das als Finding gemeldet; es ist Absicht. Wer die Spalte zieht,
+    // hat die Karte meist längst selbst verschoben, und ein Nachrücken mitten im
+    // Zug wäre schlimmer als ein Objekt, das kurz hinter dem Panel liegt: die
+    // Karte lässt sich schieben, ein zurückgesetzter Ausschnitt nicht.
+  }, [map, grenze, punkte, randRechts])
+  return null
+}
+
+/**
+ * Holt ein ausgewähltes Objekt ins Bild, wenn es gerade nicht darin ist.
+ *
+ * Bewusst eine Regel statt zweier Codepfade: bei einem Klick auf den Marker
+ * liegt das Objekt schon im Bild, also passiert nichts. Kam die Auswahl aus der
+ * Liste und liegt außerhalb, schwenkt die Karte hin — ohne den Zoom anzufassen,
+ * denn die Zoomstufe hat der Nutzer selbst gewählt.
+ */
+function ZuAuswahl({ id, lat, lng }: { id: string | null; lat?: number; lng?: number }) {
+  const map = useMap()
+  // Bewusst Einzelwerte statt des Objekts als Abhängigkeit: `punkte.find(…)`
+  // liefert bei jedem Rendern eine neue Referenz, der Effekt liefe also jedes
+  // Mal. Wer dann bei ausgewähltem, gerade weggeschobenem Objekt irgendetwas
+  // auslöst, das ein Rendern anstößt, bekäme die Karte ungefragt zurückgezogen.
+  // Mit id/lat/lng feuert er genau bei echtem Auswahlwechsel.
+  useEffect(() => {
+    if (!id || lat === undefined || lng === undefined) return
+    const wo = L.latLng(lat, lng)
+    if (!map.getBounds().contains(wo)) map.panTo(wo)
+  }, [map, id, lat, lng])
   return null
 }
 
@@ -91,7 +173,16 @@ function Ausschnitt({ grenze, punkte }: KarteProps) {
  * Eigene Komponente, weil `useMapEvents` einen Kartenkontext braucht — den gibt
  * es erst unterhalb von MapContainer, nicht in RevierkarteMap selbst.
  */
-function Objekte({ punkte }: { punkte: Punkt[] }) {
+function Objekte({
+  punkte,
+  auswahlId,
+  aufAuswahl,
+}: {
+  punkte: Punkt[]
+  auswahlId: string | null
+  /** `undefined`, solange die Grenze gezeichnet wird — dann sind Klicks Punkte. */
+  aufAuswahl?: (id: string) => void
+}) {
   const map = useMap()
   const [zoom, setZoom] = useState(() => map.getZoom())
   useMapEvents({ zoomend: () => setZoom(map.getZoom()) })
@@ -100,31 +191,68 @@ function Objekte({ punkte }: { punkte: Punkt[] }) {
 
   return (
     <>
-      {punkte.map((p) => (
-        <CircleMarker
-          key={p.id}
-          center={[p.lat, p.lng]}
-          radius={5}
-          pathOptions={{
-            color: '#FFFFFF',
-            weight: 1.5,
-            fillColor: STAND_TYPEN.has(p.typ) ? ACCENT : NEUTRAL,
-            fillOpacity: 0.9,
-          }}
-        >
-          {/* Das `key` erzwingt ein Neubinden: Leaflet liest `permanent` nur
-              beim Anlegen des Tooltips, ein bloßer Prop-Wechsel bliebe wirkungslos. */}
-          <Tooltip
-            key={namenFest ? 'fest' : 'hover'}
-            permanent={namenFest}
-            direction="top"
-            offset={[0, -6]}
-            className="zentrale-karte-label"
+      {punkte.map((p) => {
+        const gewaehlt = p.id === auswahlId
+        // Der Name des ausgewählten Objekts steht immer, auch weit herausgezoomt:
+        // sonst wäre die Auswahl unter Zoom 16 nur ein Ring ohne Auskunft.
+        const nameSteht = namenFest || gewaehlt
+        return (
+          <CircleMarker
+            // Die Interaktivität gehört in den `key`, so unschön das aussieht.
+            // Leaflet wertet `options.interactive` GENAU EINMAL aus, beim Anlegen
+            // des Pfades (`SVG.js:103` ruft dann `addInteractiveTarget`), und
+            // react-leaflet zieht später nur `setStyle(pathOptions)` nach
+            // (`@react-leaflet/core/lib/path.js`) — `interactive` ist keine
+            // Style-Eigenschaft und käme nie an. Ein bloßer Prop-Wechsel wäre
+            // also wirkungslos gewesen, in beide Richtungen: beim Zeichnen
+            // hätten die Marker weiter Kartenklicks geschluckt (bei Söder 196
+            // Stück, es käme kein Grenzpunkt zustande), und wäre die Karte
+            // während des Zeichnens erstmals aufgebaut worden, blieben die
+            // Objekte danach dauerhaft unanklickbar. Der Key erzwingt den
+            // Neuaufbau — er passiert nur beim Wechsel des Zeichenmodus.
+            key={`${p.id}|${aufAuswahl ? 'waehlbar' : 'starr'}`}
+            center={[p.lat, p.lng]}
+            radius={5}
+            interactive={!!aufAuswahl}
+            eventHandlers={aufAuswahl ? { click: () => aufAuswahl(p.id) } : undefined}
+            pathOptions={{
+              color: '#FFFFFF',
+              weight: 1.5,
+              // Alles, worauf ein Schütze sitzt, bekommt den Akzent — der Rest tritt zurück.
+              fillColor: istStand(p.typ) ? ACCENT : NEUTRAL,
+              fillOpacity: 0.9,
+            }}
           >
-            {p.name}
-          </Tooltip>
-        </CircleMarker>
-      ))}
+            {/* Das `key` erzwingt ein Neubinden: Leaflet liest `permanent` nur
+                beim Anlegen des Tooltips, ein bloßer Prop-Wechsel bliebe wirkungslos. */}
+            <Tooltip
+              key={nameSteht ? 'fest' : 'hover'}
+              permanent={nameSteht}
+              direction="top"
+              offset={[0, -6]}
+              className="zentrale-karte-label"
+            >
+              {p.name}
+            </Tooltip>
+          </CircleMarker>
+        )
+      })}
+
+      {/* Der Auswahlring liegt als eigener, nicht anklickbarer Kreis zuletzt im
+          Baum und damit über allen Markern. Ein zweites Merkmal neben der Farbe:
+          der Marker selbst behält seine Sitz-/Kein-Sitz-Färbung, die Auswahl
+          würde sie sonst überschreiben und eine Information verdecken. */}
+      {punkte
+        .filter((p) => p.id === auswahlId)
+        .map((p) => (
+          <CircleMarker
+            key={`auswahl-${p.id}`}
+            center={[p.lat, p.lng]}
+            radius={11}
+            interactive={false}
+            pathOptions={{ color: BRONZE, weight: 2.5, fill: false }}
+          />
+        ))}
     </>
   )
 }
@@ -142,7 +270,17 @@ export default function RevierkarteMap({
   grenze,
   punkte,
   zeichnen,
-}: KarteProps & { zeichnen?: ZeichenProps }) {
+  auswahlId = null,
+  aufAuswahl,
+  randRechts = 0,
+}: KarteProps & {
+  zeichnen?: ZeichenProps
+  auswahlId?: string | null
+  aufAuswahl?: (id: string) => void
+  /** Breite, die die Objektspalte rechts überdeckt — Zuschlag für `fitBounds`. */
+  randRechts?: number
+}) {
+  const gewaehlt = punkte.find((p) => p.id === auswahlId)
   return (
     <MapContainer
       center={[51.2, 10.4]} // Platzhalter bis Ausschnitt greift
@@ -179,11 +317,23 @@ export default function RevierkarteMap({
         />
       )}
 
-      <Objekte punkte={punkte} />
+      {/* Während des Zeichnens ist die Auswahl aus: ein Klick soll dann einen
+          Grenzpunkt setzen, nicht ein Objekt auswählen — der Marker würde das
+          Klickereignis sonst abfangen. */}
+      <Objekte
+        punkte={punkte}
+        auswahlId={zeichnen ? null : auswahlId}
+        aufAuswahl={zeichnen ? undefined : aufAuswahl}
+      />
+      <ZuAuswahl
+        id={zeichnen ? null : auswahlId}
+        lat={gewaehlt?.lat}
+        lng={gewaehlt?.lng}
+      />
       {/* Bewusst nur die GESPEICHERTE Grenze und die Objekte: bekäme `Ausschnitt`
           den Entwurf, liefe fitBounds bei jedem gesetzten Punkt erneut und die
           Karte würde unter der Hand wegrutschen. */}
-      <Ausschnitt grenze={grenze} punkte={punkte} />
+      <Ausschnitt grenze={grenze} punkte={punkte} randRechts={randRechts} />
     </MapContainer>
   )
 }

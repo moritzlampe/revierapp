@@ -6,10 +6,7 @@ import type { Punkt } from './revierkarte-map'
 // Importierbar auch serverseitig: schreiben.ts hat bewusst keine Imports und
 // damit keine Browser-Abhängigkeit.
 import { darfSchreiben } from './schreiben'
-
-/** Alles, worauf ein Schütze sitzt. Kirrung, Salzlecke, Wildkamera,
- *  Parkplatz und Sonstiges zählen bewusst nicht als Sitz. */
-const STAND_TYPEN = ['hochsitz', 'kanzel', 'drueckjagdstand']
+import { istStand } from './objekte'
 
 // Die Jagdart steckt in hunts.type, NICHT in hunts.kind (das kennt nur
 // group/solo). Alle vier Werte werden getragen, auch die heute ungenutzten
@@ -50,7 +47,14 @@ type Jagd = {
   status: string | null
   scheduled_for: string | null
 }
-type Objekt = { id: string; name: string; type: string; position: unknown }
+type Objekt = {
+  id: string
+  name: string
+  type: string
+  position: unknown
+  description: string | null
+  photo_url: string | null
+}
 
 /**
  * Fehler nicht verschlucken. Auf einer Kennzahlenseite ist die stille Null die
@@ -135,10 +139,17 @@ export default async function ZentraleUebersicht({
     'Jagden'
   )
 
+  // `photo_url` statt der Tabelle `map_object_photos`: nachgemessen am 27.07.2026
+  // trägt jedes Objekt mit Foto auch ein `photo_url` (181 von 181, keine Lücke).
+  // Die 185 Fotozeilen verteilen sich auf dieselben 181 Objekte — vier haben ein
+  // zweites Bild. Eine Galerie einzubetten kostete bei Söder 185 zusätzliche
+  // Zeilen pro Seitenaufruf und brächte vier Objekten ein zweites Foto.
+  // ponytail: Deckenbild statt Galerie. Nachziehen, wenn jemand mehrere Fotos am
+  // Desktop sehen will — Fotos aufnehmen bleibt ohnehin mobil.
   const objekte = geladen<Objekt[]>(
     await supabase
       .from('map_objects')
-      .select('id, name, type, position')
+      .select('id, name, type, position, description, photo_url')
       .eq('district_id', revier.id),
     'Kartenobjekte'
   )
@@ -176,11 +187,20 @@ export default async function ZentraleUebersicht({
   // Laufende Jagd: nur ein Hinweis, keine Live-Steuerung (§1.3, §3).
   const laufend = jagden.find((j) => j.status === 'active' || j.status === 'paused')
 
-  const sitze = objekte.filter((o) => STAND_TYPEN.includes(o.type)).length
+  const sitze = objekte.filter((o) => istStand(o.type)).length
   const grenze = parsePolygonHex(revier.boundary)
   const punkte = objekte.reduce<Punkt[]>((acc, o) => {
     const p = punktAus(o.position)
-    if (p) acc.push({ id: o.id, name: o.name, typ: o.type, lat: p.lat, lng: p.lng })
+    if (p)
+      acc.push({
+        id: o.id,
+        name: o.name,
+        typ: o.type,
+        lat: p.lat,
+        lng: p.lng,
+        beschreibung: o.description,
+        fotoUrl: o.photo_url,
+      })
     return acc
   }, [])
 
