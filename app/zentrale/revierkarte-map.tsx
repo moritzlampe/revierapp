@@ -386,8 +386,11 @@ export default function RevierkarteMap({
           // Grenze also KEINE Position setzbar, und zwar lautlos.
           //
           // Beim Zeichnen fiel das nie auf, weil die gespeicherte Grenze dort
-          // gar nicht gezeichnet wird. Test 5 hätte es auch nicht gezeigt: das
-          // Revier hat keine Grenze. Söder und Brockwinel haben eine.
+          // gar nicht gezeichnet wird. Im Testrevier ist es dagegen sehr wohl
+          // zu sehen: `Test 5` trägt seit dem 27.07.2026 eine gezeichnete Grenze
+          // von 7,4 ha (nachgemessen 28.07.), und innerhalb dieser Fläche wäre
+          // ohne diesen Prop keine Position setzbar. Genau dort gehört der Fall
+          // also geprüft — nicht am grenzenlosen Revier.
           //
           // Dauerhaft aus, nicht nur im Setzmodus: die Fläche hat keinen
           // Klick-Handler und braucht auch keinen. Und `interactive` wertet

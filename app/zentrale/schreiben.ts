@@ -47,7 +47,11 @@ export type WriteErgebnis<T> = {
  * Stelle, die angefasst werden muss.
  */
 const SCHREIB_REVIERE = new Set([
-  'ec27bd95-c8bc-48fc-ac87-da9914d09033', // "Test 5" — ohne Grenze, 2 Objekte
+  // "Test 5" — 2 Objekte und seit dem 27.07.2026 eine gezeichnete Grenze
+  // (7,4 ha, nachgemessen 28.07.2026). Der Zusatz ist nicht nur Buchhaltung:
+  // solange das Revier keine Grenze hatte, war ein ganzer Fehlerfall dort
+  // unprüfbar — eine interaktive Grenzfläche schluckt den Kartenklick.
+  'ec27bd95-c8bc-48fc-ac87-da9914d09033',
 ])
 
 export function darfSchreiben(revierId: string): boolean {
