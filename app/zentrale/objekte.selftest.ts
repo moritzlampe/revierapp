@@ -6,11 +6,16 @@
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 import assert from 'node:assert/strict'
 import {
+  OBJEKT_KATEGORIEN,
   OBJEKT_TYPEN,
   alsSpalten,
+  filterBaum,
   istObjektTyp,
   istStand,
+  passtZurSuche,
   pruefeObjekt,
+  toggleKategorie,
+  toggleTyp,
   typLabel,
   unveraendert,
 } from './objekte.ts'
@@ -124,5 +129,109 @@ assert.equal(
   true,
   'leere Notiz und NULL sind derselbe Zustand',
 )
+
+// --- Kategorien: jeder Enum-Wert hat genau eine ---
+// Der eigentliche Zweck dieser Datei fuer den Filter. Kaeme ein elfter Enum-Wert
+// dazu und niemand ordnete ihn zu, schlaegt es hier an. Der Filter faellt dann
+// zwar nicht aus (Unbekanntes landet unter "Sonstiges"), aber der Wert steckte
+// in der falschen Schublade — und das soll auffallen, nicht durchrutschen.
+const zugeordnet = OBJEKT_KATEGORIEN.flatMap((k) => k.typen as readonly string[])
+assert.deepEqual(
+  [...zugeordnet].sort(),
+  OBJEKT_TYPEN.map((t) => t.wert).sort(),
+  'jeder map_object_type gehoert in genau eine Legendenkategorie',
+)
+assert.equal(new Set(zugeordnet).size, zugeordnet.length, 'kein Typ in zwei Kategorien')
+// Schluessel und Reihenfolge sind die des nativen Tracks (object-categories.ts).
+assert.deepEqual(
+  OBJEKT_KATEGORIEN.map((k) => k.key),
+  ['staende', 'futter', 'kamera', 'notfall', 'sonstiges'],
+)
+
+// --- toggleTyp: einzeln aus und wieder an ---
+const leer: ReadonlySet<string> = new Set()
+assert.deepEqual([...toggleTyp(leer, 'kanzel')], ['kanzel'])
+assert.deepEqual([...toggleTyp(new Set(['kanzel']), 'kanzel')], [], 'zweiter Klick holt zurueck')
+assert.deepEqual(
+  [...toggleTyp(new Set(['kanzel']), 'hochsitz')].sort(),
+  ['hochsitz', 'kanzel'],
+  'Typen sind unabhaengig voneinander',
+)
+
+// --- toggleKategorie: "an" gewinnt beim halben Zustand ---
+const staende = ['hochsitz', 'kanzel', 'drueckjagdstand']
+assert.deepEqual(
+  [...toggleKategorie(leer, staende)].sort(),
+  [...staende].sort(),
+  'aus dem vollen Zustand heraus schaltet die Kategorie alles aus',
+)
+assert.deepEqual(
+  [...toggleKategorie(new Set(staende), staende)],
+  [],
+  'aus dem leeren Zustand heraus alles an',
+)
+assert.deepEqual(
+  [...toggleKategorie(new Set(['kanzel']), staende)],
+  [],
+  'halb aus heisst: ein Klick holt die ganze Kategorie zurueck, nicht zwei',
+)
+assert.deepEqual(
+  [...toggleKategorie(new Set(['kirrung']), staende)].sort(),
+  ['drueckjagdstand', 'hochsitz', 'kanzel', 'kirrung'].sort(),
+  'fremde Kategorien bleiben unberuehrt',
+)
+// Die Eingabemenge darf nicht veraendert werden — React vergleicht Referenzen,
+// und eine mutierte Menge kaeme nie als neuer Zustand an.
+const vorher = new Set(['kanzel'])
+toggleKategorie(vorher, staende)
+toggleTyp(vorher, 'hochsitz')
+assert.deepEqual([...vorher], ['kanzel'], 'beide Funktionen geben eine neue Menge zurueck')
+
+// --- filterBaum: nur was vorkommt, mit Anzahl ---
+const baum = filterBaum(['hochsitz', 'hochsitz', 'kanzel', 'wildkamera'])
+assert.deepEqual(
+  baum.map((k) => [k.key, k.anzahl]),
+  [
+    ['staende', 3],
+    ['kamera', 1],
+  ],
+  'leere Kategorien fallen raus — sonst stuenden zehn Eintraege im Menue, hinter denen nichts ist',
+)
+assert.deepEqual(
+  baum[0].eintraege.map((e) => [e.wert, e.anzahl]),
+  [
+    ['hochsitz', 2],
+    ['kanzel', 1],
+  ],
+  'drueckjagdstand kommt nicht vor und fehlt deshalb',
+)
+assert.deepEqual(filterBaum([]), [], 'leeres Revier hat keine Auswahl')
+const mitFremdem = filterBaum(['sonstiges', 'wildschwein'])
+assert.deepEqual(
+  mitFremdem.map((k) => k.key),
+  ['sonstiges'],
+)
+assert.deepEqual(
+  mitFremdem[0].eintraege.map((e) => e.wert),
+  ['sonstiges', 'wildschwein'],
+  'ein Typ ohne Kategorie ist im Filter erreichbar, nicht verschwunden',
+)
+assert.equal(mitFremdem[0].eintraege[1].label, 'wildschwein', 'roh beschriftet, nicht leer')
+
+// --- passtZurSuche: Name, ausgeschriebener Typ, roher Enum-Wert ---
+assert.equal(passtZurSuche('Eicheneck', 'hochsitz', 'eiche'), true)
+assert.equal(passtZurSuche('Eicheneck', 'hochsitz', 'ECK'.toLowerCase()), true)
+assert.equal(
+  passtZurSuche('Eicheneck', 'drueckjagdstand', 'drückjagdbock'),
+  true,
+  'ueber die Beschriftung, nicht nur den Enum-Wert',
+)
+assert.equal(
+  passtZurSuche('Eicheneck', 'notfall_treffpunkt', 'notfall_'),
+  true,
+  'der rohe Wert zaehlt mit, sonst waere notfall_treffpunkt schwer zu treffen',
+)
+assert.equal(passtZurSuche('Eicheneck', 'hochsitz', 'kanzel'), false)
+assert.equal(passtZurSuche('Eicheneck', 'hochsitz', ''), true, 'leerer Begriff trifft alles')
 
 console.log('zentrale/objekte: alle Faelle ok')

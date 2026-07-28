@@ -254,13 +254,20 @@
    Drei Größen: eingebettet 420px · Kinomodus 78vh · Vollbild.
    Seit Schritt 3 eine Zeile aus Bühne und Inspektor — weil das Panel INNERHALB
    des Vollbild-Ziels sitzt, gilt es in allen drei Größen ohne Sonderfall. */
-.zentrale-karte-kasten { display: flex; width: 100%; height: 420px; }
-.zentrale-karte-kasten.kino { height: 78vh; }
-.zentrale-karte-kasten:fullscreen {
-  height: 100vh;
-  width: 100vw;
+/* `position: relative`, weil die Knopfleiste seit 28.07.2026 an IHM hängt und
+   nicht mehr an der Bühne: nur so steht ihr rechtes Ende immer am rechten Rand
+   des Ganzen, also genau über der Objektspalte. */
+.zentrale-karte-kasten {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 420px;
+  /* Nur im Vollbild sichtbar, sonst deckt die Karte alles. */
   background: var(--z-bg-base);
 }
+.zentrale-karte-kasten.kino { height: 78vh; }
+/* Der Grund steht schon in der Grundregel — hier nur die Maße. */
+.zentrale-karte-kasten:fullscreen { height: 100vh; width: 100vw; }
 
 /* Die Karte samt ihrer absolut gesetzten Knöpfe und Meldungen. `min-width: 0`
    ist tragend: ohne das weigert sich ein Flex-Kind, unter seine Inhaltsbreite zu
@@ -291,6 +298,13 @@
   outline-offset: 2px;
 }
 .zentrale-karte-knoepfe button:disabled { opacity: 0.5; cursor: default; }
+/* Der Klapp-Winkel: schmaler als die Wortknöpfe, sonst gleiche Optik. */
+.zentrale-karte-knoepfe button.klapp {
+  width: 28px;
+  padding: 5px 0;
+  font-size: 0.9375rem;
+  line-height: 1;
+}
 
 /* Bedienhinweis und Fehlermeldung beim Grenzen-Bearbeiten. Unten statt oben:
    oben rechts sitzen die Knöpfe, und der Hinweis soll die Karte nicht dort
@@ -403,13 +417,58 @@
    ponytail: keine Media Query. Das Portal ist per Login-Weiche desktop-only,
    am Handy landet man in /app. Nachziehen, falls das je fällt. */
 .zentrale-inspektor {
-  flex: 0 0 320px;
+  /* Liegt ÜBER der Karte, statt neben ihr zu stehen (Moritz, 28.07.2026).
+     Als Flex-Nachbar endete die Karte an ihrer Kante, und über der Spalte blieb
+     ein grauer Streifen, auf dem die Knöpfe standen. Jetzt läuft die Karte unter
+     der Leiste durch und die Spalte legt sich ab 42px darüber.
+     Der Preis steht in `Ausschnitt`: `fitBounds` muss den verdeckten Streifen
+     aussparen, sonst lägen Stände hinter der Spalte. */
+  position: absolute;
+  top: 42px;
+  right: 0;
+  bottom: 0;
+  z-index: 1000; /* wie die Leaflet-Controls, sonst läge sie unter den Kacheln */
+  /* Kein `max-width` mehr: den Riegel zieht `spaltenBreite()` in revierkarte.tsx,
+     samt ResizeObserver am Kasten. Zwei Riegel wären zwei Wahrheiten — genau
+     daran hingen Ziehgriff und fitBounds daneben (Codex, 28.07.2026). */
+  width: var(--inspektor-breite, 320px);
   display: flex;
   flex-direction: column;
   min-height: 0; /* sonst wächst die Spalte statt zu scrollen */
   border-left: 1px solid var(--z-border);
   background: var(--z-bg-elevated);
 }
+
+/* Eingeklappt ganz weg — der Klapp-Winkel wohnt seit 28.07.2026 in der
+   Knopfleiste und braucht keine Restleiste mehr, die ihn trägt. `display: none`
+   statt Ausbau: die Spalte bleibt gemountet, Auswahl und Legendenzustand
+   überleben das Zuklappen. Die Karte bekommt dafür die volle Breite. */
+.zentrale-inspektor.zu { display: none; }
+
+/* Griff zum Ziehen: ein eigener schmaler Flex-Streifen, kein Overlay über der
+   Karte. Unsichtbar, bis man ihn ansteuert — die Trennlinie zeichnet schon der
+   linke Rand der Spalte. */
+.zentrale-inspektor-griff {
+  position: absolute;
+  top: 42px;
+  bottom: 0;
+  right: var(--inspektor-breite, 320px);
+  z-index: 1000;
+  width: 5px;
+  cursor: col-resize;
+  touch-action: none; /* sonst scrollt die Geste, statt zu ziehen */
+}
+.zentrale-inspektor-griff:hover { background: var(--z-border-strong); }
+/* Tastaturfokus muss man sehen — hier darf es der Akzent sein, beim bloßen
+   Überfahren nicht. */
+.zentrale-inspektor-griff:focus-visible {
+  background: var(--z-accent);
+  outline: none;
+}
+
+/* Während des Ziehens: kein markierter Text, und der Zeiger bleibt der Griff,
+   auch wenn er längst über der Karte steht. */
+.zentrale-karte-kasten.zieht { cursor: col-resize; user-select: none; }
 
 .zentrale-inspektor-kopf {
   flex: none;
@@ -425,15 +484,117 @@
   color: var(--z-text-secondary);
 }
 .zentrale-inspektor-kopf h3 .zahl { color: var(--z-text-primary); }
-.zentrale-inspektor-kopf input[type='search'] {
+/* Das Suchfeld steht in der Knopfleiste über der Karte, nicht in der Spalte —
+   sonst verschwände es mit ihr. Optik wie die Knöpfe daneben. */
+.zentrale-karte-suchfeld { position: relative; }
+.zentrale-karte-suchfeld input {
   font: inherit;
-  font-size: 0.875rem;
-  width: 100%;
-  padding: 5px 8px;
+  font-size: 0.8125rem;
+  width: 170px;
+  padding: 5px 10px;
   color: var(--z-text-primary);
-  background: var(--z-bg-base);
+  background: var(--z-bg-elevated);
   border: 1px solid var(--z-border-strong);
   border-radius: 6px;
+}
+.zentrale-karte-suchfeld input:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+
+/* Trefferliste direkt unter dem Feld, nur bei eingeklappter Spalte. Breiter als
+   das Feld, weil Name und Typ nebeneinander stehen; nach rechts ausgerichtet,
+   damit sie nicht über den Rand der Bühne hinauswächst. */
+.zentrale-karte-treffer {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 260px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+.zentrale-karte-treffer ul { list-style: none; margin: 0; padding: 0; }
+.zentrale-karte-treffer button {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  color: var(--z-text-primary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.zentrale-karte-treffer button:hover { background: var(--z-bg-sunken); }
+.zentrale-karte-treffer button:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: -2px;
+}
+.zentrale-karte-treffer .nam { flex: 1; min-width: 0; }
+.zentrale-karte-treffer .typ { font-size: 0.75rem; color: var(--z-text-secondary); }
+.zentrale-karte-treffer .leer {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+
+/* Legende: Kategoriezeile fett, Typzeilen eingerückt darunter. Die Zahl steht
+   rechtsbündig in Mono, damit die Spalte bei dreistelligen Beständen nicht
+   ausfranst — dieselbe Behandlung wie die Kennzahlen der Übersicht. */
+/* Aufklappbar über <details>: Zustand, Tastatur und Vorlesen macht der Browser.
+   Zugeklappt ist der Normalfall — eingestellt wird selten, gelesen wird oft. */
+.zentrale-inspektor-legende { margin-top: 8px; }
+.zentrale-inspektor-legende > summary {
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  cursor: pointer;
+  padding: 2px 0;
+  list-style-position: outside;
+}
+.zentrale-inspektor-legende > summary:hover { color: var(--z-text-primary); }
+.zentrale-inspektor-legende > summary:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+.zentrale-inspektor-legende > summary .zahl {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+.zentrale-inspektor-legende .gruppe { margin-top: 2px; }
+.zentrale-inspektor-legende .gruppe:first-of-type { margin-top: 6px; }
+.zentrale-inspektor-legende label {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  cursor: pointer;
+}
+.zentrale-inspektor-legende label:hover { color: var(--z-text-primary); }
+.zentrale-inspektor-legende .kat {
+  font-weight: 600;
+  color: var(--z-text-primary);
+  text-transform: none;
+}
+.zentrale-inspektor-legende .typ { padding-left: 20px; }
+.zentrale-inspektor-legende .nam { flex: 1; min-width: 0; }
+.zentrale-inspektor-legende .zahl {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-legende input[type='checkbox'] {
+  accent-color: var(--z-accent);
+  margin: 0;
+  flex: none;
 }
 .zentrale-inspektor-kopf .zurueck {
   font: inherit;

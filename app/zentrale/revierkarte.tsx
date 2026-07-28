@@ -9,7 +9,7 @@ import { useBoundaryEditor } from '@/hooks/useBoundaryEditor'
 import type { KarteProps } from './revierkarte-map'
 import { darfSchreiben, schreibe } from './schreiben'
 import { ewktAus, nurEinRing, pruefeGrenze } from './grenze'
-import { alsSpalten, type ObjektEntwurf } from './objekte'
+import { alsSpalten, passtZurSuche, typLabel, type ObjektEntwurf } from './objekte'
 import ObjektInspektor from './objekt-inspektor'
 
 // react-leaflet fasst beim Import `window` an — ssr:false ist Pflicht, und
@@ -23,6 +23,34 @@ const Karte = dynamic(() => import('./revierkarte-map'), {
 /** Handler-Platzhalter, während ein Write läuft — der Entwurf bleibt sichtbar,
  *  darf sich aber nicht mehr ändern. Modulweit, damit die Referenz stabil ist. */
 const nichts = () => {}
+
+/** Breite der Objektspalte: Vorgabe, Grenzen, Tastaturschritt — in Pixeln. */
+const SPALTE_STANDARD = 320
+const SPALTE_MIN = 280
+const SPALTE_MAX = 640
+const SPALTE_SCHRITT = 24
+/** Höchster Anteil an der Kastenbreite. Die Karte bleibt damit die Hauptfläche. */
+const SPALTE_ANTEIL = 0.45
+
+/**
+ * Die einzige Stelle, die entscheidet, wie breit die Spalte sein darf.
+ *
+ * Die Obergrenze ist **relativ**, nicht absolut. Eine feste Zahl war beides
+ * zugleich falsch (Moritz, 28.07.2026): 640 px sind im Vollbild auf 1512 px
+ * knappe 42 % und wirken eng, eingebettet auf 1136 px aber über 56 % — die
+ * Spalte nahm dort mehr als die halbe Karte. Und weil 640 überall erlaubt
+ * blieb, kappte das Verlassen des Vollbilds gar nichts.
+ *
+ * `SPALTE_MAX` bleibt als Obergrenze darüber: ab etwa 1420 px Kastenbreite
+ * bringt eine noch breitere Spalte nichts mehr, es sind ja nur drei Felder.
+ *
+ * Die Untergrenze sticht am Ende alles: in einem sehr schmalen Kasten ist eine
+ * unbedienbare 200er-Spalte schlechter als eine, die etwas Karte kostet.
+ */
+function spaltenBreite(px: number, kastenBreite: number): number {
+  const max = Math.min(SPALTE_MAX, kastenBreite * SPALTE_ANTEIL)
+  return Math.round(Math.max(SPALTE_MIN, Math.min(px, max)))
+}
 
 /**
  * Drei Größen, wie bei YouTube: eingebettet · Kinomodus · Vollbild.
@@ -124,6 +152,145 @@ export default function Revierkarte({
    * den Nutzer sähe das aus wie ein Erfolg. Von Codex gefunden, 27.07.2026.
    */
   const [objektBearbeitung, setObjektBearbeitung] = useState(false)
+
+  /**
+   * Ein Riegel für **alle** Grenzen-Wege, nicht einer je Knopf.
+   *
+   * Die erste Fassung sperrte nur „Grenze zeichnen/bearbeiten" — „Grenze löschen"
+   * und „Wirklich löschen" blieben offen und schrieben mitten in einen offenen
+   * Objektentwurf hinein (Moritz, 28.07.2026). „Behalten" bleibt bewusst draußen:
+   * eine begonnene Rückfrage muss man auch dann wegklicken können.
+   */
+  const grenzeGesperrt = laeuft || objektBearbeitung
+
+  /**
+   * Objektspalte ein- und ausklappen.
+   *
+   * Der Zustand liegt hier, weil auch der Ziehgriff daran hängt; der Schalter
+   * selbst sitzt im Kopf der Spalte (`objekt-inspektor.tsx`). Eingeklappt bleibt
+   * sie als schmale Leiste stehen — deshalb kann der Schalter darin wohnen, ohne
+   * den Weg zurück mitzunehmen. Der Inhalt wird verborgen, nicht ausgehängt,
+   * sonst wäre beim Wiederaufklappen der Suchbegriff weg.
+   *
+   * Gesperrt nur bei `objektBearbeitung`, nicht bei `laeuft`: ein laufender
+   * Grenzen-Write hat mit der Spalte nichts zu tun, ein offener Objektentwurf
+   * schon — der wäre nach dem Ausblenden unsichtbar und der Nutzer hielte ihn
+   * für verworfen.
+   */
+  const [inspektorOffen, setInspektorOffen] = useState(true)
+
+  /**
+   * Der Suchbegriff liegt hier, nicht in der Spalte — weil das Suchfeld hier
+   * liegt.
+   *
+   * Es steht in der Knopfleiste über der Karte und damit **außerhalb** von
+   * allem, was ein- und ausklappt (Moritz, 28.07.2026). In der Spalte war es
+   * zwangsläufig mit ihr weg, und genau das wollte der Ablauf nicht: über die
+   * Karte schauen, „17a" tippen, Treffer sehen. Ein Suchfeld, das nur da ist,
+   * wenn die Liste schon offen ist, hilft in dem Moment nicht.
+   *
+   * Bei **eingeklappter** Spalte stehen die Treffer direkt unter dem Feld, über
+   * der Karte — die Spalte klappt dafür ausdrücklich NICHT auf (Moritz,
+   * 28.07.2026). Wer über die Karte schaut und „17a" tippt, will den einen
+   * Stand finden, nicht die halbe Karte wieder zugebaut bekommen. Erst der
+   * Klick auf einen Treffer öffnet die Spalte, weil dort Foto und Notiz stehen.
+   *
+   * Ist die Spalte offen, stehen die Treffer in ihrer Liste; dann gibt es keine
+   * zweite Anzeige.
+   */
+  const [suche, setSuche] = useState('')
+  const sucheRef = useRef<HTMLInputElement>(null)
+  const suchbegriff = suche.trim().toLowerCase()
+
+  /**
+   * ponytail: bei 8 Treffern abgeschnitten. „a" trifft in Söder 150 Objekte,
+   * und eine 150 Zeilen lange Liste über der Karte wäre keine Hilfe, sondern
+   * eine zweite Karte. Wie viele weggelassen wurden, steht darunter — stumm
+   * abschneiden hieße, dem Nutzer eine vollständige Antwort vorzumachen.
+   */
+  const TREFFER_MAX = 8
+  const treffer = suchbegriff
+    ? aktuellePunkte.filter((p) => passtZurSuche(p.name, p.typ, suchbegriff))
+    : []
+
+  /**
+   * Breite der Objektspalte, in Pixeln, gezogen am Griff links davon.
+   *
+   * Bewusst in allen drei Kartengrößen, nicht nur im Vollbild: die Beschränkung
+   * wäre mehr Code als der Verzicht darauf, und eine Spalte, die sich mal ziehen
+   * lässt und mal nicht, ist die überraschendere Variante.
+   *
+   * Leaflet braucht hier nichts: die Bühne schrumpft mit, und der
+   * ResizeObserver in `revierkarte-map.tsx` hängt am Kartencontainer.
+   */
+  const [inspektorBreite, setInspektorBreite] = useState(SPALTE_STANDARD)
+  const [zieht, setZieht] = useState(false)
+
+  const begrenzt = (px: number) => spaltenBreite(px, kasten.current?.clientWidth ?? 1200)
+
+  /**
+   * Nachkappen, wenn sich der Kasten ändert — Vollbild verlassen, Kinomodus,
+   * Fenster kleiner ziehen.
+   *
+   * Vorher zog den dauerhaften Riegel ein `max-width` im CSS. Das sah richtig
+   * aus, hatte aber **zwei Wahrheiten**: die sichtbare Breite war gekappt, der
+   * gespeicherte Wert nicht. Alles, was mit dem Wert rechnete, lag daneben —
+   * der Ziehgriff hing bis zu 165 px neben der Spaltenkante, und `fitBounds`
+   * bekam einen Zuschlag, den es gar nicht gab (Codex, 28.07.2026). Jetzt gibt
+   * es nur den Zustand, und das CSS folgt ihm.
+   *
+   * Der Beobachter feuert schon beim Anhängen, der erste Wert ist also
+   * unmittelbar geprüft.
+   */
+  useEffect(() => {
+    const el = kasten.current
+    if (!el) return
+    const beobachter = new ResizeObserver(() =>
+      setInspektorBreite((b) => spaltenBreite(b, el.clientWidth)),
+    )
+    beobachter.observe(el)
+    return () => beobachter.disconnect()
+  }, [])
+
+  const griffTaste = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowLeft') setInspektorBreite((b) => begrenzt(b + SPALTE_SCHRITT))
+    else if (e.key === 'ArrowRight') setInspektorBreite((b) => begrenzt(b - SPALTE_SCHRITT))
+    else if (e.key === 'Home') setInspektorBreite(begrenzt(SPALTE_STANDARD))
+    else if (e.key === 'End') setInspektorBreite(begrenzt(SPALTE_MAX))
+    else return
+    e.preventDefault()
+  }
+
+  /**
+   * `zieht` zurücksetzen, sobald es den Griff nicht mehr gibt.
+   *
+   * Verschwindet er mitten im Zug — zweiter Finger klappt die Spalte zu oder
+   * startet das Grenzenzeichnen —, bekommt sein Handler das
+   * `lostpointercapture` nicht mehr zuverlässig und `zieht` bliebe wahr. Eine
+   * erste Fassung hat das nur in der Klasse maskiert; beim Wiederaufklappen kam
+   * `user-select: none` samt Resize-Zeiger zurück und klebte am ganzen Kasten.
+   * Der Zustand muss weg, nicht seine Anzeige. Von Codex gefunden, 28.07.2026.
+   */
+  useEffect(() => {
+    if (!inspektorOffen || zeichner.editMode) setZieht(false)
+  }, [inspektorOffen, zeichner.editMode])
+
+  /**
+   * Auswahl von der Karte — klappt die Spalte auf, wenn sie zu ist.
+   *
+   * Ohne das wählt der Klick etwas aus, das niemand sieht: der Marker bekommt
+   * seinen Ring, die Details samt Foto stehen aber in der eingeklappten Leiste.
+   * Für den Nutzer sieht es aus, als sei der Klick ins Leere gegangen. Die
+   * Auswahl ist der ausdrückliche Wunsch, das Objekt zu sehen — dann muss die
+   * Spalte weichen, nicht der Wunsch. (Moritz, 28.07.2026)
+   *
+   * Nur beim Auswählen, nicht beim Abwählen: „← Alle Objekte" soll die Spalte
+   * nicht wieder aufreißen, wenn man sie gerade zugeklappt hat.
+   */
+  const aufKartenAuswahl = (id: string | null) => {
+    setAuswahlId(id)
+    if (id) setInspektorOffen(true)
+  }
 
   // Nur abonnieren, nicht ableiten: der Zustand kommt aus dem Browser, auch
   // wenn ESC das Vollbild verlässt, ohne dass der Knopf beteiligt war.
@@ -281,14 +448,22 @@ export default function Revierkarte({
   }
 
   return (
-    <div ref={kasten} className={`zentrale-karte-kasten${kino ? ' kino' : ''}`}>
-      {/* Die Bühne trägt Karte, Knöpfe und Meldungen. Sie ist nötig, seit rechts
-          der Inspektor steht: die Knöpfe sind absolut am Rand ihres Kastens
-          ausgerichtet und lägen sonst über dem Panel. */}
-      <div className="zentrale-karte-buehne">
+    <div
+      ref={kasten}
+      className={`zentrale-karte-kasten${kino ? ' kino' : ''}${zieht ? ' zieht' : ''}`}
+      style={{ '--inspektor-breite': `${inspektorBreite}px` } as React.CSSProperties}
+    >
+      {/* Die Leiste hängt am KASTEN, nicht an der Bühne.
+          Damit steht ihr rechtes Ende immer am rechten Rand des Ganzen — also
+          Suchfeld und Klapp-Winkel genau über der Objektspalte, und die Legende
+          direkt darunter (Moritz, 28.07.2026). Hing sie an der Bühne, rutschte
+          sie beim Ein- und Ausklappen um die Spaltenbreite hin und her, und man
+          tippte links, während rechts die Treffer erschienen.
+          Die Meldungen bleiben in der Bühne: die sitzen unten und gehören zur
+          Karte, nicht zur Spalte. */}
       <div className="zentrale-karte-knoepfe">
         {offen && !zeichner.editMode && (
-          <button type="button" onClick={starten} disabled={laeuft || objektBearbeitung}>
+          <button type="button" onClick={starten} disabled={grenzeGesperrt}>
             {aktuelleGrenze ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
           </button>
         )}
@@ -308,13 +483,13 @@ export default function Revierkarte({
         )}
 
         {offen && !zeichner.editMode && aktuelleGrenze && !loeschFrage && (
-          <button type="button" onClick={() => setLoeschFrage(true)} disabled={laeuft}>
+          <button type="button" onClick={() => setLoeschFrage(true)} disabled={grenzeGesperrt}>
             Grenze löschen
           </button>
         )}
         {offen && !zeichner.editMode && aktuelleGrenze && loeschFrage && (
           <>
-            <button type="button" onClick={loeschen} disabled={laeuft}>
+            <button type="button" onClick={loeschen} disabled={grenzeGesperrt}>
               {laeuft ? 'Löscht …' : 'Wirklich löschen'}
             </button>
             <button type="button" onClick={() => setLoeschFrage(false)} disabled={laeuft}>
@@ -332,8 +507,75 @@ export default function Revierkarte({
         <button type="button" onClick={umschalten}>
           {voll ? 'Vollbild beenden' : 'Vollbild'}
         </button>
+
+        {/* Ganz rechts, und damit senkrecht über der Objektspalte: erst das
+            Suchfeld, direkt darunter die Legende in der Spalte. Beim Zeichnen
+            weg — dann gibt es keine Liste zu filtern, und die Leiste braucht
+            den Platz für Fertig · Punkt zurück · Abbrechen. */}
+        {!zeichner.editMode && (
+          <div className="zentrale-karte-suchfeld">
+            <input
+              ref={sucheRef}
+              type="search"
+              value={suche}
+              onChange={(e) => setSuche(e.target.value)}
+              placeholder="Objekt suchen …"
+              aria-label="Kartenobjekte durchsuchen"
+            />
+
+            {/* Nur bei eingeklappter Spalte: sonst stünde dasselbe zweimal da. */}
+            {!inspektorOffen && suchbegriff && (
+              <div className="zentrale-karte-treffer">
+                {treffer.length === 0 ? (
+                  <p className="leer">Nichts gefunden.</p>
+                ) : (
+                  <>
+                    <ul>
+                      {treffer.slice(0, TREFFER_MAX).map((p) => (
+                        <li key={p.id}>
+                          <button type="button" onClick={() => aufKartenAuswahl(p.id)}>
+                            <span className="nam">{p.name}</span>
+                            <span className="typ">{typLabel(p.typ)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {treffer.length > TREFFER_MAX && (
+                      <p className="leer">
+                        … und {treffer.length - TREFFER_MAX} weitere. Genauer tippen oder
+                        die Spalte aufklappen.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Der Klapp-Winkel gehört hierher, nicht in die Spalte: hier bleibt er
+            stehen, wenn die Spalte weg ist. Damit braucht es auch keine
+            34-Pixel-Restleiste mehr — eingeklappt ist die Spalte jetzt ganz
+            weg und die Karte bekommt den vollen Platz. */}
+        {!zeichner.editMode && (
+          <button
+            type="button"
+            className="klapp"
+            onClick={() => setInspektorOffen((o) => !o)}
+            disabled={objektBearbeitung}
+            aria-expanded={inspektorOffen}
+            aria-controls="zentrale-inspektor"
+            aria-label={inspektorOffen ? 'Objektspalte einklappen' : 'Objektspalte ausklappen'}
+            title={inspektorOffen ? 'Objektspalte einklappen' : 'Objektspalte ausklappen'}
+          >
+            {inspektorOffen ? '›' : '‹'}
+          </button>
+        )}
       </div>
 
+      {/* Die Bühne trägt Karte und Meldungen. Die Meldungen sitzen unten in ihr
+          und sollen mit der Karte wandern, nicht mit der Spalte. */}
+      <div className="zentrale-karte-buehne">
       {zeichner.editMode && (
         <p className="zentrale-karte-hinweis">
           In die Karte klicken setzt Punkte · Punkte ziehen verschiebt sie · kleine
@@ -360,7 +602,9 @@ export default function Revierkarte({
         auswahlId={auswahlId}
         // Während einer Objektbearbeitung nicht wählbar — sonst verwirft der
         // Klick den Entwurf, den er gar nicht sehen kann.
-        aufAuswahl={objektBearbeitung ? undefined : setAuswahlId}
+        aufAuswahl={objektBearbeitung ? undefined : aufKartenAuswahl}
+        // Was die Spalte gerade überdeckt. Beim Zeichnen ist sie weg, dann null.
+        randRechts={inspektorOffen && !zeichner.editMode ? inspektorBreite : 0}
         zeichnen={
           zeichner.editMode
             ? {
@@ -384,14 +628,56 @@ export default function Revierkarte({
       {/* Beim Zeichnen weg: die Karte ist dann Werkzeug, kein Auswahlmittel, und
           zwei gleichzeitig offene Bearbeitungen wären zwei Wahrheiten. */}
       {!zeichner.editMode && (
-        <ObjektInspektor
-          punkte={aktuellePunkte}
-          auswahlId={auswahlId}
-          aufAuswahl={setAuswahlId}
-          offen={offen}
-          aufSpeichern={objektSpeichern}
-          aufModus={setObjektBearbeitung}
-        />
+        <>
+          {/* Eigener Flex-Streifen zwischen Bühne und Spalte statt eines
+              Overlays: beim Ziehen ändert sich nur eine Zahl, das Layout macht
+              den Rest. Kein Griff, wenn nichts zu ziehen da ist. */}
+          {inspektorOffen && (
+            <div
+              className="zentrale-inspektor-griff"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Breite der Objektspalte"
+              // Bewusst ohne aria-valuenow: der `max-width`-Riegel im CSS kann
+              // die sichtbare Breite unter den gespeicherten Wert drücken, ohne
+              // dass ein Ereignis feuert (Vollbild verlassen, Fenster kleiner).
+              // Eine angesagte Zahl wäre dann falsch, und eine falsche Zahl ist
+              // schlechter als keine. Von Codex gefunden, 28.07.2026.
+              tabIndex={0}
+              onKeyDown={griffTaste}
+              onPointerDown={(e) => {
+                // Pointer-Capture, damit ein schneller Zug nicht auf der Karte
+                // landet und dort als Auswahl oder Grenzpunkt endet.
+                e.currentTarget.setPointerCapture(e.pointerId)
+                setZieht(true)
+              }}
+              onPointerMove={(e) => {
+                // Das Capture selbst ist die Wahrheit, nicht `zieht`: ein frisch
+                // eingeblendeter Griff hat keins, und ein bloßes Darüberfahren
+                // ändert deshalb nichts — auch dann nicht, wenn der Zustand von
+                // einem abgebrochenen Zug noch true wäre.
+                if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+                const rand = kasten.current?.getBoundingClientRect().right
+                if (rand !== undefined) setInspektorBreite(begrenzt(rand - e.clientX))
+              }}
+              // Deckt Loslassen und Abbruch in einem: der Browser gibt das
+              // Capture bei beidem von selbst zurück.
+              onLostPointerCapture={() => setZieht(false)}
+            />
+          )}
+
+          <ObjektInspektor
+            punkte={aktuellePunkte}
+            auswahlId={auswahlId}
+            aufAuswahl={setAuswahlId}
+            offen={offen}
+            aufSpeichern={objektSpeichern}
+            aufModus={setObjektBearbeitung}
+            suche={suche}
+            aufSuchfeldFokus={() => sucheRef.current?.focus()}
+            ausgeklappt={inspektorOffen}
+          />
+        </>
       )}
     </div>
   )

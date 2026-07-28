@@ -4,7 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Punkt } from './revierkarte-map'
 import {
   OBJEKT_TYPEN,
+  filterBaum,
+  passtZurSuche,
   pruefeObjekt,
+  toggleKategorie,
+  toggleTyp,
   typLabel,
   unveraendert,
   type ObjektEntwurf,
@@ -35,6 +39,9 @@ export default function ObjektInspektor({
   offen,
   aufSpeichern,
   aufModus,
+  suche,
+  aufSuchfeldFokus,
+  ausgeklappt,
 }: {
   punkte: Punkt[]
   auswahlId: string | null
@@ -51,19 +58,30 @@ export default function ObjektInspektor({
    * sichtbaren Komponente, und es sieht aus wie ein Erfolg.
    */
   aufModus: (bearbeitet: boolean) => void
+  /** Der Suchbegriff aus der Knopfleiste über der Karte — dort steht das Feld. */
+  suche: string
+  /**
+   * Fokus zurück ins Suchfeld. Nur für den Weg aus den Details heraus: ohne das
+   * hängt der Browser das gerade fokussierte Element aus und der nächste
+   * Tabulator fängt wieder am Seitenanfang an.
+   */
+  aufSuchfeldFokus: () => void
+  /**
+   * Ausgeklappt. Der Schalter dafür sitzt in der Knopfleiste über der Karte,
+   * nicht hier — dort bleibt er stehen, wenn die Spalte weg ist. Eingeklappt
+   * wird sie nur verborgen, nicht ausgehängt, damit Auswahl und Legende das
+   * Zuklappen überleben.
+   */
+  ausgeklappt: boolean
 }) {
   const gewaehlt = punkte.find((p) => p.id === auswahlId) ?? null
 
-  // Beim Zurückgehen soll der Fokus im Suchfeld landen, beim ersten Aufbau der
-  // Seite aber NICHT — ein Suchfeld, das sich den Fokus beim Laden greift,
-  // scrollt die Seite und schluckt Tastendrücke, die woanders hingehörten.
-  // Gesetzt im Klick, nicht in einem Effekt: „ich komme aus den Details zurück"
-  // ist eine Folge der Bedienung, kein abgeleiteter Zustand. Damit bleibt der
-  // erste Seitenaufbau fokusfrei.
-  const [zurueckGekommen, setZurueckGekommen] = useState(false)
-
   return (
-    <aside className="zentrale-inspektor" aria-label="Kartenobjekte">
+    <aside
+      id="zentrale-inspektor"
+      className={`zentrale-inspektor${ausgeklappt ? '' : ' zu'}`}
+      aria-label="Kartenobjekte"
+    >
       {gewaehlt ? (
         <Details
           // Objektwechsel baut das Formular neu auf. Ohne den key trüge ein
@@ -73,21 +91,21 @@ export default function ObjektInspektor({
           objekt={gewaehlt}
           offen={offen}
           aufZurueck={() => {
-            setZurueckGekommen(true)
+            aufSuchfeldFokus()
             aufAuswahl(null)
           }}
           aufSpeichern={aufSpeichern}
           aufModus={aufModus}
         />
       ) : (
-        <Liste punkte={punkte} aufAuswahl={aufAuswahl} fokussieren={zurueckGekommen} />
+        <Liste punkte={punkte} aufAuswahl={aufAuswahl} suche={suche} />
       )}
     </aside>
   )
 }
 
 /**
- * Objektindex mit Suche.
+ * Objektindex mit Suche und Legende.
  *
  * Braucht es, weil die Karte allein nicht reicht: Namen stehen erst ab Zoom 16
  * dauerhaft an den Punkten (sonst wären Söders 196 Beschriftungen ein
@@ -100,48 +118,144 @@ export default function ObjektInspektor({
 function Liste({
   punkte,
   aufAuswahl,
-  fokussieren,
+  suche,
 }: {
   punkte: Punkt[]
   aufAuswahl: (id: string) => void
-  /** Nur beim Zurückkommen aus den Details, nicht beim ersten Seitenaufbau. */
-  fokussieren: boolean
+  /** Kommt von oben: das Feld steht außerhalb der Spalte. */
+  suche: string
 }) {
-  const [suche, setSuche] = useState('')
-  const sucheRef = useRef<HTMLInputElement>(null)
+  /**
+   * Die abgewählten Typen — dieselbe Bauart wie die Legende der Feld-App.
+   *
+   * Als Menge des Versteckten, nicht des Gezeigten: leer heißt „alles", und das
+   * ist der Startzustand, ohne ihn aufzählen zu müssen. Nebenbei fällt damit ein
+   * ganzer Fehlerfall weg — ein abgewählter Typ, den es nach einer Änderung gar
+   * nicht mehr gibt, ist einfach folgenlos.
+   *
+   * Die Suche allein reichte nicht: sie filtert zwar schon über den
+   * ausgeschriebenen Typ, aber man muss wissen, wie er heißt. Die Legende zeigt,
+   * **was es überhaupt gibt** — bei Söders 196 Objekten ist das der eigentliche
+   * Gewinn, nicht das Filtern. Und anders als eine Einfachauswahl kann sie
+   * „Stände und Wildkameras, sonst nichts".
+   */
+  const [versteckt, setVersteckt] = useState<ReadonlySet<string>>(() => new Set())
 
-  useEffect(() => {
-    if (fokussieren) sucheRef.current?.focus()
-  }, [fokussieren])
+  const baum = useMemo(() => filterBaum(punkte.map((p) => p.typ)), [punkte])
+  const typenGesamt = baum.reduce((s, k) => s + k.eintraege.length, 0)
+
+  /** Was die Legende übrig lässt — ohne die Suche, die eine eigene Frage ist. */
+  const nachLegende = useMemo(
+    () => punkte.filter((p) => !versteckt.has(p.typ)),
+    [punkte, versteckt],
+  )
+
+  const suchbegriff = suche.trim().toLowerCase()
 
   const gefiltert = useMemo(() => {
-    const q = suche.trim().toLowerCase()
-    const sortiert = [...punkte].sort((a, b) => a.name.localeCompare(b.name, 'de'))
-    if (!q) return sortiert
-    // Auch über den ausgeschriebenen Typ suchen: wer „Drückjagdbock" tippt,
-    // meint den Enum-Wert `drueckjagdstand` und soll ihn finden.
-    return sortiert.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        typLabel(p.typ).toLowerCase().includes(q) ||
-        p.typ.includes(q),
-    )
-  }, [punkte, suche])
+    const sortiert = [...nachLegende].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    return suchbegriff ? sortiert.filter((p) => passtZurSuche(p.name, p.typ, suchbegriff)) : sortiert
+  }, [nachLegende, suchbegriff])
+
+  /**
+   * Trifft die Suche etwas, das die Legende gerade wegblendet? Nur dafür wird
+   * am Legendenfilter vorbei gezählt: sonst stünde „Nichts gefunden zu
+   * ‚Kanzel'" da, während zwölf Kanzeln bloß abgehakt sind — eine Meldung, die
+   * den Nutzer in der Suche suchen lässt, obwohl die Ursache oben steht.
+   */
+  const versteckteTreffer = suchbegriff
+    ? punkte.filter((p) => versteckt.has(p.typ) && passtZurSuche(p.name, p.typ, suchbegriff)).length
+    : 0
 
   return (
     <>
       <div className="zentrale-inspektor-kopf">
         <h3>
-          Objekte <span className="zahl">{punkte.length}</span>
+          {/* Die Zahl der Zeilen, die wirklich dastehen. Der Gesamtbestand steht
+              im Dropdown darunter, sobald „Alle Objekte" gewählt ist. */}
+          Objekte <span className="zahl">{gefiltert.length}</span>
         </h3>
-        <input
-          ref={sucheRef}
-          type="search"
-          value={suche}
-          onChange={(e) => setSuche(e.target.value)}
-          placeholder="Suchen …"
-          aria-label="Objekte durchsuchen"
-        />
+        {/* Die Legende, zweistufig wie in der Feld-App: die Kategoriezeile
+            schaltet alles darunter, die Typzeilen einzeln.
+
+            Echte `<input type="checkbox">` in `<label>`, kein nachgebautes
+            Kästchen: Tastatur, Vorlesen und der gemischte Zustand kommen vom
+            Browser. `indeterminate` ist nur als DOM-Eigenschaft zu haben, nicht
+            als Attribut — daher die Callback-Ref. Der Browser meldet daraufhin
+            von selbst `aria-checked="mixed"`. */}
+        {/* Wann es die Legende gibt.
+            `baum.length > 1` war zweimal falsch (Codex, 28.07.2026): ein Revier
+            mit Hochsitzen UND Kanzeln hat nur eine Kategorie und bekam trotzdem
+            keinen Filter. Schlimmer: schrumpft der Bestand auf eine Kategorie,
+            während etwas abgewählt ist, verschwand die Legende samt dem einzigen
+            Weg, es wieder einzuschalten. Deshalb zählt sie Typen, nicht
+            Kategorien — und sie bleibt in jedem Fall stehen, solange etwas
+            versteckt ist. */}
+        {(typenGesamt > 1 || versteckt.size > 0) && (
+          <details className="zentrale-inspektor-legende">
+            {/* Zugeklappt der Normalfall: die Legende ist ein Werkzeug, das man
+                holt, einstellt und weglegt — nicht etwas, das dauerhaft die
+                halbe Spalte belegt. Die Zusammenfassung sagt deshalb im
+                zugeklappten Zustand, ob gerade gefiltert wird; sonst müsste man
+                aufklappen, nur um zu sehen, dass alles an ist. */}
+            {/* Gemessen an dem, was die Legende WIRKLICH wegblendet, nicht an
+                `versteckt.size`: ein abgewählter Typ, den es im Bestand nicht
+                mehr gibt, hätte sonst dauerhaft „Auswahl 196 / 196" erzeugt.
+                Und ohne die Suche, die eine eigene Frage stellt. */}
+            <summary>
+              {nachLegende.length === punkte.length ? (
+                <>
+                  Alle Objekte <span className="zahl">{punkte.length}</span>
+                </>
+              ) : (
+                <>
+                  Auswahl{' '}
+                  <span className="zahl">
+                    {nachLegende.length} / {punkte.length}
+                  </span>
+                </>
+              )}
+            </summary>
+
+            {baum.map((k) => {
+              const werte = k.eintraege.map((e) => e.wert)
+              const aus = werte.filter((w) => versteckt.has(w)).length
+              const halb = aus > 0 && aus < werte.length
+              return (
+                <div key={k.key} className="gruppe">
+                  <label className="kat">
+                    <input
+                      type="checkbox"
+                      checked={aus < werte.length}
+                      ref={(el) => {
+                        if (el) el.indeterminate = halb
+                      }}
+                      onChange={() => setVersteckt((v) => toggleKategorie(v, werte))}
+                    />
+                    <span className="nam">{k.label}</span>
+                    <span className="zahl">{k.anzahl}</span>
+                  </label>
+
+                  {/* Eine Kategorie mit nur einem vorkommenden Typ bekommt keine
+                      zweite, wortgleiche Zeile — die Kopfzeile ist dort schon
+                      der Typ. */}
+                  {k.eintraege.length > 1 &&
+                    k.eintraege.map((e) => (
+                      <label key={e.wert} className="typ">
+                        <input
+                          type="checkbox"
+                          checked={!versteckt.has(e.wert)}
+                          onChange={() => setVersteckt((v) => toggleTyp(v, e.wert))}
+                        />
+                        <span className="nam">{e.label}</span>
+                        <span className="zahl">{e.anzahl}</span>
+                      </label>
+                    ))}
+                </div>
+              )
+            })}
+          </details>
+        )}
       </div>
 
       <div className="zentrale-inspektor-koerper">
@@ -150,7 +264,17 @@ function Liste({
             In diesem Revier ist kein Kartenobjekt hinterlegt.
           </p>
         ) : gefiltert.length === 0 ? (
-          <p className="zentrale-inspektor-leer">Nichts gefunden zu „{suche.trim()}“.</p>
+          // Drei Fälle, weil es drei Ursachen gibt. Der mittlere ist der, den
+          // Codex gefunden hat: die Suche trifft etwas, die Legende blendet es
+          // weg — „nichts gefunden" wäre dann eine Lüge, die den Nutzer in der
+          // Suche suchen lässt, während die Ursache oben steht.
+          <p className="zentrale-inspektor-leer">
+            {!suchbegriff
+              ? 'Alle Kategorien sind abgewählt.'
+              : versteckteTreffer > 0
+                ? `Zu „${suche.trim()}“ ist ${versteckteTreffer === 1 ? 'ein Treffer' : `sind ${versteckteTreffer} Treffer`} über die Legende ausgeblendet.`
+                : `Nichts gefunden zu „${suche.trim()}“.`}
+          </p>
         ) : (
           <ul className="zentrale-inspektor-liste">
             {gefiltert.map((p) => (

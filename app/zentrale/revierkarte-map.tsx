@@ -76,7 +76,11 @@ const NAMEN_AB_ZOOM = 16
  * Ausmaßen weiterrendern (graue Streifen am Rand). Ein Observer deckt alle drei
  * Fälle ab, inklusive Fensteränderung, und ist damit weniger, nicht mehr Code.
  */
-function Ausschnitt({ grenze, punkte }: KarteProps) {
+function Ausschnitt({
+  grenze,
+  punkte,
+  randRechts,
+}: KarteProps & { randRechts: number }) {
   const map = useMap()
   const letzteLage = useRef('')
 
@@ -116,8 +120,29 @@ function Ausschnitt({ grenze, punkte }: KarteProps) {
     if (lage === letzteLage.current) return
     letzteLage.current = lage
 
-    map.fitBounds(L.latLngBounds(ecken), { padding: [24, 24] })
-  }, [map, grenze, punkte])
+    // Rechts so viel aussparen, wie die Objektspalte überdeckt. Sie liegt seit
+    // dem 28.07.2026 ÜBER der Karte statt neben ihr — der Kartencontainer reicht
+    // also unter sie, und ohne diesen Zuschlag landete bei Söder ein gutes
+    // Sechstel der Stände hinter dem Panel.
+    //
+    // Gedeckelt, damit immer ein nutzbarer Streifen übrig bleibt: wäre das
+    // Padding breiter als der Container, rechnete Leaflet mit einer negativen
+    // Fläche und fitBounds könnte mit nicht-endlichen Werten scheitern (Codex,
+    // 28.07.2026). Der Aufrufer begrenzt schon, das hier ist der Riegel an der
+    // Stelle, an der es tatsächlich bräche.
+    const rand = Math.max(0, Math.min(randRechts, map.getSize().x - 80))
+    map.fitBounds(L.latLngBounds(ecken), {
+      paddingTopLeft: [24, 24],
+      paddingBottomRight: [24 + rand, 24],
+    })
+    // `randRechts` steht in den Abhängigkeiten, ändert aber nichts: die
+    // Lageprüfung oben bricht vorher ab. Genau so gewollt — eine reine
+    // Breitenänderung (klappen, ziehen) darf den Ausschnitt NICHT neu setzen.
+    // Codex hat das als Finding gemeldet; es ist Absicht. Wer die Spalte zieht,
+    // hat die Karte meist längst selbst verschoben, und ein Nachrücken mitten im
+    // Zug wäre schlimmer als ein Objekt, das kurz hinter dem Panel liegt: die
+    // Karte lässt sich schieben, ein zurückgesetzter Ausschnitt nicht.
+  }, [map, grenze, punkte, randRechts])
   return null
 }
 
@@ -247,10 +272,13 @@ export default function RevierkarteMap({
   zeichnen,
   auswahlId = null,
   aufAuswahl,
+  randRechts = 0,
 }: KarteProps & {
   zeichnen?: ZeichenProps
   auswahlId?: string | null
   aufAuswahl?: (id: string) => void
+  /** Breite, die die Objektspalte rechts überdeckt — Zuschlag für `fitBounds`. */
+  randRechts?: number
 }) {
   const gewaehlt = punkte.find((p) => p.id === auswahlId)
   return (
@@ -305,7 +333,7 @@ export default function RevierkarteMap({
       {/* Bewusst nur die GESPEICHERTE Grenze und die Objekte: bekäme `Ausschnitt`
           den Entwurf, liefe fitBounds bei jedem gesetzten Punkt erneut und die
           Karte würde unter der Hand wegrutschen. */}
-      <Ausschnitt grenze={grenze} punkte={punkte} />
+      <Ausschnitt grenze={grenze} punkte={punkte} randRechts={randRechts} />
     </MapContainer>
   )
 }
