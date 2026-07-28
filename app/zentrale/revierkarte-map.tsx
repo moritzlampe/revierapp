@@ -15,7 +15,7 @@ import 'leaflet/dist/leaflet.css'
 import { BKG_TOPPLUS } from '@/lib/map/tiles'
 import BoundaryDrawLayer from '@/components/map/BoundaryDrawLayer'
 import type { DrawPoint } from '@/hooks/useBoundaryEditor'
-import { istStand } from './objekte'
+import { istStand, type Ort } from './objekte'
 
 /**
  * Ein Kartenobjekt, so wie der Browser es braucht. Heißt weiter `Punkt`, weil es
@@ -50,6 +50,22 @@ export type ZeichenProps = {
   aufEinfuegen: (nachIndex: number, p: DrawPoint) => void
 }
 
+/**
+ * Setzmodus für eine Objektposition (Schritt 3b) — Verschieben und Anlegen
+ * benutzen denselben.
+ *
+ * Auch dieser Zustand liegt in `revierkarte.tsx`: die Karte nimmt den Klick auf
+ * und zeichnet, was sie bekommt. Sie weiß nicht, ob daraus ein UPDATE oder ein
+ * INSERT wird, und soll es nicht wissen.
+ */
+export type SetzProps = {
+  /** Die noch nicht gespeicherte Position, oder `null` vor dem ersten Klick. */
+  kandidat: Ort | null
+  /** Woher das Objekt kommt — nur beim Verschieben, beim Anlegen `null`. */
+  ursprung: Ort | null
+  aufOrt: (ort: Ort) => void
+}
+
 const ACCENT = '#4A5A2A'
 const NEUTRAL = '#8B8775'
 /** Bronze aus den Design Locks. Bewusst nicht der Grün-Akzent: „ausgewählt" soll
@@ -82,7 +98,7 @@ function Ausschnitt({
   randRechts,
 }: KarteProps & { randRechts: number }) {
   const map = useMap()
-  const letzteLage = useRef('')
+  const hatGefittet = useRef(false)
 
   useEffect(() => {
     const beobachter = new ResizeObserver(() => map.invalidateSize({ animate: false }))
@@ -92,6 +108,23 @@ function Ausschnitt({
 
   useEffect(() => {
     map.invalidateSize()
+
+    // **Genau einmal fitten, danach nie wieder.**
+    //
+    // Vorher stand hier eine Signatur aus allen sortierten Koordinaten, die neu
+    // fittete, sobald sich eine Lage geändert hatte. Das war für Schritt 3a
+    // richtig (Umbenennen darf den Zoom nicht zurücksetzen), fiel mit Schritt 3b
+    // aber zwangsläufig um: Verschieben und Anlegen ÄNDERN eine Lage, die
+    // Signatur wechselt also immer, und der Zoom des Nutzers wäre nach jedem
+    // gesetzten Punkt auf das ganze Revier zurückgesprungen — mitten aus der
+    // Arbeit heraus, für die er hineingezoomt hat.
+    //
+    // Ein Zähler statt einer Signatur ist möglich, weil ein Revierwechsel diese
+    // Komponente ohnehin neu aufbaut: `page.tsx` gibt der Karte `key={revier.id}`.
+    // „Einmal pro Revier" und „einmal pro Montage" sind damit dasselbe, und der
+    // ganze Sortier- und Vergleichsapparat fällt weg.
+    if (hatGefittet.current) return
+
     // Grenze UND Objekte: Stände können außerhalb der gezeichneten Grenze
     // liegen (nicht jedes Revier ist sauber vermessen) und wären sonst
     // beim ersten Blick nicht im Bild.
@@ -99,26 +132,10 @@ function Ausschnitt({
       ...(grenze?.flat() ?? []),
       ...punkte.map((p) => [p.lat, p.lng] as [number, number]),
     ]
+    // Noch nichts da heißt noch nicht gefittet: der erste Lauf kann vor den
+    // Daten kommen, und dann muss der nächste ihn nachholen.
     if (ecken.length === 0) return
-
-    // Auf die LAGE prüfen, nicht auf die Objektidentität der Props. Nach jedem
-    // Speichern zieht `router.refresh()` die Server-Komponente nach und liefert
-    // frische Arrays — ein Effekt, der nur an `punkte` hängt, hätte die Karte
-    // seit Schritt 3 bei jedem umbenannten Objekt auf das ganze Revier
-    // zurückgeworfen, mitten aus dem Hineinzoomen heraus. Nur eine echte
-    // Ortsänderung darf den Ausschnitt neu setzen.
-    // Sortiert, nicht bloß verkettet: der `map_objects`-SELECT hat kein
-    // ORDER BY, Postgres darf die Zeilen also nach jedem Refresh anders
-    // liefern. Ohne die Sortierung änderte sich die Signatur allein durch die
-    // Reihenfolge — und ein bloßes Umbenennen hätte den Zoom des Nutzers
-    // zurückgesetzt, obwohl sich kein Punkt bewegt hat. Von Codex gefunden,
-    // 27.07.2026.
-    const lage = ecken
-      .map(([lat, lng]) => `${lat},${lng}`)
-      .sort()
-      .join(';')
-    if (lage === letzteLage.current) return
-    letzteLage.current = lage
+    hatGefittet.current = true
 
     // Rechts so viel aussparen, wie die Objektspalte überdeckt. Sie liegt seit
     // dem 28.07.2026 ÜBER der Karte statt neben ihr — der Kartencontainer reicht
@@ -135,15 +152,58 @@ function Ausschnitt({
       paddingTopLeft: [24, 24],
       paddingBottomRight: [24 + rand, 24],
     })
-    // `randRechts` steht in den Abhängigkeiten, ändert aber nichts: die
-    // Lageprüfung oben bricht vorher ab. Genau so gewollt — eine reine
-    // Breitenänderung (klappen, ziehen) darf den Ausschnitt NICHT neu setzen.
-    // Codex hat das als Finding gemeldet; es ist Absicht. Wer die Spalte zieht,
-    // hat die Karte meist längst selbst verschoben, und ein Nachrücken mitten im
-    // Zug wäre schlimmer als ein Objekt, das kurz hinter dem Panel liegt: die
-    // Karte lässt sich schieben, ein zurückgesetzter Ausschnitt nicht.
   }, [map, grenze, punkte, randRechts])
   return null
+}
+
+/**
+ * Der Setzmodus: ein Kartenklick wird zur Position, nicht zur Auswahl.
+ *
+ * Eigene Komponente aus demselben Grund wie `Objekte` — `useMapEvents` braucht
+ * den Kartenkontext, und den gibt es erst unterhalb von `MapContainer`.
+ *
+ * Der Ursprung bleibt beim Verschieben blass stehen. Ohne ihn wüsste niemand
+ * mehr, wo das Objekt herkam, und „Abbrechen" wäre ein Sprung ins Dunkle.
+ */
+function SetzLage({
+  kandidat,
+  ursprung,
+  aufOrt,
+}: {
+  kandidat: Ort | null
+  ursprung: Ort | null
+  aufOrt: (ort: Ort) => void
+}) {
+  // Bewusst NICHT gewickelt: der Kandidat soll genau dort erscheinen, wo
+  // geklickt wurde. Den Bereich richtet `pruefeOrt` erst beim Schreiben, und nur
+  // dann, wenn die Karte tatsächlich eine Weltumrundung hinter sich hat.
+  useMapEvents({ click: (e) => aufOrt({ lat: e.latlng.lat, lng: e.latlng.lng }) })
+
+  return (
+    <>
+      {ursprung && (
+        <CircleMarker
+          center={[ursprung.lat, ursprung.lng]}
+          radius={7}
+          interactive={false}
+          pathOptions={{ color: NEUTRAL, weight: 1.5, dashArray: '3 3', fill: false }}
+        />
+      )}
+      {kandidat && (
+        <CircleMarker
+          center={[kandidat.lat, kandidat.lng]}
+          radius={8}
+          interactive={false}
+          pathOptions={{
+            color: '#FFFFFF',
+            weight: 2,
+            fillColor: BRONZE,
+            fillOpacity: 1,
+          }}
+        />
+      )}
+    </>
+  )
 }
 
 /**
@@ -270,17 +330,32 @@ export default function RevierkarteMap({
   grenze,
   punkte,
   zeichnen,
+  setzen,
   auswahlId = null,
   aufAuswahl,
   randRechts = 0,
 }: KarteProps & {
   zeichnen?: ZeichenProps
+  /** Setzmodus (Schritt 3b) — schließt `zeichnen` aus, beide wollen den Klick. */
+  setzen?: SetzProps
   auswahlId?: string | null
   aufAuswahl?: (id: string) => void
   /** Breite, die die Objektspalte rechts überdeckt — Zuschlag für `fitBounds`. */
   randRechts?: number
 }) {
   const gewaehlt = punkte.find((p) => p.id === auswahlId)
+
+  /**
+   * Wer wählt hier aus — und wer nicht.
+   *
+   * Ein benannter Wert statt derselben Bedingung an vier Stellen. Genau daran
+   * ist dieser Code schon zweimal gescheitert: ein Riegel, der als Ausdruck am
+   * Aufrufer steht, wird beim nächsten Aufrufer vergessen. Zeichnen und Setzen
+   * verbrauchen beide den Kartenklick, also darf in beiden Fällen kein Marker
+   * dazwischenkommen — bei Söder wären das 196 Stück, die jeden Klick
+   * schluckten, und es käme nie eine Position zustande.
+   */
+  const waehlbar = zeichnen || setzen ? undefined : aufAuswahl
   return (
     <MapContainer
       center={[51.2, 10.4]} // Platzhalter bis Ausschnitt greift
@@ -303,6 +378,25 @@ export default function RevierkarteMap({
       {!zeichnen && grenze && grenze.length > 0 && (
         <Polygon
           positions={grenze as L.LatLngExpression[][]}
+          // **`interactive={false}` ist Pflicht, nicht Kosmetik.** Leaflet gibt
+          // den Kartenklick NICHT weiter, wenn ein interaktiver Layer getroffen
+          // wurde (`Map._findEventTargets` nimmt die Karte nur auf, wenn sonst
+          // nichts traf). Die Fläche hat `fillOpacity: 0.07` und ist damit ein
+          // Klickziel über dem gesamten Revier — im Setzmodus wäre innerhalb der
+          // Grenze also KEINE Position setzbar, und zwar lautlos.
+          //
+          // Beim Zeichnen fiel das nie auf, weil die gespeicherte Grenze dort
+          // gar nicht gezeichnet wird. Im Testrevier ist es dagegen sehr wohl
+          // zu sehen: `Test 5` trägt seit dem 27.07.2026 eine gezeichnete Grenze
+          // von 7,4 ha (nachgemessen 28.07.), und innerhalb dieser Fläche wäre
+          // ohne diesen Prop keine Position setzbar. Genau dort gehört der Fall
+          // also geprüft — nicht am grenzenlosen Revier.
+          //
+          // Dauerhaft aus, nicht nur im Setzmodus: die Fläche hat keinen
+          // Klick-Handler und braucht auch keinen. Und `interactive` wertet
+          // Leaflet nur beim Anlegen des Pfades aus — ein Umschalten bräuchte
+          // denselben `key`-Neuaufbau wie bei den Markern, für nichts.
+          interactive={false}
           pathOptions={{ color: ACCENT, weight: 2.5, fillColor: ACCENT, fillOpacity: 0.07 }}
         />
       )}
@@ -317,13 +411,24 @@ export default function RevierkarteMap({
         />
       )}
 
+      {setzen && (
+        <SetzLage
+          kandidat={setzen.kandidat}
+          ursprung={setzen.ursprung}
+          aufOrt={setzen.aufOrt}
+        />
+      )}
+
       {/* Während des Zeichnens ist die Auswahl aus: ein Klick soll dann einen
           Grenzpunkt setzen, nicht ein Objekt auswählen — der Marker würde das
-          Klickereignis sonst abfangen. */}
+          Klickereignis sonst abfangen. Im Setzmodus gilt dasselbe.
+          Der Auswahlring bleibt beim Setzen dagegen stehen: er zeigt, WELCHES
+          Objekt gerade verschoben wird, und schluckt als `interactive={false}`
+          keinen Klick. */}
       <Objekte
         punkte={punkte}
         auswahlId={zeichnen ? null : auswahlId}
-        aufAuswahl={zeichnen ? undefined : aufAuswahl}
+        aufAuswahl={waehlbar}
       />
       <ZuAuswahl
         id={zeichnen ? null : auswahlId}

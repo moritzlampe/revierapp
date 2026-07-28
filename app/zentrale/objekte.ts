@@ -199,6 +199,12 @@ export function pruefeObjekt(entwurf: ObjektEntwurf): string | null {
   if (!entwurf.name.trim()) {
     return 'Ein Objekt braucht einen Namen.'
   }
+  // Der leere Typ ist ein eigener Fall, keine Unterart von „unbekannt": beim
+  // Anlegen startet die Auswahl bewusst auf „Bitte wählen" (Schritt 3b), und
+  // `Unbekannter Objekttyp „"` wäre dort eine Meldung über ein Anführungspaar.
+  if (!entwurf.typ) {
+    return 'Bitte einen Objekttyp wählen.'
+  }
   if (!istObjektTyp(entwurf.typ)) {
     return `Unbekannter Objekttyp „${entwurf.typ}".`
   }
@@ -251,5 +257,121 @@ export function unveraendert(
     neu.name === original.name &&
     neu.type === original.type &&
     neu.description === original.description
+  )
+}
+
+/* ── Position (Schritt 3b) ──────────────────────────────────────────────── */
+
+/** Ein Ort auf der Karte, in der Reihenfolge, in der Leaflet ihn liefert. */
+export type Ort = { lat: number; lng: number }
+
+/**
+ * Der Setzmodus: **ein** Zustand für Verschieben UND Anlegen.
+ *
+ * Bewusst kein zweites und drittes Boolean neben den drei, die es in
+ * `revierkarte.tsx` schon gibt (`laeuft`, `objektBearbeitung`,
+ * `zeichner.editMode`). Beide Modi verbrauchen den Kartenklick, beide schließen
+ * alles andere aus — und zwei Booleans könnten gleichzeitig wahr sein, ein
+ * Zustand kann das nicht. Genau diese Sorte Fehler hat hier zweimal
+ * zugeschlagen; siehe `beschaeftigt` in `revierkarte.tsx`.
+ *
+ * `kandidat` ist `null`, solange noch nicht in die Karte geklickt wurde. Beim
+ * Anlegen heißt das: es gibt noch keinen Datensatz, nur einen Modus.
+ * `map_objects.position` ist NOT NULL — ein Objekt ohne Ort kann es nicht
+ * geben, also entsteht es erst mit dem Klick.
+ *
+ * Der Typ liegt hier und nicht in einer der beiden Komponenten, weil beide ihn
+ * brauchen: `revierkarte.tsx` hält den Zustand, `objekt-inspektor.tsx` stellt
+ * ihn dar. Ein Export aus der einen in die andere wäre ein Ringschluss.
+ */
+export type Setzen =
+  | { art: 'position'; id: string; kandidat: Ort | null }
+  | { art: 'neu'; kandidat: Ort | null }
+
+/**
+ * Längengrad in den Bereich −180…180 zurückholen.
+ *
+ * **Kein Schönheitsfix, sondern eine echte Falle.** Leaflet lässt die Karte über
+ * den 180. Längengrad hinaus schieben und liefert danach ungewickelte Werte —
+ * wer zweimal nach Osten scrollt und dann klickt, bekommt `lng: 370`. PostGIS
+ * nimmt das an (`geometry` prüft keinen Wertebereich), speichert es, und das
+ * Objekt liegt anschließend nirgends: `fitBounds` zieht die Karte auf eine
+ * Weltbreite, und auf dem Revier ist der Punkt nicht zu sehen.
+ *
+ * Zurückholen statt ablehnen, weil der Klick nicht falsch war — der Nutzer hat
+ * auf eine sichtbare Stelle geklickt, nur hat die Karte eine zweite Umrundung
+ * hinter sich. Eine Fehlermeldung wäre an dieser Stelle nicht erklärbar.
+ *
+ * Der Bereichsprüfung vorweg ist kein Feilschen um einen Rechenschritt: die
+ * Modulo-Kette ist nicht wertetreu. `10.2` käme als `10.200000000000045`
+ * zurück — physikalisch nichts (5 Nanometer), aber jeder Positions-Write
+ * speicherte damit einen anderen Wert als den geklickten, und der Normalfall
+ * ist nun einmal „liegt längst im Bereich". Vom Selbsttest gefunden.
+ */
+export function wickleLaengengrad(lng: number): number {
+  if (lng >= -180 && lng <= 180) return lng
+  return (((lng + 180) % 360) + 360) % 360 - 180
+}
+
+/**
+ * Prüft einen angeklickten Ort und gibt ihn gewickelt zurück — oder eine
+ * Meldung für den Bildschirm.
+ *
+ * `position` ist in der DB `geometry(POINT, 4326)` und NOT NULL. Einen Punkt
+ * ohne Ort kann es also nicht geben, und einen mit `NaN` nimmt PostGIS zwar an,
+ * aber niemand findet ihn wieder. Deshalb hier abfangen, nicht dort.
+ *
+ * Der Breitengrad wird bewusst NICHT gewickelt: Leaflet begrenzt ihn von sich
+ * aus auf ±90, ein Wert darüber wäre also kein Scrollartefakt, sondern ein
+ * echter Fehler — und den soll man sehen.
+ */
+export function pruefeOrt(ort: Ort | null): { ort: Ort } | { fehler: string } {
+  if (!ort) {
+    return { fehler: 'Es ist noch keine Position gesetzt. In die Karte klicken.' }
+  }
+  if (!Number.isFinite(ort.lat) || !Number.isFinite(ort.lng)) {
+    return { fehler: 'Die angeklickte Position ist keine gültige Koordinate.' }
+  }
+  if (ort.lat < -90 || ort.lat > 90) {
+    return { fehler: `Breitengrad ${ort.lat} liegt außerhalb von −90 bis 90.` }
+  }
+  return { ort: { lat: ort.lat, lng: wickleLaengengrad(ort.lng) } }
+}
+
+/**
+ * EWKT für einen Punkt — **`lng lat`, nicht `lat lng`.**
+ *
+ * Die Reihenfolge ist die eine Stelle, an der dieser Aufruf lautlos falsch sein
+ * kann: PostGIS liest X Y, also Länge vor Breite, und in Deutschland sind beide
+ * Werte plausibel (52, 10 vs. 10, 52 — beides landet auf der Karte, nur eines
+ * in Niedersachsen). Ein vertauschtes Paar wirft keinen Fehler, es legt das
+ * Objekt bloß irgendwo in den Indischen Ozean. Der Selbsttest nagelt sie fest.
+ *
+ * Dieselbe Schreibweise wie der mobile Pfad (`MapObjectSheet:104`) und wie
+ * `ewktAus` für Polygone in `grenze.ts`.
+ */
+export function ewktPunkt(ort: Ort): string {
+  return `SRID=4326;POINT(${ort.lng} ${ort.lat})`
+}
+
+/**
+ * Ist die neue Position praktisch dieselbe wie die alte?
+ *
+ * Gleicher Zweck wie `unveraendert()` für die Textfelder: Objekt-Writes sind
+ * last-write-wins (Backlog E-R7), `map_objects` hat keine `updated_at`-Spalte,
+ * und jeder überflüssige Write ist ein Fenster, in dem eine parallele Änderung
+ * aus der Feld-App verloren geht. Der billigste Schutz ist der Write, den es
+ * nicht gibt.
+ *
+ * Mit Toleranz statt exakt: „Position ändern" und dann auf das Objekt selbst
+ * klicken trifft nie dieselbe Fließkommazahl, wäre aber offensichtlich keine
+ * Verschiebung. 1e-7 Grad sind rund 1 cm — klein genug, dass keine echte
+ * Verschiebung durchfällt, groß genug für den Klick auf denselben Punkt.
+ */
+const ORT_TOLERANZ = 1e-7
+
+export function ortUnveraendert(a: Ort, b: Ort): boolean {
+  return (
+    Math.abs(a.lat - b.lat) < ORT_TOLERANZ && Math.abs(a.lng - b.lng) < ORT_TOLERANZ
   )
 }

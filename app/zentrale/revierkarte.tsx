@@ -4,12 +4,22 @@ import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { polygonAreaHectares } from '@/lib/geo-utils'
+import { distanceInMeters, polygonAreaHectares } from '@/lib/geo-utils'
 import { useBoundaryEditor } from '@/hooks/useBoundaryEditor'
-import type { KarteProps } from './revierkarte-map'
+import type { KarteProps, Punkt } from './revierkarte-map'
 import { darfSchreiben, schreibe } from './schreiben'
 import { ewktAus, nurEinRing, pruefeGrenze } from './grenze'
-import { alsSpalten, passtZurSuche, typLabel, type ObjektEntwurf } from './objekte'
+import {
+  alsSpalten,
+  ewktPunkt,
+  ortUnveraendert,
+  passtZurSuche,
+  pruefeOrt,
+  typLabel,
+  type ObjektEntwurf,
+  type Ort,
+  type Setzen,
+} from './objekte'
 import ObjektInspektor from './objekt-inspektor'
 
 // react-leaflet fasst beim Import `window` an — ssr:false ist Pflicht, und
@@ -103,19 +113,25 @@ export default function Revierkarte({
    * Objekte, die in dieser Sitzung schon geschrieben wurden — aus demselben
    * Grund wie `gespeichert` oben: `router.refresh()` ist nicht abwartbar, und
    * bis die Server-Komponente nachgezogen hat, trüge die `punkte`-Prop noch den
-   * alten Namen. Ohne das läge im Inspektor unmittelbar nach dem Speichern
-   * wieder der alte Stand.
+   * alten Stand. Ohne das läge im Inspektor unmittelbar nach dem Speichern
+   * wieder der alte Name.
+   *
+   * **Vollständige Zeilen, nicht nur die geänderten Felder.** Bis Schritt 3a
+   * genügte ein Feld-Patch auf vorhandene IDs, weil sich nur Name, Typ und Notiz
+   * ändern konnten. Mit 3b trägt derselbe Zwischenspeicher zwei weitere Fälle,
+   * die ein Patch nicht kann: eine geänderte **Position** und eine **neue
+   * Zeile**, die es in `punkte` noch gar nicht gibt. Ein neu angelegtes Objekt
+   * wäre sonst bis zum Eintreffen der Server-Daten unsichtbar — man legt es an
+   * und die Karte bleibt leer. Von Codex gefunden, 28.07.2026.
    */
-  const [geaendert, setGeaendert] = useState<
-    Record<string, { name: string; type: string; description: string | null }>
-  >({})
-  const aktuellePunkte = punkte.map((p) => {
-    const neu = geaendert[p.id]
-    // Gemerkt wird, was wirklich in der Spalte steht — also der getrimmte Wert
-    // aus `alsSpalten`, nicht der rohe Formularinhalt. Sonst zeigte der
-    // Inspektor nach dem Speichern ein Leerzeichen, das die DB gar nicht hat.
-    return neu ? { ...p, name: neu.name, typ: neu.type, beschreibung: neu.description } : p
-  })
+  const [geschrieben, setGeschrieben] = useState<Record<string, Punkt>>({})
+  const aktuellePunkte = [
+    // Gemerkt wird, was wirklich in der DB steht — also der getrimmte Wert aus
+    // `alsSpalten`, nicht der rohe Formularinhalt. Sonst zeigte der Inspektor
+    // nach dem Speichern ein Leerzeichen, das die DB gar nicht hat.
+    ...punkte.map((p) => geschrieben[p.id] ?? p),
+    ...Object.values(geschrieben).filter((g) => !punkte.some((p) => p.id === g.id)),
+  ]
 
   /**
    * Den Zwischenspeicher leeren, sobald **überhaupt** neue Server-Daten da sind
@@ -131,6 +147,17 @@ export default function Revierkarte({
    * nicht bei jedem Rendern dieser Komponente. Der Zwischenspeicher überbrückt
    * also genau das, wofür er da ist: die Zeit bis `router.refresh()` ankommt.
    * Danach hat der Server recht, wessen Änderung es auch war.
+   *
+   * ponytail: die Decke dieser Entscheidung ist ein Wettlauf, den 3b vergrößert
+   * hat. Zwei Writes innerhalb einer Refresh-Umlaufzeit (~200 ms) — und die
+   * Antwort des ERSTEN leert den Zwischenspeicher, obwohl schon der zweite
+   * darin steht. Bis 3a war die Folge ein kurz veralteter Name; seit 3b kann
+   * ein gerade angelegtes Objekt kurz von der Karte verschwinden, was
+   * erschreckender aussieht. Es heilt mit der nächsten Antwort, und die DB ist
+   * die ganze Zeit richtig. Nicht behoben, weil es zwei vollständige
+   * Formulareingaben in 200 ms braucht — praktisch unerreichbar. Ein echter
+   * Fix bräuchte Folgenummern je Anfrage; nachziehen, wenn es je auffällt
+   * (Backlog E-R8). Von Codex gefunden, 28.07.2026.
    */
   const ersterLauf = useRef(true)
   useEffect(() => {
@@ -138,7 +165,7 @@ export default function Revierkarte({
       ersterLauf.current = false
       return
     }
-    setGeaendert((v) => (Object.keys(v).length > 0 ? {} : v))
+    setGeschrieben((v) => (Object.keys(v).length > 0 ? {} : v))
   }, [punkte])
 
   /**
@@ -153,15 +180,22 @@ export default function Revierkarte({
    */
   const [objektBearbeitung, setObjektBearbeitung] = useState(false)
 
+  const [setzen, setSetzen] = useState<Setzen | null>(null)
+
   /**
-   * Ein Riegel für **alle** Grenzen-Wege, nicht einer je Knopf.
+   * Ein Riegel für **alle** anderen Wege, nicht einer je Knopf.
    *
    * Die erste Fassung sperrte nur „Grenze zeichnen/bearbeiten" — „Grenze löschen"
    * und „Wirklich löschen" blieben offen und schrieben mitten in einen offenen
    * Objektentwurf hinein (Moritz, 28.07.2026). „Behalten" bleibt bewusst draußen:
    * eine begonnene Rückfrage muss man auch dann wegklicken können.
+   *
+   * Mit 3b kommt `setzen` dazu, und der Name ist mitgewandert: der Wert sperrt
+   * jetzt auch „Objekt anlegen" gegen einen offenen Positionsentwurf. Ein
+   * Riegel, der als Ausdruck an einem Knopf steht, wird beim nächsten Knopf
+   * vergessen — als benannter Wert an einer Stelle nicht.
    */
-  const grenzeGesperrt = laeuft || objektBearbeitung
+  const beschaeftigt = laeuft || objektBearbeitung || setzen !== null
 
   /**
    * Objektspalte ein- und ausklappen.
@@ -443,9 +477,217 @@ export default function Revierkarte({
         .eq('district_id', revierId)
         .select('id'),
     )
-    setGeaendert((v) => ({ ...v, [id]: spalten }))
+    merken(id, (p) => ({
+      ...p,
+      name: spalten.name,
+      typ: spalten.type,
+      beschreibung: spalten.description,
+    }))
     router.refresh()
   }
+
+  /**
+   * Eine Zeile im Zwischenspeicher fortschreiben.
+   *
+   * Geht über den **aktuellen** Stand, nicht über die rohe `punkte`-Prop: sonst
+   * verlöre ein Verschieben nach einem Umbenennen den neuen Namen wieder, weil
+   * beide Writes denselben Eintrag beschreiben. Wer nichts findet, schreibt
+   * nichts — der Fall kommt nur vor, wenn die Server-Daten zwischenzeitlich
+   * eingetroffen sind, und dann hat der Server ohnehin recht.
+   */
+  function merken(id: string, fort: (p: Punkt) => Punkt) {
+    const jetzt = aktuellePunkte.find((p) => p.id === id)
+    if (!jetzt) return
+    setGeschrieben((v) => ({ ...v, [id]: fort(jetzt) }))
+  }
+
+  /**
+   * Die Position eines vorhandenen Objekts schreiben (Schritt 3b).
+   *
+   * **Nur `position`, sonst nichts.** Name, Typ und Notiz bleiben unangetastet,
+   * obwohl sie im Formular daneben stehen. Grund ist E-R7: Objekt-Writes sind
+   * last-write-wins, `map_objects` hat keine `updated_at`-Spalte, und jede
+   * mitgeschriebene Spalte ist ein Fenster, in dem eine parallele Änderung aus
+   * der Feld-App verloren geht. Wer nur verschiebt, schreibt nur die Position.
+   *
+   * `.eq('district_id', revierId)` aus demselben Grund wie bei `objektSpeichern`:
+   * die R3-Allowlist prüft das Revier, nicht das Objekt.
+   */
+  const positionSpeichern = async (id: string, ort: Ort) => {
+    await schreibe(revierId, 'Die Position', () =>
+      createClient()
+        .from('map_objects')
+        .update({ position: ewktPunkt(ort) })
+        .eq('id', id)
+        .eq('district_id', revierId)
+        .select('id'),
+    )
+    merken(id, (p) => ({ ...p, lat: ort.lat, lng: ort.lng }))
+    router.refresh()
+  }
+
+  /**
+   * Ein neues Objekt anlegen (Schritt 3b).
+   *
+   * Vier Spalten, die kein Formular liefert und die deshalb hier stehen:
+   * `position` (NOT NULL, kommt aus dem Kartenklick), `district_id` (sonst wäre
+   * das Objekt revierlos und in der Übersicht unsichtbar, weil sie auf
+   * `district_id` filtert) und `created_by`.
+   *
+   * `created_by` ist nicht Kosmetik: von den vier RLS-Policies auf `map_objects`
+   * trägt `map_objects_creator_manage` genau diese Bedingung. Wer sie leer
+   * lässt, hängt allein an `map_objects_district_owner` — und verliert jeden
+   * Zugriff auf das eigene Objekt, sobald das Revier den Besitzer wechselt.
+   *
+   * `.select()` gibt die neue `id` zurück, und die braucht der Zwischenspeicher:
+   * ohne sie wäre das Objekt bis zum Eintreffen der Server-Daten unsichtbar.
+   */
+  const objektAnlegen = async (entwurf: ObjektEntwurf, ort: Ort) => {
+    const supabase = createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) throw new Error('Nicht angemeldet — bitte die Seite neu laden.')
+
+    const spalten = alsSpalten(entwurf)
+    const zeile = await schreibe(revierId, 'Das neue Objekt', () =>
+      supabase
+        .from('map_objects')
+        .insert({
+          ...spalten,
+          position: ewktPunkt(ort),
+          district_id: revierId,
+          created_by: user.id,
+        })
+        .select('id'),
+    )
+
+    const neu: Punkt = {
+      id: zeile.id,
+      name: spalten.name,
+      typ: spalten.type,
+      beschreibung: spalten.description,
+      lat: ort.lat,
+      lng: ort.lng,
+      fotoUrl: null,
+    }
+    setGeschrieben((v) => ({ ...v, [neu.id]: neu }))
+    // Direkt auswählen: wer ein Objekt anlegt, will sehen, dass es da ist —
+    // und steht damit gleich an der Stelle, an der Umbenennen und Verschieben
+    // weitergehen.
+    setAuswahlId(neu.id)
+    router.refresh()
+  }
+
+  /**
+   * Woher das Objekt kommt, das gerade verschoben wird. Beim Anlegen `null` —
+   * dann gibt es keinen Ursprung, nur ein Ziel.
+   */
+  const setzUrsprung =
+    setzen?.art === 'position'
+      ? (aktuellePunkte.find((p) => p.id === setzen.id) ?? null)
+      : null
+
+  /**
+   * Ein Kartenklick im Setzmodus. Jeder weitere überschreibt den vorigen —
+   * korrigieren ist derselbe Weg wie setzen, nicht ein zweiter.
+   */
+  const aufOrt = (ort: Ort) => setSetzen((s) => (s ? { ...s, kandidat: ort } : s))
+
+  const positionStarten = (id: string) => {
+    setFehler(null)
+    setLoeschFrage(false)
+    setSetzen({ art: 'position', id, kandidat: null })
+  }
+
+  const anlegenStarten = () => {
+    setFehler(null)
+    setLoeschFrage(false)
+    // Auswahl fallen lassen: die Spalte zeigt jetzt das Anlege-Formular, und
+    // eine unsichtbar weiterlaufende Auswahl käme danach überraschend zurück.
+    // Dieselbe Überlegung wie beim Start des Grenzenzeichnens.
+    setAuswahlId(null)
+    // Spalte aufklappen — sonst eine Sackgasse: das Formular steht in ihr, und
+    // der Klapp-Winkel ist im Setzmodus gesperrt. Wer bei eingeklappter Spalte
+    // „Objekt anlegen" drückte, käme ohne Reload nicht mehr an das Formular.
+    // Dieselbe Regel wie bei einer Auswahl von der Karte.
+    setInspektorOffen(true)
+    setSetzen({ art: 'neu', kandidat: null })
+  }
+
+  /** Abbrechen verwirft nur den Positionsentwurf; das Objekt bleibt, wie es war. */
+  const setzAbbrechen = () => {
+    setFehler(null)
+    setSetzen(null)
+  }
+
+  /**
+   * Beide Setz-Abschlüsse werfen bei Misserfolg und lassen den Modus dann
+   * **stehen** — dieselbe Lehre wie bei der Grenze (Backlog E-R2): ein
+   * gescheiterter Write darf den Entwurf nicht mitnehmen, sonst ist die gerade
+   * gesetzte Position weg und niemand weiß, warum.
+   */
+  const positionAbschliessen = async () => {
+    if (setzen?.art !== 'position' || !setzen.kandidat) return
+
+    // **Erst prüfen, dann vergleichen.** Die Reihenfolge ist nicht beliebig:
+    // `pruefeOrt` wickelt den Längengrad zurück, und ein ungewickelter Kandidat
+    // (370,2 gegen 10,2) sähe vor dem Wickeln nach einer Verschiebung aus, die
+    // es nach dem Wickeln nicht mehr ist. Andersherum entstünde ein Write, der
+    // denselben Wert schreibt.
+    const geprueft = pruefeOrt(setzen.kandidat)
+    if ('fehler' in geprueft) throw new Error(geprueft.fehler)
+
+    // Nichts verschoben heißt nichts schreiben — dieselbe Regel wie bei den
+    // Textfeldern (`unveraendert`). Wer „Position ändern" drückt und dann auf
+    // das Objekt selbst klickt, hat es nicht verschoben, und ein Write darauf
+    // wäre ein unnötiges last-write-wins-Fenster (E-R7).
+    if (setzUrsprung && ortUnveraendert(setzUrsprung, geprueft.ort)) {
+      setSetzen(null)
+      return
+    }
+    // `laeuft` friert den Kartenklick ein, siehe Kommentar an `aufOrt` unten.
+    // Der Fehler fliegt weiter — der Inspektor fängt ihn und zeigt ihn an; der
+    // Modus bleibt dann stehen.
+    setLaeuft(true)
+    try {
+      await positionSpeichern(setzen.id, geprueft.ort)
+      setSetzen(null)
+    } finally {
+      setLaeuft(false)
+    }
+  }
+
+  const anlegenAbschliessen = async (entwurf: ObjektEntwurf) => {
+    if (setzen?.art !== 'neu' || !setzen.kandidat) return
+    const geprueft = pruefeOrt(setzen.kandidat)
+    if ('fehler' in geprueft) throw new Error(geprueft.fehler)
+    setLaeuft(true)
+    try {
+      await objektAnlegen(entwurf, geprueft.ort)
+      setSetzen(null)
+    } finally {
+      setLaeuft(false)
+    }
+  }
+
+  /**
+   * Steht der Setzmodus auf einem Objekt, das es nicht mehr gibt? Dann raus.
+   *
+   * Sonst eine Sackgasse: der Inspektor zeigt ohne Auswahl die Liste, aber
+   * `setzen` sperrt weiter das Einklappen und alle anderen Modi — „Position
+   * speichern" UND „Abbrechen" wären beide verschwunden, und es bliebe nur
+   * Revierwechsel oder Reload. Erreichbar, weil die Feld-App Objekte löschen
+   * kann, während hier eines verschoben wird. Von Codex gefunden, 28.07.2026.
+   *
+   * Die Abhängigkeit ist bewusst der abgeleitete Wahrheitswert und nicht
+   * `aktuellePunkte`: das Array ist bei jedem Rendern neu, der Effekt lief
+   * sonst jedes Mal.
+   */
+  const setzZielFehlt = setzen?.art === 'position' && !setzUrsprung
+  useEffect(() => {
+    if (setzZielFehlt) setSetzen(null)
+  }, [setzZielFehlt])
 
   return (
     <div
@@ -463,7 +705,7 @@ export default function Revierkarte({
           Karte, nicht zur Spalte. */}
       <div className="zentrale-karte-knoepfe">
         {offen && !zeichner.editMode && (
-          <button type="button" onClick={starten} disabled={grenzeGesperrt}>
+          <button type="button" onClick={starten} disabled={beschaeftigt}>
             {aktuelleGrenze ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
           </button>
         )}
@@ -482,14 +724,26 @@ export default function Revierkarte({
           </>
         )}
 
+        {/* Anlegen steht bei den Grenzen-Knöpfen, nicht in der Objektspalte: es
+            ist dieselbe Sorte Handlung („in diesem Revier etwas neu
+            einrichten"), und es ist auch bei eingeklappter Spalte erreichbar —
+            `anlegenStarten` klappt sie dann auf.
+            Kein zweiter Abbrechen-Knopf hier: der steht im Fuß der Spalte, und
+            die ist im Setzmodus garantiert offen. */}
+        {offen && !zeichner.editMode && (
+          <button type="button" onClick={anlegenStarten} disabled={beschaeftigt}>
+            Objekt anlegen
+          </button>
+        )}
+
         {offen && !zeichner.editMode && aktuelleGrenze && !loeschFrage && (
-          <button type="button" onClick={() => setLoeschFrage(true)} disabled={grenzeGesperrt}>
+          <button type="button" onClick={() => setLoeschFrage(true)} disabled={beschaeftigt}>
             Grenze löschen
           </button>
         )}
         {offen && !zeichner.editMode && aktuelleGrenze && loeschFrage && (
           <>
-            <button type="button" onClick={loeschen} disabled={grenzeGesperrt}>
+            <button type="button" onClick={loeschen} disabled={beschaeftigt}>
               {laeuft ? 'Löscht …' : 'Wirklich löschen'}
             </button>
             <button type="button" onClick={() => setLoeschFrage(false)} disabled={laeuft}>
@@ -511,8 +765,11 @@ export default function Revierkarte({
         {/* Ganz rechts, und damit senkrecht über der Objektspalte: erst das
             Suchfeld, direkt darunter die Legende in der Spalte. Beim Zeichnen
             weg — dann gibt es keine Liste zu filtern, und die Leiste braucht
-            den Platz für Fertig · Punkt zurück · Abbrechen. */}
-        {!zeichner.editMode && (
+            den Platz für Fertig · Punkt zurück · Abbrechen.
+            Im Setzmodus aus demselben Grund: die Spalte zeigt dann ein Formular,
+            keine Liste. Ein Feld, in das man tippen kann und in dem nichts
+            passiert, ist schlechter als keins. */}
+        {!zeichner.editMode && !setzen && (
           <div className="zentrale-karte-suchfeld">
             <input
               ref={sucheRef}
@@ -562,7 +819,11 @@ export default function Revierkarte({
             type="button"
             className="klapp"
             onClick={() => setInspektorOffen((o) => !o)}
-            disabled={objektBearbeitung}
+            // Auch im Setzmodus zu: dort steht der Weg zum Abschluss in der
+            // Spalte („Position speichern", „Objekt anlegen"), und eingeklappt
+            // wäre er unsichtbar — der Nutzer hielte den Entwurf für verworfen.
+            // Derselbe Grund wie bei einem offenen Objektentwurf.
+            disabled={objektBearbeitung || setzen !== null}
             aria-expanded={inspektorOffen}
             aria-controls="zentrale-inspektor"
             aria-label={inspektorOffen ? 'Objektspalte einklappen' : 'Objektspalte ausklappen'}
@@ -590,6 +851,36 @@ export default function Revierkarte({
         </p>
       )}
 
+      {/* Dieselbe Zeile wie beim Zeichnen, weil es dieselbe Aussage ist: „die
+          Karte ist jetzt Werkzeug". Sie sagt zusätzlich, was der Klick bewirkt
+          hat — ohne Rückmeldung weiß man nach dem Klick nicht, ob er angekommen
+          ist, und der bronzene Punkt allein ist bei 196 Markern leicht zu
+          übersehen. */}
+      {setzen && (
+        <p className="zentrale-karte-hinweis">
+          {setzen.art === 'neu'
+            ? 'In die Karte klicken setzt die Position des neuen Objekts'
+            : 'In die Karte klicken setzt die neue Position · der alte Ort bleibt blass stehen'}
+          {setzen.kandidat && ' · erneut klicken verschiebt'}
+          {setzen.kandidat &&
+            ` · ${setzen.kandidat.lat.toFixed(5)}, ${setzen.kandidat.lng.toFixed(5)}`}
+          {/* Die Strecke nur beim Verschieben: beim Anlegen gibt es nichts, wovon
+              aus gemessen werden könnte. Sie ist die eine Zahl, an der man
+              erkennt, ob man den richtigen Punkt getroffen hat — „3 m" ist eine
+              Korrektur, „800 m" ein Fehlgriff. */}
+          {setzen.kandidat &&
+            setzUrsprung &&
+            ` · ${Math.round(
+              distanceInMeters(
+                setzUrsprung.lat,
+                setzUrsprung.lng,
+                setzen.kandidat.lat,
+                setzen.kandidat.lng,
+              ),
+            )} m verschoben`}
+        </p>
+      )}
+
       {fehler && (
         <p className="zentrale-karte-fehler" role="alert">
           {fehler}
@@ -601,8 +892,27 @@ export default function Revierkarte({
         punkte={aktuellePunkte}
         auswahlId={auswahlId}
         // Während einer Objektbearbeitung nicht wählbar — sonst verwirft der
-        // Klick den Entwurf, den er gar nicht sehen kann.
+        // Klick den Entwurf, den er gar nicht sehen kann. Im Setzmodus sperrt
+        // die Karte selbst (`waehlbar`), weil dort der Klick gebraucht wird.
         aufAuswahl={objektBearbeitung ? undefined : aufKartenAuswahl}
+        setzen={
+          setzen
+            ? {
+                kandidat: setzen.kandidat,
+                ursprung: setzUrsprung
+                  ? { lat: setzUrsprung.lat, lng: setzUrsprung.lng }
+                  : null,
+                // Während des Writes eingefroren, nicht nur die Knöpfe gesperrt.
+                // Sonst: Position A setzen, „Position speichern", bei langsamer
+                // Verbindung noch B anklicken — sichtbar ist dann B, geschrieben
+                // wird A, und beim Schließen des Modus verschwindet B
+                // kommentarlos. Der Nutzer hat zuletzt B gesehen und glaubt, B
+                // sei gespeichert. Von Codex gefunden, 28.07.2026 — dieselbe
+                // Falle wie beim Grenzenzeichnen, wo `nichts` schon dafür da ist.
+                aufOrt: laeuft ? nichts : aufOrt,
+              }
+            : undefined
+        }
         // Was die Spalte gerade überdeckt. Beim Zeichnen ist sie weg, dann null.
         randRechts={inspektorOffen && !zeichner.editMode ? inspektorBreite : 0}
         zeichnen={
@@ -676,6 +986,11 @@ export default function Revierkarte({
             suche={suche}
             aufSuchfeldFokus={() => sucheRef.current?.focus()}
             ausgeklappt={inspektorOffen}
+            setzen={setzen}
+            aufPositionStarten={positionStarten}
+            aufPositionSpeichern={positionAbschliessen}
+            aufAnlegen={anlegenAbschliessen}
+            aufSetzAbbrechen={setzAbbrechen}
           />
         </>
       )}
