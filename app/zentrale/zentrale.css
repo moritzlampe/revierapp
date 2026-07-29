@@ -734,6 +734,22 @@
   border-top: 1px solid var(--z-accent);
 }
 
+/* Die Löschfolgen (3c). Gleiche Bauform und gleiche Stelle wie die Fehlerzeile —
+   sie sollen sich gleich lesen —, aber in Bronze statt Akzentgrün: eine Warnung
+   ist kein Fehler, und der Unterschied muss vor dem zweiten Klick sichtbar sein.
+   Bronze roh statt als Token: es ist die einzige Stelle im Portal, die ihn
+   braucht (die Karte macht es mit `BRONZE` in `revierkarte-map.tsx` ebenso).
+   Wert aus docs/QuickHunt_Design_Locks.md. */
+.zentrale-inspektor-warnung {
+  flex: none;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border-top: 1px solid #c08e48;
+}
+
 .zentrale-inspektor-fuss {
   flex: none;
   display: flex;

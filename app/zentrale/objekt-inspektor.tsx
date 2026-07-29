@@ -48,6 +48,7 @@ export default function ObjektInspektor({
   aufPositionSpeichern,
   aufAnlegen,
   aufSetzAbbrechen,
+  aufLoeschen,
 }: {
   punkte: Punkt[]
   auswahlId: string | null
@@ -87,6 +88,8 @@ export default function ObjektInspektor({
   /** Legt das Objekt an und wirft bei Misserfolg — der Entwurf bleibt dann. */
   aufAnlegen: (entwurf: ObjektEntwurf) => Promise<void>
   aufSetzAbbrechen: () => void
+  /** Löscht und wirft bei Misserfolg — die Rückfrage bleibt dann stehen. */
+  aufLoeschen: (id: string) => Promise<void>
 }) {
   const gewaehlt = punkte.find((p) => p.id === auswahlId) ?? null
 
@@ -126,6 +129,7 @@ export default function ObjektInspektor({
           aufPositionStarten={aufPositionStarten}
           aufPositionSpeichern={aufPositionSpeichern}
           aufSetzAbbrechen={aufSetzAbbrechen}
+          aufLoeschen={aufLoeschen}
         />
       ) : (
         <Liste punkte={punkte} aufAuswahl={aufAuswahl} suche={suche} />
@@ -501,6 +505,7 @@ function Details({
   aufPositionStarten,
   aufPositionSpeichern,
   aufSetzAbbrechen,
+  aufLoeschen,
 }: {
   objekt: Punkt
   offen: boolean
@@ -512,8 +517,10 @@ function Details({
   aufPositionStarten: (id: string) => void
   aufPositionSpeichern: () => Promise<void>
   aufSetzAbbrechen: () => void
+  aufLoeschen: (id: string) => Promise<void>
 }) {
   const [bearbeiten, setBearbeiten] = useState(false)
+  const [loeschFrage, setLoeschFrage] = useState(false)
   const [entwurf, setEntwurf] = useState<ObjektEntwurf>({
     name: objekt.name,
     typ: objekt.typ,
@@ -528,12 +535,35 @@ function Details({
     description: objekt.beschreibung,
   }
 
-  // Nach oben melden, solange bearbeitet wird — und beim Aushängen zurücknehmen,
-  // sonst bliebe die Karte gesperrt.
+  /**
+   * Nach oben melden, solange bearbeitet wird — und beim Aushängen zurücknehmen,
+   * sonst bliebe die Karte gesperrt.
+   *
+   * `laeuft` und `loeschFrage` zählen mit, und beide decken je einen Fall ab,
+   * den `bearbeiten` allein offen ließ:
+   *
+   * - **`laeuft`** — der laufende Löschvorgang. Bei den anderen Schreibwegen ist
+   *   ohnehin gesperrt (`bearbeiten` beim Speichern, `setzen` beim Verschieben);
+   *   allein beim Löschen stünde die Karte offen, und ein Klick auf einen
+   *   anderen Marker hängte mitten im Write diese Komponente aus. Die
+   *   Fehlermeldung landete dann in etwas, das niemand mehr sieht — ein
+   *   gescheitertes Löschen sähe aus wie ein gelungenes.
+   * - **`loeschFrage`** — die offene Rückfrage. Ohne sie blieb „Grenze löschen"
+   *   in der Knopfleiste bedienbar, und **zwei gleichnamige „Wirklich
+   *   löschen"-Knöpfe standen gleichzeitig auf dem Bildschirm**; der obere
+   *   sperrte den unteren nicht, weil dessen `laeuft` in dieser Komponente
+   *   liegt. Das ist wörtlich der Fehler, den Moritz am 28.07.2026 an den
+   *   Grenzen-Knöpfen gefunden hat — ein Riegel, der einen Knopf vergisst.
+   *   Von Codex gefunden, 29.07.2026.
+   *
+   * Der Preis ist, dass die Karte während der Rückfrage nicht auswählbar ist.
+   * Das ist kein Sackgassen-Risiko: „Behalten" steht daneben und ist einen
+   * Klick entfernt — anders als bei einem Entwurf geht dabei nichts verloren.
+   */
   useEffect(() => {
-    aufModus(bearbeiten)
+    aufModus(bearbeiten || laeuft || loeschFrage)
     return () => aufModus(false)
-  }, [bearbeiten, aufModus])
+  }, [bearbeiten, laeuft, loeschFrage, aufModus])
 
   /**
    * Fokus mitführen. Ohne das hängt der Browser das gerade fokussierte Element
@@ -544,6 +574,23 @@ function Details({
   useEffect(() => {
     if (!bearbeiten) kopfRef.current?.focus()
   }, [bearbeiten, objekt.id])
+
+  /**
+   * Fokus auf die Rückfrage, sobald sie aufgeht — und zwar auf **„Behalten"**,
+   * nicht auf „Wirklich löschen".
+   *
+   * Der Knopf, den man gerade gedrückt hat, verschwindet ja; ohne das fiele der
+   * Fokus auf den Seitenanfang und die Rückfrage wäre für die Tastatur gar nicht
+   * da. Dass der **harmlose** Knopf ihn bekommt, ist der Punkt: läge er auf
+   * „Wirklich löschen", machte ein zweites, reflexhaftes Enter aus der
+   * Rückfrage eine Formalie — die Tastatur hätte dann einen Schritt weniger als
+   * die Maus, obwohl sie denselben Schutz braucht. So muss man einmal tabben,
+   * um zu löschen, und Enter ist der Rückweg.
+   */
+  const behaltenRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (loeschFrage) behaltenRef.current?.focus()
+  }, [loeschFrage])
 
   const starten = () => {
     setEntwurf({
@@ -574,6 +621,29 @@ function Details({
       await aufPositionSpeichern()
     } catch (e) {
       setFehler(e instanceof Error ? e.message : 'Unbekannter Fehler beim Speichern.')
+    } finally {
+      setLaeuft(false)
+    }
+  }
+
+  /**
+   * Löschen (Schritt 3c). Der Write liegt oben; hier bleibt der Rückweg.
+   *
+   * Bei Misserfolg bleibt die **Rückfrage stehen** statt zuzuklappen — sonst
+   * stünde die Fehlermeldung über einem Knopf, der nicht mehr der ist, den man
+   * gedrückt hat, und der zweite Versuch begänne wieder von vorn (Backlog E-R2,
+   * dieselbe Regel wie beim Entwurf und beim Positionsentwurf).
+   *
+   * Kein `setLoeschFrage(false)` im Erfolgsfall: das Objekt ist weg, die Auswahl
+   * fällt oben, und diese Komponente hängt sich mit ihr aus.
+   */
+  const loeschen = async () => {
+    setLaeuft(true)
+    setFehler(null)
+    try {
+      await aufLoeschen(objekt.id)
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : 'Unbekannter Fehler beim Löschen.')
     } finally {
       setLaeuft(false)
     }
@@ -695,9 +765,30 @@ function Details({
         </p>
       )}
 
-      {/* Nur zeigen, was jetzt geht: kein ausgegrauter Platzhalter für
-          Löschen (3c). Drei Zustände, weil es drei Aufgaben sind — und nie zwei
-          davon gleichzeitig, dafür sorgt der Setzzustand in `revierkarte.tsx`. */}
+      {/* Die Folgen stehen VOR dem zweiten Knopf, nicht nach ihm.
+          Bewusst ein feststehender Satz statt gezählter Referenzen: neun
+          Fremdschlüssel zeigen auf `map_objects`, und der neunte
+          (`map_object_checks`) kam am 29.07.2026 aus dem nativen Track dazu —
+          eine Aufzählung im Portal wäre schon am Tag ihrer Entstehung
+          unvollständig gewesen. Zählen ginge zudem nur mit einer Abfrage je
+          Tabelle, und deren Ergebnis kann RLS auf 0 filtern: eine Warnung, die
+          „hängt an nichts" sagt, weil sie nichts sehen darf, ist schlechter als
+          gar keine. Der Satz nennt deshalb die zwei Wirkungen, nicht die
+          Tabellen — CASCADE nimmt mit, SET NULL lässt stehen und kappt den
+          Bezug. (Codex-Vorschlag, 29.07.2026, gegen meinen ersten Entwurf.)
+          Kein role="alert": die Zeile erscheint auf Knopfdruck und wird über
+          `aria-describedby` mit dem Knopf vorgelesen, der sie meint. */}
+      {loeschFrage && (
+        <p id="objekt-loesch-folgen" className="zentrale-inspektor-warnung">
+          Löschen nimmt Fotos, Prüfungen und Standzuweisungen mit. Erlegungen und
+          Nachsuchen bleiben erhalten, verlieren aber den Bezug zu diesem Objekt.
+          Das lässt sich nicht rückgängig machen.
+        </p>
+      )}
+
+      {/* Nur zeigen, was jetzt geht: vier Zustände, weil es vier Aufgaben sind —
+          und nie zwei davon gleichzeitig, dafür sorgt der Setzzustand in
+          `revierkarte.tsx`. */}
       {offen && (
         <div className="zentrale-inspektor-fuss">
           {bearbeiten ? (
@@ -726,6 +817,38 @@ function Details({
                 Abbrechen
               </button>
             </>
+          ) : loeschFrage ? (
+            <>
+              <button
+                type="button"
+                className="haupt"
+                onClick={loeschen}
+                disabled={laeuft}
+                aria-describedby="objekt-loesch-folgen"
+              >
+                {laeuft ? 'Löscht …' : 'Wirklich löschen'}
+              </button>
+              {/* „Behalten" wie bei der Grenze, nicht „Abbrechen": der Knopf
+                  daneben löscht, und zwei Wörter mit demselben Anfangsbuchstaben
+                  sind an dieser Stelle eine Falle.
+                  Räumt die Fehlermeldung mit: nach einem gescheiterten Löschen
+                  stünde sie sonst über einem Fuß, der gar nicht mehr löscht.
+                  Trägt `aria-describedby` ebenfalls — er bekommt den Fokus, und
+                  die Folgen sollen vorgelesen werden, egal auf welchem der
+                  beiden Knöpfe man steht. */}
+              <button
+                ref={behaltenRef}
+                type="button"
+                onClick={() => {
+                  setFehler(null)
+                  setLoeschFrage(false)
+                }}
+                disabled={laeuft}
+                aria-describedby="objekt-loesch-folgen"
+              >
+                Behalten
+              </button>
+            </>
           ) : (
             <>
               <button type="button" onClick={starten}>
@@ -733,6 +856,18 @@ function Details({
               </button>
               <button type="button" onClick={() => aufPositionStarten(objekt.id)}>
                 Position ändern
+              </button>
+              {/* Eine alte Fehlermeldung mitzunehmen hieße, sie über der
+                  Rückfrage stehen zu lassen, wo sie nach einer Warnung zum
+                  Löschen aussieht. */}
+              <button
+                type="button"
+                onClick={() => {
+                  setFehler(null)
+                  setLoeschFrage(true)
+                }}
+              >
+                Löschen
               </button>
             </>
           )}

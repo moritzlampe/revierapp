@@ -32,7 +32,15 @@ assert.throws(() => pruefeSchreibrevier(SOEDER), /R3/)
 // --- Ergebnisdeutung: Fehler ---
 assert.throws(
   () => ausWriteErgebnis({ data: null, error: { message: 'boom' } }, 'Reviergrenze'),
-  /Reviergrenze konnte nicht gespeichert werden: boom/,
+  /Reviergrenze konnte nicht geschrieben werden: boom/,
+)
+// „geschrieben", nicht „gespeichert": seit Schritt 3c laeuft auch ein DELETE
+// durch diese Deutung, und „gespeichert" beschreibt kein Loeschen. Der Test
+// haelt die Formulierung fest, damit sie nicht zurueckwandert.
+assert.throws(
+  () => ausWriteErgebnis({ data: null, error: null }, 'Das Objekt'),
+  /gibt es die Zeile nicht \(mehr\)/,
+  'der haeufigste 0-Zeilen-Fall eines DELETE ist eine schon entfernte Zeile, nicht RLS',
 )
 
 // --- Ergebnisdeutung: 0 Zeilen ist KEIN Erfolg ---

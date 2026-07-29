@@ -16,6 +16,7 @@ import {
   passtZurSuche,
   pruefeOrt,
   typLabel,
+  ueberlagert,
   type ObjektEntwurf,
   type Ort,
   type Setzen,
@@ -123,15 +124,23 @@ export default function Revierkarte({
    * Zeile**, die es in `punkte` noch gar nicht gibt. Ein neu angelegtes Objekt
    * wäre sonst bis zum Eintreffen der Server-Daten unsichtbar — man legt es an
    * und die Karte bleibt leer. Von Codex gefunden, 28.07.2026.
+   *
+   * **`null` heißt gelöscht (Schritt 3c).** Eine entfernte Zeile lässt sich mit
+   * einer Überlagerung aus Vollzeilen nicht ausdrücken — es gibt nichts
+   * hinzulegen, es muss etwas verschwinden. Der Grabstein ist der kleinste Weg
+   * dorthin: derselbe Speicher, dieselbe Leerung beim nächsten Server-Stand, ein
+   * Wert mehr. Ein zweites `geloescht: Set<string>` wäre ein zweiter Zustand,
+   * der mit dem ersten widerspruchsfrei gehalten werden müsste — und genau daran
+   * ist dieser Code schon zweimal gescheitert.
    */
-  const [geschrieben, setGeschrieben] = useState<Record<string, Punkt>>({})
-  const aktuellePunkte = [
-    // Gemerkt wird, was wirklich in der DB steht — also der getrimmte Wert aus
-    // `alsSpalten`, nicht der rohe Formularinhalt. Sonst zeigte der Inspektor
-    // nach dem Speichern ein Leerzeichen, das die DB gar nicht hat.
-    ...punkte.map((p) => geschrieben[p.id] ?? p),
-    ...Object.values(geschrieben).filter((g) => !punkte.some((p) => p.id === g.id)),
-  ]
+  const [geschrieben, setGeschrieben] = useState<Record<string, Punkt | null>>({})
+  // Gemerkt wird, was wirklich in der DB steht — also der getrimmte Wert aus
+  // `alsSpalten`, nicht der rohe Formularinhalt. Sonst zeigte der Inspektor
+  // nach dem Speichern ein Leerzeichen, das die DB gar nicht hat.
+  // Das Zusammenführen selbst steht in `objekte.ts`: es hat mit dem Grabstein
+  // einen Fall bekommen, den man falsch herum schreiben kann, ohne dass es
+  // auffällt — und dort hängt ein Selbsttest daran.
+  const aktuellePunkte = ueberlagert(punkte, geschrieben)
 
   /**
    * Den Zwischenspeicher leeren, sobald **überhaupt** neue Server-Daten da sind
@@ -580,6 +589,62 @@ export default function Revierkarte({
   }
 
   /**
+   * Ein Kartenobjekt löschen (Schritt 3c).
+   *
+   * Wirft bei Misserfolg — der Inspektor fängt es und lässt die Rückfrage stehen.
+   *
+   * **`.select('id')` ist hier nicht Fleiß, sondern der Unterschied zwischen
+   * gelöscht und weggefiltert.** PostgREST liefert bei einem DELETE, den RLS auf
+   * 0 Zeilen zusammenstreicht, `{ data: null, error: null }` — ohne `.select()`
+   * meldete die Oberfläche Erfolg, das Objekt verschwände optimistisch von der
+   * Karte und wäre beim nächsten Server-Stand wieder da. Der mobile Löschpfad
+   * kommentiert genau diese Falle selbst (`revier-content.tsx:470`); hier fängt
+   * sie `schreibe()` an derselben Stelle ab wie bei jedem anderen Write.
+   *
+   * `.eq('district_id', revierId)` aus demselben Grund wie bei `objektSpeichern`:
+   * die R3-Allowlist prüft das Revier, nicht das Objekt. Ohne die zweite
+   * Einschränkung träfe eine fremde Objekt-ID ein Objekt in einem gesperrten
+   * Revier — und RLS hielte sie nicht auf, weil Moritz auch die Pilotreviere
+   * besitzt. Bei einem UPDATE wäre das ein falscher Wert, bei einem DELETE ist
+   * es eine fehlende Zeile.
+   *
+   * Die Auswahl fällt: das gewählte Objekt gibt es nicht mehr, und der Inspektor
+   * zeigte sonst eine Detailseite zu einer Zeile, die weg ist.
+   */
+  const objektLoeschen = async (id: string) => {
+    try {
+      await schreibe(revierId, 'Das Objekt', () =>
+        createClient()
+          .from('map_objects')
+          .delete()
+          .eq('id', id)
+          .eq('district_id', revierId)
+          .select('id'),
+      )
+    } catch (e) {
+      // **Auch der Fehlschlag zieht nach.** Der wahrscheinlichste Grund für 0
+      // betroffene Zeilen ist, dass die Feld-App dasselbe Objekt schon gelöscht
+      // hat — dann steht hier eine Zeile, die es nicht mehr gibt, und ohne
+      // Refresh bliebe sie stehen: die Rückfrage klebte an einer Leiche, und
+      // jeder weitere Versuch scheiterte mit derselben Meldung. Der Refresh
+      // holt die Wahrheit und räumt die Zeile ab, ganz gleich, welcher der drei
+      // Gründe es war. Von Codex gefunden, 29.07.2026.
+      //
+      // Der Fehler fliegt trotzdem weiter: der Nutzer soll sehen, dass sein
+      // Löschen nicht das war, was das Objekt entfernt hat.
+      router.refresh()
+      throw e
+    }
+    setGeschrieben((v) => ({ ...v, [id]: null }))
+    setAuswahlId(null)
+    // Fokus mitführen, wie „← Alle Objekte" es tut: die Detailansicht hängt
+    // sich mit dem gelöschten Objekt aus, und ohne das fängt der nächste
+    // Tabulator wieder am Seitenanfang an.
+    sucheRef.current?.focus()
+    router.refresh()
+  }
+
+  /**
    * Woher das Objekt kommt, das gerade verschoben wird. Beim Anlegen `null` —
    * dann gibt es keinen Ursprung, nur ein Ziel.
    */
@@ -991,6 +1056,7 @@ export default function Revierkarte({
             aufPositionSpeichern={positionAbschliessen}
             aufAnlegen={anlegenAbschliessen}
             aufSetzAbbrechen={setzAbbrechen}
+            aufLoeschen={objektLoeschen}
           />
         </>
       )}

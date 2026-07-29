@@ -20,6 +20,7 @@ import {
   toggleKategorie,
   toggleTyp,
   typLabel,
+  ueberlagert,
   unveraendert,
   wickleLaengengrad,
 } from './objekte.ts'
@@ -299,6 +300,54 @@ assert.equal(
   ortUnveraendert({ lat: 52.1, lng: 10.2 }, { lat: 52.10001, lng: 10.2 }),
   false,
   'rund 1 m ist eine echte Verschiebung',
+)
+
+// --- ueberlagert: Server-Stand plus das, was diese Sitzung schon schrieb ---
+// Der Grabstein ist der Fall, der sich lautlos falsch schreiben laesst:
+// `eigen[id] ?? zeile` faellt bei null auf die ALTE Zeile zurueck, und das
+// geloeschte Objekt stuende weiter auf der Karte. Der vierte Fall schlaegt an,
+// sobald jemand die Filterung hinter das `??` schiebt.
+const server = [
+  { id: 'a', name: 'Stand 1' },
+  { id: 'b', name: 'Kirrung' },
+]
+assert.deepEqual(ueberlagert(server, {}), server, 'ohne eigene Writes unveraendert')
+assert.deepEqual(
+  ueberlagert(server, { a: { id: 'a', name: 'Stand 1a' } }),
+  [
+    { id: 'a', name: 'Stand 1a' },
+    { id: 'b', name: 'Kirrung' },
+  ],
+  'die eigene Zeile gewinnt ueber die vom Server',
+)
+assert.deepEqual(
+  ueberlagert(server, { c: { id: 'c', name: 'Neu' } }).map((z) => z.id),
+  ['a', 'b', 'c'],
+  'eine Zeile, die es serverseitig noch nicht gibt, kommt dazu',
+)
+assert.deepEqual(
+  ueberlagert(server, { a: null }).map((z) => z.id),
+  ['b'],
+  'der Grabstein entfernt, er faellt NICHT auf die alte Zeile zurueck',
+)
+assert.deepEqual(
+  ueberlagert(server, {
+    a: null,
+    b: { id: 'b', name: 'Kirrung Nord' },
+    c: { id: 'c', name: 'Neu' },
+  }),
+  [
+    { id: 'b', name: 'Kirrung Nord' },
+    { id: 'c', name: 'Neu' },
+  ],
+  'geloescht, geaendert und neu gleichzeitig',
+)
+// Ein Grabstein auf einer ID, die der Server schon nicht mehr kennt (die
+// Feld-App hat dasselbe Objekt geloescht), darf keine Leiche erzeugen.
+assert.deepEqual(
+  ueberlagert(server, { z: null }).map((z) => z.id),
+  ['a', 'b'],
+  'ein Grabstein ohne passende Zeile ist folgenlos',
 )
 
 console.log('zentrale/objekte: alle Faelle ok')
