@@ -15,6 +15,7 @@ import TypeSheet from '@/components/revier/TypeSheet'
 import ObjektEditSheet from '@/components/revier/ObjektEditSheet'
 import ObjektDetailSheet from '@/components/revier/ObjektDetailSheet'
 import PositionConfirmBar from '@/components/revier/PositionConfirmBar'
+import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 
 const RevierMap = dynamic(() => import('@/components/revier/RevierMap'), { ssr: false })
 
@@ -104,6 +105,34 @@ function parseCoordPaste(raw: string): { lat: string; lng: string } | null {
   return null
 }
 
+/**
+ * Was an einem Write schiefging — oder `null`, wenn er wirklich gelandet ist.
+ *
+ * **0 betroffene Zeilen sind ein Fehler, kein Erfolg.** PostgREST liefert bei
+ * einem Write, den RLS auf 0 Zeilen zusammenstreicht, `{ data: null,
+ * error: null }`. Ohne `.select()` ist `data` ohnehin immer `null` — beides
+ * sieht ohne diese Prüfung aus wie „hat geklappt".
+ *
+ * Die Regel steht als **benannte Funktion an einer Stelle** und nicht als
+ * Ausdruck an jedem Aufruf, weil genau das hier schiefgegangen ist:
+ * `handleDetailDelete` weiter unten macht es seit jeher richtig und erklärt es
+ * sogar im Kommentar — die vier Schreibpfade daneben zogen die Lehre trotzdem
+ * nicht nach (Backlog E-R1, gefunden 27.07.2026, behoben 29.07.2026). Ein
+ * Riegel, der als Ausdruck an einem Aufruf steht, wird beim nächsten vergessen.
+ *
+ * Warum das gerade jetzt zählt: solange ein Revier genau einen Nutzer hat,
+ * filtert RLS nie — die Lücke ist unsichtbar. Sie wird in dem Moment echt, in
+ * dem mehrere Leute dasselbe Revier benutzen.
+ */
+function writeProblem(res: {
+  data: unknown[] | null
+  error: { message: string } | null
+}): string | null {
+  if (res.error) return res.error.message
+  if (!res.data || res.data.length === 0) return '0 Zeilen betroffen (RLS oder Zeile fehlt)'
+  return null
+}
+
 export default function RevierContent({ district, objects: initialObjects, userId }: Props) {
   const router = useRouter()
   const [objects, setObjects] = useState<MapObject[]>(initialObjects)
@@ -150,6 +179,9 @@ export default function RevierContent({ district, objects: initialObjects, userI
   // --- Boundary-Editor ---
   const bEditor = useBoundaryEditor()
   const isOwner = userId === district.owner_id
+  // Der Provider hängt schon in `app/app/layout.tsx` — hier ist nur der Zugriff
+  // neu. Gebraucht für die Rückfrage vor dem Grenzen-Löschen (E-R3).
+  const confirm = useConfirmSheet()
 
   // Bottom-Bar ausblenden wenn Erstellungs-Flow oder Boundary-Edit aktiv
   const creationActive = creation.stage !== 'idle' || bEditor.editMode
@@ -169,13 +201,40 @@ export default function RevierContent({ district, objects: initialObjects, userI
 
   const handleBoundaryStart = useCallback(() => {
     if (creation.stage !== 'idle') return
+    // Mehrringige Grenzen kann dieser Editor nicht: `startEditing` nimmt nur
+    // `existingBoundary[0]`, und das nächste „Fertig" schriebe ein einringiges
+    // Polygon — die Enklaven wären still weg (Backlog E-R4). Lieber ablehnen
+    // als stillschweigend kappen. Das Portal lehnt denselben Fall seit Phase 3
+    // ab; hier fehlte der Riegel, obwohl beide denselben Hook benutzen.
+    //
+    // Heute trifft das keine echte Grenze — alle sind einringig. Es wird scharf,
+    // sobald Katasterflächen mit Enklaven importiert werden (Schritt 5).
+    if (boundary && boundary.length > 1) {
+      showToast('Diese Grenze enthält Enklaven und kann hier nicht bearbeitet werden.')
+      return
+    }
     bEditor.startEditing(boundary)
-  }, [boundary, creation.stage, bEditor])
+  }, [boundary, creation.stage, bEditor, showToast])
 
   const handleBoundaryFinish = useCallback(async () => {
     const points = bEditor.drawPoints
     // Leeres Polygon → boundary NULL setzen
     if (points.length === 0) {
+      // Rückfrage vor dem Löschen (Backlog E-R3): bis hierher lag zwischen
+      // „Fertig" bei 0 Punkten und „Grenze weg" kein einziger Schritt. Sagt der
+      // Nutzer nein, bleibt der Editiermodus stehen — er kann weiterzeichnen
+      // oder ausdrücklich abbrechen.
+      const ok = await confirm({
+        title: 'Grenze entfernen?',
+        description:
+          'Die Reviergrenze wird gelöscht. Die Fläche des Reviers ist danach unbekannt, ' +
+          'bis eine neue Grenze gezeichnet wird.',
+        confirmLabel: 'Entfernen',
+        cancelLabel: 'Behalten',
+        confirmVariant: 'danger',
+      })
+      if (!ok) return
+
       const supabase = createClient()
       // NUR boundary. `area_ha` ist
       // GENERATED ALWAYS AS (st_area(boundary::geography) / 10000) und fällt von
@@ -183,17 +242,30 @@ export default function RevierContent({ district, objects: initialObjects, userI
       // scheitert immer mit `column "area_ha" can only be updated to DEFAULT` —
       // und weil hier nur geloggt wird, schlug „Grenze entfernen" jahrelang
       // still fehl (Backlog E-R6, gefunden 27.07.2026).
-      const { error } = await supabase
-        .from('districts')
-        .update({ boundary: null })
-        .eq('id', district.id)
-      if (error) {
-        console.error('Boundary-Löschen fehlgeschlagen:', error.message)
-      } else {
-        setBoundaryRaw(null)
-        setAreaHa(null)
-        showToast('Grenze entfernt')
+      //
+      // `.select('id')` seit 29.07.2026 (E-R1): ohne es meldete PostgREST bei
+      // einem RLS-gefilterten Write `{ data: null, error: null }`, die App
+      // leerte die Anzeige und sagte „Grenze entfernt" — während die DB die
+      // Grenze behielt. Beim nächsten Laden war sie wieder da. Das sieht aus
+      // wie ein Gespenst, nicht wie ein Fehler, und niemand meldet es brauchbar.
+      const problem = writeProblem(
+        await supabase
+          .from('districts')
+          .update({ boundary: null })
+          .eq('id', district.id)
+          .select('id'),
+      )
+      if (problem) {
+        console.error('Boundary-Löschen fehlgeschlagen:', problem)
+        showToast('Grenze konnte nicht entfernt werden.')
+        // Editiermodus bleibt stehen (E-R2): ein gescheiterter Write darf den
+        // Zustand nicht mitnehmen, sonst steht der Nutzer nach einer
+        // Fehlermeldung vor einer Karte, die nichts mehr anbietet.
+        return
       }
+      setBoundaryRaw(null)
+      setAreaHa(null)
+      showToast('Grenze entfernt')
       bEditor.stopEditing()
       bEditor.reset()
       return
@@ -210,29 +282,42 @@ export default function RevierContent({ district, objects: initialObjects, userI
     const ewkt = `SRID=4326;POLYGON((${wkt}))`
 
     const supabase = createClient()
-    const { error } = await supabase
-      .from('districts')
-      .update({ boundary: ewkt })
-      .eq('id', district.id)
-
-    if (error) {
-      console.error('Boundary-Update fehlgeschlagen:', error.message)
-    } else {
-      // Boundary aus DB neu laden (damit Hex-Encoding korrekt ist)
-      const { data } = await supabase
+    const problem = writeProblem(
+      await supabase
         .from('districts')
-        .select('boundary, area_ha')
+        .update({ boundary: ewkt })
         .eq('id', district.id)
-        .single()
-      if (data) {
-        setBoundaryRaw(data.boundary)
-        setAreaHa(data.area_ha)
-      }
-      showToast('Grenze gespeichert')
+        .select('id'),
+    )
+
+    if (problem) {
+      // Zwei Fehler kamen hier zusammen (Backlog E-R1 und E-R2): der Toast
+      // meldete „Grenze gespeichert", obwohl RLS den Write weggefiltert hatte —
+      // und weil `stopEditing()` und `reset()` unbedingt darunter liefen, war
+      // die gerade gezeichnete Grenze im selben Moment weg. Der Nutzer hatte
+      // eine Erfolgsmeldung und nichts in der Hand.
+      //
+      // Jetzt bleibt der Entwurf stehen: derselbe Ausgang wie im Portal, wo ein
+      // gescheitertes Speichern die Punkte ebenfalls nicht mitnimmt.
+      console.error('Boundary-Update fehlgeschlagen:', problem)
+      showToast('Grenze konnte nicht gespeichert werden.')
+      return
     }
+
+    // Boundary aus DB neu laden (damit Hex-Encoding korrekt ist)
+    const { data } = await supabase
+      .from('districts')
+      .select('boundary, area_ha')
+      .eq('id', district.id)
+      .single()
+    if (data) {
+      setBoundaryRaw(data.boundary)
+      setAreaHa(data.area_ha)
+    }
+    showToast('Grenze gespeichert')
     bEditor.stopEditing()
     bEditor.reset()
-  }, [bEditor, district.id, showToast])
+  }, [bEditor, district.id, showToast, confirm])
 
   const handleBoundaryCancel = useCallback(() => {
     bEditor.stopEditing()
@@ -359,13 +444,22 @@ export default function RevierContent({ district, objects: initialObjects, userI
     if (creation.existingId) {
       const supabase = createClient()
       const ewkt = `SRID=4326;POINT(${creation.position[1]} ${creation.position[0]})`
-      const { error } = await supabase
-        .from('map_objects')
-        .update({ position: ewkt })
-        .eq('id', creation.existingId)
+      // `.select('id')` und die 0-Zeilen-Prüfung seit 29.07.2026 (E-R1). Vorher
+      // meldete ein RLS-gefilterter Write keinen Fehler: der Toast sagte
+      // „Position aktualisiert ✓", der Stand blieb, wo er war.
+      const problem = writeProblem(
+        await supabase
+          .from('map_objects')
+          .update({ position: ewkt })
+          .eq('id', creation.existingId)
+          .select('id'),
+      )
 
-      if (error) {
-        console.error('Position-Update fehlgeschlagen:', error.message)
+      if (problem) {
+        // Vorher stand hier nur `console.error` — der Nutzer bekam gar nichts
+        // zu sehen und hielt das stumme Zurückspringen für ein Versehen.
+        console.error('Position-Update fehlgeschlagen:', problem)
+        showToast('Position konnte nicht gespeichert werden.')
         return
       }
       // Objekte neu laden und zurück zu detail mit aktualisiertem Objekt
@@ -432,20 +526,29 @@ export default function RevierContent({ district, objects: initialObjects, userI
   const handleDetailUpdate = useCallback(async (changes: Partial<MapObject>) => {
     if (creation.stage !== 'detail') return
     const supabase = createClient()
-    const { error } = await supabase
-      .from('map_objects')
-      .update(changes)
-      .eq('id', creation.object.id)
+    // `.select('id')` und die 0-Zeilen-Prüfung seit 29.07.2026 (E-R1). Dieser
+    // Pfad ist der heimtückischste der vier: er aktualisiert den lokalen State
+    // optimistisch, also sah der Nutzer seinen neuen Namen sofort im Sheet —
+    // auch wenn RLS den Write verworfen hatte. Erst der nächste Reload holte
+    // den alten Namen zurück.
+    const problem = writeProblem(
+      await supabase
+        .from('map_objects')
+        .update(changes)
+        .eq('id', creation.object.id)
+        .select('id'),
+    )
 
-    if (error) {
-      console.error('Update fehlgeschlagen:', error.message)
+    if (problem) {
+      console.error('Update fehlgeschlagen:', problem)
+      showToast('Änderung konnte nicht gespeichert werden.')
       return
     }
     // Lokalen State optimistisch aktualisieren
     const updated = { ...creation.object, ...changes }
     setObjects(prev => prev.map(o => o.id === updated.id ? updated : o))
     setCreation({ stage: 'detail', object: updated })
-  }, [creation])
+  }, [creation, showToast])
 
   const handleDetailPositionChange = useCallback(() => {
     if (creation.stage !== 'detail') return
