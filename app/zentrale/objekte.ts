@@ -375,3 +375,38 @@ export function ortUnveraendert(a: Ort, b: Ort): boolean {
     Math.abs(a.lat - b.lat) < ORT_TOLERANZ && Math.abs(a.lng - b.lng) < ORT_TOLERANZ
   )
 }
+
+/* ── Zwischenspeicher (Schritt 3c) ──────────────────────────────────────── */
+
+/**
+ * Den Server-Stand mit dem überlagern, was diese Sitzung schon geschrieben hat.
+ *
+ * `router.refresh()` gibt kein Promise zurück, das Nachziehen der
+ * Server-Komponente ist also nicht abwartbar. Bis es ankommt, trüge die Prop
+ * noch den alten Stand — der Speicher überbrückt genau diese Zeit.
+ *
+ * Drei Fälle, und jeder hat einmal gefehlt:
+ * - **geändert** — die eigene Zeile gewinnt über die vom Server.
+ * - **neu** — eine Zeile, die es serverseitig noch gar nicht gibt, muss dazu.
+ *   Ohne das war ein frisch angelegtes Objekt bis zur nächsten Auslieferung
+ *   unsichtbar (3b).
+ * - **gelöscht** — `null` als Grabstein. Der Fall ist der Grund, warum die
+ *   Reihenfolge hier zählt: `eigen[z.id] ?? z` allein fiele bei `null` auf die
+ *   **alte** Zeile zurück, und das gelöschte Objekt stünde weiter auf der Karte.
+ *   Deshalb filtert der Grabstein **vor** dem `??`, nicht danach (3c).
+ *
+ * Generisch über `{ id: string }` statt über `Punkt`, damit die Datei
+ * importfrei bleibt und mit `node --experimental-strip-types` prüfbar ist —
+ * dasselbe Motiv wie bei `passtZurSuche`, das Name und Typ einzeln nimmt.
+ */
+export function ueberlagert<T extends { id: string }>(
+  server: readonly T[],
+  eigen: Readonly<Record<string, T | null>>,
+): T[] {
+  return [
+    ...server.filter((z) => eigen[z.id] !== null).map((z) => eigen[z.id] ?? z),
+    ...Object.values(eigen).filter(
+      (z): z is T => z !== null && !server.some((s) => s.id === z.id),
+    ),
+  ]
+}

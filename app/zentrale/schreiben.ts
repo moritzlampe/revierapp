@@ -76,12 +76,19 @@ export function pruefeSchreibrevier(revierId: string): void {
  */
 export function ausWriteErgebnis<T>({ data, error }: WriteErgebnis<T>, was: string): T {
   if (error) {
-    throw new Error(`${was} konnte nicht gespeichert werden: ${error.message}`)
+    throw new Error(`${was} konnte nicht geschrieben werden: ${error.message}`)
   }
   if (!data || data.length === 0) {
+    // „geschrieben" statt „gespeichert", und „gibt es nicht (mehr)" als erste
+    // Ursache: seit Schritt 3c läuft auch ein DELETE hier durch, und für den
+    // war beides falsch. „Gespeichert" beschreibt kein Löschen, und der
+    // häufigste 0-Zeilen-Fall eines DELETE ist nicht RLS, sondern eine Zeile,
+    // die die Feld-App schon entfernt hat. Wer dann „eine RLS-Policy" liest,
+    // sucht eine Berechtigung, die nie gefehlt hat.
     throw new Error(
-      `${was} wurde nicht gespeichert: kein Datensatz betroffen. Entweder greift ` +
-        'eine RLS-Policy, die ID stimmt nicht, oder dem Aufruf fehlt .select().',
+      `${was} wurde nicht geschrieben: kein Datensatz betroffen. Entweder gibt es ` +
+        'die Zeile nicht (mehr), es greift eine RLS-Policy, oder dem Aufruf fehlt ' +
+        '.select().',
     )
   }
   // Mehr als eine Zeile heißt: die Einschränkung fehlt (z. B. kein .eq('id', …)).
