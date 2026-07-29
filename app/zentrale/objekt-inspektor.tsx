@@ -37,7 +37,6 @@ export default function ObjektInspektor({
   punkte,
   auswahlId,
   aufAuswahl,
-  offen,
   aufSpeichern,
   aufModus,
   suche,
@@ -53,8 +52,6 @@ export default function ObjektInspektor({
   punkte: Punkt[]
   auswahlId: string | null
   aufAuswahl: (id: string | null) => void
-  /** Darf in dieses Revier geschrieben werden (R3)? Sonst fehlt „Bearbeiten". */
-  offen: boolean
   /** Schreibt und wirft bei Misserfolg — die Fehlermeldung landet im Formular. */
   aufSpeichern: (id: string, entwurf: ObjektEntwurf) => Promise<void>
   /**
@@ -114,7 +111,6 @@ export default function ObjektInspektor({
           // die beim Revierwechsel schon einmal zugeschlagen hat.
           key={gewaehlt.id}
           objekt={gewaehlt}
-          offen={offen}
           aufZurueck={() => {
             aufSuchfeldFokus()
             aufAuswahl(null)
@@ -497,7 +493,6 @@ function Liste({
 
 function Details({
   objekt,
-  offen,
   aufZurueck,
   aufSpeichern,
   aufModus,
@@ -508,7 +503,6 @@ function Details({
   aufLoeschen,
 }: {
   objekt: Punkt
-  offen: boolean
   aufZurueck: () => void
   aufSpeichern: (id: string, entwurf: ObjektEntwurf) => Promise<void>
   aufModus: (bearbeitet: boolean) => void
@@ -789,8 +783,7 @@ function Details({
       {/* Nur zeigen, was jetzt geht: vier Zustände, weil es vier Aufgaben sind —
           und nie zwei davon gleichzeitig, dafür sorgt der Setzzustand in
           `revierkarte.tsx`. */}
-      {offen && (
-        <div className="zentrale-inspektor-fuss">
+      <div className="zentrale-inspektor-fuss">
           {bearbeiten ? (
             <>
               <button type="button" className="haupt" onClick={speichern} disabled={laeuft}>
@@ -871,8 +864,7 @@ function Details({
               </button>
             </>
           )}
-        </div>
-      )}
+      </div>
     </>
   )
 }

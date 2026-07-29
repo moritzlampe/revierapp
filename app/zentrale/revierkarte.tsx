@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { distanceInMeters, polygonAreaHectares } from '@/lib/geo-utils'
 import { useBoundaryEditor } from '@/hooks/useBoundaryEditor'
 import type { KarteProps, Punkt } from './revierkarte-map'
-import { darfSchreiben, schreibe } from './schreiben'
+import { schreibe } from './schreiben'
 import { ewktAus, nurEinRing, pruefeGrenze } from './grenze'
 import {
   alsSpalten,
@@ -398,8 +398,6 @@ export default function Revierkarte({
     }
   }
 
-  const offen = darfSchreiben(revierId)
-
   const starten = () => {
     // Mehrringige Grenzen kann der Zeichen-Hook nicht — er nähme nur den ersten
     // Ring und würde die Enklaven beim Speichern verlieren. Lieber ablehnen.
@@ -451,7 +449,7 @@ export default function Revierkarte({
     setFehler(null)
     try {
       const ewkt = ewktAus(zeichner.drawPoints)
-      await schreibe(revierId, 'Reviergrenze', () =>
+      await schreibe('Reviergrenze', () =>
         createClient()
           .from('districts')
           .update({ boundary: ewkt })
@@ -487,7 +485,7 @@ export default function Revierkarte({
     setLaeuft(true)
     setFehler(null)
     try {
-      await schreibe(revierId, 'Reviergrenze', () =>
+      await schreibe('Reviergrenze', () =>
         createClient()
           .from('districts')
           .update({ boundary: null })
@@ -511,19 +509,22 @@ export default function Revierkarte({
    *
    * Wirft bei Misserfolg — der Inspektor fängt es und lässt den Entwurf stehen.
    *
-   * **`.eq('district_id', revierId)` ist nicht überflüssig.** Die R3-Allowlist in
-   * `schreibe()` prüft das *Revier*, nicht das Objekt: käme je eine fremde
-   * Objekt-ID in diesen Aufruf, ginge das Tor auf und der Write träfe ein Objekt
-   * in einem gesperrten Revier — RLS hielte ihn nicht auf, weil Moritz auch die
-   * Pilotreviere besitzt. Mit der zweiten Einschränkung trifft er 0 Zeilen, und
-   * 0 Zeilen sind in `ausWriteErgebnis` ein Fehler.
+   * **`.eq('district_id', revierId)` ist nicht überflüssig — und seit dem
+   * 29.07.2026 ist es die einzige Einschränkung, die hier noch trägt.** Käme je
+   * eine fremde Objekt-ID in diesen Aufruf, hielte RLS sie nicht auf: sie deckt
+   * *alle* Reviere des angemeldeten Nutzers, also auch Brockwinel und Söder.
+   * Vorher stand die R3-Allowlist als zweites Netz dahinter; die ist mit der
+   * Abnahme von Phase 3 weggefallen. Mit dieser Einschränkung trifft ein
+   * verirrter Aufruf 0 Zeilen, und 0 Zeilen sind in `ausWriteErgebnis` ein
+   * Fehler. **Wer sie entfernt, macht aus einem lauten Fehlschlag eine stille
+   * Änderung am falschen Revier.**
    *
    * `position` bleibt unangetastet: Verschieben ist Schritt 3b und bekommt einen
    * eigenen Weg.
    */
   const objektSpeichern = async (id: string, entwurf: ObjektEntwurf) => {
     const spalten = alsSpalten(entwurf)
-    await schreibe(revierId, 'Das Objekt', () =>
+    await schreibe('Das Objekt', () =>
       createClient()
         .from('map_objects')
         .update(spalten)
@@ -565,10 +566,12 @@ export default function Revierkarte({
    * der Feld-App verloren geht. Wer nur verschiebt, schreibt nur die Position.
    *
    * `.eq('district_id', revierId)` aus demselben Grund wie bei `objektSpeichern`:
-   * die R3-Allowlist prüft das Revier, nicht das Objekt.
+   * es ist seit dem Wegfall der R3-Allowlist die einzige Einschränkung, die eine
+   * verirrte Objekt-ID vom falschen Revier fernhält — RLS tut es nicht, sie
+   * deckt alle Reviere desselben Besitzers.
    */
   const positionSpeichern = async (id: string, ort: Ort) => {
-    await schreibe(revierId, 'Die Position', () =>
+    await schreibe('Die Position', () =>
       createClient()
         .from('map_objects')
         .update({ position: ewktPunkt(ort) })
@@ -604,7 +607,7 @@ export default function Revierkarte({
     if (!user) throw new Error('Nicht angemeldet — bitte die Seite neu laden.')
 
     const spalten = alsSpalten(entwurf)
-    const zeile = await schreibe(revierId, 'Das neue Objekt', () =>
+    const zeile = await schreibe('Das neue Objekt', () =>
       supabase
         .from('map_objects')
         .insert({
@@ -643,22 +646,23 @@ export default function Revierkarte({
    * 0 Zeilen zusammenstreicht, `{ data: null, error: null }` — ohne `.select()`
    * meldete die Oberfläche Erfolg, das Objekt verschwände optimistisch von der
    * Karte und wäre beim nächsten Server-Stand wieder da. Der mobile Löschpfad
-   * kommentiert genau diese Falle selbst (`revier-content.tsx:470`); hier fängt
-   * sie `schreibe()` an derselben Stelle ab wie bei jedem anderen Write.
+   * (`handleDetailDelete` in `revier-content.tsx`) kommentiert genau diese Falle
+   * selbst; hier fängt sie `schreibe()` an derselben Stelle ab wie bei jedem
+   * anderen Write.
    *
-   * `.eq('district_id', revierId)` aus demselben Grund wie bei `objektSpeichern`:
-   * die R3-Allowlist prüft das Revier, nicht das Objekt. Ohne die zweite
-   * Einschränkung träfe eine fremde Objekt-ID ein Objekt in einem gesperrten
-   * Revier — und RLS hielte sie nicht auf, weil Moritz auch die Pilotreviere
-   * besitzt. Bei einem UPDATE wäre das ein falscher Wert, bei einem DELETE ist
-   * es eine fehlende Zeile.
+   * **`.eq('district_id', revierId)` wiegt hier am schwersten.** Seit dem Wegfall
+   * der R3-Allowlist (29.07.2026) ist es die einzige Einschränkung, die eine
+   * verirrte Objekt-ID vom falschen Revier fernhält — RLS tut es nicht, sie
+   * deckt alle Reviere desselben Besitzers und damit auch Brockwinel mit den
+   * echten Pilotdaten. Bei einem UPDATE wäre die Folge ein falscher Wert,
+   * **bei einem DELETE eine gelöschte Zeile im falschen Revier.**
    *
    * Die Auswahl fällt: das gewählte Objekt gibt es nicht mehr, und der Inspektor
    * zeigte sonst eine Detailseite zu einer Zeile, die weg ist.
    */
   const objektLoeschen = async (id: string) => {
     try {
-      await schreibe(revierId, 'Das Objekt', () =>
+      await schreibe('Das Objekt', () =>
         createClient()
           .from('map_objects')
           .delete()
@@ -814,13 +818,13 @@ export default function Revierkarte({
           Die Meldungen bleiben in der Bühne: die sitzen unten und gehören zur
           Karte, nicht zur Spalte. */}
       <div className="zentrale-karte-knoepfe">
-        {offen && !zeichner.editMode && (
+        {!zeichner.editMode && (
           <button type="button" onClick={starten} disabled={beschaeftigt}>
             {aktuelleGrenze ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
           </button>
         )}
 
-        {offen && zeichner.editMode && (
+        {zeichner.editMode && (
           <>
             <button type="button" onClick={speichern} disabled={laeuft}>
               {laeuft ? 'Speichert …' : 'Fertig'}
@@ -840,18 +844,18 @@ export default function Revierkarte({
             `anlegenStarten` klappt sie dann auf.
             Kein zweiter Abbrechen-Knopf hier: der steht im Fuß der Spalte, und
             die ist im Setzmodus garantiert offen. */}
-        {offen && !zeichner.editMode && (
+        {!zeichner.editMode && (
           <button type="button" onClick={anlegenStarten} disabled={beschaeftigt}>
             Objekt anlegen
           </button>
         )}
 
-        {offen && !zeichner.editMode && aktuelleGrenze && !loeschFrage && (
+        {!zeichner.editMode && aktuelleGrenze && !loeschFrage && (
           <button type="button" onClick={() => setLoeschFrage(true)} disabled={beschaeftigt}>
             Grenze löschen
           </button>
         )}
-        {offen && !zeichner.editMode && aktuelleGrenze && loeschFrage && (
+        {!zeichner.editMode && aktuelleGrenze && loeschFrage && (
           <>
             <button type="button" onClick={loeschen} disabled={beschaeftigt}>
               {laeuft ? 'Löscht …' : 'Wirklich löschen'}
@@ -1090,7 +1094,6 @@ export default function Revierkarte({
             punkte={aktuellePunkte}
             auswahlId={auswahlId}
             aufAuswahl={setAuswahlId}
-            offen={offen}
             aufSpeichern={objektSpeichern}
             aufModus={setObjektBearbeitung}
             suche={suche}

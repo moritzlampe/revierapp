@@ -6,28 +6,13 @@
 //
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 import assert from 'node:assert/strict'
-import {
-  darfSchreiben,
-  pruefeSchreibrevier,
-  ausWriteErgebnis,
-  schreibe,
-  type WriteErgebnis,
-} from './schreiben.ts'
+import { ausWriteErgebnis, schreibe, type WriteErgebnis } from './schreiben.ts'
 
-// Echte IDs aus der Produktions-DB, damit der Test belegt, was er behauptet.
-const TEST_5 = 'ec27bd95-c8bc-48fc-ac87-da9914d09033'
-const BROCKWINEL = '66eeed5f-6f18-4d9c-adf4-00d6bc2ae5a0' // Pilotdaten
-const SOEDER = 'fdaf24a7-6467-40e7-952b-91deceaae53e' // Echtdaten
-
-// --- R3: nur das Testrevier ist offen ---
-assert.equal(darfSchreiben(TEST_5), true)
-assert.equal(darfSchreiben(BROCKWINEL), false, 'Pilotrevier muss gesperrt sein')
-assert.equal(darfSchreiben(SOEDER), false, 'Echtdaten-Revier muss gesperrt sein')
-assert.equal(darfSchreiben(''), false)
-
-pruefeSchreibrevier(TEST_5) // wirft nicht
-assert.throws(() => pruefeSchreibrevier(BROCKWINEL), /gesperrt/)
-assert.throws(() => pruefeSchreibrevier(SOEDER), /R3/)
+// Die R3-Allowlist ist am 29.07.2026 weggefallen (Phase 3 abgenommen, alle
+// Reviere bearbeitbar). Ihre drei Testfaelle sind mit ihr verschwunden — ein
+// Test, der eine geloeschte Regel prueft, ist kein Sicherheitsnetz, sondern
+// eine Behauptung ueber Code, den es nicht mehr gibt. Was bleibt, ist der
+// wertvollere Teil: die Ergebnisdeutung.
 
 // --- Ergebnisdeutung: Fehler ---
 assert.throws(
@@ -61,33 +46,29 @@ assert.throws(
   /2 Datensätze betroffen/,
 )
 
-// --- schreibe(): der Guard ist ein TOR, kein Nachtest ---
-// Der Thunk darf bei gesperrtem Revier gar nicht laufen — sonst waere der Write
-// schon draussen, bevor die Pruefung greift.
-let thunkLief = false
-await assert.rejects(
-  () =>
-    schreibe(BROCKWINEL, 'Reviergrenze', () => {
-      thunkLief = true
-      return Promise.resolve({ data: [{ id: 'x' }], error: null })
-    }),
-  /gesperrt/,
-)
-assert.equal(thunkLief, false, 'Thunk darf bei gesperrtem Revier nicht ausgefuehrt werden')
-
 // --- schreibe(): Erfolgsfall gibt die betroffene Zeile zurueck ---
-const zeile = await schreibe<{ id: string }>(TEST_5, 'Reviergrenze', () =>
-  Promise.resolve({ data: [{ id: TEST_5 }], error: null }),
+const zeile = await schreibe<{ id: string }>('Reviergrenze', () =>
+  Promise.resolve({ data: [{ id: 'a' }], error: null }),
 )
-assert.deepEqual(zeile, { id: TEST_5 })
+assert.deepEqual(zeile, { id: 'a' })
 
-// --- schreibe(): 0 Zeilen aus einem erlaubten Revier wirft ebenfalls ---
+// --- schreibe(): 0 Zeilen wirft ---
 await assert.rejects(
   () =>
-    schreibe(TEST_5, 'Reviergrenze', () =>
+    schreibe('Reviergrenze', () =>
       Promise.resolve({ data: null, error: null } as WriteErgebnis<{ id: string }>),
     ),
   /kein Datensatz betroffen/,
 )
+
+// --- schreibe(): der Thunk laeuft genau einmal ---
+// Ohne den Guard ist `schreibe` nur noch Deutung. Der Test haelt fest, dass sie
+// den Write nicht versehentlich zweimal ausloest.
+let laeufe = 0
+await schreibe('Reviergrenze', () => {
+  laeufe += 1
+  return Promise.resolve({ data: [{ id: 'a' }], error: null })
+})
+assert.equal(laeufe, 1)
 
 console.log('zentrale/schreiben: alle Faelle ok')

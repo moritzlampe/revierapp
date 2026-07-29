@@ -3,9 +3,6 @@ import { createClient } from '@/lib/supabase/server'
 import { parsePointHex, parsePolygonHex } from '@/lib/geo-utils'
 import Revierkarte from './revierkarte'
 import type { Punkt } from './revierkarte-map'
-// Importierbar auch serverseitig: schreiben.ts hat bewusst keine Imports und
-// damit keine Browser-Abhängigkeit.
-import { darfSchreiben } from './schreiben'
 import { istStand } from './objekte'
 
 // Die Jagdart steckt in hunts.type, NICHT in hunts.kind (das kennt nur
@@ -207,12 +204,11 @@ export default async function ZentraleUebersicht({
   return (
     <div className="zentrale-wrap">
       <h1>{revier.name}</h1>
-      {/* Seit Phase 3 stimmt „nur lesend" nicht mehr pauschal: im Testrevier ist
-          die Grenze bearbeitbar. Die Zeile sagt jetzt, was für dieses Revier gilt,
-          statt eine Eigenschaft der Seite zu behaupten. */}
-      <p className="zentrale-sub">
-        {darfSchreiben(revier.id) ? 'Übersicht · Grenze bearbeitbar' : 'Übersicht · nur lesend'}
-      </p>
+      {/* Seit dem Wegfall der R3-Allowlist (29.07.2026) gilt für jedes Revier
+          dasselbe, also sagt die Zeile nichts mehr über Rechte. Sie sagte das
+          vorher, weil es zwei Fälle gab; einen Hinweis stehen zu lassen, der
+          immer denselben Text zeigt, ist schlechter als keiner. */}
+      <p className="zentrale-sub">Übersicht</p>
 
       {laufend && (
         <div className="zentrale-live">
@@ -246,27 +242,23 @@ export default async function ZentraleUebersicht({
       <section className="zentrale-block">
         <h2>Revierkarte</h2>
         <div className="zentrale-karte">
-          {/* Auch bei völlig leerem Revier die Karte zeigen, sofern hineingeschrieben
-              werden darf — sonst gäbe es keinen Ort, an dem die erste Grenze
-              entstehen könnte. */}
-          {grenze || punkte.length > 0 || darfSchreiben(revier.id) ? (
-            // `key` ist hier tragend, nicht Kosmetik: beim Revierwechsel ändert
-            // sich nur `?revier=`, Next behält dieselbe Client-Instanz und damit
-            // den Editierzustand. Ohne den key lag die halbfertige Zeichnung des
-            // Testreviers über der Karte des echten Reviers — und weil dort nicht
-            // geschrieben werden darf, verschwanden gleichzeitig „Fertig" und
-            // „Abbrechen": die Oberfläche steckte ohne Reload fest.
-            <Revierkarte
-              key={revier.id}
-              grenze={grenze}
-              punkte={punkte}
-              revierId={revier.id}
-            />
-          ) : (
-            <div className="zentrale-karte-lade">
-              Für dieses Revier ist weder eine Grenze noch ein Objekt hinterlegt.
-            </div>
-          )}
+          {/* Immer die Karte, auch bei völlig leerem Revier — sonst gäbe es
+              keinen Ort, an dem die erste Grenze entstehen könnte. Bis zum
+              29.07.2026 hing das an der R3-Allowlist; seit die weg ist, darf in
+              jedes angezeigte Revier geschrieben werden, und die Bedingung wäre
+              immer wahr. Der Leerzustand daneben ist damit unerreichbar geworden
+              und deshalb entfernt statt totes Gerüst zu bleiben.
+
+              `key` ist tragend, nicht Kosmetik: beim Revierwechsel ändert sich
+              nur `?revier=`, Next behält dieselbe Client-Instanz und damit den
+              Editierzustand. Ohne den key lag die halbfertige Zeichnung des
+              einen Reviers über der Karte des nächsten. */}
+          <Revierkarte
+            key={revier.id}
+            grenze={grenze}
+            punkte={punkte}
+            revierId={revier.id}
+          />
         </div>
       </section>
 

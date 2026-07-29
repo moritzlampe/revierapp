@@ -1,23 +1,26 @@
 /**
  * Eine Tür für jeden schreibenden Zugriff der Revierzentrale.
  *
- * Sie schließt zwei Löcher, die sonst in jedem Aufrufer einzeln vergessen werden:
+ * Sie schließt ein Loch, das sonst in jedem Aufrufer einzeln vergessen wird:
+ * **ein Write, der 0 Zeilen trifft, ist ein Fehler und kein Erfolg.** PostgREST
+ * liefert bei RLS-gefilterten 0 Zeilen `{ data: null, error: null }`. Genau
+ * daran sind in der PWA vier Schreibpfade jahrelang still vorbeigelaufen
+ * (Backlog E-R1, behoben 29.07.2026); das Portal fängt es seit Phase 3 an einer
+ * Stelle ab.
  *
- * 1. **R3** — geschrieben wird nur gegen ein Testrevier, nie gegen Pilotdaten.
- *    Der Guard steht hier, nicht in der Disziplin des Aufrufers.
- * 2. **Ein Write, der 0 Zeilen trifft, ist ein Fehler und kein Erfolg.**
- *    PostgREST liefert bei RLS-gefilterten 0 Zeilen `{ data: null, error: null }`.
- *    Der Löschpfad der PWA kommentiert diese Falle selbst
- *    (`app/app/du/revier/[id]/revier-content.tsx:450`), während die drei
- *    Update-Pfade daneben hineinlaufen — Backlog E-R1. Das Portal fängt sie an
- *    einer Stelle ab.
+ * **Die R3-Allowlist ist am 29.07.2026 weggefallen** (Entscheidung Moritz):
+ * Phase 3 ist abgenommen, und vor dem Testlauf mit Freunden sollen alle Reviere
+ * bearbeitbar sein. Sie war ein Entwicklungsriegel, kein Produktmerkmal — die
+ * echte Berechtigungsgrenze war immer RLS. `/zentrale` lädt ohnehin nur Reviere
+ * mit `owner_id = <angemeldeter Nutzer>` (siehe `page.tsx`), es gab also nie
+ * einen Weg, ein fremdes Revier auch nur anzuzeigen.
  *
  * Bewusst **ohne jeden Import**: dadurch ist die Datei mit
  * `node --experimental-strip-types` prüfbar (siehe `schreiben.selftest.ts`), ohne
  * Pfad-Alias, Env-Variablen oder Netz. Den Supabase-Client baut der Aufrufer und
  * schließt ihn in den Thunk ein:
  *
- *     await schreibe(revierId, 'Reviergrenze', () =>
+ *     await schreibe('Reviergrenze', () =>
  *       createClient()
  *         .from('districts')
  *         .update({ boundary: ewkt })
@@ -34,37 +37,6 @@
 export type WriteErgebnis<T> = {
   data: T[] | null
   error: { message: string } | null
-}
-
-/**
- * R3-Allowlist. Solange Phase 3 nicht abgenommen ist, darf das Portal nur hier
- * hinein schreiben — lieber ein Fehler beim Entwickeln als eine stille Änderung
- * in Brockwinel.
- *
- * ponytail: harte Allowlist statt Konfiguration, weil es genau einen Wert gibt
- * und er sich einmal ändert. Bei Abnahme von Phase 3 fällt die Liste zusammen
- * mit `pruefeSchreibrevier` in einem Commit weg; bis dahin ist sie die einzige
- * Stelle, die angefasst werden muss.
- */
-const SCHREIB_REVIERE = new Set([
-  // "Test 5" — 2 Objekte und seit dem 27.07.2026 eine gezeichnete Grenze
-  // (7,4 ha, nachgemessen 28.07.2026). Der Zusatz ist nicht nur Buchhaltung:
-  // solange das Revier keine Grenze hatte, war ein ganzer Fehlerfall dort
-  // unprüfbar — eine interaktive Grenzfläche schluckt den Kartenklick.
-  'ec27bd95-c8bc-48fc-ac87-da9914d09033',
-])
-
-export function darfSchreiben(revierId: string): boolean {
-  return SCHREIB_REVIERE.has(revierId)
-}
-
-export function pruefeSchreibrevier(revierId: string): void {
-  if (!darfSchreiben(revierId)) {
-    throw new Error(
-      `Schreiben in dieses Revier ist gesperrt (${revierId}). Die Revierzentrale ` +
-        'schreibt bis zur Abnahme von Phase 3 nur gegen ein Testrevier (R3).',
-    )
-  }
 }
 
 /**
@@ -108,14 +80,18 @@ export function ausWriteErgebnis<T>({ data, error }: WriteErgebnis<T>, was: stri
 /**
  * Der einzige Weg, aus der Revierzentrale zu schreiben.
  *
- * Prüft zuerst R3 und führt den Thunk nur dann aus — der Guard ist ein Tor, kein
- * Nachtest. Danach wird das Ergebnis gedeutet oder es wirft.
+ * Seit dem Wegfall der R3-Allowlist ist das nur noch die Ergebnisdeutung — der
+ * Parameter `revierId` ist mit dem Guard verschwunden, statt als toter Wert
+ * stehenzubleiben. Ein Argument, das niemand mehr liest, sieht beim nächsten
+ * Lesen wie eine Prüfung aus, die es nicht gibt.
+ *
+ * Die Funktion bleibt trotzdem: sie ist die eine Stelle, an der „0 Zeilen
+ * betroffen ist ein Fehler" steht, und genau deshalb hat das Portal diesen
+ * Fehler nie gehabt.
  */
 export async function schreibe<T>(
-  revierId: string,
   was: string,
   ausfuehren: () => PromiseLike<WriteErgebnis<T>>,
 ): Promise<T> {
-  pruefeSchreibrevier(revierId)
   return ausWriteErgebnis(await ausfuehren(), was)
 }
