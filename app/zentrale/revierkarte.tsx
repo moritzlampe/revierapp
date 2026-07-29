@@ -143,8 +143,8 @@ export default function Revierkarte({
   const aktuellePunkte = ueberlagert(punkte, geschrieben)
 
   /**
-   * Den Zwischenspeicher leeren, sobald **überhaupt** neue Server-Daten da sind
-   * — nicht erst, wenn sie dem entsprechen, was hier geschrieben wurde.
+   * **Beide** Zwischenspeicher leeren, sobald **überhaupt** neue Server-Daten da
+   * sind — nicht erst, wenn sie dem entsprechen, was hier geschrieben wurde.
    *
    * Der Unterschied ist der ganze Punkt (Codex, 27.07.2026): verglich man auf
    * Gleichheit, blieb der Eintrag genau dann liegen, wenn die Feld-App
@@ -157,16 +157,37 @@ export default function Revierkarte({
    * also genau das, wofür er da ist: die Zeit bis `router.refresh()` ankommt.
    * Danach hat der Server recht, wessen Änderung es auch war.
    *
+   * **`gespeichert` hängt seit Schritt 4 mit drin, und zwar an `punkte`, nicht
+   * an `grenze`.** Vorher wurde es überhaupt nicht geleert: einmal gesetzt,
+   * verdeckte es die `grenze`-Prop bis zum Revierwechsel oder Reload — also die
+   * ganze Sitzung. Der Schaden wuchs in drei Stufen: die Karte zeigte die alte
+   * Grenze, während die Kennzahl „Fläche" aus dem Server schon die neue trug;
+   * „Grenze bearbeiten" lud den veralteten Ring; und „Fertig" schrieb ihn
+   * zurück. Das ist E-R7 (last-write-wins) ohne die Milderung, die Objekte
+   * durch `unveraendert()` haben.
+   *
+   * Die naheliegende Fassung — ein eigener Effekt an `[grenze]` — hatte ein Loch
+   * (Codex, 29.07.2026): **`grenze` ist kein Melder für „neue Server-Daten",
+   * weil `null` sich nicht von `null` unterscheidet.** Wer eine erste Grenze
+   * zeichnet, während die Feld-App sie gleich wieder löscht, bekommt zweimal
+   * `null` geliefert, die Abhängigkeit wechselt nie, und der lokal gezeichnete
+   * Ring klebt weiter — „Bearbeiten → Fertig" ließe die gelöschte Grenze
+   * wiederauferstehen. `punkte` kann das nicht: das Array entsteht in `page.tsx`
+   * aus `objekte.reduce(…, [])` und ist bei **jeder** Auslieferung frisch, auch
+   * wenn es leer ist. Ein Signal für beide Speicher ist außerdem eines statt
+   * zweier — und der Fix für E-R8 unten trifft dann von selbst beide.
+   *
    * ponytail: die Decke dieser Entscheidung ist ein Wettlauf, den 3b vergrößert
    * hat. Zwei Writes innerhalb einer Refresh-Umlaufzeit (~200 ms) — und die
    * Antwort des ERSTEN leert den Zwischenspeicher, obwohl schon der zweite
    * darin steht. Bis 3a war die Folge ein kurz veralteter Name; seit 3b kann
    * ein gerade angelegtes Objekt kurz von der Karte verschwinden, was
-   * erschreckender aussieht. Es heilt mit der nächsten Antwort, und die DB ist
-   * die ganze Zeit richtig. Nicht behoben, weil es zwei vollständige
-   * Formulareingaben in 200 ms braucht — praktisch unerreichbar. Ein echter
-   * Fix bräuchte Folgenummern je Anfrage; nachziehen, wenn es je auffällt
-   * (Backlog E-R8). Von Codex gefunden, 28.07.2026.
+   * erschreckender aussieht; seit Schritt 4 kann auch die Grenze kurz auf den
+   * alten Stand zurückfallen (Codex, 29.07.2026). Es heilt mit der nächsten
+   * Antwort, und die DB ist die ganze Zeit richtig. Nicht behoben, weil es zwei
+   * vollständige Eingaben in 200 ms braucht — praktisch unerreichbar. Ein
+   * echter Fix bräuchte Folgenummern je Anfrage; nachziehen, wenn es je
+   * auffällt (Backlog E-R8). Von Codex gefunden, 28.07.2026.
    */
   const ersterLauf = useRef(true)
   useEffect(() => {
@@ -175,6 +196,7 @@ export default function Revierkarte({
       return
     }
     setGeschrieben((v) => (Object.keys(v).length > 0 ? {} : v))
+    setGespeichert((v) => (v !== undefined ? undefined : v))
   }, [punkte])
 
   /**
@@ -205,6 +227,29 @@ export default function Revierkarte({
    * vergessen — als benannter Wert an einer Stelle nicht.
    */
   const beschaeftigt = laeuft || objektBearbeitung || setzen !== null
+
+  /**
+   * Die Grenzen-Rückfrage räumen, wenn im Inspektor ein Modus aufgeht
+   * (Schritt 4).
+   *
+   * `loeschFrage` steht bewusst NICHT in `beschaeftigt` — sonst sperrte
+   * „Wirklich löschen" sich selbst. Sie muss deshalb geräumt werden, und die
+   * Wege von hier aus tun das auch: `starten`, `anlegenStarten` und
+   * `positionStarten` rufen alle `setLoeschFrage(false)`. Die Wege aus dem
+   * **Kind** heraus können das nicht — „Bearbeiten" und „Löschen" im Inspektor
+   * melden nur `objektBearbeitung` nach oben und wissen von der Rückfrage nichts.
+   *
+   * Ohne das blieb sie im Hintergrund stehen: ausgegraut neben dem
+   * Objektformular (`disabled={beschaeftigt}` greift, seit 3c das Kind meldet)
+   * — und **wieder scharf, sobald der Objektmodus endet**. Eine Rückfrage, die
+   * der Nutzer vor Minuten geöffnet hat, wartet dann auf einen Klick, der ihr
+   * nicht mehr gilt. Kein paralleler Write, aber derselbe Fehlertyp wie am
+   * 29.07.2026: ein Riegel schützt nur die Zustände, die ihn erreichen — und
+   * ein Zustand wird nur geräumt, wo jemand ihn kennt.
+   */
+  useEffect(() => {
+    if (objektBearbeitung) setLoeschFrage(false)
+  }, [objektBearbeitung])
 
   /**
    * Objektspalte ein- und ausklappen.
