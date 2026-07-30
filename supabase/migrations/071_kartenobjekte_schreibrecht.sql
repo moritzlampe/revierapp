@@ -62,17 +62,15 @@ create policy map_objects_creator_manage on map_objects
 -- weiterhin auch fremde Objekte in seinem Revier bearbeiten, nicht nur eigene.
 
 -- ---------------------------------------------------------------------------
--- Gegenproben (nach dem Apply)
+-- Appliziert und gegengeprüft am 30.07.2026
 -- ---------------------------------------------------------------------------
--- a) Fremder schreibt NICHT mehr ins fremde Revier:
---      begin; set local role authenticated;
---        set local "request.jwt.claim.sub" = '<uuid ohne Bezug>';
---        insert into map_objects (district_id, type, name, position, created_by)
---        values ('<testrevier>','hochsitz','071-Probe',
---                extensions.st_geomfromtext('POINT(10 53)',4326),'<dieselbe uuid>');
---      rollback;   -- muss mit 42501 scheitern
+-- Drei INSERTs ins Testrevier „Karte (L7)", in einem DO-Block mit
+-- Fehlerbehandlung, der am Ende absichtlich abbricht — damit räumt er die
+-- Testzeilen selbst weg. Gegenprobe danach: keine Reste.
 --
--- b) Positivkontrolle, sonst beweist (a) nichts: derselbe INSERT mit der
---    UUID des Revierbesitzers muss durchgehen.
+--   Fremder ins fremde Revier      blockiert 42501
+--   Revierbesitzer                 ok          <- Positivkontrolle
+--   Ad-hoc-Objekt ohne Revier      ok          <- district_id null bleibt frei
 --
--- c) Ad-hoc-Objekt ohne Revier geht weiterhin (district_id null).
+-- Ohne die mittlere Zeile bewiese die erste nichts: eine Policy, die ALLES
+-- blockiert, sieht in einem Negativtest genauso aus wie eine richtige.
