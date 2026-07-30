@@ -103,11 +103,15 @@ create trigger trg_hunting_licenses_holder_fixieren
 -- aufgeschlagen würde. Default 1 (unterwegs): nicht 0, sonst findet niemand das
 -- Feature; nicht 2, weil eine Voreinstellung nichts preisgeben darf
 -- (Einzeljagd §4).
+-- BEWUSST NICHT security definer: als definer wäre sie ein Auskunftsschalter
+-- über jedes beliebige Revier (existiert es, und wie steht es eingestellt) für
+-- jeden angemeldeten Nutzer. Als invoker greift RLS auf districts — der
+-- Fremde bekommt NULL. Innerhalb der definer-Funktionen unten läuft sie
+-- trotzdem mit deren Rechten, weil dort der definer der aktuelle Nutzer ist.
 create or replace function public.revier_stufe(p_district_id uuid)
 returns smallint
 language sql
 stable
-security definer
 set search_path = public
 as $$
   select coalesce((settings->>'einzeljagd_sichtbarkeit')::smallint, 1)
@@ -127,6 +131,7 @@ set search_path = public, extensions
 as $$
 declare
   l         hunting_licenses%rowtype;
+  jetzt     hunting_licenses%rowtype;
   betroffen int;
 begin
   if auth.uid() is null then
@@ -164,16 +169,33 @@ begin
     return;
   end if;
 
-  -- holder_id is null steht in der WHERE-Bedingung, nicht nur oben geprüft:
-  -- zwei Leute können denselben Link gleichzeitig öffnen. Der Zweite bekommt
-  -- dann 0 Zeilen und die ehrliche Antwort, statt den Ersten zu überschreiben.
+  -- Alle drei Bedingungen stehen in der WHERE-Klausel, nicht nur oben geprüft.
+  -- Zwischen dem SELECT und hier kann jemand den Schein gesperrt haben oder
+  -- ein zweiter Einlöser schneller gewesen sein; wer nur auf die Prüfung von
+  -- vorhin baut, löst einen Schein ein, den es so nicht mehr gibt.
   update hunting_licenses
      set holder_id = auth.uid(), updated_at = now()
-   where id = l.id and holder_id is null;
+   where id = l.id
+     and holder_id is null
+     and status = 'aktiv'::jes_status
+     and valid_until >= current_date;
   get diagnostics betroffen = row_count;
 
   if betroffen = 0 then
-    return query select 'schon_eingeloest'::text, null::uuid, null::text, null::smallint;
+    -- Verloren — aber woran? Erneut lesen statt raten. Der wahrscheinlichste
+    -- Fall ist der Doppeltipp desselben Nutzers auf langsamer Leitung, und
+    -- dem "schon eingelöst" zu sagen läse sich wie eine Absage.
+    select * into jetzt from hunting_licenses where id = l.id;
+    if jetzt.holder_id = auth.uid() then
+      return query select 'bereits_deiner'::text, d.id, d.name, revier_stufe(d.id)
+                     from districts d where d.id = jetzt.district_id;
+    elsif jetzt.holder_id is not null then
+      return query select 'schon_eingeloest'::text, null::uuid, null::text, null::smallint;
+    elsif jetzt.status is distinct from 'aktiv'::jes_status then
+      return query select 'gesperrt'::text, null::uuid, null::text, null::smallint;
+    else
+      return query select 'abgelaufen'::text, null::uuid, null::text, null::smallint;
+    end if;
     return;
   end if;
 
@@ -256,8 +278,12 @@ revoke execute on function public.is_revierinhaber(uuid)   from public;
 
 grant execute on function public.schein_einloesen(text)    to authenticated;
 grant execute on function public.revier_praesenz(uuid)     to authenticated;
-grant execute on function public.revier_stufe(uuid)        to authenticated;
 grant execute on function public.is_revierinhaber(uuid)    to authenticated;
+
+-- revier_stufe bekommt bewusst KEIN grant: sie wird nur innerhalb der beiden
+-- definer-Funktionen gebraucht, und dort trägt der definer die Rechte. Wer die
+-- Einstellung seines eigenen Reviers lesen will, liest districts.settings —
+-- dafür gibt es RLS.
 
 -- ---------------------------------------------------------------------------
 -- Gegenproben (nach dem Apply einzeln ausführen, nicht Teil der Migration)
