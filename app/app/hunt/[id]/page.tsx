@@ -16,7 +16,7 @@ import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 import { isHuntScheduled } from '@/lib/hunt/status'
 import { showToast } from '@/lib/erlegung/toast'
-import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog, Megaphone, Stop, CalendarBlank, Plus, Trash, MagnifyingGlass } from '@phosphor-icons/react'
+import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog, Stop, CalendarBlank, Plus, Trash, MagnifyingGlass } from '@phosphor-icons/react'
 import { WildIcon } from '@/components/icons/WildIcon'
 import type { ComponentType, SVGProps } from 'react'
 
@@ -855,29 +855,38 @@ export default function HuntPage() {
         )}
       </div>
 
-      {/* Jagdleiter Command Bar */}
+      {/* Jagdleiter-Leiste.
+       *
+       * Hieß der eine verbliebene Knopf bis 30.07.2026 „Hahn in Ruh" — falsch,
+       * und zwar nicht bloß schief: nativ ist das der Begriff für das ENDE
+       * EINES TREIBENS (`endDrive()` in src/lib/data/drives.ts, „active →
+       * completed" auf hunt_drives), und das Jagd-Ende heißt dort „Jagd
+       * beenden" (EndHuntPrompt.tsx). Dieselben Worte meinten in den zwei
+       * Clients derselben Datenbank zwei verschiedene Reichweiten. Wer den
+       * Begriff in der Feld-App gelernt hat, hätte hier für ein Treiben
+       * gedrückt und die Jagd für alle beendet.
+       *
+       * Gleichzeitig sind drei Knöpfe gefallen: „Treiben!", „Rollen" und
+       * „+Nachsuche" hatten NIE einen onClick. „Treiben!" war dabei der
+       * auffälligste der Leiste (gefüllt, Akzentfarbe) und tat nichts.
+       * Verdrahtet wurden sie bewusst nicht: das Treiben gehört in die native
+       * App (DrivesSheet, DriveStatusBanner, hunt_drives sind dort fertig),
+       * und die PWA ist im Maintenance-Modus. Ein Knopf, der nichts tut, ist
+       * schlechter als kein Knopf.
+       *
+       * Die Leiste bleibt als Ablage für Jagdleiter-Aktionen stehen — sie ist
+       * die Stelle, an der ein Treiben-Bedienelement landet, wenn die PWA nativ
+       * nachzieht. Offen und bewusst nicht hier entschieden: „Jagd beenden"
+       * steht damit an zwei Orten (hier und im ⋯-Menü, dort creator-only). Ein
+       * Ort wäre besser — genau diese doppelte Bedingung war der Bug von heute.
+       */}
       {showJLBar && isJagdleiter && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto flex-shrink-0"
           style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-default)' }}>
-          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid var(--accent-primary)', background: 'var(--accent-primary)', color: '#fff', minHeight: '2.75rem' }}>
-            <Megaphone size={14} />
-            Treiben!
-          </button>
           <button onClick={() => endHunt()} className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
             style={{ border: '1px solid var(--alert-border)', background: 'var(--alert-bg)', color: 'var(--alert-text)', minHeight: '2.75rem' }}>
             <Stop size={14} weight="fill" color="var(--red)" />
-            Hahn in Ruh
-          </button>
-          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid var(--border-default)', background: 'var(--bg-sunken)', color: 'var(--text-primary)', minHeight: '2.75rem' }}>
-            <UsersThree size={14} />
-            Rollen
-          </button>
-          <button className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
-            style={{ border: '1px solid var(--accent-gold)', background: 'var(--bg-sunken)', color: 'var(--accent-gold)', minHeight: '2.75rem' }}>
-            <Dog size={14} />
-            +Nachsuche
+            Jagd beenden
           </button>
         </div>
       )}
