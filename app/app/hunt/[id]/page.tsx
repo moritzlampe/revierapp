@@ -128,9 +128,14 @@ export default function HuntPage() {
   const geoState = useGeolocation()
 
   // Eigene participant_id bestimmen
-  const myParticipantId = useMemo(() => {
-    return participants.find(p => p.user_id === userId)?.id ?? null
-  }, [participants, userId])
+  // Die eigene Teilnehmerzeile, nicht nur ihre id — der STATUS entscheidet, ob
+  // wir überhaupt dabei sind. Vorher stand hier nur `?.id`, und damit zählte
+  // auch eine Zeile mit status='left' als Teilnahme.
+  const myParticipation = useMemo(
+    () => participants.find(p => p.user_id === userId) ?? null,
+    [participants, userId],
+  )
+  const myParticipantId = myParticipation?.id ?? null
 
   // Realtime-Positionen aller anderen Teilnehmer
   const otherPositions = useHuntPositions(hunt?.id ?? null, participants, userId)
@@ -192,6 +197,13 @@ export default function HuntPage() {
   // Eigene Position an Supabase senden — NUR bei guter Genauigkeit (<10m)
   // Ungenaue Positionen werden nur lokal angezeigt (Sicherheit bei Drückjagd)
   useEffect(() => {
+    // Nur wer wirklich dabei ist, sendet Position. Wer die Jagd verlassen hat,
+    // blieb sonst ein Punkt auf der Karte der anderen, während er in keiner
+    // Teilnehmerliste mehr stand: der Jagdleiter hielt ihn für weg, die Karte
+    // zeigte ihn auf dem Stand. Genau der Fall, der bei einer Drückjagd nicht
+    // passieren darf. 'invited' ist ebenfalls kein Mitsenden — wer noch nicht
+    // zugesagt hat, ist nicht im Revier.
+    if (myParticipation?.status !== 'joined') return
     if (!myParticipantId || !hunt?.id || !geoState.position) return
     if ((geoState.accuracy ?? 999) >= 10) return
 
@@ -203,7 +215,7 @@ export default function HuntPage() {
       geoState.accuracy ?? 999,
       geoState.isLocked,
     )
-  }, [geoState.position, geoState.accuracy, geoState.isLocked, myParticipantId, hunt?.id, supabase])
+  }, [geoState.position, geoState.accuracy, geoState.isLocked, myParticipantId, myParticipation?.status, hunt?.id, supabase])
 
   const loadMapObjects = useCallback(async (districtId: string) => {
     const { data: mapObjects } = await supabase
@@ -400,7 +412,12 @@ export default function HuntPage() {
     if (!hunt || !userId) return
     const ok = await confirmSheet({
       title: 'Jagd verlassen?',
-      description: 'Du kannst später wieder beitreten, solange die Jagd läuft.',
+      // Der alte Text — „Du kannst später wieder beitreten, solange die Jagd
+      // läuft" — versprach etwas, das es nicht gibt und auch nicht geben soll:
+      // hunt_participants hat keine Self-Join-Policy, und das ist Absicht
+      // (Jagd_Abschluss_V1 §6). Wer sich selbst zurückholen könnte, säße
+      // womöglich auf einem Stand, während der Jagdleiter ihn für weg hält.
+      description: 'Der Jagdleiter kann dich danach wieder aufnehmen.',
       confirmLabel: 'Verlassen',
       confirmVariant: 'danger',
     })
@@ -523,6 +540,47 @@ export default function HuntPage() {
 
   if (loading) return <div className="min-h-dvh flex items-center justify-center" style={{ background: 'var(--bg)' }}><p style={{ color: 'var(--text-3)' }}>Lädt...</p></div>
   if (!hunt) return null
+
+  // Wer die Jagd verlassen hat, darf sie nicht weiter als Teilnehmer sehen.
+  //
+  // Vorher prüfte diese Seite den eigenen Status NIRGENDS: nach dem Verlassen
+  // sah alles unverändert aus — Karte, Chat, Stände —, während
+  // `joinedParticipants` einen längst herausgefiltert hatte. Man war für die
+  // anderen weg und für sich selbst dabei.
+  //
+  // Der Rückweg führt bewusst über den Jagdleiter und nicht über einen
+  // Selbst-Beitritt: er muss wissen, wer im Revier ist, bevor sich jemand auf
+  // einen Stand setzt (Konzept Jagd_Abschluss_V1 §6). Nativ steht an derselben
+  // Stelle HuntGatePrompt mit derselben Aussage.
+  //
+  // Der Ersteller kommt immer durch: `hunts_creator_all` lässt ihn die Jagd
+  // auch dann laden, wenn seine Teilnehmerzeile fehlt (gescheiterter Insert
+  // beim Anlegen) — ohne diese Ausnahme sperrte der Guard ihn aus seiner
+  // eigenen Jagd aus.
+  if (userId !== hunt.creator_id && (!myParticipation || myParticipation.status === 'left')) {
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-4 px-8 text-center"
+        style={{ background: 'var(--bg)' }}>
+        <WarningCircle size={40} color="var(--text-3)" />
+        <div>
+          <p className="font-semibold" style={{ marginBottom: '0.375rem' }}>
+            Du bist kein Teilnehmer von „{hunt.name}“
+          </p>
+          <p className="text-sm" style={{ color: 'var(--text-3)', lineHeight: 1.45 }}>
+            Du hast diese Jagd verlassen. Der Jagdleiter kann dich wieder aufnehmen.
+          </p>
+        </div>
+        <button onClick={() => router.push('/app?tab=jagden')}
+          className="font-semibold text-sm"
+          style={{
+            height: '2.75rem', padding: '0 1.25rem', borderRadius: 'var(--radius)',
+            background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)',
+          }}>
+          Zurück zu den Jagden
+        </button>
+      </div>
+    )
+  }
 
   const pName = (p: Participant) => p.profiles?.display_name || p.guest_name || 'Unbekannt'
   const joinedParticipants = participants.filter(p => p.status === 'joined')
