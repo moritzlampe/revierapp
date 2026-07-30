@@ -239,7 +239,9 @@ returns table (
   stufe       smallint,
   stand_id    uuid,
   stand_name  text,
-  position    geometry
+  -- NICHT "position": das ist in einer returns-table-Liste reserviert
+  -- (POSITION(x IN y)) und scheitert mit 42601.
+  standort    geometry
 )
 language sql
 stable
@@ -273,43 +275,48 @@ $$;
 -- ---------------------------------------------------------------------------
 revoke execute on function public.schein_einloesen(text)   from public;
 revoke execute on function public.revier_praesenz(uuid)    from public;
-revoke execute on function public.revier_stufe(uuid)       from public;
 revoke execute on function public.is_revierinhaber(uuid)   from public;
 
 grant execute on function public.schein_einloesen(text)    to authenticated;
 grant execute on function public.revier_praesenz(uuid)     to authenticated;
 grant execute on function public.is_revierinhaber(uuid)    to authenticated;
 
--- revier_stufe bekommt bewusst KEIN grant: sie wird nur innerhalb der beiden
--- definer-Funktionen gebraucht, und dort trägt der definer die Rechte. Wer die
--- Einstellung seines eigenen Reviers lesen will, liest districts.settings —
--- dafür gibt es RLS.
+-- revier_stufe wird nur INNERHALB von schein_einloesen gebraucht; dort trägt
+-- der definer die Rechte. Deshalb der Riegel für beide Client-Rollen.
+--
+-- `revoke ... from public` allein genügt hier NICHT, nachgemessen am
+-- 30.07.2026: Supabase vergibt EXECUTE per ALTER DEFAULT PRIVILEGES direkt an
+-- anon und authenticated, und PUBLIC zu entziehen trifft diese Grants nicht
+-- (has_function_privilege('authenticated', …) stand danach weiter auf true).
+-- Wer eine Funktion wirklich schließen will, muss die Rollen benennen.
+--
+-- Die eigentliche Sicherheit trägt aber nicht dieser Riegel, sondern dass die
+-- Funktion invoker ist: als definer wäre sie ein Auskunftsschalter über jedes
+-- Revier. So greift RLS auf districts — ein Unbeteiligter bekommt NULL.
+revoke execute on function public.revier_stufe(uuid) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- Gegenproben (nach dem Apply einzeln ausführen, nicht Teil der Migration)
+-- Appliziert und gegengeprüft am 30.07.2026
 -- ---------------------------------------------------------------------------
--- a) Spalten und Default da:
---    select column_name, column_default from information_schema.columns
---     where table_name='hunting_licenses'
---       and column_name in ('revier_sichtbarkeit','stand_ids','invite_code');
+-- a) Spalten und Default stehen (information_schema).
 --
--- b) Code ist URL-sicher — kein '+' und kein '/':
---    select translate(encode(extensions.gen_random_bytes(9),'base64'),'+/','-_');
+-- b) Trigger: Umhängen auf ein anderes Konto scheitert mit 42501,
+--    Positivkontrolle (auflagen ändern) geht durch. Getestet über einen
+--    DO-Block, der am Ende absichtlich RAISE EXCEPTION wirft — damit räumt der
+--    Abbruch die Testzeile selbst weg. Gegenprobe: hunting_licenses = 0 Zeilen.
 --
--- c) holder_id ist dicht. In EINER Transaktion, aber GETRENNTEN Anweisungen —
---    ein CTE sähe die frisch eingefügte Zeile nicht und meldete 0 Zeilen, ohne
---    dass der Trigger je gegriffen hätte (AGENTS.md, 28.07.2026):
---      begin;
---        insert into hunting_licenses (district_id, issuer_id, holder_id,
---          holder_name, valid_from, valid_until)
---        values ('<testrevier>','<uid>','<uid>','Test', current_date,
---                current_date + 30) returning id;
---        update hunting_licenses set holder_id = gen_random_uuid()
---         where id = '<die id>';   -- muss mit 42501 scheitern
---      rollback;
+-- c) Ende zu Ende, im Testrevier „Karte (L7)", in einer Transaktion mit
+--    ROLLBACK: erster Aufruf 'ok', zweiter 'bereits_deiner' (Doppeltipp),
+--    falscher Code 'unbekannt'. Damit ist auch belegt, dass schein_einloesen
+--    als definer weiterhin an revier_stufe kommt, obwohl beide Client-Rollen
+--    dort kein EXECUTE mehr haben.
 --
--- d) revier_praesenz liefert dem Fremden nichts:
---    begin; set local role authenticated;
---      set local "request.jwt.claim.sub" = '<fremde uuid>';
---      select count(*) from revier_praesenz('<revier>');  -- 0
---    rollback;
+-- d) RLS-Matrix auf Brockwinel:
+--      unbeteiligte UUID → 0 Reviere, revier_stufe NULL, is_revierinhaber
+--        false, revier_praesenz 0 Zeilen
+--      Besitzer (Moritz) → revier_stufe 1, is_revierinhaber true,
+--        revier_praesenz 0 Zeilen (es gibt noch keine Einzeljagd)
+--    ACHTUNG bei künftigen Tests: Heinrich ist für Brockwinel KEIN Fremder —
+--    er hängt über die Pilotjagd an districts_joined_participant_select und
+--    sieht das Revier zu Recht. Wer eine Negativprobe braucht, nimmt eine
+--    UUID, die an keiner Jagd hängt.
