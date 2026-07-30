@@ -131,8 +131,13 @@ export default function HuntPage() {
   // Die eigene Teilnehmerzeile, nicht nur ihre id — der STATUS entscheidet, ob
   // wir überhaupt dabei sind. Vorher stand hier nur `?.id`, und damit zählte
   // auch eine Zeile mit status='left' als Teilnahme.
+  // `userId &&` ist nicht kosmetisch: Gäste haben `user_id IS NULL`. Ohne die
+  // Bedingung fände `find` bei unbekanntem `userId` (getUser() hat gehakt) die
+  // erste GASTZEILE und hielte sie für die eigene — der Nutzer käme am Guard
+  // vorbei und sendete seine Position unter der Teilnehmer-id des Gastes.
+  // Ohne bekannten Nutzer gibt es keine eigene Zeile, Punkt.
   const myParticipation = useMemo(
-    () => participants.find(p => p.user_id === userId) ?? null,
+    () => (userId ? participants.find(p => p.user_id === userId) ?? null : null),
     [participants, userId],
   )
   const myParticipantId = myParticipation?.id ?? null
@@ -566,8 +571,15 @@ export default function HuntPage() {
           <p className="font-semibold" style={{ marginBottom: '0.375rem' }}>
             Du bist kein Teilnehmer von „{hunt.name}“
           </p>
+          {/* Zwei verschiedene Zustände, zwei verschiedene Sätze: „verlassen"
+              stimmt nur, wenn es eine Zeile mit status='left' gibt. Fehlt die
+              Zeile ganz, ist der häufigere Grund eine hakende Anmeldung — dann
+              wäre „Du hast verlassen" schlicht gelogen und schickt jemanden auf
+              die falsche Fehlersuche. */}
           <p className="text-sm" style={{ color: 'var(--text-3)', lineHeight: 1.45 }}>
-            Du hast diese Jagd verlassen. Der Jagdleiter kann dich wieder aufnehmen.
+            {myParticipation?.status === 'left'
+              ? 'Du hast diese Jagd verlassen. Der Jagdleiter kann dich wieder aufnehmen.'
+              : 'Nur der Jagdleiter kann dich zu dieser Jagd hinzufügen.'}
           </p>
         </div>
         <button onClick={() => router.push('/app?tab=jagden')}
