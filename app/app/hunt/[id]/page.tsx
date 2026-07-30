@@ -15,6 +15,7 @@ import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 import { isHuntScheduled } from '@/lib/hunt/status'
+import { showToast } from '@/lib/erlegung/toast'
 import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog, Megaphone, Stop, CalendarBlank, Plus, Trash, MagnifyingGlass } from '@phosphor-icons/react'
 import { WildIcon } from '@/components/icons/WildIcon'
 import type { ComponentType, SVGProps } from 'react'
@@ -260,7 +261,12 @@ export default function HuntPage() {
     setHunt(hunt)
     setParticipants(parts || [])
     setUserId(user?.id ?? null)
-    setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter') || false)
+    // `status === 'joined'` muss mit: get_my_joined_hunt_ids_as_leader() (067)
+    // verlangt es, also darf das UI-Gate es nicht weglassen. Sonst sieht ein
+    // eingeladener, aber noch nicht beigetretener Jagdleiter die Führungs-UI,
+    // und jeder Knopf darin scheitert an RLS — genau die UI/RLS-Divergenz, die
+    // 067 beseitigt hat.
+    setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter' && p.status === 'joined') || false)
     setIsGruppenleiter(parts?.some(p => p.user_id === user?.id && p.tags?.includes('gruppenleiter')) || false)
     setLoading(false)
 
@@ -371,7 +377,19 @@ export default function HuntPage() {
       })
       if (!ok) return
     }
-    await supabase.from('hunts').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', hunt.id)
+    // .select() ist hier kein Beiwerk: ohne es meldet PostgREST auch dann
+    // Erfolg, wenn RLS die Zeile herausgefiltert hat. Genau so blieb „Hahn in
+    // Ruh" für einen Jagdleiter ≠ Ersteller wirkungslos, während der Nutzer
+    // schon auf /app stand und die Jagd weiterlief.
+    const { data: beendet, error } = await supabase
+      .from('hunts')
+      .update({ status: 'completed', ended_at: new Date().toISOString() })
+      .eq('id', hunt.id)
+      .select('id')
+    if (error || !beendet?.length) {
+      showToast('Jagd konnte nicht beendet werden. Sie läuft weiter.', 'warning')
+      return
+    }
     // Router-Cache invalidieren, sonst zeigt das Tagebuch den Hunt
     // weiterhin ohne 'auto_completed'/'completed'-Chip bis PWA-Neustart.
     router.refresh()
@@ -387,11 +405,17 @@ export default function HuntPage() {
       confirmVariant: 'danger',
     })
     if (!ok) return
-    await supabase
-      .from('hunt_participants')
-      .update({ status: 'left', left_at: new Date().toISOString() })
-      .eq('hunt_id', hunt.id)
-      .eq('user_id', userId)
+    // RPC statt UPDATE (Migration 067). Ein direktes UPDATE auf die eigene
+    // Zeile ist nicht möglich: hunt_participants hat keine UPDATE-Policy für
+    // `user_id = auth.uid()`, und eine solche Policy dürfte es auch nicht
+    // geben — RLS kann keine Spalten einschränken, also könnte damit jeder
+    // Teilnehmer sein eigenes `role` auf 'jagdleiter' setzen. Die Funktion
+    // schreibt genau status und left_at und wirft bei 0 Zeilen.
+    const { error } = await supabase.rpc('jagd_verlassen', { p_hunt: hunt.id })
+    if (error) {
+      showToast('Verlassen fehlgeschlagen. Du bist weiter in der Jagd.', 'warning')
+      return
+    }
     // Participant-Count ändert sich → Solo/Gesell-Schwelle im Tagebuch
     // muss neu berechnet werden.
     router.refresh()
@@ -429,15 +453,37 @@ export default function HuntPage() {
     })
     if (!ok) return
     setInviteBusy(true)
-    await supabase.from('hunt_participants').delete().eq('id', p.id)
+    const { data: entfernt, error } = await supabase
+      .from('hunt_participants')
+      .delete()
+      .eq('id', p.id)
+      .select('id')
+    if (error || !entfernt?.length) {
+      setInviteBusy(false)
+      showToast(`${name} konnte nicht entfernt werden.`, 'warning')
+      return
+    }
     // joined: zusätzlich aus der Hunt-Chat-Gruppe entfernen (analog 049-Cleanup,
-    // gescopt auf chat_groups.hunt_id IS NOT NULL). chat_group_members_delete
-    // erlaubt dem Gruppen-Ersteller (= Jagdleiter) das Entfernen.
+    // gescopt auf chat_groups.hunt_id IS NOT NULL). Seit 067 deckt das nicht nur
+    // der Gruppen-Ersteller ab, sondern jeder Jagdleiter der Jagd
+    // (chat_group_members_hunt_leader_delete).
+    //
+    // Kein Abbruch bei Fehlschlag, aber auch kein Schweigen: der Teilnehmer ist
+    // an dieser Stelle schon aus der Jagd raus, das lässt sich nicht
+    // zurücknehmen. Ein halbes Entfernen — raus aus der Jagd, drin im Chat —
+    // muss man aber sehen, sonst liest jemand still weiter mit.
     if (p.status === 'joined' && p.user_id) {
       const { data: groups } = await supabase.from('chat_groups').select('id').eq('hunt_id', hunt.id)
       const groupIds = (groups || []).map(g => g.id)
       if (groupIds.length > 0) {
-        await supabase.from('chat_group_members').delete().in('group_id', groupIds).eq('user_id', p.user_id)
+        const { error: chatFehler } = await supabase
+          .from('chat_group_members')
+          .delete()
+          .in('group_id', groupIds)
+          .eq('user_id', p.user_id)
+        if (chatFehler) {
+          showToast(`${name} ist aus der Jagd, aber noch im Jagd-Chat.`, 'warning')
+        }
       }
     }
     setInviteBusy(false)
