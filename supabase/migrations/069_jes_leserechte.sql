@@ -75,6 +75,25 @@ create policy zones_jes_select on zones
 -- Reviergrenze, aber keine Stände mehr, und niemand verstünde warum. Wenn sie
 -- fällt, fällt sie an allen Stellen gleichzeitig.
 --
--- Ruhezonen: ein Pächter sollte sehen, wo nicht gejagt wird. Das ist aber eine
--- eigene Entscheidung und steht in keinem gelockten Konzept — deshalb hier
--- nicht mitgenommen.
+-- Ruhezonen: ein Pächter sollte sehen, wo nicht gejagt wird. Moritz hat am
+-- 30.07.2026 entschieden, dass das ein eigenes Konzept wird — Ruhezonen sind
+-- Grenzen INNERHALB des Reviers und keine Sichtbarkeitsfrage.
+--
+-- SCHREIBEN. Diese Migration regelt nur das Lesen. Dass ein Scheininhaber sich
+-- eigene Stände aufbaut, geht heute schon — nur geht es zu weit: gemessen am
+-- 30.07.2026 hat `map_objects_creator_manage` als WITH CHECK allein
+-- `created_by = auth.uid()`. Ein Nutzer ohne jede Beziehung zu einem Revier
+-- konnte im Test ein `hochsitz`-Objekt hineinschreiben (rollback, keine Reste).
+-- Der Riegel prüft, WER schreibt, aber nicht WOHIN. Das ist älter als dieses
+-- Feature und bewusst nicht hier mitgeflickt — eigene Migration.
+
+-- ---------------------------------------------------------------------------
+-- Appliziert und gegengeprüft am 30.07.2026
+-- ---------------------------------------------------------------------------
+-- Testrevier „Karte (L7)" (dd77dd77-…), Testschein für Heinrich, zwei Zonen
+-- davon eine im Schein — alles in einer Transaktion mit ROLLBACK.
+--
+--   mit aktivem Schein   Revier 1 · Objekte 33 · Zonen 1 (nur die eigene)
+--   ohne Schein          Revier 0 · Objekte 0  · get_my_jes_district_ids() 0
+--
+-- Gegenprobe nach dem Rollback: hunting_licenses 0, zones 0, keine Testreste.
