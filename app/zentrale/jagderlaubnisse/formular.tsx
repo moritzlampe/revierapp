@@ -131,11 +131,19 @@ export default function Ausstellen({
       // die App nie geöffnet hat, hat kein Gerät hinterlegt. Genau dafür steht
       // der Code kopierbar in der Liste.
       // Gleiche Bauform wie sendDrivePush in der nativen App.
+      // Ohne Prüfung auf `ok` bliebe selbst ein HTTP 500 unsichtbar — `fetch`
+      // lehnt bei Statusfehlern nicht ab. Der Nutzer bekommt trotzdem nichts zu
+      // sehen (der Schein ist ja angelegt), aber in der Konsole steht dann,
+      // warum niemand benachrichtigt wurde. (Codex, 31.07.2026)
       void fetch('/api/push/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'schein', licenseId: angelegt.id }),
-      }).catch(() => {})
+      })
+        .then((r) => {
+          if (!r.ok) console.error('[push] Schein-Benachrichtigung fehlgeschlagen:', r.status)
+        })
+        .catch((e: unknown) => console.error('[push] Schein-Benachrichtigung nicht abgesetzt:', e))
       // Zeitraum und Zuteilung stehen lassen: wer zwei Gästen denselben
       // Zeitraum gibt, tippt ihn sonst zweimal. Person und Auflagen sind
       // dagegen genau das, was sich je Schein unterscheidet.

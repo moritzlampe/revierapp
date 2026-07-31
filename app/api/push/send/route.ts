@@ -91,14 +91,21 @@ export async function POST(request: Request) {
       if (typeof licenseId !== 'string' || !licenseId) {
         return NextResponse.json({ error: 'licenseId ist Pflicht' }, { status: 400 })
       }
-      const { data: schein } = await supabase
+      const { data: schein, error: scheinFehler } = await supabase
         .from('hunting_licenses')
         .select('id, issuer_id, districts!inner ( name, owner_id )')
         .eq('id', licenseId)
         .maybeSingle()
+      // Einen DB-Fehler nicht als „nichts gefunden" durchgehen lassen. Ein
+      // Tippfehler im Spaltennamen fiele sonst nirgends auf — der Client ist
+      // untypisiert —, und der ganze Zweig wäre still tot. (Codex, 31.07.2026)
+      if (scheinFehler) {
+        console.error('Push-Route schein: Schein nicht lesbar:', scheinFehler)
+        return NextResponse.json({ error: 'Interner Fehler' }, { status: 500 })
+      }
       const revier = schein?.districts as unknown as { name: string; owner_id: string } | undefined
       if (!schein || schein.issuer_id !== senderId || revier?.owner_id !== senderId) {
-        return NextResponse.json({ sent: 0 })
+        return NextResponse.json({ ok: true })
       }
       scheinRevier = revier?.name ?? ''
 
@@ -107,15 +114,22 @@ export async function POST(request: Request) {
       // dann nicht zeigt. NULL heisst: keine offene Einladung, kein bestaetigtes
       // Konto zu der Adresse, oder zwei Konten, die sich nur in der
       // Schreibweise unterscheiden.
-      const { data: empfaenger } = await supabase.rpc('schein_empfaenger', {
+      const { data: empfaenger, error: rpcFehler } = await supabase.rpc('schein_empfaenger', {
         p_license_id: licenseId,
       })
+      // Fehlendes EXECUTE oder eine umbenannte Funktion sähen sonst exakt aus
+      // wie „diese Adresse hat kein Konto" — der Zweig wäre stumm kaputt, und
+      // zwar auf die eine Art, die niemandem auffällt. (Codex, 31.07.2026)
+      if (rpcFehler) {
+        console.error('Push-Route schein: Empfänger nicht auflösbar:', rpcFehler)
+        return NextResponse.json({ error: 'Interner Fehler' }, { status: 500 })
+      }
       if (!empfaenger) {
-        // Bewusst dieselbe Antwort wie bei Erfolg-ohne-Gerät: der Aussteller
-        // soll aus dem Ergebnis nicht ablesen können, ob zu einer eingetippten
-        // Adresse ein Konto existiert. Er hat die Adresse selbst gewählt; das
-        // Formular zeigt ihm den Code als Rückfallweg ohnehin an.
-        return NextResponse.json({ sent: 0 })
+        // Dieselbe Antwort wie bei Erfolg: der Aussteller soll aus dem Ergebnis
+        // nicht ablesen können, ob zu einer eingetippten Adresse ein Konto
+        // existiert. Er hat die Adresse selbst gewählt; das Formular zeigt ihm
+        // den Code als Rückfallweg ohnehin an.
+        return NextResponse.json({ ok: true })
       }
       recipientUserIds = [empfaenger as string]
     } else if (type === 'drive') {
@@ -195,7 +209,11 @@ export async function POST(request: Request) {
       .in('user_id', recipientUserIds)
 
     if (!subscriptions || subscriptions.length === 0) {
-      return NextResponse.json({ sent: 0 })
+      // Diese Stelle erreicht ein schein-Request, sobald der Eingeladene zwar
+      // ein Konto hat, aber kein Gerät — und genau die beiden Fälle „Konto ohne
+      // Gerät" und „kein Konto" dürfen sich nicht unterscheiden lassen.
+      // Dieselbe Antwort wie am Ende der Funktion.
+      return NextResponse.json(type === 'schein' ? { ok: true } : { sent: 0 })
     }
 
     // Absendername autoritativ aus profiles auflösen (race-frei, Service-Role)
@@ -360,6 +378,22 @@ export async function POST(request: Request) {
     // DeviceNotRegistered).
     if (expiredIds.length > 0) {
       await supabase.from('push_subscriptions').delete().in('id', expiredIds)
+    }
+
+    // Für schein NIE die Zahlen: `sent` und `expired` verraten sonst, ob zu
+    // einer eingetippten Adresse ein bestätigtes Konto mit Gerät gehört — der
+    // Aussteller könnte Adressen durchprobieren und es an der Antwort ablesen.
+    // (Codex, 31.07.2026: der Zweig war trotz der Absicht im Kommentar noch
+    // ein Orakel, weil ganz am Ende doch die Zahlen zurückgingen.)
+    //
+    // Was das NICHT schließt: den Zeitkanal. Mit Empfänger läuft eine
+    // Subscription-Abfrage und womöglich ein Aufruf nach draußen, ohne
+    // Empfänger nicht. Dagegen hülfe nur eine Outbox — bewusst nicht gebaut:
+    // wer so misst, braucht ein eigenes Revier UND hinterlässt je Versuch eine
+    // Schein-Zeile. Der Aufwand steht in keinem Verhältnis zur Auskunft
+    // „diese Adresse hat ein Konto".
+    if (type === 'schein') {
+      return NextResponse.json({ ok: true })
     }
 
     return NextResponse.json({ sent, expired: expiredIds.length })
