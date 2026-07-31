@@ -338,7 +338,16 @@ export async function POST(request: Request) {
         sound: 'default',
         title,
         body,
-        data: type === 'drive' ? { huntId, event } : { url: safeUrl },
+        // Für schein zusätzlich das WAS, nicht nur das WO: die native App
+        // ordnet `type` selbst einem Bildschirm zu (`src/lib/push/tap.ts`).
+        // `url` ist der PWA-Pfad und taugt dafür nicht — Route-Namen der
+        // iOS-App gehören nicht in eine Next.js-Datei.
+        data:
+          type === 'drive'
+            ? { huntId, event }
+            : type === 'schein'
+              ? { type: 'schein', url: safeUrl }
+              : { url: safeUrl },
       }))
 
       const chunks = expo.chunkPushNotifications(messages)
