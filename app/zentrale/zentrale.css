@@ -550,23 +550,35 @@
    ausfranst — dieselbe Behandlung wie die Kennzahlen der Übersicht. */
 /* Aufklappbar über <details>: Zustand, Tastatur und Vorlesen macht der Browser.
    Zugeklappt ist der Normalfall — eingestellt wird selten, gelesen wird oft. */
+/* Legende und Papierkorb teilen sich die Aufklapp-Optik: beide sind Werkzeuge
+   am Rand der Liste, die man holt, benutzt und wieder weglegt. Deshalb eine
+   Selektorliste statt einer zweiten Kopie — sonst driften sie auseinander. */
 .zentrale-inspektor-legende { margin-top: 8px; }
-.zentrale-inspektor-legende > summary {
+.zentrale-inspektor-legende > summary,
+.zentrale-papierkorb > summary {
   font-size: 0.8125rem;
   color: var(--z-text-secondary);
   cursor: pointer;
   padding: 2px 0;
   list-style-position: outside;
 }
-.zentrale-inspektor-legende > summary:hover { color: var(--z-text-primary); }
-.zentrale-inspektor-legende > summary:focus-visible {
+.zentrale-inspektor-legende > summary:hover,
+.zentrale-papierkorb > summary:hover { color: var(--z-text-primary); }
+.zentrale-inspektor-legende > summary:focus-visible,
+.zentrale-papierkorb > summary:focus-visible {
   outline: 2px solid var(--z-accent);
   outline-offset: 2px;
 }
-.zentrale-inspektor-legende > summary .zahl {
+.zentrale-inspektor-legende > summary .zahl,
+.zentrale-papierkorb > summary .zahl {
   font-family: var(--font-mono);
   font-size: 0.75rem;
 }
+/* Nur der Papierkorb: die Legende setzt ihren Abstand über ein Leerzeichen im
+   Text, der Papierkorb hat keins. Hier statt in der Selektorliste oben, sonst
+   verschöbe sich die Legende, die mit dieser Änderung nichts zu tun hat.
+   (Codex, 31.07.2026) */
+.zentrale-papierkorb > summary .zahl { margin-left: 6px; }
 .zentrale-inspektor-legende .gruppe { margin-top: 2px; }
 .zentrale-inspektor-legende .gruppe:first-of-type { margin-top: 6px; }
 .zentrale-inspektor-legende label {
@@ -779,3 +791,76 @@
   outline-offset: 2px;
 }
 .zentrale-inspektor-fuss button:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------------------------------------------------------------------------
+   Papierkorb (072–074)
+   Sitzt unter der Objektliste. Die Aufklapp-Optik teilt er sich mit der
+   Legende, siehe oben; hier stehen nur die Zeilen darin.
+   --------------------------------------------------------------------------- */
+.zentrale-papierkorb {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--z-border);
+}
+/* Eigener Scrollbereich. Der Papierkorb sitzt bewusst AUSSERHALB von
+   `.zentrale-inspektor-koerper`, damit er bei 196 Objekten nicht am Ende eines
+   langen Scrollwegs auftaucht — dann muss er seine Höhe aber selbst begrenzen,
+   sonst schiebt ein voller Papierkorb die Spalte auf. (Codex, 31.07.2026) */
+.zentrale-papierkorb ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.zentrale-papierkorb li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+.zentrale-papierkorb .nam {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--z-text-primary);
+}
+.zentrale-papierkorb .typ { font-size: 0.75rem; }
+.zentrale-papierkorb .wann {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+.zentrale-papierkorb button {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  color: var(--z-text-primary);
+  background: none;
+  border: 1px solid var(--z-border);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.zentrale-papierkorb button:hover { border-color: var(--z-accent); }
+.zentrale-papierkorb button:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+.zentrale-papierkorb button:disabled { opacity: 0.5; cursor: default; }
+.zentrale-papierkorb .hinweis,
+.zentrale-papierkorb .fehler {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+/* Kein Rot: die Zentrale hebt Fehler über Primärfarbe und eine Akzentlinie
+   hervor (siehe .zentrale-inspektor-fehler), nicht über eine Signalfarbe. */
+.zentrale-papierkorb .fehler {
+  color: var(--z-text-primary);
+  padding-left: 8px;
+  border-left: 2px solid var(--z-accent);
+}

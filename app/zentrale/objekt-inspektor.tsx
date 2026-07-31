@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Punkt } from './revierkarte-map'
+import Papierkorb from './papierkorb'
 import {
   OBJEKT_TYPEN,
   filterBaum,
@@ -34,6 +35,7 @@ import {
  * eigener Write ohne gemeinsamen Rückweg.
  */
 export default function ObjektInspektor({
+  revierId,
   punkte,
   auswahlId,
   aufAuswahl,
@@ -49,6 +51,8 @@ export default function ObjektInspektor({
   aufSetzAbbrechen,
   aufLoeschen,
 }: {
+  /** Nur für den Papierkorb am Fuß der Liste — er lädt sich selbst. */
+  revierId: string
   punkte: Punkt[]
   auswahlId: string | null
   aufAuswahl: (id: string | null) => void
@@ -128,7 +132,7 @@ export default function ObjektInspektor({
           aufLoeschen={aufLoeschen}
         />
       ) : (
-        <Liste punkte={punkte} aufAuswahl={aufAuswahl} suche={suche} />
+        <Liste revierId={revierId} punkte={punkte} aufAuswahl={aufAuswahl} suche={suche} />
       )}
     </aside>
   )
@@ -313,10 +317,12 @@ function NeuFormular({
  * wenn ein Revier vierstellig wird.
  */
 function Liste({
+  revierId,
   punkte,
   aufAuswahl,
   suche,
 }: {
+  revierId: string
   punkte: Punkt[]
   aufAuswahl: (id: string) => void
   /** Kommt von oben: das Feld steht außerhalb der Spalte. */
@@ -487,6 +493,12 @@ function Liste({
           </ul>
         )}
       </div>
+
+      {/* Unter der Liste, nicht darin: der Papierkorb ist genau die Antwort auf
+          „hier fehlt etwas", und die Frage stellt sich am Ende der Liste. Er
+          steht außerhalb des scrollenden Körpers, damit er bei Söders 196
+          Objekten nicht erst am Ende eines langen Scrollwegs auftaucht. */}
+      <Papierkorb revierId={revierId} />
     </>
   )
 }

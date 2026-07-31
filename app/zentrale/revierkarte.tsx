@@ -1098,6 +1098,7 @@ export default function Revierkarte({
           )}
 
           <ObjektInspektor
+            revierId={revierId}
             punkte={aktuellePunkte}
             auswahlId={auswahlId}
             aufAuswahl={setAuswahlId}
