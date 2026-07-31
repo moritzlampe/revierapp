@@ -140,14 +140,23 @@
 --    braucht, sollte sich an dieser Stelle orientieren statt 42501
 --    zweckzuentfremden — „Du darfst nicht" für „geht gerade nicht" ist eine
 --    Auskunft, die schlicht falsch ist.
--- 2. PostgREST bildet die Fehlerklasse 55 auf **HTTP 500** ab (42501 dagegen
---    auf 403). Der Client sieht davon nichts — `supabase-js` reicht den
---    SQLSTATE als `error.code` durch, und genau daran hängen
---    `isStandOccupiedError` und die Meldung. Es heißt aber, dass ein ganz
---    normaler Nutzervorgang in einem Server-Log als 500 auftaucht.
---    Bewusst in Kauf genommen: der sprechende Code ist mehr wert als ein
---    sauberer Status. Wird das je zum Problem (Alarm-Rauschen), ist `PT409`
---    der Tausch — dann wird der Status zu 409, und `error.code` heißt 'PT409'.
+-- 2. PostgREST bildet die Fehlerklasse 55 auf **HTTP 500** ab. Auch das ist
+--    gemessen, nicht angenommen — mit einer Wegwerf-Funktion gegen die echte
+--    Produktions-URL (31.07.2026, danach sofort entfernt):
+--
+--      POST /rest/v1/rpc/<sonde 55006>  ->  500  {"code":"55006", …}
+--      POST /rest/v1/rpc/<sonde 42501>  ->  401  {"code":"42501", …}
+--
+--    **Entscheidend ist der Körper, nicht der Status:** er kommt durch das
+--    Gateway unverändert an, und `postgrest-js` parst bei JEDER nicht-ok-
+--    Antwort den ganzen Körper nach `error` (`error = JSON.parse(body)`).
+--    `error.code === '55006'` hält also, und daran hängen
+--    `isStandOccupiedError` und die Meldung im Client.
+--
+--    Der Preis ist allein kosmetisch: ein ganz normaler Nutzervorgang taucht
+--    im Server-Log als 500 auf. Bewusst in Kauf genommen — der sprechende Code
+--    ist mehr wert als ein sauberer Status. Wird daraus je Alarm-Rauschen, ist
+--    `PT409` der Tausch (Status 409, `error.code` dann 'PT409').
 --
 -- Idempotent: reines CREATE OR REPLACE, kein DDL an Tabellen. Bestehende
 -- Grants bleiben erhalten.
