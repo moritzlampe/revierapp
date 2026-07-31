@@ -34,12 +34,20 @@
 -- SECURITY DEFINER, weil der Aufrufer `districts` per RLS gerade nicht lesen
 -- darf; die Funktion ist die Ausnahme und deshalb so schmal wie möglich:
 -- ein Parameter, ein Rückgabewert, kein Zeilenzugriff auf irgendetwas sonst.
+-- `pg_temp` gehört ans ENDE des search_path und nicht weggelassen. Ohne die
+-- Nennung sucht Postgres das Temp-Schema ZUERST — ein Angemeldeter legt
+-- `create temp table hunting_licenses (...)` an, und diese Funktion liest seine
+-- Fassung statt der echten. Nachgestellt am 31.07.2026 gegen die
+-- Produktions-DB: ein Nutzer ohne jeden Schein bekam so „Brockwinel" zurück.
+-- Explizit genannt wird pg_temp zuletzt durchsucht, und die echte Tabelle
+-- gewinnt. (Der Befund gilt für fast alle SECURITY-DEFINER-Funktionen des
+-- Projekts — siehe Migration 076.)
 create or replace function public.schein_revier_name(p_district_id uuid)
 returns text
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
   select d.name
     from districts d
