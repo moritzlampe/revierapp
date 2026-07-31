@@ -1,8 +1,15 @@
 -- 076 — pg_temp aus dem Weg räumen (alle SECURITY-DEFINER-Funktionen)
 --
 -- ============================================================================
--- STATUS: GESCHRIEBEN UND IM TROCKENLAUF BEWIESEN, NICHT ANGEWENDET.
--- Wartet auf Freigabe durch Moritz. Bis dahin steht die Lücke unten offen.
+-- STATUS: APPLIZIERT UND GEGENGEPRÜFT 31.07.2026 (Freigabe Moritz).
+--
+--   Vollständigkeit:  36 SECURITY-DEFINER-Funktionen, 0 ohne pg_temp
+--   Angriff danach:   0 Objekte / kann_revier_pflegen false / Name null
+--   Positivkontrolle: Moritz 9 Reviere, 3 Objekte, 38 Jagden, pflegen true
+--                     Heinrich sieht Brockwinel und die Pilotjagd weiter
+--
+-- Die Positivkontrolle gehört dazu: eine Änderung, die ALLES zumacht, sieht im
+-- Negativtest genauso aus wie die richtige.
 -- ============================================================================
 --
 -- ## Der Befund
