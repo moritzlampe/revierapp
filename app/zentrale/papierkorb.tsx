@@ -125,9 +125,21 @@ export default function Papierkorb({ revierId }: { revierId: string }) {
         if (e.currentTarget.open) void laden()
       }}
     >
+      {/* Mit Substantiv und in Klammern, nicht als nackte Zahl wie in der
+          Legende. Dort trägt das Wort davor das Substantiv („Objekte 196"),
+          hier nicht — „Papierkorb 1" beantwortet nicht, eins WAS. Moritz hat
+          beim ersten Blick genau danach gefragt (31.07.2026), und das ist der
+          Befund: eine Konvention übernommen, ohne zu prüfen, ob sie an dieser
+          Stelle trägt.
+          Bei leerem Papierkorb gar nichts: „Papierkorb 0" sagte dasselbe wie
+          das „Nichts gelöscht." direkt darunter, nur schlechter. */}
       <summary>
         Papierkorb
-        {zeilen ? <span className="zahl">{zeilen.length}</span> : null}
+        {zeilen && zeilen.length > 0 ? (
+          <span className="zahl">
+            ({zeilen.length} {zeilen.length === 1 ? 'Objekt' : 'Objekte'})
+          </span>
+        ) : null}
       </summary>
 
       {/* Die Zeilen bleiben beim Nachladen stehen, der Hinweis kommt daneben.
