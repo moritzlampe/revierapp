@@ -11,7 +11,7 @@ const BEREICHE = [
   { href: '/zentrale/revier', label: 'Revier', fertig: false },
   { href: '/zentrale/jagden', label: 'Jagden', fertig: false },
   { href: '/zentrale/dokumentation', label: 'Dokumentation', fertig: false },
-  { href: '/zentrale/jagderlaubnisse', label: 'Jagderlaubnisse', fertig: false },
+  { href: '/zentrale/jagderlaubnisse', label: 'Jagderlaubnisse', fertig: true },
 ]
 
 export type RevierEintrag = { id: string; name: string }

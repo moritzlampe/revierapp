@@ -1,0 +1,320 @@
+/* Jagderlaubnisse — eigenes Stylesheet, nicht zentrale.css.
+   Nicht aus Ordnungsliebe: der Papierkorb-Strang arbeitet parallel in
+   zentrale.css (31.07.2026). Zwei Stränge in einer 866-Zeilen-Datei sind der
+   einzige Konflikt, den dieser Auftrag hätte haben können — eine eigene Datei
+   macht die Schnittmenge zu null.
+
+   Die Tokens (--z-*) erbt die Datei: alles hier steht innerhalb von .zentrale,
+   wo sie definiert sind. Prefix ist `jes-` wie die Tabelle `jes_status`. */
+
+.jes-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 560px;
+}
+
+.jes-feld {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jes-feld > label,
+.jes-zuteilung legend {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+}
+
+.jes-feld input[type='text'],
+.jes-feld input[type='email'],
+.jes-feld input[type='date'],
+.jes-feld textarea,
+.jes-feld input:not([type]) {
+  font: inherit;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.jes-feld textarea {
+  resize: vertical;
+  min-height: 56px;
+}
+
+.jes-feld input:focus-visible,
+.jes-feld textarea:focus-visible,
+.jes-eingriff input:focus-visible,
+.jes-eingriff select:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 1px;
+}
+
+.jes-hinweis {
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  margin: 2px 0 0;
+  max-width: 60ch;
+}
+
+.jes-zeitraum {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.jes-zuteilung {
+  border: 1px solid var(--z-border);
+  border-radius: 6px;
+  padding: 12px;
+  gap: 6px;
+}
+
+.jes-zuteilung label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.jes-zuteilung label:has(input:disabled) {
+  cursor: default;
+  color: var(--z-text-secondary);
+}
+
+/* Höhenbegrenzt und scrollend: Söder hat 196 Objekte, davon ein guter Teil
+   Stände. Eine ungedeckelte Liste schöbe den Absenden-Knopf aus dem Bild. */
+.jes-staende {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--z-bg-sunken);
+  border-radius: 4px;
+}
+
+.jes-staende label {
+  font-size: 0.875rem;
+  padding: 2px 0;
+}
+
+.jes-staende .nam {
+  flex: 1;
+}
+
+.jes-staende .typ,
+.jes-liste .typ {
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+
+.jes-fuss {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.jes-form button,
+.jes-einloesen button,
+.jes-eingriff button,
+.jes-code button {
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.jes-form button:hover:not(:disabled),
+.jes-einloesen button:hover:not(:disabled),
+.jes-eingriff button:hover:not(:disabled),
+.jes-code button:hover {
+  border-color: var(--z-accent);
+}
+
+.jes-form button.haupt,
+.jes-einloesen button.haupt {
+  background: var(--z-accent);
+  border-color: var(--z-accent);
+  color: var(--z-on-accent);
+  font-weight: 600;
+}
+
+.jes-form button.haupt:hover:not(:disabled),
+.jes-einloesen button.haupt:hover:not(:disabled) {
+  background: var(--z-accent-hover);
+}
+
+.jes-form button:disabled,
+.jes-einloesen button:disabled,
+.jes-eingriff button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.jes-fehler {
+  font-size: 0.875rem;
+  color: #8A2F1F;
+  margin: 4px 0 0;
+}
+
+.jes-gut {
+  font-size: 0.875rem;
+  color: var(--z-accent);
+  margin: 8px 0 0;
+}
+
+.jes-fehlt {
+  color: var(--z-text-secondary);
+  font-style: italic;
+}
+
+/* --- Liste der ausgestellten Scheine --- */
+
+.jes-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.jes-schein {
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.jes-kopf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.jes-kopf .nam {
+  font-weight: 600;
+}
+
+/* Nur zwei Zustände bekommen Farbe: „gilt gerade" und „gilt nicht mehr, weil
+   jemand es so entschieden hat". Abgelaufen und „ab später" sind Normalfälle
+   des Kalenders und brauchen keine Warnfarbe — die graue Pille aus
+   zentrale.css sagt es genau richtig. */
+.jes-status-aktiv {
+  background: var(--z-surface-hero);
+  border-color: var(--z-accent);
+  color: var(--z-text-primary);
+}
+
+.jes-status-entzogen,
+.jes-status-pausiert {
+  border-color: #B4553F;
+  color: #8A2F1F;
+}
+
+.jes-daten {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.jes-daten dt {
+  color: var(--z-text-secondary);
+}
+
+.jes-daten dd {
+  margin: 0;
+}
+
+.jes-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jes-code code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background: var(--z-bg-sunken);
+  border-radius: 4px;
+  padding: 2px 6px;
+  user-select: all;
+}
+
+.jes-code button {
+  padding: 3px 9px;
+  font-size: 0.75rem;
+}
+
+.jes-eingriff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--z-border);
+}
+
+.jes-eingriff label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.jes-eingriff label > span {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--z-text-secondary);
+}
+
+.jes-eingriff input,
+.jes-eingriff select {
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.jes-einloesen {
+  display: flex;
+  gap: 10px;
+  max-width: 460px;
+  margin-top: 12px;
+}
+
+.jes-einloesen input {
+  font: inherit;
+  font-family: var(--font-mono);
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+  flex: 1;
+}
+
+.jes-einloesen input:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 1px;
+}
