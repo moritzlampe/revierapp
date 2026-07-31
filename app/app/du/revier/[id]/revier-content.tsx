@@ -568,30 +568,29 @@ export default function RevierContent({ district, objects: initialObjects, userI
   const handleDetailDelete = useCallback(async () => {
     if (creation.stage !== 'detail') return
     const supabase = createClient()
-    // .select() ist nötig, um echte Löschungen von RLS-gefilterten zu trennen:
-    // .delete() ohne .select() liefert bei 0 betroffenen Zeilen { data: null,
-    // error: null } — sonst meldet die UI fälschlich Erfolg und das Objekt ist
-    // beim Reload wieder da.
-    const { data, error } = await supabase
-      .from('map_objects')
-      .delete()
-      .eq('id', creation.object.id)
-      .select()
+    // Papierkorb statt hartem DELETE (Migrationen 072–074). Die Zeile bleibt
+    // liegen und ist über den Papierkorb des Reviers wiederherstellbar; vor
+    // allem überleben die Kontrollhistorie und die Fotos des Objekts, die ein
+    // hartes DELETE per CASCADE mitgenommen hätte.
+    //
+    // Die frühere 0-Zeilen-Prüfung entfällt, und zwar ersatzlos: eine RPC wirft
+    // bei fehlender Berechtigung einen Fehler, statt wie ein RLS-gefiltertes
+    // DELETE still { data: null, error: null } zu liefern. Genau der stille
+    // Erfolg war der Grund für das damalige `.select()`.
+    const { error } = await supabase.rpc('kartenobjekt_loeschen', {
+      p_id: creation.object.id,
+      p_district_id: district.id,
+    })
 
     if (error) {
       console.error('Löschen fehlgeschlagen:', error.message)
-      showToast('Löschen fehlgeschlagen')
-      return
-    }
-    if (!data || data.length === 0) {
-      // Keine Zeile gelöscht (RLS) → kein optimistisches Entfernen, kein Erfolg
-      showToast('Objekt konnte nicht gelöscht werden (keine Berechtigung).')
+      showToast('Objekt konnte nicht gelöscht werden.')
       return
     }
     setObjects(prev => prev.filter(o => o.id !== creation.object.id))
     setCreation({ stage: 'idle' })
     showToast('Gelöscht ✓')
-  }, [creation, showToast])
+  }, [creation, district.id, showToast])
 
   // --- Abgeleitete Werte ---
 

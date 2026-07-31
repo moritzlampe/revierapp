@@ -113,24 +113,21 @@ function RevierSetupContent() {
   // Hochsitz löschen
   const handleDeleteStand = useCallback(async (id: string) => {
     const supabase = createClient()
-    // .select(), damit RLS-gefilterte Löschungen (0 Zeilen, kein Error) nicht
-    // still als Erfolg durchlaufen — sonst ist der Stand beim Reload wieder da.
-    const { data, error } = await supabase
-      .from('map_objects')
-      .delete()
-      .eq('id', id)
-      .select()
+    // Papierkorb statt hartem DELETE (Migrationen 072–074): der Stand bleibt
+    // liegen und ist wiederherstellbar, und seine Kontrollhistorie überlebt.
+    // Die frühere 0-Zeilen-Prüfung entfällt ersatzlos — die RPC wirft, statt
+    // still Erfolg zu melden.
+    const { error } = await supabase.rpc('kartenobjekt_loeschen', {
+      p_id: id,
+      p_district_id: districtId,
+    })
     if (error) {
-      showToast('Fehler beim Entfernen')
-      return
-    }
-    if (!data || data.length === 0) {
-      showToast('Stand konnte nicht entfernt werden (keine Berechtigung).')
+      showToast('Stand konnte nicht entfernt werden.')
       return
     }
     setStands(prev => prev.filter(s => s.id !== id))
     showToast('Stand entfernt')
-  }, [showToast])
+  }, [districtId, showToast])
 
   // Grenze speichern
   const saveBoundary = useCallback(async () => {

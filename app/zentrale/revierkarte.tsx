@@ -641,35 +641,42 @@ export default function Revierkarte({
    *
    * Wirft bei Misserfolg — der Inspektor fängt es und lässt die Rückfrage stehen.
    *
-   * **`.select('id')` ist hier nicht Fleiß, sondern der Unterschied zwischen
-   * gelöscht und weggefiltert.** PostgREST liefert bei einem DELETE, den RLS auf
-   * 0 Zeilen zusammenstreicht, `{ data: null, error: null }` — ohne `.select()`
-   * meldete die Oberfläche Erfolg, das Objekt verschwände optimistisch von der
-   * Karte und wäre beim nächsten Server-Stand wieder da. Der mobile Löschpfad
-   * (`handleDetailDelete` in `revier-content.tsx`) kommentiert genau diese Falle
-   * selbst; hier fängt sie `schreibe()` an derselben Stelle ab wie bei jedem
-   * anderen Write.
+   * **Papierkorb statt hartem DELETE** (Migrationen 072–074). Das Objekt bleibt
+   * in der Datenbank, ist wiederherstellbar, und seine Kontrollen und Fotos
+   * überleben — ein hartes DELETE hätte sie per CASCADE mitgenommen.
    *
-   * **`.eq('district_id', revierId)` wiegt hier am schwersten.** Seit dem Wegfall
-   * der R3-Allowlist (29.07.2026) ist es die einzige Einschränkung, die eine
-   * verirrte Objekt-ID vom falschen Revier fernhält — RLS tut es nicht, sie
-   * deckt alle Reviere desselben Besitzers und damit auch Brockwinel mit den
-   * echten Pilotdaten. Bei einem UPDATE wäre die Folge ein falscher Wert,
-   * **bei einem DELETE eine gelöschte Zeile im falschen Revier.**
+   * **Warum nicht durch `schreibe()`.** Die RPC hat `returns void` und liefert
+   * damit `{ data: null, error: null }` — genau das Muster, das
+   * `ausWriteErgebnis` als Fehlschlag deutet. Sie würde bei jedem ERFOLG
+   * werfen. `schreibe()` ist für Tabellen-Writes mit `.select()` gebaut; hier
+   * übernimmt die Funktion selbst, was `schreibe()` sonst leistet: sie wirft
+   * bei 0 betroffenen Zeilen, statt still Erfolg zu melden. Der Fehler wird
+   * unten nur in dieselbe Form gebracht, damit der Inspektor ihn wie bisher
+   * fängt.
+   *
+   * **Die Revier-Schranke ist geblieben, sie steht nur woanders.** Vorher war
+   * es `.eq('district_id', revierId)`, jetzt `p_district_id` — und seit 074 ist
+   * der Parameter Pflicht, nicht optional. Der Grund ist unverändert und wiegt
+   * am schwersten: seit dem Wegfall der R3-Allowlist (29.07.2026) ist er die
+   * einzige Einschränkung, die eine verirrte Objekt-ID vom falschen Revier
+   * fernhält — RLS tut es nicht, sie deckt alle Reviere desselben Besitzers und
+   * damit auch Brockwinel mit den echten Pilotdaten. Der Papierkorb macht den
+   * Fall milder, nicht harmlos: die Zeile wäre wiederherstellbar, sie
+   * verschwände aber still, und niemand sucht in einem Papierkorb, von dem er
+   * nichts weiß.
    *
    * Die Auswahl fällt: das gewählte Objekt gibt es nicht mehr, und der Inspektor
    * zeigte sonst eine Detailseite zu einer Zeile, die weg ist.
    */
   const objektLoeschen = async (id: string) => {
     try {
-      await schreibe('Das Objekt', () =>
-        createClient()
-          .from('map_objects')
-          .delete()
-          .eq('id', id)
-          .eq('district_id', revierId)
-          .select('id'),
-      )
+      const { error } = await createClient().rpc('kartenobjekt_loeschen', {
+        p_id: id,
+        p_district_id: revierId,
+      })
+      if (error) {
+        throw new Error(`Das Objekt konnte nicht gelöscht werden: ${error.message}`)
+      }
     } catch (e) {
       // **Auch der Fehlschlag zieht nach.** Der wahrscheinlichste Grund für 0
       // betroffene Zeilen ist, dass die Feld-App dasselbe Objekt schon gelöscht

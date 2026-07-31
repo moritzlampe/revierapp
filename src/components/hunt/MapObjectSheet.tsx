@@ -174,15 +174,24 @@ export default function MapObjectSheet({
     setSaving(true)
 
     const supabase = createClient()
-    const { error } = await supabase
-      .from('map_objects')
-      .delete()
-      .eq('id', editData.id)
+    // Papierkorb statt hartem DELETE (Migrationen 072–074).
+    //
+    // Hier stand der stillste der vier Löschpfade: ein `.delete()` ohne
+    // `.select()`, das bei 0 betroffenen Zeilen `{ error: null }` lieferte —
+    // die UI meldete „Gelöscht", und das Objekt war beim nächsten Laden wieder
+    // da. Mit der RPC kann das nicht mehr passieren, sie wirft.
+    const { error } = await supabase.rpc('kartenobjekt_loeschen', {
+      p_id: editData.id,
+      p_district_id: districtId,
+    })
 
     if (error) {
       if (process.env.NODE_ENV === 'development') {
-        console.error('map_objects delete error:', error.message)
+        console.error('kartenobjekt_loeschen error:', error.message)
       }
+      // Vorher lief dieser Zweig ohne ein Wort an den Nutzer: Dialog zu, nichts
+      // passiert, keine Erklärung. Ein Fehlschlag muss sichtbar sein.
+      showToast('Konnte nicht gelöscht werden')
       setSaving(false)
       setShowConfirmDelete(false)
       return
