@@ -37,12 +37,15 @@ async function resolveJoinedParticipantIds(
 
 export async function POST(request: Request) {
   try {
-    const { huntId, groupId, messageText, isDirect, chatName, url, recipientUserId, kind, type, event, driveName } = await request.json()
+    const { huntId, groupId, messageText, isDirect, chatName, url, recipientUserId, kind, type, event, driveName, licenseId } = await request.json()
 
     // drive-Push (T0.C1) baut den Payload serverseitig fix und braucht daher
     // kein messageText. Für alle bestehenden Zweige bleibt die Pflichtprüfung
     // exakt an dieser Stelle (Cookie-Pfad regressionsfrei).
-    if (type !== 'drive' && !messageText) {
+    // schein-Push (31.07.2026) aus demselben Grund: sein Text entsteht aus
+    // Aussteller und Reviername, beide serverseitig aufgelöst — der Absender
+    // kann kein Wort davon bestimmen.
+    if (type !== 'drive' && type !== 'schein' && !messageText) {
       return NextResponse.json({ error: 'messageText ist Pflicht' }, { status: 400 })
     }
 
@@ -75,8 +78,47 @@ export async function POST(request: Request) {
 
     // Empfänger ermitteln (jeweils mit Autorisierung)
     let recipientUserIds: string[] = []
+    // Nur für den schein-Zweig belegt: der Reviername für den Text.
+    let scheinRevier = ''
 
-    if (type === 'drive') {
+    if (type === 'schein') {
+      // Einladung zu einem Begehungsschein (31.07.2026).
+      //
+      // Autorisierung spiegelt Migration 079: ausstellen darf nur, wem das
+      // Revier gehört. Beides wird hier nachgeprüft und NICHT aus dem Body
+      // übernommen — sonst könnte jeder Angemeldete mit einer geratenen
+      // Schein-ID eine Benachrichtigung an einen Fremden auslösen.
+      if (typeof licenseId !== 'string' || !licenseId) {
+        return NextResponse.json({ error: 'licenseId ist Pflicht' }, { status: 400 })
+      }
+      const { data: schein } = await supabase
+        .from('hunting_licenses')
+        .select('id, issuer_id, districts!inner ( name, owner_id )')
+        .eq('id', licenseId)
+        .maybeSingle()
+      const revier = schein?.districts as unknown as { name: string; owner_id: string } | undefined
+      if (!schein || schein.issuer_id !== senderId || revier?.owner_id !== senderId) {
+        return NextResponse.json({ sent: 0 })
+      }
+      scheinRevier = revier?.name ?? ''
+
+      // Wer die Einladung sehen darf, entscheidet die DB — zeichengleich mit
+      // meine_einladungen() (080), damit der Push nichts ankündigt, was die App
+      // dann nicht zeigt. NULL heisst: keine offene Einladung, kein bestaetigtes
+      // Konto zu der Adresse, oder zwei Konten, die sich nur in der
+      // Schreibweise unterscheiden.
+      const { data: empfaenger } = await supabase.rpc('schein_empfaenger', {
+        p_license_id: licenseId,
+      })
+      if (!empfaenger) {
+        // Bewusst dieselbe Antwort wie bei Erfolg-ohne-Gerät: der Aussteller
+        // soll aus dem Ergebnis nicht ablesen können, ob zu einer eingetippten
+        // Adresse ein Konto existiert. Er hat die Adresse selbst gewählt; das
+        // Formular zeigt ihm den Code als Rückfallweg ohnehin an.
+        return NextResponse.json({ sent: 0 })
+      }
+      recipientUserIds = [empfaenger as string]
+    } else if (type === 'drive') {
       // Treiben-Push (T0.C1 D4): gleiche Empfänger wie der Jagd-Chat — zugesagte
       // Teilnehmer der Jagd, Sender rausgefiltert. Der Sender muss selbst
       // zugesagter Teilnehmer sein (Spoofing-Schutz, wie im Jagd-Chat-Zweig).
@@ -130,8 +172,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'huntId, groupId oder recipientUserId nötig' }, { status: 400 })
     }
 
-    // Sender rausfiltern (keine Benachrichtigung an sich selbst)
-    recipientUserIds = recipientUserIds.filter(id => id !== senderId)
+    // Sender rausfiltern (keine Benachrichtigung an sich selbst).
+    //
+    // Ausnahme schein: dort ist der Empfänger nicht aus einer Mitgliedermenge
+    // abgeleitet, sondern eine Adresse, die der Aussteller bewusst eingetippt
+    // hat. Schreibt er seine eigene hin, hat er genau das gemeint — und liest
+    // sie auf einem anderen Gerät als dem, an dem er sie eingetragen hat. Der
+    // Grund für die Regel (man schaut ohnehin schon auf den Bildschirm, auf dem
+    // es passiert) trifft hier nicht zu.
+    if (type !== 'schein') {
+      recipientUserIds = recipientUserIds.filter(id => id !== senderId)
+    }
 
     if (recipientUserIds.length === 0) {
       return NextResponse.json({ sent: 0 })
@@ -175,6 +226,16 @@ export async function POST(request: Request) {
         title = 'Treiben'
         body = 'Statusänderung im Treiben.'
       }
+    } else if (type === 'schein') {
+      // Fester Text, gebaut aus zwei serverseitig aufgelösten Angaben. Der
+      // Reviername gehört hinein: ohne ihn steht auf dem Sperrbildschirm eine
+      // Einladung, von der man nicht weiss, wohin. Ihn zu nennen gibt nichts
+      // preis — der Aussteller hat diesen Menschen gerade dorthin eingeladen.
+      title = 'Begehungsschein'
+      const wer = displayName || 'Jemand'
+      body = scheinRevier
+        ? `${wer} hat dir einen Begehungsschein für ${scheinRevier} ausgestellt.`
+        : `${wer} hat dir einen Begehungsschein ausgestellt.`
     } else if (kind === 'rsvp') {
       // RSVP-Benachrichtigung: "Hans hat zugesagt" (messageText = "hat zugesagt").
       title = chatName || 'QuickHunt'
@@ -189,7 +250,14 @@ export async function POST(request: Request) {
 
     // url auf same-origin-relativen Pfad beschränken (kein Open-Redirect/
     // Phishing über die Push-Notification: muss mit '/' beginnen, nicht '//').
-    const safeUrl = typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') ? url : '/'
+    // Für schein gar nicht erst aus dem Body: das Ziel steht fest, und was
+    // feststeht, soll der Aufrufer nicht bestimmen können.
+    const safeUrl =
+      type === 'schein'
+        ? '/app/du'
+        : typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')
+          ? url
+          : '/'
 
     // Subscriptions nach kind partitionieren (T0.C1 D2). Bestands-Rows ohne
     // kind gelten als 'web' (Default), damit die Partition auch vor der
@@ -207,7 +275,13 @@ export async function POST(request: Request) {
       title,
       body,
       url: safeUrl,
-      tag: type === 'drive' ? `drive-${huntId}` : (groupId || huntId || recipientUserId || 'chat'),
+      // Eigener tag je Schein: zwei Einladungen sollen nebeneinander stehen und
+      // sich nicht gegenseitig ersetzen — ohne ihn fielen beide auf 'chat'.
+      tag: type === 'drive'
+        ? `drive-${huntId}`
+        : type === 'schein'
+          ? `schein-${licenseId}`
+          : (groupId || huntId || recipientUserId || 'chat'),
       ...(type === 'drive' ? { data: { huntId, event } } : {}),
     })
 

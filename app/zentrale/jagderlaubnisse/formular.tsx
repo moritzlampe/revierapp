@@ -117,12 +117,25 @@ export default function Ausstellen({
     setLaeuft(true)
     setFehler(null)
     try {
-      await schreibe('Begehungsschein', () =>
+      const angelegt = await schreibe<{ id: string }>('Begehungsschein', () =>
         createClient()
           .from('hunting_licenses')
           .insert(alsSpalten(entwurf, revierId, ausstellerId))
           .select('id')
       )
+
+      // Benachrichtigen, aber niemals darauf warten und niemals daran
+      // scheitern: der Schein IST angelegt: das ist der Vorgang, den der Nutzer
+      // ausgelöst hat. Ein fehlgeschlagener Push darf ihn nicht als Fehler
+      // aussehen lassen — und er ist ohnehin kein Zustellversprechen, denn wer
+      // die App nie geöffnet hat, hat kein Gerät hinterlegt. Genau dafür steht
+      // der Code kopierbar in der Liste.
+      // Gleiche Bauform wie sendDrivePush in der nativen App.
+      void fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'schein', licenseId: angelegt.id }),
+      }).catch(() => {})
       // Zeitraum und Zuteilung stehen lassen: wer zwei Gästen denselben
       // Zeitraum gibt, tippt ihn sonst zweimal. Person und Auflagen sind
       // dagegen genau das, was sich je Schein unterscheidet.
