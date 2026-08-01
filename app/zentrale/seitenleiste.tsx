@@ -3,7 +3,10 @@
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
-// Fünf Bereiche, gelockt in QuickHunt_Konzept_Revierzentrale_V1.md §1.1.
+// Sechs Bereiche, gelockt in QuickHunt_Konzept_Revierzentrale_V1.md §1.1.
+// "Gäste" kam am 01.08.2026 dazu, als der Gästestamm entstand (Migration 085) —
+// die Lock-Begründung "keinen kanonischen Gästestamm" war damit entfallen und
+// ist im Konzept nachgezogen worden.
 // Bewusst KEIN "Einstellungen" und KEIN eigener Drückjagd-Bereich.
 // `fertig` steuert, ob verlinkt wird — nicht gebaute Ziele wären sonst 404.
 const BEREICHE = [
@@ -12,6 +15,7 @@ const BEREICHE = [
   { href: '/zentrale/jagden', label: 'Jagden', fertig: false },
   { href: '/zentrale/dokumentation', label: 'Dokumentation', fertig: false },
   { href: '/zentrale/jagderlaubnisse', label: 'Jagderlaubnisse', fertig: true },
+  { href: '/zentrale/gaeste', label: 'Gäste', fertig: true },
 ]
 
 export type RevierEintrag = { id: string; name: string }
@@ -31,9 +35,26 @@ export default function Seitenleiste({ reviere }: { reviere: RevierEintrag[] }) 
   // Kein Fallback auf reviere[0]: die Seite leitet auf die kanonische URL mit
   // ?revier= um, sodass der Parameter hier immer gesetzt ist. Zweimal denselben
   // Default herzuleiten wäre die Stelle, an der beide später auseinanderlaufen.
-  const aktiv = useSearchParams().get('revier')
+  const parameter = useSearchParams()
+  const aktiv = parameter.get('revier')
 
   const mitRevier = (href: string) => (aktiv ? `${href}?revier=${aktiv}` : href)
+
+  /**
+   * Revier wechseln, ohne die übrigen Parameter wegzuwerfen.
+   *
+   * Vorher stand hier `?revier=<id>` als ganze Query — das löschte still jeden
+   * anderen Zustand. Aufgefallen ist es an `/zentrale/gaeste`, das Suche und
+   * Filter in der URL ablegt (§2.4): ein Griff an den Wechsler leerte das
+   * Suchfeld. Die Bereichslinks oben tragen bewusst weiterhin **nur** das
+   * Revier — ein Filter der Gästeliste hat in einem anderen Bereich nichts
+   * verloren; ein Revierwechsel dagegen verlässt die Seite gar nicht.
+   */
+  function revierWechseln(id: string) {
+    const p = new URLSearchParams(parameter.toString())
+    p.set('revier', id)
+    router.push(`${pathname}?${p.toString()}`)
+  }
 
   return (
     <aside className="zentrale-side">
@@ -49,7 +70,7 @@ export default function Seitenleiste({ reviere }: { reviere: RevierEintrag[] }) 
             id="zentrale-revier"
             className="val"
             value={aktiv ?? ''}
-            onChange={(e) => router.push(`${pathname}?revier=${e.target.value}`)}
+            onChange={(e) => revierWechseln(e.target.value)}
           >
             {!aktiv && <option value="">— wählen —</option>}
             {reviere.map((r) => (

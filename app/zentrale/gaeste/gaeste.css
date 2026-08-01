@@ -1,0 +1,192 @@
+/* Gäste — Bereichsstil. Alles unter .zentrale gescopet (R1), Token und
+   Grundmuster kommen aus zentrale.css; hier steht nur, was der Bereich
+   zusätzlich braucht.
+   Gelockte Maße: Tabellenzeile 40px, Inspektor 360–400px, Inhalt max. 1200px
+   (QuickHunt_Konzept_Revierzentrale_V1.md §2.3/§2.4). */
+
+.zentrale .gaeste-leiste {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 12px;
+  flex-wrap: wrap;
+}
+
+.zentrale .gaeste-suche {
+  flex: 1 1 320px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 0.9375rem;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 8px;
+}
+.zentrale .gaeste-suche:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 1px;
+}
+
+.zentrale .gaeste-filter {
+  display: flex;
+  gap: 6px;
+}
+
+/* Der gewählte Filter trägt Fläche UND Text-Gewicht, nicht nur einen Farbton —
+   dieselbe Haltung wie „Status immer als Text-Pill, nie nur über Farbe" (§2.4). */
+.zentrale .gaeste-chip {
+  height: 30px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  background: transparent;
+  border: 1px solid var(--z-border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.zentrale .gaeste-chip:hover { background: var(--z-bg-sunken); }
+.zentrale .gaeste-chip[aria-pressed='true'] {
+  color: var(--z-on-accent);
+  background: var(--z-accent);
+  border-color: var(--z-accent);
+  font-weight: 600;
+}
+.zentrale .gaeste-chip:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+
+.zentrale .gaeste-treffer {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+
+/* Tabelle links, Inspektor rechts — feste Spalte, damit die Tabelle beim
+   Auswählen nicht springt. 360px ist die untere Grenze aus §2.4. */
+.zentrale .gaeste-raster {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Sticky-Header braucht eine Höhe am Scroll-Container, sonst ist er
+   wirkungslos (§2.4, dort ausdrücklich als Falle notiert). */
+.zentrale .gaeste-tabellenkasten {
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+  background: var(--z-bg-elevated);
+}
+/* Der Kasten trägt Rahmen und Radius, die Tabelle darin nicht noch einmal. */
+.zentrale .gaeste-tabellenkasten .zentrale-tabelle {
+  border: 0;
+  border-radius: 0;
+}
+.zentrale .gaeste-tabelle thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--z-bg-elevated);
+}
+
+.zentrale .gaeste-tabelle tbody tr { cursor: pointer; }
+.zentrale .gaeste-tabelle tbody tr:hover { background: var(--z-bg-sunken); }
+/* Die gewählte Zeile: Fläche plus Kante links. Nicht Farbe allein. */
+.zentrale .gaeste-tabelle tr.gaeste-zeile-aktiv { background: var(--z-bg-sunken); }
+.zentrale .gaeste-tabelle tr.gaeste-zeile-aktiv td:first-child {
+  box-shadow: inset 3px 0 0 var(--z-accent);
+}
+
+/* Der Name ist der Fokusträger der Zeile — als Knopf, damit die Liste per
+   Tastatur bedienbar bleibt, aber ohne Knopf-Optik. */
+.zentrale .gaeste-zeilenknopf {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.zentrale .gaeste-zeilenknopf:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Das abgeleitete Kürzel: Mono, damit es als Kennung lesbar ist und nicht als
+   zweiter Name. Zurückgenommen über die Sekundärfarbe, NICHT über Deckkraft —
+   die fällt bei diesem Ton unter 3:1 (nachgemessen 01.08.2026). */
+.zentrale .gaeste-kuerzel {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  color: var(--z-text-secondary);
+  white-space: nowrap;
+}
+
+/* Die Notiz ist das häufigste Feld (136/154), aber 97-mal nur „Kürzel <Name>" —
+   sie bekommt deshalb Platz, aber nicht den meisten. Eine Zeile, Rest mit
+   Auslassungspunkten; vollständig steht sie im Inspektor. */
+.zentrale .gaeste-notiz {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--z-text-secondary);
+}
+
+.zentrale .gaeste-inspektor {
+  position: sticky;
+  top: 24px;
+  padding: 16px;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+}
+
+.zentrale .gaeste-detail-name {
+  margin: 0 0 14px;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Label links, Wert rechts. Kein Fraunces, keine dritte Textebene (§2.2/§2.1). */
+.zentrale .gaeste-felder {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 0.875rem;
+}
+.zentrale .gaeste-felder dt {
+  color: var(--z-text-secondary);
+  font-size: 0.75rem;
+  padding-top: 2px;
+}
+.zentrale .gaeste-felder dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* Ein leeres Feld ist eine Auskunft, keine Warnung — nur ein Strich. */
+.zentrale .gaeste-felder dd.gaeste-leer-feld { color: var(--z-text-secondary); }
+
+/* Datenqualitäts-Hinweis: neutraler Ton mit Gold-Kante, KEIN Alarmrot —
+   das bleibt der Nachsuche vorbehalten (§2.6). */
+.zentrale .gaeste-hinweis {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--z-text-primary);
+  background: var(--z-bg-sunken);
+  border-left: 3px solid var(--z-border-strong);
+  border-radius: 0 6px 6px 0;
+}
