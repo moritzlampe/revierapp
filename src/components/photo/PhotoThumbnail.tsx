@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { ImageBroken, X } from '@phosphor-icons/react'
+import StorageImg from './StorageImg'
 
 interface PhotoThumbnailProps {
   url: string
@@ -94,7 +95,7 @@ export default function PhotoThumbnail({
 
       {/* Bild */}
       {!errored && (
-        <img
+        <StorageImg
           src={url}
           alt={alt}
           decoding="async"

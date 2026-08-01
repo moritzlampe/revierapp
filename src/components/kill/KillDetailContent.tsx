@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Clock, User, Barbell as Weight, Star, ShareNetwork as Share2, PencilSimple as Pencil, Camera, CircleNotch as Loader2 } from '@phosphor-icons/react'
 import PhotoCapture from '@/components/photo/PhotoCapture'
+import StorageImg from '@/components/photo/StorageImg'
 import type { DisplayKill } from '@/lib/strecke/visibility'
 import {
   WILD_ART_TO_GROUP,
@@ -441,7 +442,7 @@ function Hero({
           marginTop: '0.25rem',
         }}
       >
-        <img
+        <StorageImg
           src={photoUrl}
           alt=""
           style={{

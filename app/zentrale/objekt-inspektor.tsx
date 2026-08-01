@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Punkt } from './revierkarte-map'
 import Papierkorb from './papierkorb'
+import StorageImg from '@/components/photo/StorageImg'
 import {
   OBJEKT_TYPEN,
   filterBaum,
@@ -728,8 +729,7 @@ function Details({
             {objekt.fotoUrl && (
               // Nur ansehen. Aufnehmen, Hochladen und Löschen von Fotos bleibt in
               // der Feld-App — das Portal hat weder Kamera noch den Grund dazu.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <StorageImg
                 className="zentrale-inspektor-foto"
                 src={objekt.fotoUrl}
                 alt={`Foto von ${objekt.name}`}

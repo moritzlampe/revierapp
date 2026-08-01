@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { usePrefetchChats } from '@/hooks/usePrefetchChats'
 import SwipeToAction from '@/components/ui/swipe-to-action'
+import StorageImg from '@/components/photo/StorageImg'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
 import { MagnifyingGlass, Plus, Star, Crosshair, EyeSlash, EnvelopeSimple } from '@phosphor-icons/react'
 import type { ChatMember } from '@/lib/chat-utils'
@@ -992,7 +993,7 @@ export default function HomeContent({ displayName, initialHunts, userId }: Props
                         {item.displayInitial}
                       </div>
                     ) : item.avatarUrl ? (
-                      <img src={item.avatarUrl} alt=""
+                      <StorageImg src={item.avatarUrl} alt=""
                         className="flex-shrink-0"
                         style={{
                           width: '2.625rem', height: '2.625rem', borderRadius: '50%',

@@ -8,6 +8,7 @@ import { DetailField } from './DetailField'
 import { DetailHero } from './DetailHero'
 import { DetailTopBar } from './DetailTopBar'
 import { KillPhotoEditor } from './KillPhotoEditor'
+import StorageImg from '@/components/photo/StorageImg'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
 import { HIT_LOCATION_LABEL, GESCHLECHT_LABEL } from '@/lib/diary/labels'
 import { extractLatLng } from '@/lib/diary/geo'
@@ -217,7 +218,7 @@ export function ErlegungDetailContent({
             <div className="photo-stack">
               {visibleThumbs.map((p) => (
                 <div className="thumb" key={p.id}>
-                  <img src={p.url} alt="" decoding="async" />
+                  <StorageImg src={p.url} alt="" decoding="async" />
                 </div>
               ))}
               {moreCount > 0 && (

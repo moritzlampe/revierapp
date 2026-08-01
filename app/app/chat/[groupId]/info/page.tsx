@@ -7,6 +7,7 @@ import { getChatDisplayInfo } from '@/lib/chat-utils'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
+import StorageImg from '@/components/photo/StorageImg'
 import { leaveChatGroup, deleteChatGroup } from '@/lib/chat-group-actions'
 
 function getInitials(name: string) {
@@ -383,7 +384,7 @@ export default function GroupInfoPage() {
           {/* Avatar mit Kamera-Button */}
           <div style={{ position: 'relative' }}>
             {group.avatar_url ? (
-              <img
+              <StorageImg
                 src={group.avatar_url}
                 alt=""
                 style={{
@@ -543,7 +544,7 @@ export default function GroupInfoPage() {
                         overflow: 'hidden',
                       }}
                     >
-                      <img
+                      <StorageImg
                         src={item.media_url}
                         alt=""
                         loading="lazy"
@@ -775,7 +776,7 @@ export default function GroupInfoPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <img
+          <StorageImg
             src={fullscreenPhoto}
             alt="Vollbild"
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}

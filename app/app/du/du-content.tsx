@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import SwipeToAction from '@/components/ui/swipe-to-action'
+import StorageImg from '@/components/photo/StorageImg'
 import {
   CaretRight as ChevronRight,
   CaretDown,
@@ -160,7 +161,7 @@ export default function DuContent({
             }}
           >
             {avatarUrl ? (
-              <img
+              <StorageImg
                 src={avatarUrl}
                 alt={displayName}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}

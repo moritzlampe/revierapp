@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { DotsThreeVertical } from '@phosphor-icons/react'
 import { createClient } from '@/lib/supabase/client'
 import ChatPanel from '@/components/hunt/ChatPanel'
+import StorageImg from '@/components/photo/StorageImg'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
 import type { ChatMember } from '@/lib/chat-utils'
 import { getAvatarColor } from '@/lib/avatar-color'
@@ -200,7 +201,7 @@ export default function GroupChatPage() {
               {displayInitial}
             </div>
           ) : group.avatar_url ? (
-            <img src={group.avatar_url} alt=""
+            <StorageImg src={group.avatar_url} alt=""
               className="flex-shrink-0"
               style={{ width: '2.25rem', height: '2.25rem', borderRadius: '50%', objectFit: 'cover' }} />
           ) : (

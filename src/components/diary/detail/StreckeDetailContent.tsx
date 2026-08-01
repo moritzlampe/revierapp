@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import StorageImg from '@/components/photo/StorageImg'
 import { DetailField } from './DetailField'
 import { DetailHero } from './DetailHero'
 import { DetailTopBar } from './DetailTopBar'
@@ -122,7 +123,7 @@ export function StreckeDetailContent({ detail }: { detail: StreckeDetail }) {
             <div className="photo-stack">
               {visibleThumbs.map((p) => (
                 <div className="thumb" key={p.id}>
-                  <img src={p.url} alt="" decoding="async" />
+                  <StorageImg src={p.url} alt="" decoding="async" />
                 </div>
               ))}
               {moreCount > 0 && (

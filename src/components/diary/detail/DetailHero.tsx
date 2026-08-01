@@ -1,3 +1,5 @@
+import StorageImg from '@/components/photo/StorageImg'
+
 type HeroVariant = 'erlegung' | 'gesell' | 'anblick' | 'neutral'
 
 /**
@@ -42,7 +44,7 @@ export function DetailHero({
         // Anblick hat v1 kein Foto — Forest-Pattern statt Bild.
         <div className="forest-pattern" aria-hidden="true" />
       ) : photoUrl ? (
-        <img className="hero-photo" src={photoUrl} alt="" decoding="async" />
+        <StorageImg className="hero-photo" src={photoUrl} alt="" decoding="async" />
       ) : (
         <div className="hero-fallback" aria-hidden="true" />
       )}

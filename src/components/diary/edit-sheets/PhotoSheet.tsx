@@ -6,6 +6,8 @@ import { BaseFieldSheet } from './BaseFieldSheet'
 import { uploadPhoto } from '@/lib/photos/upload'
 import { updateWildEvent } from '@/lib/erlegung/updateWildEvent'
 import { createClient } from '@/lib/supabase/client'
+import StorageImg from '@/components/photo/StorageImg'
+import { splitPublicUrl } from '@/lib/photos/public-url'
 
 export type PhotoSheetProps = {
   open: boolean
@@ -15,17 +17,13 @@ export type PhotoSheetProps = {
   onCancel: () => void
 }
 
-const PHOTO_BUCKET_MARKER = '/object/public/app-photos/'
-
 /**
  * Extract the bucket-relative path from a Supabase public URL.
  * Returns null if the URL does not point at the app-photos bucket.
  */
 function extractStoragePath(url: string | null): string | null {
-  if (!url) return null
-  const idx = url.indexOf(PHOTO_BUCKET_MARKER)
-  if (idx === -1) return null
-  return url.slice(idx + PHOTO_BUCKET_MARKER.length)
+  const teile = splitPublicUrl(url)
+  return teile?.bucket === 'app-photos' ? teile.path : null
 }
 
 async function removeStorageObject(path: string): Promise<void> {
@@ -212,8 +210,7 @@ export function PhotoSheet({
             style={{ color: 'var(--bronze)', animation: 'spin 1s linear infinite' }}
           />
         ) : previewUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <StorageImg
             src={previewUrl}
             alt="Foto-Vorschau"
             style={{

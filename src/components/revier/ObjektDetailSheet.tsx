@@ -5,6 +5,7 @@ import { Plus, CircleNotch as Loader2 } from '@phosphor-icons/react'
 import type { MapObject, ObjektType, MapObjectPhoto } from '@/lib/types/revier'
 import PhotoCapture from '@/components/photo/PhotoCapture'
 import PhotoThumbnail from '@/components/photo/PhotoThumbnail'
+import StorageImg from '@/components/photo/StorageImg'
 import { uploadPhoto } from '@/lib/photos/upload'
 import { deletePhoto } from '@/lib/photos/delete'
 import { listMapObjectPhotos } from '@/lib/photos/list'
@@ -663,7 +664,7 @@ export default function ObjektDetailSheet({ object, userId, onClose, onPositionC
           className="chat-fullscreen-overlay"
           onClick={closeFullscreen}
         >
-          <img src={fullscreenPhoto} alt="" className="chat-fullscreen-img" />
+          <StorageImg src={fullscreenPhoto} alt="" className="chat-fullscreen-img" />
           <button
             className="chat-fullscreen-close"
             onClick={closeFullscreen}

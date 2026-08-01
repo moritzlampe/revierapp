@@ -7,6 +7,7 @@ import { Camera, Info } from '@phosphor-icons/react'
 import { DetailField } from './DetailField'
 import { DetailHero } from './DetailHero'
 import { DetailTopBar } from './DetailTopBar'
+import StorageImg from '@/components/photo/StorageImg'
 import { GenderSheet } from '@/components/diary/edit-sheets/GenderSheet'
 import { WeightSheet } from '@/components/diary/edit-sheets/WeightSheet'
 import { DistanceSheet } from '@/components/diary/edit-sheets/DistanceSheet'
@@ -375,8 +376,7 @@ function PhotoEditTile({
             Foto hinzufügen
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <StorageImg
             src={photoUrl}
             alt=""
             style={{

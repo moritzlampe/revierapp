@@ -6,6 +6,7 @@ import { useChatCache } from '@/contexts/ChatCacheContext'
 import SwipeToAction from '@/components/ui/swipe-to-action'
 import { extractFirstUrl } from '@/lib/chat-utils'
 import LinkPreviewCard from '@/components/chat/LinkPreviewCard'
+import StorageImg from '@/components/photo/StorageImg'
 import { MessageContextSheet } from '@/components/chat/MessageContextSheet'
 import { ReplyQuoteBar } from '@/components/chat/ReplyQuoteBar'
 import { InlineQuoteBox } from '@/components/chat/InlineQuoteBox'
@@ -920,7 +921,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
                           )
                         })()}
                         {msg.type === 'photo' && msg.media_url && (
-                          <img
+                          <StorageImg
                             src={msg.media_url}
                             alt="Foto"
                             className="msg-photo-img"
@@ -1065,7 +1066,7 @@ export default function ChatPanel({ huntId, groupId, chatName, isDirect = false,
       {/* Fullscreen Foto-Overlay */}
       {fullscreenPhoto && (
         <div className="chat-fullscreen-overlay" onClick={() => setFullscreenPhoto(null)}>
-          <img src={fullscreenPhoto} alt="Vollbild" className="chat-fullscreen-img" />
+          <StorageImg src={fullscreenPhoto} alt="Vollbild" className="chat-fullscreen-img" />
           <button className="chat-fullscreen-close" onClick={() => setFullscreenPhoto(null)}>✕</button>
         </div>
       )}

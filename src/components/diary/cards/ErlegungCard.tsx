@@ -5,6 +5,7 @@ import {
   ThermometerSimple,
   LinkSimpleHorizontal,
 } from '@phosphor-icons/react/dist/ssr'
+import StorageImg from '@/components/photo/StorageImg'
 import type { TimelineErlegung } from '@/lib/diary/timeline'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
 
@@ -269,7 +270,7 @@ export default function ErlegungCard({ item, breadcrumbText }: Props) {
             <div style={PHOTO_TILE}>
               {/* iOS Safari Bug: NEVER set loading="lazy" inside a deferred-visible
                   container — images then sometimes fail to load. */}
-              <img
+              <StorageImg
                 src={item.fotoUrl}
                 alt=""
                 style={PHOTO_IMG}
