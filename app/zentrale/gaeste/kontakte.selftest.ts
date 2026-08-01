@@ -14,6 +14,7 @@ import {
   einladungsweg,
   ersterWert,
   initialen,
+  kuerzelVon,
   istGestrichen,
   passtZuSuche,
   sichtbare,
@@ -36,6 +37,7 @@ function k(teil: Partial<Kontakt>): Kontakt {
     adresse: null,
     geburtstag: null,
     notiz: null,
+    kuerzel: null,
     ...teil,
   }
 }
@@ -82,6 +84,20 @@ assert.equal(initialen({ vorname: 'Dr. Jochen', nachname: 'Algermissen' }), 'JA'
 assert.equal(initialen({ vorname: 'Henner', nachname: 'Ahlwes' }), 'HA')
 assert.equal(initialen({ vorname: null, nachname: 'Ahlwes' }), 'A')
 assert.equal(initialen({ vorname: null, nachname: null }), '')
+
+// --- kuerzelVon: Vorgabe schlaegt Ableitung (Migration 086) ---
+// NULL heisst "rechne aus", nicht "kein Kuerzel".
+assert.equal(kuerzelVon({ vorname: 'Anton', nachname: 'v. Alvensleben', kuerzel: null }), 'AvA')
+// Genau der Fall, fuer den die Spalte existiert: Anton UND Albrecht
+// v. Alvensleben ergeben beide `AvA` — der Vater nannte sie Toni und Alfons.
+assert.equal(kuerzelVon({ vorname: 'Anton', nachname: 'v. Alvensleben', kuerzel: 'Toni' }), 'Toni')
+assert.equal(
+  kuerzelVon({ vorname: 'Albrecht', nachname: 'v. Alvensleben', kuerzel: 'Alfons' }),
+  'Alfons',
+)
+// Leerraum zaehlt als nicht gesetzt — sonst erfaende ein versehentliches
+// Leerzeichen im Formular eine dritte Bedeutung neben "abgeleitet" und "Vorgabe".
+assert.equal(kuerzelVon({ vorname: 'Henner', nachname: 'Ahlwes', kuerzel: '   ' }), 'HA')
 
 // --- suchtext: Umlaute fallen weg, ue-Schreibweise ausdruecklich NICHT ---
 assert.equal(suchtext('Kürzel'), 'kurzel')

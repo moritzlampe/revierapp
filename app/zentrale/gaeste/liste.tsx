@@ -7,7 +7,7 @@ import {
   einladungsHinweis,
   einladungsweg,
   EINLADUNGSWEG_LABEL,
-  initialen,
+  kuerzelVon,
   istGestrichen,
   sichtbare,
   sortiert,
@@ -75,8 +75,8 @@ export default function Liste({
     const p = new URLSearchParams(window.location.search)
     if (neueSuche.trim()) p.set('q', neueSuche)
     else p.delete('q')
-    if (neuerFilter === 'code') p.set('filter', 'code')
-    else p.delete('filter')
+    if (neuerFilter === 'alle') p.delete('filter')
+    else p.set('filter', neuerFilter)
     const rest = p.toString()
     window.history.replaceState(null, '', rest ? `?${rest}` : window.location.pathname)
   }
@@ -187,7 +187,7 @@ export default function Liste({
                           einer eigenen Spalte: es IST der Name, nur kurz. So
                           lässt sich die Ableitung über alle Zeilen auf einen
                           Blick prüfen, statt 154-mal den Inspektor zu öffnen. */}
-                      <span className="gaeste-kuerzel">{initialen(z)}</span>
+                      <span className="gaeste-kuerzel">{kuerzelVon(z)}</span>
                     </td>
                     <td>{z.begleitung || '—'}</td>
                     <td className="gaeste-notiz">{z.notiz || '—'}</td>
@@ -231,7 +231,7 @@ function Details({ kontakt }: { kontakt: Kontakt }) {
       <h2 className="gaeste-detail-name">{anzeigeName(kontakt)}</h2>
 
       <dl className="gaeste-felder">
-        <Feld label="Kürzel" wert={initialen(kontakt)} />
+        <Feld label="Kürzel" wert={kuerzelVon(kontakt)} />
         <Feld label="Begleitung" wert={kontakt.begleitung} />
         <Feld label="E-Mail" wert={kontakt.email} />
         <Feld label="Geburtstag" wert={alsDatum(kontakt.geburtstag)} />

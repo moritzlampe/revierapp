@@ -21,6 +21,8 @@ export type Kontakt = {
   adresse: string | null
   geburtstag: string | null
   notiz: string | null
+  /** Übersteuerung aus Migration 086. `null` heißt „ableiten", nicht „keins". */
+  kuerzel: string | null
 }
 
 /**
@@ -114,6 +116,20 @@ export function initialen(k: Pick<Kontakt, 'vorname' | 'nachname'>): string {
       .map((w) => (PARTIKEL.has(w.toLowerCase()) ? w[0].toLowerCase() : w[0].toUpperCase()))
       .join('')
   return zeichen(k.vorname) + zeichen(k.nachname)
+}
+
+/**
+ * Das Kürzel, das angezeigt wird: die Vorgabe des Besitzers, sonst die
+ * Ableitung.
+ *
+ * **Die eine Stelle, an der beide zusammenkommen.** `initialen()` allein
+ * aufzurufen wäre der Fehler — dann stünde in der Liste etwas anderes als im
+ * Formular. `NULL` in der Spalte heißt „rechne aus" (Migration 086), nicht
+ * „kein Kürzel"; leer getrimmt zählt als nicht gesetzt, weil ein Formular
+ * sonst über ein versehentliches Leerzeichen eine dritte Bedeutung erfände.
+ */
+export function kuerzelVon(k: Pick<Kontakt, 'vorname' | 'nachname' | 'kuerzel'>): string {
+  return (k.kuerzel ?? '').trim() || initialen(k)
 }
 
 /**
