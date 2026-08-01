@@ -101,8 +101,13 @@ export default async function GaestePage({
         {kontakte.length === 1 ? 'Kontakt' : 'Kontakte'}
       </p>
 
+      {/* `besitzerId` kommt vom Server, nicht aus einem Client-`getUser()`:
+          ein neuer Kontakt braucht `besitzer_id` beim INSERT (NOT NULL, und
+          danach durch den Trigger aus 085 fest). Derselbe Weg wie
+          `ausstellerId` in ../jagderlaubnisse. */}
       <Liste
         kontakte={kontakte}
+        besitzerId={user.id}
         startSuche={ersterWert(q)}
         startFilter={alsFilter(ersterWert(filter))}
       />
