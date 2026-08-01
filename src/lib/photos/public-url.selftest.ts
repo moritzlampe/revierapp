@@ -47,6 +47,9 @@ assert.equal(splitPublicUrl(''), null)
 assert.equal(splitPublicUrl('blob:http://localhost:3000/abc-def'), null)
 // bereits signiert: der Weg heisst /object/sign/, nicht /object/public/
 assert.equal(splitPublicUrl(`https://x.supabase.co/storage/v1/object/sign/app-photos/uid/a.jpg?token=y`), null)
+// Transform-URL: heisst /render/image/public/ und wird bewusst NICHT zerlegt.
+// Steht hier, damit der Fall benannt ist — s. den Hinweis in public-url.ts.
+assert.equal(splitPublicUrl(`https://x.supabase.co/storage/v1/render/image/public/app-photos/uid/a.jpg?width=400`), null)
 
 // --- kaputte Formen duerfen null liefern, nicht raten ---
 assert.equal(splitPublicUrl(`${BASIS}/app-photos`), null)      // Bucket ohne Pfad

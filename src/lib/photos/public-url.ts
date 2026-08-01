@@ -12,6 +12,13 @@ const MARKER = '/storage/v1/object/public/'
  * Gibt `null` fuer alles, was nicht auf diesen Weg zeigt — externe Bilder
  * (es liegt eine Unsplash-URL in `hunt_photos`), Blob-URLs aus einer frischen
  * Auswahl, leere Strings, bereits signierte URLs (`/object/sign/`).
+ *
+ * ACHTUNG fuer spaeter: Transform-URLs aus `getPublicUrl(pfad, { transform })`
+ * heissen `/storage/v1/render/image/public/…` und treffen den Marker NICHT.
+ * Sie kaemen hier als `null` heraus und wuerden unsigniert durchgereicht — nach
+ * dem Umschalten auf `public: false` also ein totes Bild ohne Fehlermeldung.
+ * Am 01.08.2026 liegt keine einzige davon in der Datenbank. Wer anfaengt,
+ * Transform-URLs zu speichern, muss diesen Zweig hier ergaenzen.
  */
 export function splitPublicUrl(
   url: string | null | undefined,

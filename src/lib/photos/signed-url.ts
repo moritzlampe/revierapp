@@ -11,9 +11,10 @@ import { splitPublicUrl } from './public-url'
  *
  * Der Umbau geht bewusst NICHT ueber neue Pfad-Spalten: die gespeicherte URL
  * traegt den Pfad bereits (alles hinter `/object/public/<bucket>/`), und die
- * Ableitung ist mechanisch — nachgemessen am 01.08.2026 gegen alle 206
- * belegten Zeilen, 0 Ausnahmen. Die Spalten bleiben also, was sie sind; nur
- * beim Anzeigen wird frisch signiert.
+ * Ableitung ist mechanisch — nachgemessen am 01.08.2026 gegen alle 386
+ * belegten Zeilen: 385 kanonisch, die eine Ausnahme ist eine externe
+ * Unsplash-URL in `hunt_photos`, die unveraendert durchgereicht wird. Die
+ * Spalten bleiben also, was sie sind; nur beim Anzeigen wird frisch signiert.
  *
  * Was NICHT hier haengt: `getPublicUrl` beim Hochladen bleibt stehen. Die
  * dabei entstehende URL ist nach dem Umschalten nicht mehr direkt abrufbar,
@@ -63,4 +64,18 @@ export async function signStorageUrl(url: string | null | undefined): Promise<st
 
   cache.set(url, { signiert: data.signedUrl, gueltig_bis: Date.now() + TTL_SEKUNDEN * 1000 })
   return data.signedUrl
+}
+
+/**
+ * Wirft die gemerkte Signatur einer URL weg, damit der naechste Aufruf frisch
+ * signiert.
+ *
+ * Gebraucht, weil der Puffer oben nur den naechsten AUFRUF schuetzt, nicht ein
+ * bereits gerendertes `<img>`: dessen `src` steht seit dem Mount fest. Laedt der
+ * Browser das Bild erst spaeter — `loading="lazy"` unter dem Falz, ein Vollbild
+ * nach einer Stunde, ein wiederhergestellter Tab —, trifft er auf eine
+ * abgelaufene URL. StorageImg signiert dann genau einmal nach.
+ */
+export function verwerfeSignatur(url: string): void {
+  cache.delete(url)
 }
