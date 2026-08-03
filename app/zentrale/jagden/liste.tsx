@@ -58,6 +58,7 @@ export default function Liste({
   filter,
   jahr,
   revierId,
+  reviere,
   eigeneId,
 }: {
   jagden: Jagd[]
@@ -66,7 +67,10 @@ export default function Liste({
   antworten: Record<string, Antworten>
   filter: Filter
   jahr: string
+  /** Das Revier dieser Ansicht — Voreinstellung beim Anlegen. */
   revierId: string
+  /** Alle eigenen Reviere, für die Auswahl im Anlege-Formular. */
+  reviere: { id: string; name: string }[]
   eigeneId: string
 }) {
   const router = useRouter()
@@ -143,7 +147,11 @@ export default function Liste({
    * **Immer `scheduled`, nie `active`.** Das Portal bereitet vor; gestartet
    * wird in der App (Konzept §3).
    */
-  const jagdAnlegen = async (entwurf: JagdEntwurf, schonAngelegt: AngelegteJagd) => {
+  const jagdAnlegen = async (
+    entwurf: JagdEntwurf,
+    zielRevier: string,
+    schonAngelegt: AngelegteJagd,
+  ) => {
     const client = createClient()
     const name = entwurf.name.trim()
 
@@ -168,7 +176,7 @@ export default function Liste({
           .insert({
             ...felder,
             creator_id: eigeneId,
-            district_id: revierId,
+            district_id: zielRevier,
             kind: 'group',
             status: 'scheduled',
             started_at: null,
@@ -262,7 +270,11 @@ export default function Liste({
     // schreiben hieße, genau den Zustand herzustellen, den der Kommentar oben
     // vermeiden will: einen Mangel, der erst am Jagdtag auffällt
     // (Schlusslesung 03.08.2026).
-    const ziel = `/zentrale/jagden/${huntId}?revier=${revierId}`
+    // **Das Ziel folgt dem GEWAEHLTEN Revier, nicht dem der Ansicht.** Wer die
+    // Jagd woanders anlegt, soll dort landen — sonst zeigte die Adresse ein
+    // Revier, zu dem die Jagd gar nicht gehoert, und die Detailseite leitete
+    // sofort wieder um.
+    const ziel = `/zentrale/jagden/${huntId}?revier=${zielRevier}`
     router.push(chatFehler ? `${ziel}&chat=fehlt` : ziel)
     return chatFehler
   }
@@ -291,7 +303,14 @@ export default function Liste({
   )
 
   if (anlegen) {
-    return <Anlegen aufSichern={jagdAnlegen} aufAbbrechen={() => setAnlegen(false)} />
+    return (
+      <Anlegen
+        aufSichern={jagdAnlegen}
+        aufAbbrechen={() => setAnlegen(false)}
+        revierId={revierId}
+        reviere={reviere}
+      />
+    )
   }
 
   if (jagden.length === 0) {
@@ -519,9 +538,18 @@ function Antwortgruppe({ titel, eintraege }: { titel: string; eintraege: Antwort
 function Anlegen({
   aufSichern,
   aufAbbrechen,
+  revierId,
+  reviere,
 }: {
-  aufSichern: (entwurf: JagdEntwurf, schonAngelegt: AngelegteJagd) => Promise<string | null>
+  aufSichern: (
+    entwurf: JagdEntwurf,
+    zielRevier: string,
+    schonAngelegt: AngelegteJagd,
+  ) => Promise<string | null>
   aufAbbrechen: () => void
+  /** Voreingestelltes Revier: das der aktuellen Ansicht. */
+  revierId: string
+  reviere: { id: string; name: string }[]
 }) {
   const [entwurf, setEntwurf] = useState<JagdEntwurf>({ name: '', termin: '', type: 'drueckjagd' })
   const [fehler, setFehler] = useState<string | null>(null)
@@ -534,6 +562,21 @@ function Anlegen({
    * Wiederholungsversuch überleben, ohne ein Rendern auszulösen.
    */
   const schonAngelegt: AngelegteJagd = useRef<string | null>(null)
+
+  /**
+   * Das Revier, in dem die Jagd entsteht — voreingestellt auf das der Ansicht.
+   *
+   * **Nach dem ersten Schreibversuch nicht mehr änderbar.** Die Jagd existiert
+   * dann bereits; `hunts.district_id` nachträglich umzuschreiben ist ein
+   * anderer Vorgang als sie anzulegen — und einer, den die DB ablehnt, sobald
+   * Erlegungen daran hängen. Ein Feld, das nach dem Fehlschlag noch aussieht
+   * wie eine Wahl, wäre eine Lüge.
+   */
+  const [zielRevier, setZielRevier] = useState(revierId)
+  // `revierFest` ist ein State, nicht aus dem Ref oben abgeleitet: ein Ref löst
+  // kein Rendern aus, das Feld bliebe nach einem Fehlschlag also sichtbar
+  // bedienbar — und die Wahl darin wirkungslos, weil die Jagd schon steht.
+  const [revierFest, setRevierFest] = useState(false)
 
   const absenden = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -552,7 +595,7 @@ function Anlegen({
     setLaeuft(true)
     setFehler(null)
     try {
-      await aufSichern(mitName, schonAngelegt)
+      await aufSichern(mitName, zielRevier, schonAngelegt)
       // Kein `setLaeuft(false)` im Erfolgsfall: der Aufrufer navigiert weg, und
       // ein wieder freigegebener Knopf wäre eine Einladung zum zweiten Anlegen.
       // Ein fehlender Chat ist kein Fehlschlag des Anlegens — er reist als
@@ -568,6 +611,7 @@ function Anlegen({
               'erzeugt keine zweite.'
             : '')
       )
+      if (schonAngelegt.current) setRevierFest(true)
       inArbeit.current = false
       setLaeuft(false)
     }
@@ -578,6 +622,35 @@ function Anlegen({
       <h2 className="jagden-abschnitt">Neue Jagd</h2>
 
       <div className="zentrale-inspektor-feld">
+        {/* Das Revier zuerst: es bestimmt, wo die Jagd landet, und beim
+            Anlegen aus einer gefilterten Liste ist die Voreinstellung nicht
+            immer die gewollte. Nur ein Revier vorhanden? Dann ist die Auswahl
+            eine Zeile ohne Wahl — dann steht der Name einfach da. */}
+        <div>
+          <label htmlFor="neu-revier">Revier</label>
+          {reviere.length > 1 && !revierFest ? (
+            <select
+              id="neu-revier"
+              value={zielRevier}
+              disabled={laeuft}
+              onChange={(e) => setZielRevier(e.target.value)}
+            >
+              {reviere.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="neu-revier"
+              value={reviere.find((r) => r.id === zielRevier)?.name ?? '—'}
+              readOnly
+              disabled
+            />
+          )}
+        </div>
+
         <div>
           <label htmlFor="neu-name">Name</label>
           <input
@@ -622,6 +695,9 @@ function Anlegen({
 
       <p className="zentrale-sub">
         Die Jagd wird geplant angelegt. Gestartet wird sie in der Feld-App.
+        {zielRevier !== revierId
+          ? ' Sie entsteht in einem anderen Revier als dem gerade angezeigten — die Ansicht wechselt dorthin mit.'
+          : ''}
       </p>
 
       {fehler ? (

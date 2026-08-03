@@ -212,6 +212,9 @@ export default async function JagdenPage({
         filter={alsFilter(ersterWert(filter))}
         jahr={jahr}
         revierId={revier.id}
+        // Alle eigenen Reviere, damit sich beim Anlegen ein anderes wählen
+        // lässt. Sie sind ohnehin geladen — die Seitenleiste braucht sie.
+        reviere={reviere}
         eigeneId={user.id}
       />
     </div>
