@@ -7,19 +7,34 @@
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 import assert from 'node:assert/strict'
 import {
+  alsEingabewert,
   alsFilter,
+  alsZeitstempel,
   beendet,
+  einladungscode,
   ersterWert,
   filtere,
+  jagdAenderungen,
   jagdart,
   jagdstatus,
   laeuft,
+  namensvorschlag,
+  pruefeJagdEntwurf,
+  rolle,
   sortiere,
+  sortiereTeilnehmer,
+  tag,
+  teilnahme,
+  teilnehmerName,
   termin,
   terminText,
   vorbereitbar,
+  VORBEREITBARE_STATUS,
+  wiederEinladbar,
   zusagen,
   type Jagd,
+  type JagdEntwurf,
+  type Teilnehmer,
 } from './jagden.ts'
 
 function jagd(teil: Partial<Jagd>): Jagd {
@@ -69,6 +84,19 @@ assert.equal(vorbereitbar('active'), false)
 assert.equal(vorbereitbar('paused'), false)
 assert.equal(vorbereitbar('completed'), false)
 assert.equal(vorbereitbar('auto_completed'), false)
+
+// **Unbekannt heisst "nicht anfassen".** Vorher stand hier die doppelte
+// Verneinung `!laeuft && !beendet`, die zu `null` und zu jedem kuenftigen
+// Enum-Wert "ja, aendere ruhig" sagte — waehrend der Statusfilter im UPDATE
+// aus einer Aufzaehlung besteht und dasselbe verneinte. Die beiden liefen
+// auseinander (Schlusslesung 03.08.2026).
+assert.equal(vorbereitbar(null), false)
+assert.equal(vorbereitbar('irgendwas_neues'), false)
+
+// Der Filter im UPDATE und die Funktion muessen aus derselben Quelle kommen —
+// sonst zeigt die Seite Knoepfe, die die Query nicht bedient.
+for (const s of VORBEREITBARE_STATUS) assert.equal(vorbereitbar(s), true)
+assert.equal(VORBEREITBARE_STATUS.length, 2)
 
 // --- Termin -----------------------------------------------------------------
 
@@ -200,3 +228,243 @@ assert.equal(ersterWert('offen'), 'offen')
 assert.equal(ersterWert(['offen', 'beendet']), 'offen')
 assert.equal(ersterWert(undefined), undefined)
 assert.equal(ersterWert([]), undefined)
+
+// --- Rollen, Tags, Teilnahme ------------------------------------------------
+
+assert.equal(rolle('jagdleiter'), 'Jagdleiter')
+assert.equal(rolle('schuetze'), 'Schütze')
+assert.equal(rolle('treiber'), 'Treiber')
+assert.equal(rolle(null), 'Unbekannt')
+
+assert.equal(tag('hundefuehrer'), 'Hundeführer')
+// Ein unbekannter Tag gibt sich selbst zurueck statt "Unbekannt": die Spalte
+// ist ein Enum-Array, ein neuer Wert waere eine Migration und soll dann lesbar
+// durchkommen, nicht als Fehler aussehen.
+assert.equal(tag('waldpilz'), 'waldpilz')
+
+assert.equal(teilnahme('declined'), 'Abgesagt')
+assert.equal(teilnahme('joined'), 'Zugesagt')
+assert.equal(teilnahme('left'), 'Ausgetreten')
+assert.equal(teilnahme(null), 'Unbekannt')
+
+// Nur eine Absage ist eine erneute Einladung wert. `left` gehoert in die App.
+assert.equal(wiederEinladbar('declined'), true)
+assert.equal(wiederEinladbar('left'), false)
+assert.equal(wiederEinladbar('invited'), false)
+assert.equal(wiederEinladbar('joined'), false)
+
+// --- Teilnehmernamen --------------------------------------------------------
+
+function teiln(teil: Partial<Teilnehmer>): Teilnehmer {
+  return { id: 't', user_id: null, guest_name: null, role: 'schuetze', tags: [], status: 'joined', ...teil }
+}
+
+const namen = { 'aaaaaaaa-1111': 'Moritz', 'bbbbbbbb-2222': 'Heinrich' }
+
+assert.equal(teilnehmerName(teiln({ user_id: 'aaaaaaaa-1111' }), namen), 'Moritz')
+assert.equal(teilnehmerName(teiln({ guest_name: 'Gast Ohne Konto' }), namen), 'Gast Ohne Konto')
+// Ein Profil, das RLS nicht durchlaesst, darf keine leere Zeile ergeben.
+assert.equal(teilnehmerName(teiln({ user_id: 'cccccccc-3333' }), namen), 'Konto cccccccc')
+assert.equal(teilnehmerName(teiln({}), namen), 'Unbekannt')
+
+// --- Sortierung der Teilnehmer ----------------------------------------------
+
+{
+  const liste = [
+    teiln({ id: 'abgesagt', user_id: 'aaaaaaaa-1111', status: 'declined' }),
+    teiln({ id: 'offen', guest_name: 'Zacharias', status: 'invited' }),
+    teiln({ id: 'zugesagt', guest_name: 'Wilhelm', status: 'joined' }),
+    teiln({ id: 'leiter', user_id: 'bbbbbbbb-2222', role: 'jagdleiter', status: 'joined' }),
+  ]
+  // Leiter oben, dann zugesagt, eingeladen, abgesagt.
+  assert.deepEqual(
+    sortiereTeilnehmer(liste, namen).map((t) => t.id),
+    ['leiter', 'zugesagt', 'offen', 'abgesagt'],
+  )
+  // Der Leiter steht oben, obwohl "Heinrich" alphabetisch hinter "Wilhelm"
+  // NICHT kaeme — die Rolle schlaegt den Namen.
+  assert.equal(sortiereTeilnehmer(liste, namen)[0].id, 'leiter')
+}
+
+// Gleicher Rang, gleiche Rolle: dann entscheidet der Name, deutsch sortiert.
+{
+  const liste = [
+    teiln({ id: 'oe', guest_name: 'Österle', status: 'joined' }),
+    teiln({ id: 'n', guest_name: 'Naumann', status: 'joined' }),
+    teiln({ id: 'z', guest_name: 'Zacharias', status: 'joined' }),
+  ]
+  assert.deepEqual(sortiereTeilnehmer(liste, namen).map((t) => t.id), ['n', 'oe', 'z'])
+}
+
+// sortiereTeilnehmer() fasst die Eingabe nicht an.
+{
+  const eingabe = [teiln({ id: 'b', status: 'declined' }), teiln({ id: 'a', status: 'joined' })]
+  const vorher = eingabe.map((t) => t.id)
+  sortiereTeilnehmer(eingabe, namen)
+  assert.deepEqual(eingabe.map((t) => t.id), vorher)
+}
+
+// --- Entwurf pruefen --------------------------------------------------------
+
+function entwurf(teil: Partial<JagdEntwurf> = {}): JagdEntwurf {
+  return { name: 'Drückjagd Nord', termin: '2026-11-14T08:00', type: 'drueckjagd', ...teil }
+}
+
+assert.equal(pruefeJagdEntwurf(entwurf()), null)
+assert.match(pruefeJagdEntwurf(entwurf({ name: '' })) ?? '', /Namen/)
+// Nur Leerzeichen ist kein Name.
+assert.match(pruefeJagdEntwurf(entwurf({ name: '   ' })) ?? '', /Namen/)
+// Der Termin ist Pflicht — das Portal plant, es startet nicht (Konzept §3).
+assert.match(pruefeJagdEntwurf(entwurf({ termin: '' })) ?? '', /Termin/)
+assert.match(pruefeJagdEntwurf(entwurf({ termin: 'morgen frueh' })) ?? '', /Datum/)
+assert.match(
+  pruefeJagdEntwurf(entwurf({ type: 'flugjagd' as never })) ?? '',
+  /Jagdart/,
+)
+
+// --- Termin hin und zurueck -------------------------------------------------
+
+// Der Rundweg muss den Wert erhalten: was im Feld stand, steht nach dem
+// Speichern und Neuladen wieder dort. Sonst wandert der Termin bei jedem
+// Bearbeiten um den Zonenversatz.
+{
+  const eingabe = '2026-11-14T08:00'
+  const iso = alsZeitstempel(eingabe)
+  assert.ok(iso)
+  assert.equal(alsEingabewert(iso), eingabe)
+}
+
+// Auch ueber die Sommerzeitgrenze: Juli ist CEST (+02:00), November CET (+01:00).
+{
+  const sommer = '2026-07-15T18:30'
+  assert.equal(alsEingabewert(alsZeitstempel(sommer)), sommer)
+}
+
+// **Die Zeitumstellungstage selbst, und das ist der Test, der vorher fehlte.**
+// Die erste Fassung mass den Berlin-Versatz am Ausgangspunkt statt am Ergebnis
+// und lag an genau diesen Tagen eine Stunde daneben — gefunden von der
+// Fremdpruefung am 03.08.2026, nicht von diesem Selbsttest. Juli und November
+// liegen beide weit von jeder Grenze; sie haben den Fehler nicht sehen koennen.
+//
+// 2026: Vorstellen am 29.03. (02:00 -> 03:00), Rueckstellen am 25.10.
+// (03:00 -> 02:00).
+{
+  // Vorstellen, die Stunde davor und danach.
+  assert.equal(alsEingabewert(alsZeitstempel('2026-03-29T01:30')), '2026-03-29T01:30')
+  assert.equal(alsEingabewert(alsZeitstempel('2026-03-29T03:30')), '2026-03-29T03:30')
+  // Rueckstellen, davor und danach.
+  assert.equal(alsEingabewert(alsZeitstempel('2026-10-25T01:30')), '2026-10-25T01:30')
+  assert.equal(alsEingabewert(alsZeitstempel('2026-10-25T03:30')), '2026-10-25T03:30')
+  // Der Tag drumherum bleibt ebenfalls stabil.
+  assert.equal(alsEingabewert(alsZeitstempel('2026-03-28T23:30')), '2026-03-28T23:30')
+  assert.equal(alsEingabewert(alsZeitstempel('2026-10-26T00:30')), '2026-10-26T00:30')
+}
+
+// Die zwei Sonderstunden. Sie sind nicht "richtig" aufloesbar — hier steht,
+// was tatsaechlich herauskommt, damit eine spaetere Aenderung auffaellt.
+{
+  // 02:30 am 29.03. existiert nicht (die Stunde wird uebersprungen). Der Wert
+  // wird nach vorn normalisiert.
+  const uebersprungen = alsEingabewert(alsZeitstempel('2026-03-29T02:30'))
+  assert.equal(uebersprungen, '2026-03-29T03:30')
+  // 02:30 am 25.10. gibt es zweimal. Geliefert wird eine der beiden Lesarten —
+  // welche, ist offen, aber der Rundweg muss auf sich selbst zurueckfallen.
+  const doppelt = alsZeitstempel('2026-10-25T02:30')
+  assert.equal(alsEingabewert(doppelt), '2026-10-25T02:30')
+}
+
+assert.equal(alsZeitstempel(''), null)
+assert.equal(alsZeitstempel('kein datum'), null)
+assert.equal(alsEingabewert(null), '')
+assert.equal(alsEingabewert('kein datum'), '')
+
+// --- Aenderungen ------------------------------------------------------------
+
+const bestand = (teil: Partial<Jagd> = {}): Jagd =>
+  jagd({ name: 'Drückjagd Nord', type: 'drueckjagd', scheduled_for: '2026-11-14T07:00:00+00:00', ...teil })
+
+// Nichts geaendert heisst nichts schreiben.
+assert.equal(jagdAenderungen(entwurf({ termin: alsEingabewert('2026-11-14T07:00:00+00:00') }), bestand()), null)
+
+// **Der Kern dieses Tests**: die DB liefert `+00:00`, toISOString() liefert
+// `.000Z`. Zeichenweise verglichen waeren die beiden verschieden, und jedes
+// Speichern schriebe den Termin neu — ein Write ohne Aenderung, der wie eine
+// Aenderung aussieht.
+{
+  const gleich = jagdAenderungen(
+    entwurf({ termin: alsEingabewert('2026-11-14T07:00:00+00:00') }),
+    bestand({ scheduled_for: '2026-11-14T07:00:00.000Z' }),
+  )
+  assert.equal(gleich, null)
+}
+
+// Einzelne Felder kommen einzeln.
+assert.deepEqual(
+  jagdAenderungen(entwurf({ name: 'Drückjagd Süd', termin: alsEingabewert('2026-11-14T07:00:00+00:00') }), bestand()),
+  { name: 'Drückjagd Süd' },
+)
+
+// **Die Jagdart zieht `signal_mode` mit.** Ohne das bliebe ein Wechsel auf
+// Drueckjagd still und der Wechsel zurueck laut — die Feld-App laese eine
+// Kombination, die bei einer Neuanlage nie entstuende (Fremdpruefung 03.08.2026).
+assert.deepEqual(
+  jagdAenderungen(entwurf({ type: 'ansitz', termin: alsEingabewert('2026-11-14T07:00:00+00:00') }), bestand()),
+  { type: 'ansitz', signal_mode: 'silent' },
+)
+assert.deepEqual(
+  jagdAenderungen(
+    entwurf({ type: 'drueckjagd', termin: alsEingabewert('2026-11-14T07:00:00+00:00') }),
+    bestand({ type: 'ansitz' }),
+  ),
+  { type: 'drueckjagd', signal_mode: 'loud' },
+)
+// Bleibt die Art gleich, wird `signal_mode` nicht angefasst — sonst schriebe
+// jedes Speichern eine Spalte, die niemand geaendert hat.
+assert.equal(
+  jagdAenderungen(entwurf({ termin: alsEingabewert('2026-11-14T07:00:00+00:00') }), bestand()),
+  null,
+)
+
+// Ein Termin, der vorher fehlte, wird gesetzt — 14 von 18 Jagden im Bestand
+// tragen keinen (03.08.2026).
+{
+  const patch = jagdAenderungen(entwurf({ termin: '2026-11-14T08:00' }), bestand({ scheduled_for: null }))
+  assert.ok(patch)
+  assert.ok(patch.scheduled_for)
+}
+
+// Der getrimmte Name zaehlt, nicht der getippte.
+assert.equal(
+  jagdAenderungen(
+    entwurf({ name: '  Drückjagd Nord  ', termin: alsEingabewert('2026-11-14T07:00:00+00:00') }),
+    bestand(),
+  ),
+  null,
+)
+
+// --- Einladungscode ---------------------------------------------------------
+
+// `hunts.invite_code` ist NOT NULL ohne Default — ohne diesen Wert scheitert
+// jedes Anlegen aus dem Portal.
+{
+  const code = einladungscode()
+  assert.equal(code.length, 13)
+  assert.match(code, /^[0-9a-z]+$/)
+  assert.notEqual(einladungscode(), einladungscode())
+}
+
+// --- Namensvorschlag --------------------------------------------------------
+
+assert.equal(namensvorschlag('2026-11-14T08:00'), 'Jagd am 14.11.2026')
+assert.equal(namensvorschlag(''), 'Jagd')
+assert.equal(namensvorschlag('unsinn'), 'Jagd')
+// Fuehrende Nullen fallen weg, wie in der App ("Jagd am 5.1.2027").
+assert.equal(namensvorschlag('2027-01-05T06:00'), 'Jagd am 5.1.2027')
+
+// **Der Tag kommt aus der Zeichenkette, nicht aus einem Date-Objekt.** Ueber
+// `new Date()` haette 23:30 unter UTC den Folgetag ergeben, waehrend der
+// gespeicherte Berliner Termin auf dem Vortag liegt — Jagd, Chat-Gruppe und
+// Einladungslink truegen dann ein Datum, das der Termin nicht hat
+// (Fremdpruefung 03.08.2026). Dieser Test faellt in jeder Zone gleich aus.
+assert.equal(namensvorschlag('2026-08-15T23:30'), 'Jagd am 15.8.2026')
+assert.equal(namensvorschlag('2026-08-15T00:30'), 'Jagd am 15.8.2026')

@@ -85,9 +85,18 @@ export default async function JagdenPage({
   const revier = reviere.find((r) => r.id === gewuenscht)
   if (!revier) redirect(`/zentrale/jagden?revier=${reviere[0].id}`)
 
-  // Sichtbar ist, was RLS durchlässt: Ersteller und Teilnehmer der Jagd. Der
-  // Revierbesitzer als solcher hat KEINE eigene hunts-Policy — eine fremd
-  // angelegte Jagd im eigenen Revier fehlt hier also ganz.
+  // **`district_id` ist der Filter, und er blendet die Einzeljagden aus.**
+  // Von 39 Jagden im Bestand tragen 18 gar kein Revier (gemessen 03.08.2026):
+  // `createSoloHunt` der App schreibt `districtId: null`. Diese Seite zeigt sie
+  // nie, und das ist gewollt — die Revierzentrale bereitet Reviergeschehen vor,
+  // eine Einzeljagd ist ein Ansitz von einer Person, den niemand organisiert.
+  // Es steht hier, weil fast die halbe Zahl fehlt und ein leeres Revier sonst
+  // wie „keine Jagden" aussieht statt wie „keine Revierjagden".
+  // (Schlusslesung 03.08.2026, offener Punkt.)
+  //
+  // Sichtbar ist außerdem nur, was RLS durchlässt: Ersteller und Teilnehmer der
+  // Jagd. Der Revierbesitzer als solcher hat KEINE eigene hunts-Policy — eine
+  // fremd angelegte Jagd im eigenen Revier fehlt hier also ganz.
   //
   // Heute folgenlos: alle 39 Jagden im Bestand hat Moritz selbst angelegt
   // (gemessen 03.08.2026, 0 fremde). Der Fall entsteht erst mit mehreren
@@ -95,11 +104,20 @@ export default async function JagdenPage({
   // gestellt ("noch nicht so dringend"). Wenn er kommt, ist DIESE Query die
   // Stelle, die davon als Erstes etwas merkt: aus "keine Jagden" wird dann
   // stillschweigend "nicht meine Jagden".
+  // **Das Limit steht ausdrücklich da, damit es auffällt, wenn es greift.**
+  // PostgREST schneidet sonst still bei 1000 Zeilen ab, und die Liste rechnet
+  // Filter und Zähler aus dem, was sie bekommen hat — aus einer abgeschnittenen
+  // Menge würden also zu niedrige Zahlen, die wie gültige aussehen
+  // (Fremdprüfung 03.08.2026, S4). Heute stehen 39 Jagden im Bestand; die
+  // Grenze ist weit weg, aber ihr Erreichen wäre lautlos.
+  const GRENZE = 1000
+
   const jagden = geladen<Jagd[]>(
     await supabase
       .from('hunts')
       .select('id, name, type, status, scheduled_for, started_at, ended_at, created_at')
-      .eq('district_id', revier.id),
+      .eq('district_id', revier.id)
+      .limit(GRENZE),
     'Jagden'
   )
 
@@ -120,19 +138,34 @@ export default async function JagdenPage({
             .in(
               'hunt_id',
               jagden.map((j) => j.id)
-            ),
+            )
+            .limit(GRENZE),
           'Teilnehmer'
         )
+
+  // Die Teilnehmerabfrage erreicht die Grenze deutlich früher als die Jagden —
+  // 39 Jagden tragen heute 88 Zeilen. Lieber ein sichtbarer Hinweis als eine
+  // stille Falschzahl; die Haltung ist dieselbe wie in `geladen()`.
+  const unvollstaendig = jagden.length >= GRENZE || teilnahmen.length >= GRENZE
 
   return (
     <div className="zentrale-wrap">
       <h1>Jagden</h1>
       <p className="zentrale-sub">{revier.name}</p>
+      {unvollstaendig ? (
+        <div className="zentrale-note" role="alert">
+          <p style={{ margin: 0 }}>
+            Diese Ansicht zeigt die ersten {GRENZE} Datensätze. Zusagen und
+            Zähler sind damit unvollständig — die Seite braucht Blätterung.
+          </p>
+        </div>
+      ) : null}
       <Liste
         jagden={jagden}
         zusagen={Object.fromEntries(zusagen(teilnahmen))}
         filter={alsFilter(ersterWert(filter))}
         revierId={revier.id}
+        eigeneId={user.id}
       />
     </div>
   )

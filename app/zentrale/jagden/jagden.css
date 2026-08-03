@@ -88,3 +88,92 @@
 @media (prefers-color-scheme: dark) {
   .zentrale .jagden-pille.ist-live { color: #1F2618; }
 }
+
+/* --- Detail einer Jagd --------------------------------------------------- */
+
+.zentrale .jagden-zurueck {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.zentrale .jagden-kopfzeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 1rem 0;
+}
+
+.zentrale .jagden-abschnitt {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.0625rem;
+}
+
+.zentrale .jagden-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.zentrale .jagden-link:hover { color: var(--z-accent); }
+
+.zentrale .jagden-formular { margin-top: 1rem; }
+
+/* Der Zustand einer Teilnahme trägt seinen Namen — Farbe kommt dazu, nie
+   allein (Konzept §2.4, gleiche Regel wie bei der Status-Pille). */
+.zentrale .jagden-stand { white-space: nowrap; }
+.zentrale .jagden-stand.ist-joined { color: var(--z-accent); }
+.zentrale .jagden-stand.ist-declined { color: var(--z-text-secondary); opacity: 0.75; }
+.zentrale .jagden-stand.ist-left { color: var(--z-text-secondary); opacity: 0.75; }
+
+.zentrale .jagden-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.zentrale .jagden-tag-wahl,
+.zentrale .jagden-kandidat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.zentrale .jagden-aktionen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Die Auswahl bleibt eine Liste, keine Kachelwand: bei 9 Konten ist ein Raster
+   Zierat, und es soll bis zu ein paar Dutzend ruhig bleiben. */
+.zentrale .jagden-einladen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--z-border);
+  border-radius: 8px;
+  background: var(--z-bg-elevated);
+}
+
+.zentrale .jagden-erneut {
+  margin-left: 6px;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+
+/* Nur für Vorleser: die Aktionsspalte braucht eine Überschrift, aber keine
+   sichtbare — sonst steht dort ein Wort ohne Inhalt. */
+.zentrale .zentrale-nur-vorleser {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
