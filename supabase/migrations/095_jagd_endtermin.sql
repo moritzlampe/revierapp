@@ -1,0 +1,122 @@
+-- 095 — Der Endtermin einer Jagd
+--
+-- ===========================================================================
+-- Warum
+-- ===========================================================================
+--
+-- Moritz am 03.08.2026: „wollten wir bei termin nicht ein von bis möglich
+-- machen? vorausgefüllt dann immer wenn man startdatum wählt das enddatum als
+-- selbes? (mehrtägige jagden)"
+--
+-- Drueckjagden gehen ueber ein Wochenende, Ansitze ueber mehrere Abende. Heute
+-- traegt `hunts` nur `scheduled_for`, also einen Zeitpunkt — eine dreitaegige
+-- Jagd ist damit entweder eine Luege oder drei Eintraege.
+--
+-- ===========================================================================
+-- „Mehrtaegig" wird abgeleitet, nicht gespeichert — aber ueber KALENDERTAGE
+-- ===========================================================================
+--
+-- Es gibt bewusst KEIN Merkmal `ist_mehrtaegig`. Ein Schalter waere eine dritte
+-- Angabe ueber denselben Sachverhalt — etwas, das man vergessen oder falsch
+-- setzen kann, waehrend die Daten daneben etwas anderes sagen. Moritz hat es
+-- selbst so formuliert: „einfach bei dem termin ein start und endtermin
+-- eintragen, dann ergibt es sich automatisch".
+--
+-- **Der Vergleich lautet aber NICHT `scheduled_until > scheduled_for`.** Genau
+-- so stand es im ersten Entwurf, und die Fremdpruefung hat es zerlegt: beide
+-- Spalten sind Zeitpunkte, also erfuellt auch eine eintaegige Jagd von 08:00
+-- bis 16:00 diese Bedingung. Sie waere damit „mehrtaegig" — falsch, und
+-- lautlos falsch.
+--
+-- Der tragfaehige Vertrag vergleicht die **Berliner Kalenderdaten**:
+--
+--   mehrtaegig  :=  (scheduled_until at time zone 'Europe/Berlin')::date
+--                 > (scheduled_for  at time zone 'Europe/Berlin')::date
+--
+-- Berlin und nicht UTC, aus demselben Grund wie in 087 und 092: die Datenbank
+-- laeuft auf UTC, und eine Jagd, die um 23:00 Berliner Zeit endet, liegt in UTC
+-- schon am Folgetag. Ueber `::date` allein waere sie mehrtaegig, obwohl sie an
+-- einem Abend stattfand.
+--
+-- Dieser Vertrag gilt fuer JEDEN Client, der die Spalte liest. Er steht hier,
+-- weil die Datenbank ihn nicht erzwingt — es ist eine Lesevorschrift, kein
+-- Constraint.
+--
+-- ===========================================================================
+-- Warum NICHT `end_time`
+-- ===========================================================================
+--
+-- `hunts.end_time` existiert seit Migration 003 und ist in **0 von 41** Jagden
+-- gesetzt; kein Client liest sie (gemessen 03.08.2026, im nativen Repo steht sie
+-- nur in `database.types.ts`). Man koennte sie also umwidmen und spaerte eine
+-- Spalte.
+--
+-- **Dagegen spricht ihr Kommentar in 003: „Timer-Endzeit".** Gemeint war eine
+-- laufende Uhr am Jagdtag — „das Treiben endet um 15:00" —, nicht der letzte Tag
+-- eines Termins. Beides in eine Spalte zu legen hiesse, dass ihr Name kuenftig
+-- etwas anderes sagt als ihr Inhalt, und dass die Timer-Funktion beim Bau eine
+-- belegte Spalte vorfindet. Eine zusaetzliche nullable Spalte kostet dagegen
+-- nichts: additiv, rueckwaertskompatibel, und beide Clients ignorieren sie,
+-- bis sie sie koennen.
+--
+-- ===========================================================================
+-- Was diese Migration bewusst NICHT tut
+-- ===========================================================================
+--
+--   * **Keine Pruefung `scheduled_until >= scheduled_for` als CHECK.** Sie waere
+--     richtig, aber ein CHECK trifft auch die 41 Altzeilen und jeden Schreibweg
+--     beider Clients — und `scheduled_for` ist nullable, der Ausdruck haette
+--     also einen NULL-Zweig, der stillschweigend alles durchlaesst. Die
+--     Reihenfolge gehoert dorthin, wo sie dem Nutzer erklaert werden kann: ins
+--     Formular. Wird sie in der DB gebraucht, ist das ein eigener Schritt mit
+--     eigener Gegenprobe.
+--   * **Kein Anfassen von `scheduled_for`.** Der Start bleibt der Anker fuer
+--     Sortierung, Jagdjahr und den Auto-Start aus Migration 051.
+--   * **Keine Policy-Aenderung.** `hunts_creator_all` und `hunts_leader_update`
+--     sind spaltenunabhaengig; die neue Spalte erbt sie vollstaendig.
+--   * **Keine Rueckrechnung.** Alle 41 Jagden bleiben ohne Endtermin — das ist
+--     richtig, denn keine von ihnen war je als mehrtaegig erfasst.
+
+alter table public.hunts
+  add column if not exists scheduled_until timestamptz;
+
+comment on column public.hunts.scheduled_until is
+  'Geplantes Ende eines Jagdtermins, als Zeitpunkt. NULL = kein Ende angegeben. '
+  'MEHRTAEGIG heisst: verschiedene BERLINER Kalenderdaten von scheduled_for und '
+  'scheduled_until — nicht schlicht until > for, denn das erfuellt auch eine '
+  'Jagd von 08:00 bis 16:00 am selben Tag. Bewusst NICHT end_time, die laut '
+  'Migration 003 die Timer-Endzeit am Jagdtag meint.';
+
+-- ---------------------------------------------------------------------------
+-- Gegenproben (als authenticated, jede mit ROLLBACK; Positivkontrolle zuerst)
+-- ---------------------------------------------------------------------------
+--
+--   -- 1 Positivkontrolle: Ersteller setzt scheduled_until an eigener Jagd -> geht
+--   -- 2 Rollen-Jagdleiter setzt es (hunts_leader_update)                  -> geht
+--   -- 3 Fremder setzt es an fremder Jagd                                  -> 0 Zeilen
+--   -- 4 scheduled_until vor scheduled_for                                 -> geht
+--        (bewusst: kein CHECK, s. oben — der Riegel sitzt im Formular)
+--   -- 5 Bestand nach dem Applizieren: 41 Jagden, alle scheduled_until NULL
+--   -- 6 Regression: startHunt/endHunt der App laufen unveraendert
+--        (Status-UPDATE ohne Bezug zur neuen Spalte)
+--   -- 7 Regression auf 092: Revierwechsel an einer Jagd mit Erlegungen -> 55006
+--
+--   Die Kalendergrenzen der Mehrtaegigkeitsregel (Ergaenzung aus der
+--   Fremdpruefung, Punkt 10). Der Vertrag steht oben; diese vier Proben
+--   halten ihn fest, damit ein spaeterer Client ihn nicht anders liest:
+--
+--     with f(bez, von, bis) as (values
+--       ('ein Tag, 08-16 Uhr',      '2026-11-28T07:00Z'::timestamptz, '2026-11-28T15:00Z'::timestamptz),
+--       ('zwei Tage',               '2026-11-28T07:00Z'::timestamptz, '2026-11-29T15:00Z'::timestamptz),
+--       ('bis 23:00 Berlin',        '2026-11-28T07:00Z'::timestamptz, '2026-11-28T22:00Z'::timestamptz),
+--       ('ueber Mitternacht Berlin','2026-11-28T07:00Z'::timestamptz, '2026-11-28T23:30Z'::timestamptz))
+--     select bez,
+--            (bis at time zone 'Europe/Berlin')::date
+--          > (von at time zone 'Europe/Berlin')::date as mehrtaegig,
+--            bis > von as naive_regel
+--       from f;
+--
+--   Erwartet: „ein Tag" false/true — genau hier weichen die beiden Regeln ab,
+--   und das ist der Befund, der die naive Fassung erledigt hat. „bis 23:00
+--   Berlin" (= 22:00Z, in UTC noch derselbe Tag) false. „ueber Mitternacht
+--   Berlin" (= 23:30Z, in Berlin bereits der 29.) true. „zwei Tage" true.
