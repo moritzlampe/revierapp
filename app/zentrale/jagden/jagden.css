@@ -118,6 +118,46 @@
   white-space: nowrap;
 }
 
+/* Zustandsgruppen in der Teilnehmertabelle.
+
+   Eine feine Linie und kleine Versalien — bewusst KEINE Fläche und kein
+   Balken: ein bloßer Zustand bekäme damit mehr Gewicht als die Namen und
+   Aufgaben darunter, und das kippt von „ledergebunden-editorial" Richtung
+   Jägermagazin (Codex, 03.08.2026). Aus demselben Grund steht die Anzahl am
+   ANFANG der Gruppe und nicht als Summe darunter: eine Summe wird erst nach
+   dem Durchscrollen sichtbar und liest sich wie ein Tabellenabschluss. */
+.zentrale .jagden-teilnehmer-summe {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* **Doch eine Fläche — Moritz' Entscheidung am 03.08.2026** („sieht noch sehr
+   nach einer Suppe aus"). Codex hatte davon abgeraten, weil ein Zustand nicht
+   mehr Gewicht bekommen soll als die Namen darunter; der Einwand bleibt
+   richtig, deshalb ist es der vorhandene `--z-bg-sunken` (#E3DDCB gegen
+   #FAF7F0 der Tabelle) und keine Akzentfarbe. Dieselbe Tiefe wie der
+   Navigations-Hover — die Gruppenzeile liest sich als Fach, nicht als Banner.
+   Widersprechen sich zwei Prüfer, entscheidet Moritz (CLAUDE.md). */
+.zentrale .jagden-gruppenzeile th {
+  height: 32px;
+  background: var(--z-bg-sunken);
+  border-top: 1px solid var(--z-border-strong);
+  color: var(--z-text-primary);
+}
+/* Die erste Gruppe steht direkt unter dem Tabellenkopf — dessen eigene Linie
+   trennt dort schon, eine zweite wäre ein Doppelstrich. */
+.zentrale .jagden-tabelle tbody:first-of-type .jagden-gruppenzeile th {
+  border-top: 0;
+}
+
+.zentrale .jagden-gruppenzahl {
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
 /* Status immer als Text-Pille, nie nur über Farbe (Konzept §2.4). */
 .zentrale .jagden-pille {
   display: inline-block;

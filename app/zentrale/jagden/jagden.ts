@@ -486,6 +486,60 @@ export function sortiereTeilnehmer(
   })
 }
 
+export interface Teilnehmergruppe {
+  status: string
+  titel: string
+  eintraege: Teilnehmer[]
+}
+
+/**
+ * Dieselbe Liste, aber in Zustandsgruppen zerlegt: Zugesagt, Eingeladen,
+ * Abgesagt, Ausgetreten.
+ *
+ * **Der Grund ist ein Bedienfehler, nicht Schmuck** (Codex, 03.08.2026):
+ * `sortiereTeilnehmer` stellt die Rolle VOR den Zustand, ein abgesagter
+ * Jagdleiter stand also über allen zugesagten Schützen. Weil die kleine Pille
+ * in der Spalte „Stand" die einzige Zustandsanzeige ist, las sich die oberste
+ * Zeile wie „verfügbar". Hier schlägt der Zustand die Rolle; der Leiter steht
+ * oben INNERHALB seiner Gruppe — dafür sortiert `sortiereTeilnehmer` weiter,
+ * das innerhalb einer Gruppe auf „Leiter, dann Name" zusammenfällt.
+ *
+ * **Leere Gruppen fallen weg, und das trägt die Skalierung:** eine Jagd mit
+ * zwei Zugesagten bekommt eine einzige Gruppe, die Oberfläche zeigt dann gar
+ * keine Zwischenzeile (`detail.tsx`). Erst ab zwei Zuständen entsteht eine
+ * Gliederung. Die größte Jagd im Bestand hat heute 4 Teilnehmer, im Oktober
+ * sollen es 40 sein — beide Größen müssen ohne Umbau tragen.
+ *
+ * **`declined` und `left` bleiben getrennt.** Nur Abgesagte sind wieder
+ * einladbar (`wiederEinladbar`); eine gemeinsame Gruppe „nicht dabei" würde
+ * genau diesen Unterschied verwischen.
+ */
+export function gruppiereTeilnehmer(
+  liste: readonly Teilnehmer[],
+  namen: Record<string, string>,
+): Teilnehmergruppe[] {
+  // **Von Hand statt `Map.groupBy`, und das ist eine Rücknahme.** Die
+  // Kurzform stand hier schon; die Fremdprüfung hat sie zerlegt: `Map.groupBy`
+  // gibt es erst ab Safari 17.4, Next polyfillt es nicht, und der Fehler wäre
+  // keine schiefe Sortierung, sondern eine weiße Seite auf jedem älteren Mac.
+  // `tsc` sagt dazu nichts, weil `lib` auf `esnext` steht — die Typen sind da,
+  // die Laufzeit nicht.
+  const koepfe = new Map<string, Teilnehmer[]>()
+  for (const t of liste) {
+    const s = t.status ?? ''
+    const vorhanden = koepfe.get(s)
+    if (vorhanden) vorhanden.push(t)
+    else koepfe.set(s, [t])
+  }
+  return [...koepfe.entries()]
+    .sort((a, b) => (ZUSTAND_RANG[a[0]] ?? 9) - (ZUSTAND_RANG[b[0]] ?? 9))
+    .map(([status, eintraege]) => ({
+      status,
+      titel: teilnahme(status),
+      eintraege: sortiereTeilnehmer(eintraege, namen),
+    }))
+}
+
 /**
  * Der Anzeigename.
  *

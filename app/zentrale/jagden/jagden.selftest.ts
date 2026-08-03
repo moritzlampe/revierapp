@@ -28,6 +28,7 @@ import {
   namensvorschlag,
   pruefeJagdEntwurf,
   rolle,
+  gruppiereTeilnehmer,
   sortiere,
   sortiereTeilnehmer,
   tag,
@@ -409,6 +410,88 @@ assert.equal(teilnehmerName(teiln({}), namen), 'Unbekannt')
   const eingabe = [teiln({ id: 'b', status: 'declined' }), teiln({ id: 'a', status: 'joined' })]
   const vorher = eingabe.map((t) => t.id)
   sortiereTeilnehmer(eingabe, namen)
+  assert.deepEqual(eingabe.map((t) => t.id), vorher)
+}
+
+// --- Gruppierung der Teilnehmer ---------------------------------------------
+
+// Der Fall, um dessentwillen es die Gruppierung gibt: ein ABGESAGTER Jagdleiter
+// stand in der flachen Sortierung ueber allen Zugesagten und las sich wie
+// "verfuegbar" (Codex, 03.08.2026). Hier schlaegt der Zustand die Rolle.
+{
+  const liste = [
+    teiln({ id: 'schuetze', guest_name: 'Wilhelm', status: 'joined' }),
+    teiln({ id: 'leiter', user_id: 'bbbbbbbb-2222', role: 'jagdleiter', status: 'declined' }),
+  ]
+  assert.deepEqual(sortiereTeilnehmer(liste, namen).map((t) => t.id), ['leiter', 'schuetze'])
+  const g = gruppiereTeilnehmer(liste, namen)
+  assert.deepEqual(g.map((x) => x.status), ['joined', 'declined'])
+  assert.deepEqual(g[0].eintraege.map((t) => t.id), ['schuetze'])
+  assert.deepEqual(g[1].eintraege.map((t) => t.id), ['leiter'])
+}
+
+// Reihenfolge der Gruppen: zugesagt, eingeladen, abgesagt, ausgetreten
+// (Moritz, 03.08.2026). Der Leiter steht INNERHALB seiner Gruppe oben.
+{
+  const liste = [
+    teiln({ id: 'weg', guest_name: 'Ludwig', status: 'left' }),
+    teiln({ id: 'abgesagt', guest_name: 'Anton', status: 'declined' }),
+    teiln({ id: 'offen', guest_name: 'Zacharias', status: 'invited' }),
+    teiln({ id: 'zugesagt', guest_name: 'Wilhelm', status: 'joined' }),
+    teiln({ id: 'leiter', user_id: 'bbbbbbbb-2222', role: 'jagdleiter', status: 'joined' }),
+  ]
+  const g = gruppiereTeilnehmer(liste, namen)
+  assert.deepEqual(g.map((x) => x.status), ['joined', 'invited', 'declined', 'left'])
+  assert.deepEqual(g.map((x) => x.titel), ['Zugesagt', 'Eingeladen', 'Abgesagt', 'Ausgetreten'])
+  assert.deepEqual(g.map((x) => x.eintraege.length), [2, 1, 1, 1])
+  // "Heinrich" kaeme alphabetisch vor "Wilhelm" — aber die Rolle entscheidet,
+  // und zwar nur noch innerhalb der Gruppe.
+  assert.deepEqual(g[0].eintraege.map((t) => t.id), ['leiter', 'zugesagt'])
+}
+
+// Nur ein Zustand ergibt genau EINE Gruppe — die Oberflaeche zeigt dann keine
+// Zwischenzeile. Das ist der Riegel gegen Verwaltungsarchitektur fuer zwei
+// Leute (groesste Jagd im Bestand am 03.08.2026: 4 Teilnehmer).
+{
+  const liste = [
+    teiln({ id: 'a', guest_name: 'Anton', status: 'joined' }),
+    teiln({ id: 'b', guest_name: 'Berta', status: 'joined' }),
+  ]
+  assert.equal(gruppiereTeilnehmer(liste, namen).length, 1)
+}
+
+// Leere Liste: keine Gruppen, kein Absturz.
+assert.deepEqual(gruppiereTeilnehmer([], namen), [])
+
+// Ein unbekannter Zustand faellt hinten heraus statt eine Person zu verschlucken.
+{
+  const liste = [
+    teiln({ id: 'komisch', guest_name: 'Xaver', status: 'wasauchimmer' }),
+    teiln({ id: 'ohne', guest_name: 'Yvonne', status: null }),
+    teiln({ id: 'zugesagt', guest_name: 'Anton', status: 'joined' }),
+  ]
+  const g = gruppiereTeilnehmer(liste, namen)
+  assert.equal(g[0].status, 'joined')
+  assert.deepEqual(g.slice(1).map((x) => x.titel), ['Unbekannt', 'Unbekannt'])
+  // **Auf IDs pruefen, nicht auf die Gesamtzahl** (Fremdprüfung 03.08.2026,
+  // F13): "Summe 3" bliebe auch dann gruen, wenn Xaver verdoppelt und Yvonne
+  // verschluckt wuerde. Jede Person genau einmal, und in ihrer eigenen Gruppe.
+  assert.deepEqual(
+    g.flatMap((x) => x.eintraege.map((t) => t.id)).sort(),
+    ['komisch', 'ohne', 'zugesagt'],
+  )
+  assert.deepEqual(g.map((x) => x.eintraege.map((t) => t.id)), [
+    ['zugesagt'],
+    ['komisch'],
+    ['ohne'],
+  ])
+}
+
+// gruppiereTeilnehmer() fasst die Eingabe nicht an.
+{
+  const eingabe = [teiln({ id: 'b', status: 'declined' }), teiln({ id: 'a', status: 'joined' })]
+  const vorher = eingabe.map((t) => t.id)
+  gruppiereTeilnehmer(eingabe, namen)
   assert.deepEqual(eingabe.map((t) => t.id), vorher)
 }
 

@@ -570,6 +570,7 @@ function Anlegen({
     zielRevier: string,
     schonAngelegt: AngelegteJagd,
   ) => Promise<string | null>
+  /** Schließt das Formular. Das Aufräumen erledigt der Aufgerufene vorher. */
   aufAbbrechen: () => void
   /** Voreingestelltes Revier: das der aktuellen Ansicht. */
   revierId: string
@@ -601,6 +602,73 @@ function Anlegen({
   // kein Rendern aus, das Feld bliebe nach einem Fehlschlag also sichtbar
   // bedienbar — und die Wahl darin wirkungslos, weil die Jagd schon steht.
   const [revierFest, setRevierFest] = useState(false)
+  /** Einmal gescheitertes Verwerfen macht aus dem Knopf einen reinen Ausgang. */
+  const [verwerfenGescheitert, setVerwerfenGescheitert] = useState(false)
+
+  /**
+   * „Abbrechen" heißt abbrechen — auch wenn schon eine Jagd dasteht.
+   *
+   * **Der Weg hierher ist schmal und genau deshalb heikel:** erreichbar ist er
+   * nur, wenn Schritt 1 (die Jagd) durchlief und Schritt 2 (die eigene
+   * Teilnehmerzeile) scheiterte. Die Chat-Schritte werfen nie nach oben. Wer
+   * hier abbricht, ließe also eine Jagd zurück, in der **niemand** steht — und
+   * der Ersteller kann sich im Portal nicht selbst eintragen, die
+   * Einladeliste schließt ihn aus (`einladbar`, `p.id !== eigeneId`). Sie wäre
+   * nicht bloß unvollständig, sondern unreparierbar (Schlusslesung
+   * 03.08.2026, L11).
+   *
+   * **Ein zweiter Anlauf war die erste Idee und ist verworfen:** ein Knopf
+   * „Zur angelegten Jagd" führte zuverlässig genau auf diese kaputte Jagd.
+   * Löschen ist der ehrliche Ausgang — die Jagd ist Sekunden alt, hat keine
+   * Erlegungen und keinen anderen Teilnehmer.
+   *
+   * Der Statusfilter steht auch hier: startet der Auto-Start aus Migration 051
+   * die Jagd dazwischen, wird sie nicht mehr weggeräumt, sondern gemeldet.
+   * Scheitert das Löschen, bleibt das Formular offen — ein stiller Rest wäre
+   * schlimmer als ein Hinweis.
+   */
+  const verwerfen = async () => {
+    const huntId = schonAngelegt.current
+    if (!huntId) {
+      aufAbbrechen()
+      return
+    }
+    if (inArbeit.current) return
+    inArbeit.current = true
+    setLaeuft(true)
+    setFehler(null)
+    try {
+      await schreibe('Die angefangene Jagd', () =>
+        createClient()
+          .from('hunts')
+          .delete()
+          .eq('id', huntId)
+          .in('status', VORBEREITBARE_STATUS)
+          .select('id')
+      )
+      aufAbbrechen()
+    } catch (err) {
+      /*
+       * **Ein Formular braucht immer einen Ausgang** (Delta-Durchgang
+       * 03.08.2026, D2). Startet der Auto-Start aus Migration 051 die Jagd
+       * zwischen Anlegen und Abbrechen, scheitern DELETE und UPDATE beide am
+       * Statusfilter — vorher schloss „Abbrechen" wenigstens immer. Der Knopf
+       * wird deshalb zum reinen „Schließen", sobald das Verwerfen einmal
+       * gescheitert ist.
+       *
+       * Der Hinweis nennt seither nur noch das Nachprüfbare: dass die Jagd
+       * steht. „‚Anlegen' führt sie zu Ende" wäre in genau diesem Fall falsch
+       * gewesen — das UPDATE trifft dann ebenfalls 0 Zeilen.
+       */
+      setFehler(
+        (err instanceof Error ? err.message : 'Unbekannter Fehler.') +
+          ' Die angefangene Jagd steht noch und erscheint in der Liste.'
+      )
+      setVerwerfenGescheitert(true)
+      inArbeit.current = false
+      setLaeuft(false)
+    }
+  }
 
   const absenden = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -612,6 +680,25 @@ function Anlegen({
     const problem = pruefeJagdEntwurf(mitName)
     if (problem) {
       setFehler(problem)
+      return
+    }
+
+    /*
+     * **Nur für die Meldung.** Der Riegel ist der Trigger aus Migration 092:
+     * eine Jagd in einem fremden Revier wird mit `42501` abgewiesen, egal was
+     * hier steht. Ohne diese Zeile bekäme der Nutzer aber die rohe DB-Meldung
+     * zu sehen (Fremdprüfung 03.08.2026). Erreichbar ist der Fall über einen
+     * von Hand geänderten `<select>`-Wert — und über ein Revier, das der
+     * Nutzer verloren hat, während die Seite offen stand.
+     *
+     * **Nicht mehr beim Fertigstellen** (Schlusslesung 03.08.2026, L5): steht
+     * die Jagd schon, fasst der zweite Versuch `district_id` gar nicht mehr an.
+     * Ein hier abgewiesener Wiederanlauf hinterließe die halbe Jagd und eine
+     * Anweisung („eines aus der Liste nehmen"), der bei festgestelltem Feld
+     * niemand folgen kann.
+     */
+    if (!schonAngelegt.current && !reviere.some((r) => r.id === zielRevier)) {
+      setFehler('Dieses Revier steht nicht (mehr) zur Wahl. Bitte eines aus der Liste nehmen.')
       return
     }
 
@@ -734,8 +821,19 @@ function Anlegen({
         <button type="submit" className="haupt" disabled={laeuft}>
           {laeuft ? 'Wird angelegt …' : 'Anlegen'}
         </button>
-        <button type="button" onClick={aufAbbrechen} disabled={laeuft}>
-          Abbrechen
+        {/* Die Beschriftung nennt die Folge, sobald es eine gibt — eine
+            Rückfrage obendrauf wäre eine zweite Bestätigung für etwas, das
+            der Nutzer gerade selbst angestoßen hat (S5). */}
+        <button
+          type="button"
+          onClick={verwerfenGescheitert ? aufAbbrechen : verwerfen}
+          disabled={laeuft}
+        >
+          {verwerfenGescheitert
+            ? 'Schließen'
+            : revierFest
+              ? 'Abbrechen und verwerfen'
+              : 'Abbrechen'}
         </button>
       </div>
     </form>

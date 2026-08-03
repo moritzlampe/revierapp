@@ -14,7 +14,7 @@ import {
   namensvorschlag,
   pruefeJagdEntwurf,
   rolle,
-  sortiereTeilnehmer,
+  gruppiereTeilnehmer,
   tag,
   teilnahme,
   teilnehmerName,
@@ -103,7 +103,13 @@ export default function Detail({
     () => Object.fromEntries(profile.map((p) => [p.id, p.display_name ?? ''])),
     [profile]
   )
-  const sortiert = useMemo(() => sortiereTeilnehmer(teilnehmer, namen), [teilnehmer, namen])
+  const gruppen = useMemo(() => gruppiereTeilnehmer(teilnehmer, namen), [teilnehmer, namen])
+  // **Zusagen und Offene, nicht „N Personen"** (Schlusslesung 03.08.2026):
+  // eine Gesamtzahl zählt Abgesagte und Ausgetretene mit, und „8 Personen"
+  // liest sich wie acht Kommende. Die zwei Zahlen hier sind die, nach denen
+  // ein Jagdleiter beim Vorbereiten sucht; alles Weitere steht in den Gruppen.
+  const zugesagt = teilnehmer.filter((t) => t.status === 'joined').length
+  const offen = teilnehmer.filter((t) => t.status === 'invited').length
 
   /** Wer noch gar keine Zeile hat — nur die sind ein INSERT. */
   const einladbar = useMemo(() => {
@@ -144,7 +150,19 @@ export default function Detail({
       .eq('id', jagd.id)
       .maybeSingle()
     if (error) throw new Error(`Der Zustand der Jagd war nicht zu prüfen: ${error.message}`)
-    if (!data || !vorbereitbar(data.status)) {
+    // **`!data` heißt NICHT „gestartet".** Eine unsichtbare Zeile kann gelöscht
+    // sein oder von RLS gefiltert; beides als „inzwischen gestartet" zu melden
+    // ist eine erfundene Auskunft (Fremdprüfung 03.08.2026, F4). Ein Nutzer,
+    // dem gerade die Leitung entzogen wurde, wartet sonst auf ein Jagdende,
+    // das es nicht gibt.
+    if (!data) {
+      nachladen()
+      throw new Error(
+        'Diese Jagd ist nicht mehr erreichbar — gelöscht, oder die Leitung liegt ' +
+          'nicht mehr bei dir. Die Seite lädt gerade den neuen Stand.'
+      )
+    }
+    if (!vorbereitbar(data.status)) {
       nachladen()
       throw new Error(
         'Diese Jagd wurde inzwischen gestartet oder beendet. Ab da gehört sie der ' +
@@ -160,14 +178,35 @@ export default function Detail({
       setBearbeiten(false)
       return
     }
-    await schreibe('Die Jagd', () =>
-      createClient()
-        .from('hunts')
-        .update(patch)
-        .eq('id', jagd.id)
-        .in('status', VORBEREITBARE_STATUS)
-        .select('id')
-    )
+    /*
+     * **Erst schreiben, dann fragen warum — nicht umgekehrt.**
+     *
+     * Der Riegel gegen das Beschreiben einer laufenden Jagd ist der
+     * Statusfilter unten; er ist atomar. Was fehlte, war die MELDUNG: am
+     * 03.08.2026 am Bildschirm belegt, dass der Riegel hielt und `schreibe()`
+     * drei Ursachen nannte, von denen keine zutraf.
+     *
+     * Die erste Fassung prüfte deshalb VOR dem Write — und machte aus einer
+     * Diagnose ein zweites Tor (Fremdprüfung, F3): ein einmalig scheiternder
+     * GET hätte ein UPDATE verhindert, das durchgelaufen wäre. Im Fehlerzweig
+     * kostet die Prüfung nichts, kann nichts blockieren und beantwortet genau
+     * die Frage, die dann offen ist.
+     */
+    try {
+      await schreibe('Die Jagd', () =>
+        createClient()
+          .from('hunts')
+          .update(patch)
+          .eq('id', jagd.id)
+          .in('status', VORBEREITBARE_STATUS)
+          .select('id')
+      )
+    } catch (err) {
+      // Findet `pruefeZustand()` einen benennbaren Grund, wirft es ihn; sonst
+      // bleibt es bei der allgemeinen Meldung aus `schreibe()`.
+      await pruefeZustand()
+      throw err
+    }
     setBearbeiten(false)
     nachladen()
   }
@@ -345,42 +384,73 @@ export default function Detail({
 
       <h2 className="jagden-abschnitt">Teilnehmer</h2>
 
-      {sortiert.length === 0 ? (
+      {teilnehmer.length === 0 ? (
         <div className="zentrale-note">
           <p style={{ margin: 0 }}>Noch niemand eingeladen.</p>
         </div>
       ) : (
-        <div className="jagden-tabellenkasten">
-          <table className="zentrale-tabelle jagden-tabelle">
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Rolle</th>
-                <th scope="col">Merkmale</th>
-                <th scope="col">Stand</th>
-                <th scope="col">
-                  <span className="zentrale-nur-vorleser">Aktionen</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortiert.map((t) => (
-                <Zeile
-                  key={t.id}
-                  teilnehmer={t}
-                  name={teilnehmerName(t, namen)}
-                  /** Der Ersteller bleibt unantastbar — s. `Zeile`. */
-                  istErstellerZeile={t.user_id === erstellerId}
-                  schreibbar={schreibbar}
-                  gesperrt={laedtNach}
-                  aufAendern={teilnehmerAendern}
-                  aufEntfernen={entfernen}
-                  aufFehler={setFehler}
-                />
+        <>
+          <p className="jagden-teilnehmer-summe">
+            {zugesagt} zugesagt
+            {offen > 0 ? <> · {offen} offen</> : null}
+          </p>
+
+          <div className="jagden-tabellenkasten">
+            <table className="zentrale-tabelle jagden-tabelle">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Rolle</th>
+                  <th scope="col">Merkmale</th>
+                  <th scope="col">Stand</th>
+                  <th scope="col">
+                    <span className="zentrale-nur-vorleser">Aktionen</span>
+                  </th>
+                </tr>
+              </thead>
+              {/*
+               * **Ein `tbody` je Zustandsgruppe, und die Zwischenzeile nur bei
+               * mehr als einer.** Eine Jagd mit zwei Zugesagten bekäme sonst
+               * eine Gliederung für eine einzige Gruppe — Verwaltungsarchitektur
+               * für zwei Leute. Ab zwei Zuständen trägt dieselbe Zeile die
+               * Orientierung, die bei 40 Personen nötig wird.
+               *
+               * `g.status` steht roh als Schlüssel da: `|| 'unbekannt'`
+               * kollidierte mit einem echten Status dieses Namens
+               * (Fremdprüfung, F5). Der leere String ist ein gültiger,
+               * eindeutiger Schlüssel.
+               */}
+              {gruppen.map((g) => (
+                <tbody key={g.status}>
+                  {gruppen.length > 1 ? (
+                    <tr className="jagden-gruppenzeile">
+                      {/* `rowgroup`, nicht `colgroup` — die Zeile betitelt die
+                          Teilnehmer darunter, keine Spalten (Fremdprüfung, F5). */}
+                      <th scope="rowgroup" colSpan={5}>
+                        {g.titel}
+                        <span className="jagden-gruppenzahl">{g.eintraege.length}</span>
+                      </th>
+                    </tr>
+                  ) : null}
+                  {g.eintraege.map((t) => (
+                    <Zeile
+                      key={t.id}
+                      teilnehmer={t}
+                      name={teilnehmerName(t, namen)}
+                      /** Der Ersteller bleibt unantastbar — s. `Zeile`. */
+                      istErstellerZeile={t.user_id === erstellerId}
+                      schreibbar={schreibbar}
+                      gesperrt={laedtNach}
+                      aufAendern={teilnehmerAendern}
+                      aufEntfernen={entfernen}
+                      aufFehler={setFehler}
+                    />
+                  ))}
+                </tbody>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+        </>
       )}
 
       {schreibbar ? (
