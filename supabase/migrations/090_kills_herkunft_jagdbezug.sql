@@ -116,6 +116,17 @@
 -- lassen oder den Client mitziehen. Sonst steht dort wieder „später erneut
 -- versuchen" vor einem Fehler, der beim zehnten Versuch derselbe ist — und die
 -- Erlegung bleibt unerfasst.
+--
+-- **Es gilt auch umgekehrt, und diese Richtung ist die wahrscheinlichere:**
+-- KEINE neue Fehlermeldung auf einem Schreibweg nach `kills` darf das Wort
+-- enthalten, es sei denn sie bedeutet dasselbe — endgültig abgelehnter Schein,
+-- Meldung soll ohne ihn wiederholt werden. Schritt 3/4 des Freigabekonzepts
+-- wird fast zwangsläufig etwas wie „Kontingent des Begehungsscheins
+-- erschöpft" erzeugen; der Client würde den Schein dann abwählen und „jetzt
+-- ohne ihn melden" anbieten — beim Kontingent genau das Falsche, denn dort
+-- soll die Meldung MIT Schein durchgehen und die Überschreitung ausweisen.
+-- **Spätestens dann gehört die Erkennung auf eine eigene Achse** — ein
+-- SQLSTATE im privaten Bereich (z. B. `P0087`) statt eines Wortes im Text.
 
 create or replace function public.set_kill_herkunft()
 returns trigger
