@@ -57,3 +57,6 @@ scripts/
 BERICHT_*.md
 .recon_db
 .envrc
+
+# Review-Schnappschuesse (Review-Kette, CLAUDE.md)
+.review/
