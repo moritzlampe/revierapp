@@ -28,6 +28,7 @@ import {
   suchtext,
   mehrfachText,
   normiert,
+  zuordnungsPatch,
   FELDER,
   KATEGORIEN,
   LEERER_ENTWURF,
@@ -547,3 +548,49 @@ assert.equal(passtZuSuche(gl, 'Gruppenleiter'), true)
 // UND-Verknuepfung ueber Feldgrenzen: Name + Kategorie zusammen.
 assert.equal(passtZuSuche(treiber, 'beck treiber'), true)
 assert.equal(passtZuSuche(treiber, 'beck schutze'), false)
+
+// --- Massenzuordnung (Moritz' Wunsch vom 03.08.2026) ------------------------
+
+const ohne = k({ id: '40', nachname: 'Grote' })
+const schon = k({ id: '41', nachname: 'Grote', kategorien: ['schuetze'] })
+const beides = k({ id: '42', nachname: 'Grote', kategorien: ['schuetze', 'treiber'] })
+
+// Hinzufuegen ist ADDITIV — die Kategorien sind ausdruecklich mehrfach.
+assert.deepEqual(zuordnungsPatch(ohne, 'schuetze', 'hinzufuegen'), ['schuetze'])
+assert.deepEqual(zuordnungsPatch(schon, 'treiber', 'hinzufuegen'), ['schuetze', 'treiber'])
+// Und zwar in Anzeigeordnung, egal in welcher Reihenfolge zugewiesen wurde.
+assert.deepEqual(
+  zuordnungsPatch(k({ id: '43', nachname: 'G', kategorien: ['treiber'] }), 'schuetze', 'hinzufuegen'),
+  ['schuetze', 'treiber'],
+)
+
+// **`null` heisst „nicht schreiben".** Bei 154 Zeilen ist das der Unterschied
+// zwischen 154 Requests und drei — und ein Patch, der denselben Wert
+// zurueckschreibt, ueberschreibt nebenbei, was ein Mitfuehrender gerade gesetzt
+// hat.
+assert.equal(zuordnungsPatch(schon, 'schuetze', 'hinzufuegen'), null, 'schon drin')
+assert.equal(zuordnungsPatch(ohne, 'schuetze', 'entfernen'), null, 'gar nicht drin')
+
+// Entfernen nimmt NUR die eine Marke.
+assert.deepEqual(zuordnungsPatch(beides, 'treiber', 'entfernen'), ['schuetze'])
+assert.deepEqual(zuordnungsPatch(beides, 'schuetze', 'entfernen'), ['treiber'])
+// Die letzte zu entfernen ergibt ein leeres Array, nicht null — die Spalte ist
+// NOT NULL, und „keine Kategorie" ist ein gueltiger Zustand.
+assert.deepEqual(zuordnungsPatch(schon, 'schuetze', 'entfernen'), [])
+
+// Ein ungeladenes oder unbekanntes Feld stuerzt nicht ab.
+assert.deepEqual(zuordnungsPatch({ kategorien: undefined as never }, 'treiber', 'hinzufuegen'), ['treiber'])
+assert.deepEqual(
+  zuordnungsPatch({ kategorien: ['buchhalter'] as never }, 'treiber', 'hinzufuegen'),
+  ['treiber'],
+  'Unbekanntes faellt weg statt in die Enum-Spalte zu laufen',
+)
+
+// Hin und zurueck stellt den Ausgangszustand her — sonst waere ein Fehlgriff
+// bei 40 Zeilen nicht zu heilen.
+for (const kat of KATEGORIEN) {
+  const drauf = zuordnungsPatch(beides, kat.wert, 'hinzufuegen') ?? beides.kategorien
+  const runter = zuordnungsPatch({ kategorien: drauf }, kat.wert, 'entfernen') ?? drauf
+  const erwartet = beides.kategorien.filter((x) => x !== kat.wert)
+  assert.deepEqual(runter, erwartet, `${kat.wert} hin und zurueck`)
+}

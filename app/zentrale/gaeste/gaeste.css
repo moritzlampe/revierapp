@@ -310,3 +310,39 @@
   line-height: 1.4;
   color: var(--z-text-secondary);
 }
+
+/* Zuordnen-Modus: Kategorie waehlen, Zeilen markieren, zuweisen.
+   Die Leiste sitzt auf --z-bg-sunken wie die Gruppenzeile der Teilnehmerliste
+   — sie liest sich als Fach ueber der Tabelle, nicht als Banner. */
+.zentrale .gaeste-zuordnen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--z-bg-sunken);
+  border-radius: 8px;
+}
+.zentrale .gaeste-zuordnen-wahl,
+.zentrale .gaeste-zuordnen-tat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.zentrale .gaeste-zuordnen-tat > span {
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+.zentrale .gaeste-zuordnen .zentrale-inspektor-fehler { flex-basis: 100%; margin: 0; }
+
+/* Die Hakenspalte bleibt schmal — sie ist ein Werkzeug, keine Angabe. */
+.zentrale .gaeste-haken { width: 32px; }
+.zentrale .gaeste-haken input { cursor: pointer; }
+
+.zentrale .gaeste-kategorien {
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}

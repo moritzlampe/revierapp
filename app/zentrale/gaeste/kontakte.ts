@@ -778,3 +778,54 @@ export function aenderungen(
   }
   return Object.keys(patch).length > 0 ? patch : null
 }
+
+// ===========================================================================
+// Mehrere auf einmal zuordnen
+// ===========================================================================
+//
+// **Moritz am 03.08.2026, beim ersten Ansehen der fertigen Seite:** „sollte man
+// nicht bei gästen auf ‚schützen' klicken können und dann alle anwählen die als
+// schütze eingeladen werden sollen?"
+//
+// Der Anlass ist gemessen: **154 Kontakte, alle ohne Kategorie**, und einzeln
+// durch den Inspektor sind das 154 Mal Zeile öffnen, Formular, Haken,
+// Speichern, zurück. Der Kategorie-Filter im Einlade-Dialog nützt nichts,
+// solange niemand die Kategorien pflegt — und das tut niemand, wenn es so lange
+// dauert. Die Massenzuordnung ist damit keine Bequemlichkeit, sondern die
+// Bedingung dafür, dass der ganze Block benutzt wird.
+
+/** Was eine Massenzuordnung mit der Kategorie tut. */
+export const ZUORDNUNG = ['hinzufuegen', 'entfernen'] as const
+export type Zuordnung = (typeof ZUORDNUNG)[number]
+
+/**
+ * Der neue Kategorien-Wert für einen Kontakt — oder `null`, wenn sich nichts
+ * ändert.
+ *
+ * **`null` heißt „nicht schreiben", und das ist bei 154 Zeilen der Unterschied
+ * zwischen 154 Requests und drei.** Wer schon Schütze ist, braucht kein Update;
+ * ein Patch, der denselben Wert zurückschreibt, kostet einen Roundtrip und
+ * überschreibt nebenbei, was ein Mitführender in derselben Sekunde gesetzt hat.
+ * Dieselbe Überlegung wie bei `aenderungen()`.
+ *
+ * **Hinzufügen ist additiv, nicht ersetzend** — die Kategorien sind
+ * ausdrücklich mehrfach (094: „Schweißhundführer können auch Schützen sein").
+ * Wer den Treibern eine Schützen-Marke gibt, nimmt ihnen nicht die Treiber-Marke.
+ *
+ * **Entfernen gibt es, weil es Hinzufügen gibt.** Ein Sammelklick auf 40 Zeilen
+ * ist genau die Handlung, bei der man sich vergreift; ohne den Rückweg wäre der
+ * einzige Ausweg, 40 Kontakte einzeln zu öffnen (S5 — irreversibel und
+ * ungefragt).
+ */
+export function zuordnungsPatch(
+  k: Pick<Kontakt, 'kategorien'>,
+  kategorie: Kategorie,
+  aktion: Zuordnung,
+): Kategorie[] | null {
+  const jetzt = normiert(k.kategorien, KATEGORIEN)
+  const hat = jetzt.includes(kategorie)
+  if (aktion === 'hinzufuegen' && hat) return null
+  if (aktion === 'entfernen' && !hat) return null
+  const neu = aktion === 'hinzufuegen' ? [...jetzt, kategorie] : jetzt.filter((x) => x !== kategorie)
+  return normiert(neu, KATEGORIEN)
+}

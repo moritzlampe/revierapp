@@ -17,14 +17,18 @@ import {
   istGestrichen,
   mehrfachText,
   normiert,
+  zuordnungsPatch,
   pruefeEntwurf,
   sichtbare,
   sortiert,
   EINLADUNGSWEG_LABEL,
+  KATEGORIEN,
   FELDER,
   LEERER_ENTWURF,
   MEHRFACH,
   type Entwurf,
+  type Kategorie,
+  type Zuordnung,
   type Filter,
   type Kontakt,
 } from './kontakte'
@@ -77,6 +81,24 @@ export default function Liste({
    * die Karte gelöst.
    */
   const [imEingriff, setImEingriff] = useState(false)
+
+  /**
+   * Der Zuordnen-Modus — Moritz' Wunsch vom 03.08.2026.
+   *
+   * **Ein Modus, kein Dauerzustand**, und das ist die einzige Stelle, an der
+   * hier überhaupt etwas umschaltet: die Zeile trägt schon einen Klick (sie
+   * öffnet den Inspektor). Kästchen daneben, die immer dastehen, machten aus
+   * jedem Klick eine Frage, welchen der beiden man gerade meint.
+   *
+   * `null` heißt: Modus aus. Sonst steht darin die Kategorie, die zugewiesen
+   * wird — Moritz' Ablauf ist „erst auf Schützen klicken, dann alle anwählen",
+   * die Kategorie kommt also VOR der Auswahl.
+   */
+  const [zuordnen, setZuordnen] = useState<Kategorie | null>(null)
+  const [markiert, setMarkiert] = useState<Set<string>>(new Set())
+  const [zuordnungLaeuft, setZuordnungLaeuft] = useState(false)
+  const [zuordnungFehler, setZuordnungFehler] = useState<string | null>(null)
+  const zuordnungInArbeit = useRef(false)
   const gesperrt = neu || imEingriff
 
   const ohneMail = useMemo(
@@ -143,6 +165,59 @@ export default function Liste({
       router.refresh()
     },
     [router],
+  )
+
+  /**
+   * Massenzuordnung: eine Kategorie auf alle markierten Kontakte.
+   *
+   * **Ein UPDATE je Kontakt, aber nur für die, bei denen sich etwas ändert.**
+   * `zuordnungsPatch()` gibt `null` für alle, die die Marke schon tragen (oder
+   * schon nicht tragen) — bei 154 Zeilen ist das der Unterschied zwischen 154
+   * Requests und drei. Ein Sammel-UPDATE über `.in('id', …)` ginge nicht: jeder
+   * Kontakt bekommt einen anderen Array-Wert, weil seine übrigen Kategorien
+   * erhalten bleiben.
+   *
+   * **Die Teilerfolgszahl steht in der Meldung** — dieselbe Lehre wie beim
+   * Einladen (Fremdprüfung 03.08.2026): scheitert der 7. von 40, sind 6
+   * geschrieben, und ohne die Zahl liest sich der Fehler, als sei nichts
+   * passiert.
+   *
+   * **Die Markierung überlebt einen Fehlschlag NICHT** — nach dem Refresh steht
+   * der frische Stand da, und wer weitermachen will, markiert aus dem, was
+   * wirklich noch offen ist. Auch das ist von dort übernommen.
+   */
+  const massenZuordnung = useCallback(
+    async (aktion: Zuordnung) => {
+      if (zuordnungInArbeit.current || !zuordnen || markiert.size === 0) return
+      zuordnungInArbeit.current = true
+      setZuordnungLaeuft(true)
+      setZuordnungFehler(null)
+      const betroffen = kontakte.filter((k) => markiert.has(k.id))
+      let geschrieben = 0
+      try {
+        for (const k of betroffen) {
+          const neu = zuordnungsPatch(k, zuordnen, aktion)
+          if (!neu) continue
+          await schreibe('Die Zuordnung', () =>
+            createClient().from('kontakte').update({ kategorien: neu }).eq('id', k.id).select('id'),
+          )
+          geschrieben++
+        }
+      } catch (err) {
+        const rumpf = err instanceof Error ? err.message : 'Unbekannter Fehler beim Zuordnen.'
+        setZuordnungFehler(
+          geschrieben > 0
+            ? `${geschrieben} Kontakte sind geändert, dann brach es ab: ${rumpf}`
+            : rumpf,
+        )
+      } finally {
+        setMarkiert(new Set())
+        zuordnungInArbeit.current = false
+        setZuordnungLaeuft(false)
+        router.refresh()
+      }
+    },
+    [kontakte, markiert, zuordnen, router],
   )
 
   /**
@@ -238,16 +313,91 @@ export default function Liste({
             durch ein leeres Formular ersetzen. */}
         <button
           type="button"
+          onClick={() => {
+            // Der Modus schliesst den Inspektor: beide zeigen auf dieselben
+            // Zeilen, und ein offener Entwurf neben einer laufenden
+            // Massenaenderung waere zweimal derselbe Kontakt.
+            setGewaehlt(null)
+            setNeu(false)
+            setZuordnungFehler(null)
+            setMarkiert(new Set())
+            setZuordnen(zuordnen ? null : KATEGORIEN[0].wert)
+          }}
+          disabled={imEingriff}
+          aria-pressed={zuordnen !== null}
+        >
+          {zuordnen ? 'Fertig' : 'Mehrere zuordnen'}
+        </button>
+
+        <button
+          type="button"
           className="gaeste-neu"
           onClick={() => {
             setGewaehlt(null)
             setNeu(true)
           }}
-          disabled={gesperrt}
+          disabled={gesperrt || zuordnen !== null}
         >
           Neuer Kontakt
         </button>
       </div>
+
+      {/* **Die Kategorie steht VOR der Auswahl**, wie Moritz es beschrieben hat:
+          „erst auf Schützen klicken, dann alle anwählen die als Schütze
+          eingeladen werden sollen." Umgekehrt — erst markieren, dann zuordnen —
+          waere derselbe Klickaufwand, aber man wuesste bis zuletzt nicht, wofuer
+          man gerade sammelt. */}
+      {zuordnen ? (
+        <div className="gaeste-zuordnen">
+          <div className="gaeste-zuordnen-wahl" role="group" aria-label="Kategorie zum Zuordnen">
+            {KATEGORIEN.map((kat) => (
+              <button
+                key={kat.wert}
+                type="button"
+                className="jagden-chip"
+                aria-pressed={zuordnen === kat.wert}
+                disabled={zuordnungLaeuft}
+                onClick={() => setZuordnen(kat.wert)}
+              >
+                {kat.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="gaeste-zuordnen-tat">
+            <span aria-live="polite">
+              {markiert.size === 0
+                ? 'Niemand markiert'
+                : `${markiert.size} markiert`}
+            </span>
+            <button
+              type="button"
+              className="haupt"
+              disabled={zuordnungLaeuft || markiert.size === 0}
+              onClick={() => void massenZuordnung('hinzufuegen')}
+            >
+              {zuordnungLaeuft ? 'Wird gespeichert …' : 'Kategorie hinzufügen'}
+            </button>
+            {/* **Der Rückweg gehört dazu, nicht in eine spätere Runde.** Ein
+                Sammelklick auf 40 Zeilen ist genau die Handlung, bei der man
+                sich vergreift; ohne „Entfernen" waere der einzige Ausweg, 40
+                Kontakte einzeln zu oeffnen. */}
+            <button
+              type="button"
+              disabled={zuordnungLaeuft || markiert.size === 0}
+              onClick={() => void massenZuordnung('entfernen')}
+            >
+              Entfernen
+            </button>
+          </div>
+
+          {zuordnungFehler ? (
+            <p className="zentrale-inspektor-fehler" role="alert">
+              {zuordnungFehler}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="gaeste-raster">
         <div className="gaeste-tabellenkasten">
@@ -261,11 +411,34 @@ export default function Liste({
             <table className="zentrale-tabelle gaeste-tabelle">
               <thead>
                 <tr>
+                  {zuordnen ? (
+                    <th scope="col" className="gaeste-haken">
+                      {/* Ein Kästchen im Kopf, das alles Sichtbare erfasst —
+                          bei 154 Zeilen der eigentliche Zeitgewinn. Es wirkt
+                          NUR auf das, was Suche und Filter gerade zeigen; die
+                          Auswahl ist die sichtbare Liste, der Haken führt sie
+                          nur aus. */}
+                      <input
+                        type="checkbox"
+                        checked={zeilen.length > 0 && zeilen.every((z) => markiert.has(z.id))}
+                        disabled={zuordnungLaeuft}
+                        aria-label="Alle sichtbaren markieren"
+                        onChange={(e) =>
+                          setMarkiert(
+                            e.target.checked ? new Set(zeilen.map((z) => z.id)) : new Set(),
+                          )
+                        }
+                      />
+                    </th>
+                  ) : null}
                   <th scope="col">Name</th>
                   <th scope="col">Begleitung</th>
                   <th scope="col">Notiz</th>
                   <th scope="col">Geburtstag</th>
-                  <th scope="col">Einladung</th>
+                  {/* Im Zuordnen-Modus zeigt die letzte Spalte die Kategorien
+                      statt des Einladungswegs: dort schaut man hin, um zu
+                      sehen, was der Klick bewirkt hat. */}
+                  <th scope="col">{zuordnen ? 'Kategorien' : 'Einladung'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -274,9 +447,37 @@ export default function Liste({
                     key={z.id}
                     className={z.id === gewaehlt ? 'gaeste-zeile-aktiv' : undefined}
                     onClick={() => {
+                      // Im Zuordnen-Modus markiert der Zeilenklick, statt den
+                      // Inspektor zu oeffnen — sonst zeigten zwei Klickziele auf
+                      // dieselbe Zeile.
+                      if (zuordnungLaeuft) return
+                      if (zuordnen) {
+                        setMarkiert((v) => {
+                          const neu = new Set(v)
+                          if (neu.has(z.id)) neu.delete(z.id)
+                          else neu.add(z.id)
+                          return neu
+                        })
+                        return
+                      }
                       if (!gesperrt) setGewaehlt(z.id)
                     }}
                   >
+                    {zuordnen ? (
+                      <td className="gaeste-haken">
+                        <input
+                          type="checkbox"
+                          checked={markiert.has(z.id)}
+                          disabled={zuordnungLaeuft}
+                          aria-label={`${anzeigeName(z)} markieren`}
+                          onChange={() => {
+                            /* Der Zeilenklick oben erledigt das Umschalten.
+                               Ohne diesen leeren Handler waere das Kästchen
+                               fuer React unkontrolliert. */
+                          }}
+                        />
+                      </td>
+                    ) : null}
                     <td>
                       {/* Der Knopf trägt den zugänglichen Namen und den Fokus;
                           der Klick auf die Zeile ist die bequeme Zugabe, nicht
@@ -285,7 +486,7 @@ export default function Liste({
                         type="button"
                         className="gaeste-zeilenknopf"
                         aria-current={z.id === gewaehlt ? 'true' : undefined}
-                        disabled={gesperrt}
+                        disabled={gesperrt || zuordnen !== null}
                       >
                         {anzeigeName(z)}
                       </button>
@@ -299,9 +500,15 @@ export default function Liste({
                     <td className="gaeste-notiz">{z.notiz || '—'}</td>
                     <td className="num">{alsDatum(z.geburtstag)}</td>
                     <td>
-                      <span className="zentrale-pill">
-                        {EINLADUNGSWEG_LABEL[einladungsweg(z)]}
-                      </span>
+                      {zuordnen ? (
+                        <span className="gaeste-kategorien">
+                          {mehrfachText(z.kategorien ?? [], KATEGORIEN) ?? '—'}
+                        </span>
+                      ) : (
+                        <span className="zentrale-pill">
+                          {EINLADUNGSWEG_LABEL[einladungsweg(z)]}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
