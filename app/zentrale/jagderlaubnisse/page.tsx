@@ -5,6 +5,7 @@ import Ausstellen, { Einloesen } from './formular'
 import type { StandWahl, ScheinZeile } from './formular'
 import { heuteUtc } from './scheine'
 import './jagderlaubnisse.css'
+import { geladen } from '../laden'
 
 /**
  * Jagderlaubnisse — Begehungsscheine ausstellen und einlösen.
@@ -26,11 +27,6 @@ type Revier = { id: string; name: string }
 
 /** Fehler nicht verschlucken — gleiche Haltung wie `geladen()` in ../page.tsx:
  *  eine leere Liste ist von einem RLS-Bruch nicht zu unterscheiden. */
-function geladen<T>({ data, error }: { data: unknown; error: { message: string } | null }, was: string): T {
-  if (error) throw new Error(`${was} konnten nicht geladen werden: ${error.message}`)
-  return (data ?? []) as T
-}
-
 export default async function JagderlaubnissePage({
   searchParams,
 }: {

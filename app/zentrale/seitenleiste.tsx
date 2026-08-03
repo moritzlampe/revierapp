@@ -12,7 +12,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 const BEREICHE = [
   { href: '/zentrale', label: 'Übersicht', fertig: true },
   { href: '/zentrale/revier', label: 'Revier', fertig: false },
-  { href: '/zentrale/jagden', label: 'Jagden', fertig: false },
+  { href: '/zentrale/jagden', label: 'Jagden', fertig: true },
   { href: '/zentrale/dokumentation', label: 'Dokumentation', fertig: false },
   { href: '/zentrale/jagderlaubnisse', label: 'Jagderlaubnisse', fertig: true },
   { href: '/zentrale/gaeste', label: 'Gäste', fertig: true },

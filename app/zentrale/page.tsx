@@ -4,6 +4,7 @@ import { parsePointHex, parsePolygonHex } from '@/lib/geo-utils'
 import Revierkarte from './revierkarte'
 import type { Punkt } from './revierkarte-map'
 import { istStand } from './objekte'
+import { geladen } from './laden'
 
 // Die Jagdart steckt in hunts.type, NICHT in hunts.kind (das kennt nur
 // group/solo). Alle vier Werte werden getragen, auch die heute ungenutzten
@@ -59,11 +60,6 @@ type Objekt = {
  * keine Strecke" und wäre von einem echten leeren Revier nicht zu unterscheiden.
  * Lieber werfen und error.tsx sagen lassen, dass die Zahl gerade nicht bekannt ist.
  */
-function geladen<T>({ data, error }: { data: unknown; error: { message: string } | null }, was: string): T {
-  if (error) throw new Error(`${was} konnten nicht geladen werden: ${error.message}`)
-  return (data ?? []) as T
-}
-
 /** PostgREST liefert geometry als GeoJSON; der Hex-Pfad ist der Fallback für
  *  andere Aufrufer (dieselbe Asymmetrie wie in parsePolygonHex). */
 function punktAus(input: unknown): { lat: number; lng: number } | null {

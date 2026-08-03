@@ -1,0 +1,90 @@
+/* Jagden — nur, was über `zentrale.css` hinausgeht.
+   Rahmen, Kopfzeile und Zeilenhöhe kommen aus `.zentrale-tabelle`. */
+
+.zentrale .jagden-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 1.25rem 0 1rem;
+}
+
+.zentrale .jagden-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--z-border);
+  border-radius: 16px;
+  background: var(--z-bg-elevated);
+  color: var(--z-text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.zentrale .jagden-chip:hover { background: var(--z-bg-sunken); }
+.zentrale .jagden-chip[aria-pressed='true'] {
+  background: var(--z-accent);
+  border-color: var(--z-accent);
+  color: var(--z-on-accent);
+}
+.zentrale .jagden-chip:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+
+/* Die Zahl bleibt auch auf dem aktiven Chip lesbar: Deckkraft statt einer
+   zweiten Farbe (Designsystem §11.1 — Zurücknahme läuft über Deckkraft). */
+.zentrale .jagden-chip-zahl {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+
+.zentrale .jagden-tabellenkasten {
+  /* Wide content scrollt in seinem eigenen Kasten, nie die Seite. */
+  overflow-x: auto;
+}
+
+/* Datums- und Zahlenspalten fluchten untereinander (Konzept §2.2:
+   "der Unterschied zwischen Kassenbuch und Website"). */
+.zentrale .jagden-tabelle .jagden-zahl {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Status immer als Text-Pille, nie nur über Farbe (Konzept §2.4). */
+.zentrale .jagden-pille {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--z-border-strong);
+  border-radius: 10px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.zentrale .jagden-pille.ist-offen {
+  border-color: var(--z-accent);
+  color: var(--z-accent);
+}
+/* Eine laufende Jagd ist der einzige Zustand, den das Portal nicht anfassen
+   darf. Sie hebt sich ab — aber NICHT in Alarmrot: das gehört der Nachsuche
+   (Konzept §2.6). */
+.zentrale .jagden-pille.ist-live {
+  border-color: #C08E48;
+  background: #C08E48;
+  color: #FFFFFF;
+}
+
+.zentrale .jagden-hinweis {
+  margin-left: 6px;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+
+.zentrale .jagden-offen { color: var(--z-text-secondary); }
+.zentrale .jagden-abgesagt { color: var(--z-text-secondary); opacity: 0.75; }
+
+@media (prefers-color-scheme: dark) {
+  .zentrale .jagden-pille.ist-live { color: #1F2618; }
+}

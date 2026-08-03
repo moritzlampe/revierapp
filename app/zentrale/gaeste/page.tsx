@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Liste from './liste'
 import { alsFilter, ersterWert, type Kontakt } from './kontakte'
 import './gaeste.css'
+import { geladen } from '../laden'
 
 /**
  * Gäste — die persönliche Kontaktliste (Gästestamm).
@@ -37,14 +38,6 @@ type Suchparameter = { [k: string]: string | string[] | undefined }
 /** Fehler nicht verschlucken — gleiche Haltung wie `geladen()` in ../page.tsx.
  *  ponytail: dritte Kopie dieser vier Zeilen im Portal. Zusammenlegen, sobald
  *  eine vierte dazukommt — dann ist es ein Muster und kein Zufall. */
-function geladen<T>(
-  { data, error }: { data: unknown; error: { message: string } | null },
-  was: string,
-): T {
-  if (error) throw new Error(`${was} konnten nicht geladen werden: ${error.message}`)
-  return (data ?? []) as T
-}
-
 export default async function GaestePage({
   searchParams,
 }: {
