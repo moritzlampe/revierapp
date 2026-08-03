@@ -731,3 +731,362 @@ export function namensvorschlag(termin: string): string {
   const [, jahr, monat, tag] = treffer
   return `Jagd am ${Number(tag)}.${Number(monat)}.${jahr}`
 }
+
+// ===========================================================================
+// Einladen — Konten UND Gäste ohne Konto
+// ===========================================================================
+//
+// **Der Anlass ist Moritz' Beobachtung vom 03.08.2026:** beim Anlegen einer
+// Jagd standen nur die 9 Personen mit Konto zur Wahl. „wir werden aber ja auch
+// jagden anlegen mit leuten die noch keinen haben oder nie haben werden."
+//
+// **Der Weg dafür war schon vollständig da, nur nicht angeschlossen:**
+// `hunt_participants.user_id` ist seit Migration 003 nullable, daneben stehen
+// `guest_name` und `guest_token`. Beide Clients zeigen `guest_name` als
+// Namensfallback (nativ `participants.ts:76`, PWA `hunt/[id]/page.tsx:160`),
+// `teilnehmerName()` hier tut dasselbe, und `/join/<code>` nimmt Gäste ohne
+// Anmeldung auf. Gefehlt hat allein die Auswahl.
+//
+// **Was NICHT gebaut wurde: eine Spalte `hunt_participants.kontakt_id`.** Sie
+// wäre der saubere Bezug zwischen Teilnehmerzeile und Adressbuch, und ohne sie
+// hängt der Dublettenschutz am NAMEN (`schonDabei`). Sie wäre aber DDL, also
+// Migration, also Anker 2 der Review-Kette — für einen Schutz, dessen
+// Ausfallschaden eine überzählige Zeile ist, die man entfernt. Fällig, sobald
+// etwas an der Zeile HÄNGT statt nur an ihr abzulesen: A-S3 Legitimation will
+// einen Nachweis je Person und Jagd, und ein Name trägt den nicht.
+// ponytail: Dublettenschutz über den Namen. Auf `kontakt_id` umstellen, sobald
+// A-S3 gebaut wird.
+
+/** Ein Adressbuch-Eintrag, so weit das Einladen ihn braucht. */
+export interface EinladbarerKontakt {
+  id: string
+  vorname: string | null
+  nachname: string | null
+  kategorien: readonly string[] | null
+}
+
+/**
+ * Ein Konto, so weit Portal-Seiten es brauchen.
+ *
+ * Stand als `interface Profil` gleichlautend in `[id]/page.tsx` UND
+ * `[id]/detail.tsx`; mit dieser Datei wäre es die dritte Kopie geworden
+ * (Ponytail-Lesung 03.08.2026). Dieselbe Klasse Befund wie die fünf Kopien der
+ * Objekt-Typliste, auf die `FELDER` in `../gaeste/kontakte.ts` verweist.
+ */
+export interface Profil {
+  id: string
+  display_name: string | null
+}
+
+export interface Kandidat {
+  /**
+   * **Über beide Quellen eindeutig**, deshalb mit Präfix: eine Kontakt-ID und
+   * eine Konto-ID sind beide UUIDs und könnten sich sonst nicht unterscheiden.
+   * Die Auswahl ist ein `Set<string>` über genau diese Schlüssel.
+   */
+  schluessel: string
+  name: string
+  /** Gesetzt heißt: die Person hat ein Konto und wird darüber eingeladen. */
+  userId: string | null
+  kategorien: readonly string[]
+  /** Hat abgesagt — wird per UPDATE wieder eingeladen, nicht per INSERT. */
+  erneut: boolean
+}
+
+export const KONTO_SCHLUESSEL = 'konto:'
+export const KONTAKT_SCHLUESSEL = 'kontakt:'
+
+/**
+ * Wer noch eingeladen werden kann — Konten und Adressbuch in EINER Liste.
+ *
+ * Drei Gruppen, in dieser Reihenfolge:
+ * 1. Konten ohne Teilnehmerzeile (INSERT mit `user_id`),
+ * 2. Konten, die abgesagt haben (UPDATE — seit 088 bleibt die Zeile stehen),
+ * 3. Adressbuch-Kontakte, die noch nicht als Gast eingetragen sind.
+ *
+ * **Der Ersteller fällt raus**, wie bisher: er steht als Jagdleiter schon drin.
+ *
+ * **Konto und Kontakt derselben Person erscheinen beide**, wenn beides
+ * existiert — `kontakte.profil_id` ist bei 0 von 154 Zeilen gesetzt (03.08.2026),
+ * es gibt also nichts, woran sich die Verbindung ablesen ließe. Ein
+ * Namensvergleich wäre geraten: „Lampe, Moritz" im Adressbuch gegen ein frei
+ * gesetztes `display_name`. Der Einladende sieht beide Zeilen und weiß, wer wer
+ * ist; ein falsch geratenes Zusammenlegen würde dagegen jemanden verschlucken.
+ * ponytail: auflösen, sobald `profil_id` gepflegt wird.
+ *
+ * **Drei Grenzen des Namens-Dublettenschutzes, alle gemessen und alle heute
+ * unerreichbar** (Fremdprüfung 03.08.2026, B1/B2/B5):
+ *
+ * 1. **Zwei Kontakte mit identischem Vor- UND Nachnamen** (Vater und Sohn ohne
+ *    „jun.") — ist einer eingeladen, verschwindet der andere aus der Auswahl.
+ *    Im Bestand: **0 solche Paare** von 154. Der Ausfall ist laut, nicht still:
+ *    der Jagdleiter sucht die Person und findet sie nicht.
+ * 2. **Schreibweise geändert nach der Einladung** — „Hans-Peter" wird zu „Hans
+ *    Peter", und der Kontakt wird erneut angeboten. `namensschluessel()`
+ *    normalisiert nur Groß-/Kleinschreibung und Leerraum, keine Satzzeichen und
+ *    keine Unicode-Zusammensetzung.
+ * 3. **Zwei Jagdleiter laden gleichzeitig denselben Gast ein** — `UNIQUE
+ *    (hunt_id, user_id)` greift bei `NULL` nicht, beide INSERTs gehen durch.
+ *    Danach steht ein Mensch zweimal auf der Liste, zählt doppelt und kann zwei
+ *    Stände bekommen.
+ *
+ * Fall 3 ist der einzige, den Code hier nicht schließen kann: dagegen hilft nur
+ * ein partieller Unique-Index (`(hunt_id, lower(guest_name)) where user_id is
+ * null`), also DDL, also der native Track (R2) und Anker 2. Notiert, nicht
+ * stillschweigend übergangen.
+ */
+export function kandidaten(
+  profile: readonly Profil[],
+  kontakte: readonly EinladbarerKontakt[],
+  teilnehmer: readonly { user_id: string | null; guest_name: string | null; status: string | null }[],
+  eigeneId: string,
+  namen: Record<string, string>,
+): Kandidat[] {
+  const mitZeile = new Set(teilnehmer.map((t) => t.user_id).filter(Boolean) as string[])
+  // Gäste erkennt man nur am Namen — s. der ponytail-Hinweis oben. Vergleich
+  // über `schonDabei`, damit Groß-/Kleinschreibung und Leerraum nicht zu einer
+  // zweiten Zeile für dieselbe Person führen.
+  const gaeste = new Set(
+    teilnehmer.filter((t) => !t.user_id && t.guest_name).map((t) => namensschluessel(t.guest_name!)),
+  )
+
+  const neu: Kandidat[] = profile
+    .filter((p) => p.id !== eigeneId && !mitZeile.has(p.id))
+    .map((p) => ({
+      schluessel: KONTO_SCHLUESSEL + p.id,
+      name: p.display_name || `Konto ${p.id.slice(0, 8)}`,
+      userId: p.id,
+      kategorien: [],
+      erneut: false,
+    }))
+
+  const abgesagt: Kandidat[] = teilnehmer
+    .filter((t) => t.user_id && wiederEinladbar(t.status))
+    .map((t) => ({
+      schluessel: KONTO_SCHLUESSEL + t.user_id!,
+      name: namen[t.user_id!] || `Konto ${t.user_id!.slice(0, 8)}`,
+      userId: t.user_id!,
+      kategorien: [],
+      erneut: true,
+    }))
+
+  const ausAdressbuch: Kandidat[] = kontakte
+    // **`OHNE_NAMEN` fällt raus** (Fremdprüfung 03.08.2026, B10): der Name wird
+    // als `guest_name` gespeichert und ist danach in keiner Oberfläche mehr zu
+    // ändern — ein Teilnehmer namens „(ohne Namen)" wäre Datenmüll, den man nur
+    // durch Entfernen und Neu-Einladen loswird. Der Check-Constraint
+    // `kontakt_braucht_namen` macht den Fall heute unerreichbar (0 von 154);
+    // der Riegel steht da, weil eine Ansicht sich nicht darauf verlassen darf,
+    // dass eine Datenbankbedingung nie verletzt wird — dieselbe Haltung wie bei
+    // `anzeigeName()` in `../gaeste/kontakte.ts`.
+    .filter((k) => kontaktName(k) !== OHNE_NAMEN)
+    .filter((k) => !gaeste.has(namensschluessel(kontaktName(k))))
+    .map((k) => ({
+      schluessel: KONTAKT_SCHLUESSEL + k.id,
+      name: kontaktName(k),
+      userId: null,
+      kategorien: k.kategorien ?? [],
+      erneut: false,
+    }))
+
+  return [...neu, ...abgesagt, ...ausAdressbuch]
+}
+
+/**
+ * „Ahlwes, Henner" aus Vor- und Nachname — bewusst NICHT `anzeigeName()` aus
+ * `../gaeste/kontakte`.
+ *
+ * Der Name landet als `guest_name` in der Datenbank und ist damit das, was
+ * beide Clients und die Papierliste am Jagdtag zeigen. Die
+ * Adressbuch-Schreibweise („Alvensleben v., Ferdinand") ist eine
+ * SORTIER-Schreibweise; sie ist im Adressbuch richtig und auf einer
+ * Teilnehmerliste falsch.
+ */
+export const OHNE_NAMEN = '(ohne Namen)'
+
+export function kontaktName(k: Pick<EinladbarerKontakt, 'vorname' | 'nachname'>): string {
+  return [k.vorname, k.nachname].map((s) => (s ?? '').trim()).filter(Boolean).join(' ') || OHNE_NAMEN
+}
+
+/** Namensvergleich ohne Groß-/Kleinschreibung und ohne doppelten Leerraum. */
+export function namensschluessel(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+/**
+ * Die Filter über der Kandidatenliste.
+ *
+ * **Filter statt getrennter Tabellen** (Codex, 03.08.2026, auf Moritz' Vorgabe
+ * „wenn ich schützen einlade will ich die treiber da nicht sehen"): bei 154
+ * Kontakten würden vier Tabellen untereinander die Seite sprengen, und eine
+ * Person mit drei Kategorien stünde dreimal da — mit drei Kästchen für eine
+ * Einladung.
+ *
+ * `gewaehlt` ist kein Bequemlichkeits-Filter, sondern **der Riegel des ganzen
+ * Entwurfs.** Die Auswahl überlebt den Kategoriewechsel (sonst wäre ein
+ * 40-Personen-Durchgang nicht zu schaffen), und damit kann ausgewählt sein, was
+ * man gerade nicht sieht. Der Zähler am Knopf sagt, DASS da etwas ist; dieser
+ * Filter zeigt, WAS.
+ */
+export const EINLADE_FILTER = [
+  { wert: 'alle', label: 'Alle' },
+  { wert: 'schuetze', label: 'Schützen' },
+  { wert: 'jaegerei', label: 'Jägerei' },
+  { wert: 'treiber', label: 'Treiber' },
+  { wert: 'schweisshundfuehrer', label: 'Schweißhundführer' },
+  { wert: 'konten', label: 'Mit Konto' },
+  { wert: 'ohne', label: 'Ohne Kategorie' },
+  { wert: 'gewaehlt', label: 'Ausgewählt' },
+] as const satisfies readonly { wert: string; label: string }[]
+
+export type EinladeFilter = (typeof EINLADE_FILTER)[number]['wert']
+
+/**
+ * Was dasteht, wenn kein Kandidat übrig ist.
+ *
+ * **Kein Text sagt, WARUM die Liste leer ist** — und das ist die Lehre aus zwei
+ * Runden an derselben Stelle. Erst stand hier „In dieser Kategorie ist niemand
+ * eingeordnet" für jeden Filter; das war unter „Mit Konto" falsch (Konten haben
+ * keine Kategorie) und unter „Ohne Kategorie" das Gegenteil der Wahrheit
+ * (Schlusslesung 03.08.2026). Die Fassung danach benannte je Filter eine
+ * Ursache — und log weiterhin, nur seltener: die Liste zeigt **nur
+ * Nicht-Eingeladene**, „keine Schützen zur Wahl" kann also auch heißen, dass
+ * alle schon eingeladen sind (Delta-Durchgang, D4).
+ *
+ * Diese Auskunft ist von hier aus nicht zu treffen, und der Ausweg ist nicht
+ * eine dritte Verzweigung, sondern der Verzicht: **der Text sagt, was ist
+ * („niemand steht mehr zur Wahl"), und nennt die Gästeliste als Ort, an dem man
+ * nachsieht — nicht als Diagnose.**
+ */
+export function leerText(filter: EinladeFilter, suche: string): string {
+  if (suche.trim()) return 'Niemand mit diesem Namen in dieser Auswahl.'
+  if (filter === 'gewaehlt') return 'Noch niemand ausgewählt.'
+  if (filter === 'konten') return 'Kein Konto steht mehr zur Wahl.'
+  if (filter === 'alle') return 'Niemand steht mehr zur Wahl.'
+  const woher =
+    filter === 'ohne' ? 'ohne Kategorie' : `aus der Kategorie „${einladeFilterLabel(filter)}"`
+  return `Niemand ${woher} steht noch zur Wahl — entweder ist niemand so eingeordnet, oder alle sind schon eingeladen. Nachsehen und einordnen lässt sich das in der Gästeliste.`
+}
+
+/** Die Beschriftung eines Filters — für Meldungen, die ihn benennen. */
+export function einladeFilterLabel(filter: EinladeFilter): string {
+  return EINLADE_FILTER.find((f) => f.wert === filter)?.label ?? filter
+}
+
+/** Gehört der Kandidat in diesen Filter? */
+export function imFilter(
+  k: Kandidat,
+  filter: EinladeFilter,
+  gewaehlt: ReadonlySet<string>,
+): boolean {
+  switch (filter) {
+    case 'alle':
+      return true
+    case 'gewaehlt':
+      return gewaehlt.has(k.schluessel)
+    // Konten tragen keine Kategorien — die hängen am Kontakt, nicht am Konto.
+    // Sie deshalb still unter „Ohne Kategorie" zu mischen, verwischte zwei ganz
+    // verschiedene Zustände: „hat die App" und „ist noch nicht eingeordnet".
+    case 'konten':
+      return k.userId !== null
+    case 'ohne':
+      return k.userId === null && k.kategorien.length === 0
+    default:
+      return k.kategorien.includes(filter)
+  }
+}
+
+/**
+ * Die sichtbaren Kandidaten. Filter UND Suche, in dieser Reihenfolge — die
+ * Suche wirkt INNERHALB des Filters, sie hebt ihn nicht auf.
+ *
+ * **`normalisiere` ist ein Parameter, und das ist keine Einspeisung auf Vorrat.**
+ * Übergeben wird immer `suchtext()` aus der Gästeliste; ein direkter Import
+ * wäre kürzer und war nach der Ponytail-Lesung am 03.08.2026 auch kurz drin.
+ * **Er bricht die Selbsttests:** diese Datei wird von `jagden.selftest.ts` unter
+ * `node --experimental-strip-types` geladen, und node löst nur Importe MIT
+ * `.ts`-Endung auf — die wiederum darf in Produktionscode nicht stehen. Der
+ * Parameter ist der Preis dafür, dass die Regeln hier ohne Testrahmen prüfbar
+ * bleiben (derselbe Grund, aus dem `../gaeste/kontakte.ts` ganz ohne Import
+ * auskommt).
+ *
+ * Gesucht wird damit über dieselbe Normalisierung wie in der Gästeliste:
+ * Umlaute fallen weg, die „ue"-Schreibweise ausdrücklich nicht.
+ */
+export function sichtbareKandidaten(
+  alle: readonly Kandidat[],
+  filter: EinladeFilter,
+  suche: string,
+  gewaehlt: ReadonlySet<string>,
+  normalisiere: (s: string) => string,
+): Kandidat[] {
+  const gesucht = normalisiere(suche).trim()
+  return alle.filter(
+    (k) => imFilter(k, filter, gewaehlt) && (!gesucht || normalisiere(k.name).includes(gesucht)),
+  )
+}
+
+/**
+ * Die Zahl je Filter — sie steht am Schalter, nicht erst nach dem Klick.
+ *
+ * Ohne sie muss man jeden Filter durchprobieren, um zu sehen, wo überhaupt
+ * jemand steht; mit ihr sieht man, dass „Treiber 0" heißt: dort ist niemand
+ * eingeordnet, nicht: dort ist niemand.
+ *
+ * **Die Suche geht NICHT ein.** Die Zahlen beschreiben den Bestand, nicht die
+ * gerade getippte Anfrage — sonst sprängen alle acht bei jedem Tastendruck.
+ */
+export function filterZaehler(
+  alle: readonly Kandidat[],
+  gewaehlt: ReadonlySet<string>,
+): Record<EinladeFilter, number> {
+  const zahlen = {} as Record<EinladeFilter, number>
+  for (const f of EINLADE_FILTER) {
+    zahlen[f.wert] = alle.filter((k) => imFilter(k, f.wert, gewaehlt)).length
+  }
+  return zahlen
+}
+
+/**
+ * Die Zustände, die ein Jagdleiter für einen GAST setzen darf.
+ *
+ * `left` fehlt bewusst: es heißt „selbst gegangen" und ist eine Aussage über
+ * eine Handlung des Teilnehmers. Ein Gast handelt hier nicht — was der
+ * Jagdleiter einträgt, ist entweder eine Zusage oder eine Absage, die er selbst
+ * entgegengenommen hat.
+ */
+export const GAST_ZUSTAENDE = ['invited', 'joined', 'declined'] as const
+export type GastZustand = (typeof GAST_ZUSTAENDE)[number]
+
+/**
+ * Der Patch für einen Zustandswechsel — **mit den Zeitstempeln, die dazu
+ * gehören**.
+ *
+ * `joined_at` und `left_at` allein stehen zu lassen wäre dieselbe Falle wie im
+ * Wiedereinladen-Zweig oben: eine Zeile auf `invited` mit einem Absagedatum
+ * daneben behauptet zwei Dinge gleichzeitig. Wer einen Gast von „abgesagt" auf
+ * „zugesagt" dreht, muss das `left_at` loswerden, und umgekehrt.
+ *
+ * Die Wahrheit steht danach in genau einer Spalte je Aussage — der Zustand im
+ * `status`, sein Zeitpunkt daneben, und nichts Widersprüchliches dazwischen.
+ *
+ * **Der Patch muss TOTAL bleiben — daran hängt mehr als Ordnung**
+ * (Delta-Durchgang 03.08.2026, D7). Anders als der Wiedereinlade-Zweig für
+ * Konten, der sich mit `.eq('status','declined')` gegen eine nebenläufige
+ * Änderung schützt, schreibt dieser Pfad ohne Vorzustandsprüfung. Das ist heute
+ * gefahrlos, weil alle drei Spalten aus dem ZIELzustand folgen und keinen
+ * Vorzustand lesen: zwei gleichzeitige Portal-Sitzungen ergeben schlimmstenfalls
+ * den letzten Klick, nie eine widersprüchliche Zeile. Wer hier später einen
+ * Teil-Patch einbaut (etwa „nur `status` setzen"), verliert diese Eigenschaft
+ * lautlos.
+ */
+export function gastZustand(wert: string): Record<string, unknown> {
+  const zustand: GastZustand = (GAST_ZUSTAENDE as readonly string[]).includes(wert)
+    ? (wert as GastZustand)
+    : 'invited'
+  return {
+    status: zustand,
+    joined_at: zustand === 'joined' ? new Date().toISOString() : null,
+    left_at: zustand === 'declined' ? new Date().toISOString() : null,
+  }
+}

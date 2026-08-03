@@ -262,3 +262,51 @@
   border-left: 3px solid var(--z-border-strong);
   border-radius: 0 6px 6px 0;
 }
+
+/* Mehrfachfelder (Kategorien, Funktionen) — Migration 094.
+   Der Rahmen ist die schwache Kante, nicht die starke: die Gruppe soll sich
+   als Fach lesen, nicht als Kasten mit eigenem Gewicht. Dieselbe Zurückhaltung
+   wie bei der Gruppenzeile der Teilnehmerliste; „dicke Balken" sind für
+   Zustandsgruppen bewusst verworfen worden und wären hier genauso falsch. */
+.zentrale .gaeste-mehrfach {
+  margin: 0 0 12px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--z-border);
+  border-radius: 6px;
+}
+/* `<legend>` sieht aus wie jede andere Feldbeschriftung — der Unterschied
+   zwischen „ein Feld" und „eine Gruppe von Kästchen" gehört ins Markup, damit
+   Screenreader ihn ansagen, nicht in die Optik. */
+.zentrale .gaeste-mehrfach > legend {
+  padding: 0 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--z-text-secondary);
+}
+/* `inline-flex` statt des `display:block` aus .zentrale-inspektor-feld label:
+   Kästchen und Beschriftung stehen nebeneinander, nicht übereinander. */
+.zentrale .gaeste-mehrfach .gaeste-mehrfach-wahl {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0 14px 0 0;
+  padding: 3px 0;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--z-text-primary);
+  cursor: pointer;
+}
+/* Die Breitenvorgabe aus .zentrale-inspektor-feld input gilt für Textfelder;
+   ein Kästchen auf 100% wäre ein Balken. */
+.zentrale .gaeste-mehrfach input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+.zentrale .gaeste-mehrfach:disabled .gaeste-mehrfach-wahl { cursor: default; }
+.zentrale .gaeste-mehrfach-hinweis {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--z-text-secondary);
+}

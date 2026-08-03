@@ -26,10 +26,18 @@ import {
   sortSchluessel,
   sortiert,
   suchtext,
+  mehrfachText,
+  normiert,
   FELDER,
+  KATEGORIEN,
   LEERER_ENTWURF,
+  MEHRFACH,
+  TAGS,
   type Kontakt,
 } from './kontakte.ts'
+
+const normiert2K = (w: readonly string[] | null | undefined) => normiert(w, KATEGORIEN)
+const normiert2T = (w: readonly string[] | null | undefined) => normiert(w, TAGS)
 
 /** Ein Kontakt mit allem leer — die Testfaelle setzen nur, was sie pruefen. */
 function k(teil: Partial<Kontakt>): Kontakt {
@@ -45,6 +53,8 @@ function k(teil: Partial<Kontakt>): Kontakt {
     geburtstag: null,
     notiz: null,
     kuerzel: null,
+    kategorien: [],
+    standard_tags: [],
     ...teil,
   }
 }
@@ -296,10 +306,19 @@ assert.deepEqual(sichtbare(bestand, '', 'alle'), bestand)
 // --- FELDER ist die EINE Liste: was der Entwurf hat, steht drin und umgekehrt ---
 // Laufen die auseinander, zeigt der Inspektor ein Feld, das das Formular nicht
 // schreibt (oder schlimmer: umgekehrt).
+// Seit 094 sind es ZWEI Listen — FELDER traegt die Textfelder, MEHRFACH die
+// Arrays. Zusammen muessen sie den Entwurf luekenlos und ueberschneidungsfrei
+// decken: ein Feld in keiner der beiden Listen liesse sich nicht bearbeiten,
+// ein Feld in beiden stuende zweimal im Formular.
 assert.deepEqual(
-  FELDER.map((f) => f.key).sort(),
+  [...FELDER.map((f) => f.key), ...MEHRFACH.map((m) => m.key)].sort(),
   (Object.keys(LEERER_ENTWURF) as (keyof typeof LEERER_ENTWURF)[]).sort(),
-  'FELDER und Entwurf muessen dieselben Felder fuehren',
+  'FELDER + MEHRFACH und Entwurf muessen dieselben Felder fuehren',
+)
+assert.equal(
+  FELDER.some((f) => MEHRFACH.some((m) => m.key === (f.key as string))),
+  false,
+  'kein Feld darf in beiden Listen stehen',
 )
 assert.deepEqual(
   FELDER.filter((f) => f.imKopf).map((f) => f.key),
@@ -400,3 +419,131 @@ assert.equal(
 assert.deepEqual(aenderungen({ ...entwurfVon(unsauber), notiz: 'extern' }, unsauber), {
   notiz: 'extern',
 })
+
+// --- 094: Kategorien und Funktionen -----------------------------------------
+
+// Die Enum-Werte, gegen die Migration 094 geschrieben ist. Laufen Konstante und
+// Spalte auseinander, wirft der INSERT `22P02 invalid input value for enum` —
+// erst beim Speichern, beim Nutzer, mit rohem Postgres-Text.
+assert.deepEqual(
+  KATEGORIEN.map((x) => x.wert),
+  ['schuetze', 'jaegerei', 'treiber', 'schweisshundfuehrer'],
+  'kontakt_kategorie aus 094',
+)
+assert.deepEqual(TAGS.map((x) => x.wert), ['gruppenleiter', 'hundefuehrer'], 'participant_tag')
+
+// normKategorien: Anzeigeordnung, egal wie geklickt wurde.
+assert.deepEqual(normiert2K(['treiber', 'schuetze']), ['schuetze', 'treiber'])
+// Dubletten fallen weg — sonst stuende „Schütze, Schütze" im Inspektor.
+assert.deepEqual(normiert2K(['schuetze', 'schuetze']), ['schuetze'])
+// Ein Wert, den das Enum nicht kennt, wuerde beim Schreiben mit 22P02 abgewiesen.
+assert.deepEqual(normiert2K(['schuetze', 'buchhalter']), ['schuetze'])
+// NULL/undefined: die Spalte ist NOT NULL, aber eine aeltere `.select()`-Liste
+// liefert sie schlicht nicht mit. Leer, nicht Absturz.
+assert.deepEqual(normiert2K(null), [])
+assert.deepEqual(normiert2K(undefined), [])
+assert.deepEqual(normiert2T(['hundefuehrer', 'gruppenleiter']), ['gruppenleiter', 'hundefuehrer'])
+
+// mehrfachText: Beschriftungen in Anzeigeordnung, leer heisst null (der
+// Inspektor zeigt dann „+ hinzufügen" statt einer leeren Zeile).
+assert.equal(mehrfachText(['treiber', 'schuetze'], KATEGORIEN), 'Schütze, Treiber')
+assert.equal(mehrfachText([], KATEGORIEN), null)
+assert.equal(mehrfachText(['buchhalter'], KATEGORIEN), null, 'Unbekanntes zaehlt nicht als Wert')
+
+// entwurfVon: die Spalte kommt normiert im Formular an.
+const mitKat = k({ id: '20', nachname: 'Grote', kategorien: ['treiber', 'schuetze'] })
+assert.deepEqual(entwurfVon(mitKat).kategorien, ['schuetze', 'treiber'])
+assert.deepEqual(entwurfVon(mitKat).standard_tags, [])
+
+// alsSpalten: leer ist ein leeres ARRAY, nicht NULL — die Spalte ist NOT NULL
+// mit Vorgabe `{}`, ein null wuerde mit 23502 abgewiesen.
+assert.deepEqual(alsSpalten(LEERER_ENTWURF).kategorien, [])
+assert.deepEqual(alsSpalten(LEERER_ENTWURF).standard_tags, [])
+
+// --- aenderungen: der Kern, an dem ein Array anders ist als ein String -------
+
+// **Der Fall, gegen den der getrennte Zweig in aenderungen() gebaut ist.**
+// Zwei Arrays sind nie `===`; ohne Inhaltsvergleich erzeugte jedes blosse
+// Oeffnen-und-Speichern einen Patch auf beide Spalten — und ueberschriebe damit
+// die Kategorie, die der Mitfuehrende gerade gesetzt hat.
+assert.equal(aenderungen(entwurfVon(mitKat), mitKat), null, 'unveraendert heisst kein Patch')
+
+// Die Reihenfolge in der Spalte ist ohne Belang: beide Seiten laufen durch
+// dieselbe Normalisierung. Sonst meldete ein Kontakt, dessen Spalte in anderer
+// Ordnung steht, bei jedem Oeffnen eine Aenderung.
+const andersHerum = k({ id: '21', nachname: 'Grote', kategorien: ['schuetze', 'treiber'] })
+assert.equal(
+  aenderungen({ ...entwurfVon(andersHerum), kategorien: ['treiber', 'schuetze'] }, andersHerum),
+  null,
+  'Reihenfolge allein ist keine Aenderung',
+)
+
+// Eine echte Aenderung faehrt — und NUR sie. Der Patch darf `standard_tags`
+// nicht mitschreiben, sonst ist der Schutz aus aenderungen() fuer die
+// Mehrfachfelder wirkungslos.
+assert.deepEqual(
+  aenderungen({ ...entwurfVon(mitKat), kategorien: ['schuetze'] }, mitKat),
+  { kategorien: ['schuetze'] },
+)
+// Alle Haken entfernen heisst ein leeres Array schreiben — und das IST eine
+// Aenderung, so wie ein geleertes Textfeld NULL schreibt.
+assert.deepEqual(aenderungen({ ...entwurfVon(mitKat), kategorien: [] }, mitKat), {
+  kategorien: [],
+})
+// Textfeld und Mehrfachfeld gemeinsam: beide im selben Patch, keins verdraengt
+// das andere. Der Mehrfach-Zweig laeuft vor der Textschleife und schreibt in
+// dasselbe Objekt.
+assert.deepEqual(
+  aenderungen({ ...entwurfVon(mitKat), notiz: 'ruft vorher an', kategorien: [] }, mitKat),
+  { kategorien: [], notiz: 'ruft vorher an' },
+)
+// Und die Gegenprobe zur Textschleife: sie darf die Arrays nicht ein zweites
+// Mal anfassen (`Array.isArray`-continue). Ein `kategorien: "schuetze,treiber"`
+// im Patch waere eine Zeichenkette in einer Enum-Spalte.
+assert.equal(
+  typeof (aenderungen({ ...entwurfVon(mitKat), kategorien: ['schuetze'] }, mitKat) ?? {})
+    .kategorien,
+  'object',
+  'die Textschleife darf die Arrays nicht anfassen',
+)
+
+// --- Fixes auf die Fremdpruefung vom 03.08.2026 -----------------------------
+
+// **A9: „nicht geladen" ist nicht „leer".** Beide Spalten sind NOT NULL mit
+// Vorgabe `{}` — aus der DB kommt nie `undefined`, wohl aber aus einem
+// `.select()`, das sie nicht mitnimmt. Ohne den Riegel zeigte der Inspektor
+// eine leere Aufzaehlung, und der erste Klick schriebe genau diese Leere
+// zurueck: stiller Verlust der echten Werte, mit Erfolgsmeldung.
+const ungeladen = { ...k({ id: '30', nachname: 'Grote' }) } as Kontakt
+// @ts-expect-error — genau der Zustand, den ein unvollstaendiges .select() erzeugt
+delete ungeladen.kategorien
+assert.equal(
+  aenderungen({ ...entwurfVon(ungeladen), kategorien: ['schuetze'] }, ungeladen),
+  null,
+  'eine ungeladene Spalte darf NICHT gepatcht werden',
+)
+// Die Gegenprobe: geladen und leer IST patchbar — sonst waere der Riegel eine
+// Sperre statt einer Unterscheidung.
+const geladenLeer = k({ id: '31', nachname: 'Grote', kategorien: [] })
+assert.deepEqual(
+  aenderungen({ ...entwurfVon(geladenLeer), kategorien: ['schuetze'] }, geladenLeer),
+  { kategorien: ['schuetze'] },
+)
+
+// **A11b: die Suche findet Kategorien und Funktionen** ueber ihre Beschriftung.
+// Ohne das tippt man „Treiber" und findet niemanden, obwohl Kontakte so
+// markiert sind — und wer 154 Zeilen einordnet, hat keine Kontrolle darueber.
+const treiber = k({ id: '32', vorname: 'Anna', nachname: 'Beck', kategorien: ['treiber'] })
+assert.equal(passtZuSuche(treiber, 'Treiber'), true)
+assert.equal(passtZuSuche(treiber, 'treiber'), true, 'Grossschreibung egal')
+assert.equal(passtZuSuche(treiber, 'Schütze'), false, 'nicht gesetzte Kategorie trifft nicht')
+// Umlaute fallen auf beiden Seiten weg — „schutze" findet „Schütze".
+const schuetze = k({ id: '33', nachname: 'Ahlwes', kategorien: ['schuetze'] })
+assert.equal(passtZuSuche(schuetze, 'schutze'), true)
+assert.equal(passtZuSuche(schuetze, 'Schütze'), true)
+// Funktionen genauso.
+const gl = k({ id: '34', nachname: 'Grote', standard_tags: ['gruppenleiter'] })
+assert.equal(passtZuSuche(gl, 'Gruppenleiter'), true)
+// UND-Verknuepfung ueber Feldgrenzen: Name + Kategorie zusammen.
+assert.equal(passtZuSuche(treiber, 'beck treiber'), true)
+assert.equal(passtZuSuche(treiber, 'beck schutze'), false)

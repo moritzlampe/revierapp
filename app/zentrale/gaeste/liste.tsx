@@ -15,12 +15,15 @@ import {
   initialen,
   kuerzelVon,
   istGestrichen,
+  mehrfachText,
+  normiert,
   pruefeEntwurf,
   sichtbare,
   sortiert,
   EINLADUNGSWEG_LABEL,
   FELDER,
   LEERER_ENTWURF,
+  MEHRFACH,
   type Entwurf,
   type Filter,
   type Kontakt,
@@ -133,7 +136,7 @@ export default function Liste({
    * in einem Client-Cache, den man von Hand nachziehen könnte.
    */
   const speichern = useCallback(
-    async (id: string, patch: Record<string, string | null>) => {
+    async (id: string, patch: Record<string, string | string[] | null>) => {
       await schreibe('Der Kontakt', () =>
         createClient().from('kontakte').update(patch).eq('id', id).select('id'),
       )
@@ -358,7 +361,7 @@ function Details({
   /** Meldet nach oben, dass die Liste gesperrt gehört. */
   aufModus: (imEingriff: boolean) => void
   /** Schreibt und wirft bei Misserfolg — die Fehlermeldung landet im Formular. */
-  aufSpeichern: (id: string, patch: Record<string, string | null>) => Promise<void>
+  aufSpeichern: (id: string, patch: Record<string, string | string[] | null>) => Promise<void>
   /** Löscht und wirft bei Misserfolg — die Rückfrage bleibt dann stehen. */
   aufLoeschen: (id: string) => Promise<void>
 }) {
@@ -485,6 +488,22 @@ function Details({
             aufNachtragen={() => {
               setFehler(null)
               setBearbeiten({ fokus: f.key })
+            }}
+          />
+        ))}
+
+        {/* Die Mehrfachfelder lesen sich wie jede andere Zeile — eine
+            Aufzählung, oder „+ hinzufügen". Der Inspektor soll nicht zeigen,
+            WIE etwas gepflegt wird, sondern WAS gepflegt ist. */}
+        {MEHRFACH.map((m) => (
+          <Feld
+            key={m.key}
+            label={m.label}
+            gesperrt={loeschFrage || laeuft}
+            wert={mehrfachText(kontakt[m.key] ?? [], m.optionen)}
+            aufNachtragen={() => {
+              setFehler(null)
+              setBearbeiten({ fokus: m.key })
             }}
           />
         ))}
@@ -693,6 +712,53 @@ function Formular({
             </div>
           )
         })}
+
+        {/* Kästchen statt Mehrfach-Auswahlliste: ein `<select multiple>`
+            verlangt Strg-Klicken, und was gerade gewählt ist, sieht man erst
+            beim Scrollen. Vier bzw. zwei Werte passen nebeneinander — alles
+            sichtbar, ein Klick je Wert.
+
+            `<fieldset>`/`<legend>` statt `<label>`: eine Beschriftung gehört zu
+            EINEM Bedienelement. Wer sich die Seite vorlesen lässt, hört sonst
+            „Schütze, Kontrollkästchen" ohne zu wissen, wozu die Gruppe gehört. */}
+        {MEHRFACH.map((m, i) => (
+          <fieldset key={m.key} className="gaeste-mehrfach" disabled={laeuft}>
+            <legend>{m.label}</legend>
+            {m.optionen.map((o, j) => (
+              <label key={o.wert} className="gaeste-mehrfach-wahl">
+                <input
+                  type="checkbox"
+                  checked={(entwurf[m.key] as readonly string[]).includes(o.wert)}
+                  autoFocus={fokus === m.key && j === 0}
+                  onChange={(e) =>
+                    setEntwurf((v) => ({
+                      ...v,
+                      // Aus dem Entwurf entfernen und beim Setzen neu normieren:
+                      // damit steht die Auswahl immer in Anzeigeordnung, egal in
+                      // welcher Reihenfolge geklickt wurde. `aenderungen()`
+                      // normiert ohnehin — hier geht es allein darum, dass die
+                      // Kästchen und der Inspektor dieselbe Ordnung zeigen.
+                      [m.key]: normiert(
+                        e.target.checked
+                          ? [...v[m.key], o.wert]
+                          : v[m.key].filter((w: string) => w !== o.wert),
+                        m.optionen,
+                      ),
+                    }))
+                  }
+                />
+                {o.label}
+              </label>
+            ))}
+            {i === MEHRFACH.length - 1 && (
+              // Steht nur einmal, unter beiden Gruppen: der Satz gilt für beide
+              // und wäre zweimal ein Hinweis, den niemand mehr liest.
+              <p className="gaeste-mehrfach-hinweis">
+                Mehrfach möglich — wer Schweißhundführer ist, kann zugleich Schütze sein.
+              </p>
+            )}
+          </fieldset>
+        ))}
       </div>
 
       {fehler && (

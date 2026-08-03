@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../../schreiben'
 import {
   alsEingabewert,
+  filterZaehler,
   jagdAenderungen,
   jagdart,
   jagdstatus,
@@ -14,7 +15,11 @@ import {
   namensvorschlag,
   pruefeJagdEntwurf,
   rolle,
+  gastZustand,
+  leerText,
   gruppiereTeilnehmer,
+  kandidaten,
+  sichtbareKandidaten,
   tag,
   teilnahme,
   teilnehmerName,
@@ -22,19 +27,20 @@ import {
   terminText,
   vorbereitbar,
   VORBEREITBARE_STATUS,
-  wiederEinladbar,
+  EINLADE_FILTER,
+  GAST_ZUSTAENDE,
   JAGDARTEN,
   SETZBARE_ROLLEN,
   TAGS,
+  type EinladbarerKontakt,
+  type EinladeFilter,
   type Jagd,
   type JagdEntwurf,
+  type Kandidat,
+  type Profil,
   type Teilnehmer,
 } from '../jagden'
-
-interface Profil {
-  id: string
-  display_name: string | null
-}
+import { suchtext } from '../../gaeste/kontakte'
 
 /**
  * Eine Jagd vorbereiten — Portal-Phase 4a.
@@ -54,6 +60,7 @@ export default function Detail({
   revierId,
   teilnehmer,
   profile,
+  kontakte,
   eigeneId,
   erstellerId,
   istLeiter,
@@ -63,6 +70,8 @@ export default function Detail({
   revierId: string | null
   teilnehmer: Teilnehmer[]
   profile: Profil[]
+  /** Das Adressbuch — die Menschen ohne Konto (Migration 085). */
+  kontakte: EinladbarerKontakt[]
   eigeneId: string
   erstellerId: string
   /** Ersteller ODER zugesagter Rollen-Jagdleiter. Serverseitig entschieden. */
@@ -111,11 +120,16 @@ export default function Detail({
   const zugesagt = teilnehmer.filter((t) => t.status === 'joined').length
   const offen = teilnehmer.filter((t) => t.status === 'invited').length
 
-  /** Wer noch gar keine Zeile hat — nur die sind ein INSERT. */
-  const einladbar = useMemo(() => {
-    const dabei = new Set(teilnehmer.map((t) => t.user_id).filter(Boolean))
-    return profile.filter((p) => p.id !== eigeneId && !dabei.has(p.id))
-  }, [profile, teilnehmer, eigeneId])
+  /**
+   * Wer eingeladen werden kann — Konten UND Adressbuch in einer Liste.
+   *
+   * Die Regeln stecken in `kandidaten()` (mit Selbsttest); hier steht nur, dass
+   * beide Quellen hineingehen. Bis 03.08.2026 waren es allein die 9 Profile.
+   */
+  const alleKandidaten = useMemo(
+    () => kandidaten(profile, kontakte, teilnehmer, eigeneId, namen),
+    [profile, kontakte, teilnehmer, eigeneId, namen]
+  )
 
   /**
    * Die Read-only-Grenze aus Konzept §3, **in der Datenbank statt nur im UI**.
@@ -222,11 +236,47 @@ export default function Detail({
    *
    * `left_at` wird dabei zurückgesetzt: eine Zeile auf `invited` mit einem
    * Absagedatum daneben behauptet zwei Dinge gleichzeitig.
+   *
+   * **Seit 03.08.2026 kommen Gäste ohne Konto dazu** — ein dritter Fall, und
+   * der einfachste: `user_id = null`, `guest_name` gesetzt. Kein UPDATE-Zweig,
+   * weil ein Gast keine Zeile haben KANN, die er wieder-einladen ließe: er hat
+   * keine Kennung, an der man sie fände. Ein bereits eingetragener Gast steht
+   * deshalb gar nicht erst zur Wahl (`kandidaten()` filtert über den Namen).
+   *
+   * **`guest_token` bleibt hier leer, und das ist Absicht.** Er ist der
+   * Nachweis, dass jemand über `/join/<code>` selbst beigetreten ist — wer vom
+   * Jagdleiter eingetragen wird, hat nichts nachgewiesen. Ein hier erfundener
+   * Token wäre eine Behauptung, und die Join-Seite liest genau dieses Feld, um
+   * Eingetragene von Beigetretenen zu unterscheiden.
    */
-  const einladen = async (userIds: string[]) => {
+  const einladen = async (schluessel: string[]) => {
     await pruefeZustand()
     const client = createClient()
     const vorhandene = new Map(teilnehmer.filter((t) => t.user_id).map((t) => [t.user_id!, t]))
+    // Aus dem Schlüssel zurück auf den Kandidaten: er trägt Name und `userId`,
+    // und beides braucht der Write. Über die Kandidatenliste statt über zwei
+    // getrennte Parameter — dann kann der Aufrufer die zwei Fälle nicht
+    // verwechseln.
+    const gewaehlteKandidaten = schluessel
+      .map((s) => alleKandidaten.find((k) => k.schluessel === s))
+      .filter((k): k is NonNullable<typeof k> => Boolean(k))
+
+    // **Ein Schlüssel ohne Kandidat wird NICHT still verworfen** (Fremdprüfung
+    // 03.08.2026, B4). Die Auswahl überlebt einen `router.refresh()`, die
+    // Kandidatenliste nicht: wer inzwischen von woanders eingeladen wurde,
+    // verschwindet aus `alleKandidaten` und bliebe im Set stehen. Der Knopf
+    // sagte dann „12 einladen", geschrieben würden 10 — ein Teilfehlschlag, der
+    // sich als voller Erfolg liest. Genau die Klasse, gegen die `schreibe()`
+    // gebaut ist, nur eine Ebene höher.
+    if (gewaehlteKandidaten.length !== schluessel.length) {
+      const fehlend = schluessel.length - gewaehlteKandidaten.length
+      nachladen()
+      throw new Error(
+        `${fehlend} der ${schluessel.length} Ausgewählten stehen nicht mehr zur Wahl — ` +
+          'sie wurden inzwischen anderswo eingeladen oder entfernt. Es wurde nichts ' +
+          'geschrieben; die Seite lädt gerade den neuen Stand.',
+      )
+    }
 
     /**
      * **`finally`, nicht am Ende des Erfolgspfads** (Codex-Befund 2): die Writes
@@ -239,9 +289,32 @@ export default function Detail({
      * Mit dem Refresh im `finally` ist der zweite Versuch auf dem frischen
      * Stand und tut genau das, was noch fehlt.
      */
+    // **Zählt mit, wie viele schon durch sind** (Fremdprüfung 03.08.2026,
+    // B3/B11). Die Writes committen einzeln; scheitert der 7. von 20, stehen 6
+    // dauerhaft in der DB, 13 wurden nie versucht, und die Auswahl wird gleich
+    // darauf geleert. Ohne diese Zahl liest sich die Meldung, als sei gar
+    // nichts passiert — der Nutzer wählt alle 20 erneut und läuft beim ersten
+    // in `23505`.
+    let geschrieben = 0
     try {
-      for (const userId of userIds) {
-        const alt = vorhandene.get(userId)
+      for (const kandidat of gewaehlteKandidaten) {
+        if (!kandidat.userId) {
+          await schreibe('Die Einladung', () =>
+            client
+              .from('hunt_participants')
+              .insert({
+                hunt_id: jagd.id,
+                user_id: null,
+                guest_name: kandidat.name,
+                role: 'schuetze',
+                status: 'invited',
+              })
+              .select('id')
+          )
+          geschrieben++
+          continue
+        }
+        const alt = vorhandene.get(kandidat.userId)
         if (alt) {
           /**
            * **`.eq('status', 'declined')` ist der Riegel, nicht Zierat**
@@ -262,15 +335,33 @@ export default function Detail({
               .eq('status', 'declined')
               .select('id')
           )
+          geschrieben++
         } else {
           await schreibe('Die Einladung', () =>
             client
               .from('hunt_participants')
-              .insert({ hunt_id: jagd.id, user_id: userId, role: 'schuetze', status: 'invited' })
+              .insert({
+                hunt_id: jagd.id,
+                user_id: kandidat.userId,
+                role: 'schuetze',
+                status: 'invited',
+              })
               .select('id')
           )
+          geschrieben++
         }
       }
+    } catch (err) {
+      // Die Zahl davor, nicht dahinter: sie ist die Handlungsanweisung („die
+      // ersten sechs stehen, fang beim siebten an"), die Ursache nur die
+      // Erklärung. Beim ersten Fehlschlag steht sie nicht da — dann wäre „0 von
+      // 20" ein Rauschen vor der eigentlichen Meldung.
+      const rumpf = err instanceof Error ? err.message : 'Unbekannter Fehler beim Einladen.'
+      throw new Error(
+        geschrieben > 0
+          ? `${geschrieben} von ${gewaehlteKandidaten.length} sind eingeladen, dann brach es ab: ${rumpf}`
+          : rumpf,
+      )
     } finally {
       nachladen()
     }
@@ -454,13 +545,7 @@ export default function Detail({
       )}
 
       {schreibbar ? (
-        <Einladen
-          kandidaten={einladbar}
-          abgesagte={teilnehmer.filter((t) => wiederEinladbar(t.status))}
-          namen={namen}
-          gesperrt={laedtNach}
-          aufEinladen={einladen}
-        />
+        <Einladen kandidaten={alleKandidaten} gesperrt={laedtNach} aufEinladen={einladen} />
       ) : null}
     </>
   )
@@ -689,7 +774,52 @@ function Zeile({
       </td>
 
       <td>
-        <span className={`jagden-stand ist-${t.status ?? 'unbekannt'}`}>{teilnahme(t.status)}</span>
+        {/**
+          * **Für Gäste ist der Zustand setzbar, für Konten nicht** —
+          * Schlusslesung 03.08.2026, offener Punkt.
+          *
+          * Ein Konto antwortet selbst, in der App. Diese Zelle dort zu einem
+          * Auswahlfeld zu machen hieße, eine fremde Willenserklärung zu
+          * überschreiben: der Jagdleiter setzte „zugesagt" für jemanden, der
+          * nichts gesagt hat.
+          *
+          * **Ein Gast kann nicht selbst antworten, und das ist keine
+          * Bequemlichkeitsfrage, sondern eine Sackgasse:** er hat kein Konto,
+          * der Weg über `/join/<code>` ist verschlossen (s. `Einladen`), und
+          * bis hierher konnte auch der Jagdleiter den Zustand nicht ändern —
+          * die Zeile bot nur `role` und `tags`. Ein eingetragener Gast wäre
+          * damit dauerhaft „Eingeladen" geblieben und hätte für immer im
+          * „N offen" der Kopfzeile mitgezählt. Die Zahl hätte behauptet, dort
+          * stünden Antworten aus, wo keine kommen können.
+          *
+          * Der Jagdleiter erfährt die Zusage ohnehin selbst — er hat den Gast
+          * angerufen oder ihm geschrieben; es gibt keinen anderen Weg zu ihm.
+          * Hier trägt er ein, was er weiß.
+          */}
+        {/* **Nur für Zustände, die das Feld auch anbietet** (Delta-Durchgang
+            03.08.2026, D3). Stünde in der Zeile `left` oder `null`, zeigte das
+            Feld „Eingeladen" — und weil `onChange` beim Wählen des bereits
+            angezeigten Werts nicht feuert, ließe sich die Abweichung nicht
+            einmal wegklicken. Lieber der wahre Zustand als Text: der Fall ist
+            über keinen Weg herstellbar (ein Gast kann weder absagen noch
+            austreten, beide RPCs brauchen ein Konto), und wenn er doch
+            entsteht, will man ihn SEHEN, nicht überschrieben bekommen. */}
+        {aenderbar && !t.user_id && GAST_ZUSTAENDE.includes(t.status as never) ? (
+          <select
+            value={t.status as string}
+            disabled={blockiert}
+            aria-label={`Zustand von ${name}`}
+            onChange={(e) => void fuehreAus(() => aufAendern(t.id, gastZustand(e.target.value)))}
+          >
+            {GAST_ZUSTAENDE.map((z) => (
+              <option key={z} value={z}>
+                {teilnahme(z)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className={`jagden-stand ist-${t.status ?? 'unbekannt'}`}>{teilnahme(t.status)}</span>
+        )}
       </td>
 
       <td className="jagden-aktionen">
@@ -723,40 +853,108 @@ function Zeile({
 }
 
 /**
- * Einladen — Neue und erneut Abgesagte in einer Auswahl.
+ * Einladen — Konten und Adressbuch in EINER Liste, nach Kategorie filterbar.
  *
- * Ohne Suche, wie nativ: im Bestand stehen 9 Profile (03.08.2026). Die
- * Gästeliste mit 154 Namen hängt bewusst nicht daran — `kontakte.profil_id`
- * steht bei 0 von 154, das ist ein eigener Block (E3).
+ * **Moritz' Vorgabe vom 03.08.2026, wörtlich:** *„ich will das aber wirklich
+ * übersichtlich getrennt können. also wenn ich schützen einlade will ich die
+ * treiber da nicht sehen. entweder über filter oder eigene tabellen."*
+ *
+ * **Filter, nicht eigene Tabellen** (Codex, 03.08.2026, auf genau diese Frage).
+ * Vier Tabellen untereinander sprengen bei 154 Kontakten die Seite, und eine
+ * Person mit drei Kategorien stünde dreimal da — mit drei Kästchen für eine
+ * Einladung. Der Filter zeigt jede Person genau einmal.
+ *
+ * **Die Auswahl überlebt den Filterwechsel**, sonst wäre ein Durchgang mit 40
+ * Leuten nicht zu schaffen: erst alle Schützen, dann alle Treiber. Damit kann
+ * aber ausgewählt sein, was man gerade nicht sieht — Codex' eigener Einwand
+ * gegen seinen Vorschlag. Dagegen zwei Dinge, und sie sind keine Zugabe: der
+ * Zähler am Knopf sagt, DASS da etwas ist, und der Filter „Ausgewählt" zeigt,
+ * WAS.
+ *
+ * **Mit Suche, anders als bisher.** Bei 9 Profilen war der Verzicht richtig;
+ * bei 154 Kontakten ist es eine andere Größenordnung — und die Suche ist der
+ * einzige Weg zu jemandem, der noch keine Kategorie hat und dessen Namen man
+ * kennt.
+ *
+ * **Hier stand kurzzeitig ein Einladungslink, und er ist wieder raus.** Der
+ * naheliegende zweite Weg für Menschen ohne Konto wäre `hunts.invite_code` mit
+ * `/join/<code>` — die Seite gibt es, jede der 41 Jagden hat einen Code, und
+ * `hunt_participants` trägt seit Migration 003 `guest_token` genau dafür.
+ * **Der Weg ist tot, gemessen am 03.08.2026 gegen die Produktion** (Testrevier
+ * L7, alles mit ROLLBACK):
+ *
+ * - `anon` liest `hunts` per `invite_code` -> **0 Zeilen**; die Join-Seite
+ *   meldet „Einladungslink ungültig oder abgelaufen", bevor irgendetwas
+ *   passiert.
+ * - `anon` INSERT auf `hunt_participants` -> **42501**.
+ * - Ein ANGEMELDETER Fremder: dasselbe, 0 Zeilen und 42501. Alle vier Policies
+ *   verlangen, Ersteller oder Jagdleiter zu sein.
+ * - Positivkontrolle: der Ersteller legt eine Gast-Zeile an -> durchgelaufen.
+ *   **Genau der Pfad, den `einladen()` oben nimmt.**
+ *
+ * Aufgefallen ist es nie, weil ihn nie jemand benutzt hat: `guest_token` ist
+ * bei **0 von 93** Teilnehmerzeilen gesetzt. Ein Knopf dafür wäre der S2-Fall
+ * aus dem Standard-Focus gewesen — eine Fläche, die einen Weg verspricht, den
+ * die Policies verweigern.
+ *
+ * **Was das offenlässt und was nicht:** wer nie ein Konto haben wird, steht
+ * über die Gästeliste vollständig auf der Teilnehmerliste — dafür braucht es
+ * den Link nicht. Wer die App bekommen SOLL, kommt heute nur über einen
+ * Begehungsschein herein. Den Link-Weg wieder aufzumachen wäre eine
+ * INSERT-Policy, also DDL, also der native Track (R2) und Anker 2.
  */
 function Einladen({
   kandidaten,
-  abgesagte,
-  namen,
   gesperrt,
   aufEinladen,
 }: {
-  kandidaten: Profil[]
-  abgesagte: Teilnehmer[]
-  namen: Record<string, string>
+  kandidaten: Kandidat[]
   /** Ein Refresh läuft — die Kandidatenliste ist bis dahin veraltet. */
   gesperrt: boolean
-  aufEinladen: (userIds: string[]) => Promise<void>
+  aufEinladen: (schluessel: string[]) => Promise<void>
 }) {
   const [gewaehlt, setGewaehlt] = useState<Set<string>>(new Set())
+  const [filter, setFilter] = useState<EinladeFilter>('alle')
+  const [suche, setSuche] = useState('')
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
   const inArbeit = useRef(false)
 
   const blockiert = laeuft || gesperrt
 
-  const umschalten = (id: string) =>
+  const zahlen = useMemo(() => filterZaehler(kandidaten, gewaehlt), [kandidaten, gewaehlt])
+  const sichtbar = useMemo(
+    () => sichtbareKandidaten(kandidaten, filter, suche, gewaehlt, suchtext),
+    [kandidaten, filter, suche, gewaehlt]
+  )
+
+  const umschalten = (schluessel: string) =>
     setGewaehlt((v) => {
       const neu = new Set(v)
-      if (neu.has(id)) neu.delete(id)
-      else neu.add(id)
+      if (neu.has(schluessel)) neu.delete(schluessel)
+      else neu.add(schluessel)
       return neu
     })
+
+  /**
+   * Alle Sichtbaren auf einmal — der Grund, warum ein 40-Personen-Durchgang
+   * überhaupt zumutbar ist. Wirkt **nur auf das gerade Sichtbare**: Filter und
+   * Suche sind die Auswahl, der Knopf führt sie nur aus.
+   *
+   * Er setzt oder räumt, je nachdem, ob schon alles Sichtbare gewählt ist —
+   * damit ist derselbe Knopf auch der Rückweg aus einem Fehlgriff.
+   */
+  const alleSichtbaren = () => {
+    const alleDrin = sichtbar.length > 0 && sichtbar.every((k) => gewaehlt.has(k.schluessel))
+    setGewaehlt((v) => {
+      const neu = new Set(v)
+      for (const k of sichtbar) {
+        if (alleDrin) neu.delete(k.schluessel)
+        else neu.add(k.schluessel)
+      }
+      return neu
+    })
+  }
 
   const absenden = async () => {
     if (inArbeit.current || gewaehlt.size === 0) return
@@ -781,21 +979,15 @@ function Einladen({
     }
   }
 
-  const auswahl = [
-    ...kandidaten.map((p) => ({ id: p.id, name: p.display_name || `Konto ${p.id.slice(0, 8)}`, erneut: false })),
-    ...abgesagte
-      .filter((t) => t.user_id)
-      .map((t) => ({ id: t.user_id!, name: namen[t.user_id!] || `Konto ${t.user_id!.slice(0, 8)}`, erneut: true })),
-  ]
-
-  if (auswahl.length === 0) {
+  if (kandidaten.length === 0) {
     return (
       <>
         <h2 className="jagden-abschnitt">Einladen</h2>
         <div className="zentrale-note">
           <p style={{ margin: 0 }}>
-            Alle bekannten Konten sind schon eingeladen. Wer noch kein Konto hat,
-            kommt über einen Begehungsschein dazu.
+            Niemand steht mehr zur Wahl. Wer noch fehlt, kommt zuerst in die{' '}
+            <Link href="/zentrale/gaeste">Gästeliste</Link> — von dort steht er
+            beim nächsten Mal hier.
           </p>
         </div>
       </>
@@ -805,20 +997,74 @@ function Einladen({
   return (
     <>
       <h2 className="jagden-abschnitt">Einladen</h2>
-      <div className="jagden-einladen">
-        {auswahl.map((k) => (
-          <label key={k.id} className="jagden-kandidat">
-            <input
-              type="checkbox"
-              checked={gewaehlt.has(k.id)}
+
+      <div className="jagden-einladen-kopf">
+        {/* Die Zahl steht AM Schalter, nicht erst nach dem Klick: „Treiber 0"
+            heißt „dort ist niemand eingeordnet" — ohne die Zahl müsste man
+            jeden Filter durchprobieren, um das herauszufinden. */}
+        <div className="jagden-filter" role="group" aria-label="Nach Kategorie filtern">
+          {EINLADE_FILTER.map((f) => (
+            <button
+              key={f.wert}
+              type="button"
+              className="jagden-chip"
+              aria-pressed={filter === f.wert}
               disabled={blockiert}
-              onChange={() => umschalten(k.id)}
-            />
-            {k.name}
-            {k.erneut ? <span className="jagden-erneut"> hatte abgesagt</span> : null}
-          </label>
-        ))}
+              onClick={() => setFilter(f.wert)}
+            >
+              {f.label} <span className="jagden-chip-zahl">{zahlen[f.wert]}</span>
+            </button>
+          ))}
+        </div>
+
+        <label className="jagden-suche">
+          <span className="jagden-suche-label">Suchen</span>
+          <input
+            type="search"
+            value={suche}
+            disabled={blockiert}
+            placeholder="Name suchen …"
+            onChange={(e) => setSuche(e.target.value)}
+          />
+        </label>
       </div>
+
+      {sichtbar.length === 0 ? (
+        // Vier Fälle statt drei, Begründung bei `leerText()` in `../jagden.ts`
+        <p className="jagden-leer">{leerText(filter, suche)}</p>
+      ) : (
+        <>
+          <div className="jagden-einladen">
+            {sichtbar.map((k) => (
+              <label key={k.schluessel} className="jagden-kandidat">
+                <input
+                  type="checkbox"
+                  checked={gewaehlt.has(k.schluessel)}
+                  disabled={blockiert}
+                  onChange={() => umschalten(k.schluessel)}
+                />
+                {k.name}
+                {/* „hatte abgesagt" ist eine Warnung, „ohne Konto" eine
+                    Sacherklärung: die Person bekommt keine Einladung aufs
+                    Handy, sie steht auf der Liste. Wer das nicht weiß, wartet
+                    auf eine Zusage, die nie kommt. */}
+                {k.erneut ? <span className="jagden-erneut"> hatte abgesagt</span> : null}
+                {!k.userId ? <span className="jagden-gast"> ohne Konto</span> : null}
+              </label>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="jagden-alle"
+            disabled={blockiert}
+            onClick={alleSichtbaren}
+          >
+            {sichtbar.every((k) => gewaehlt.has(k.schluessel))
+              ? `Diese ${sichtbar.length} abwählen`
+              : `Diese ${sichtbar.length} auswählen`}
+          </button>
+        </>
+      )}
 
       {fehler ? (
         <p className="zentrale-inspektor-fehler" role="alert">
@@ -835,6 +1081,28 @@ function Einladen({
         >
           {laeuft ? 'Wird eingeladen …' : `${gewaehlt.size || ''} einladen`.trim()}
         </button>
+        {/* **Der Riegel gegen den einen Fehler, den dieser Entwurf ermöglicht**
+            (Codex' eigener Punkt 7): wer Schützen wählt, zu Treibern wechselt
+            und dort weiterwählt, lädt beide Gruppen ein, ohne es zu sehen.
+            Steht nur da, wenn tatsächlich etwas verborgen ist — sonst wäre es
+            ein Hinweis auf nichts. */}
+        {gewaehlt.size > sichtbar.filter((k) => gewaehlt.has(k.schluessel)).length ? (
+          <button
+            type="button"
+            className="jagden-versteckt"
+            onClick={() => {
+              // **Auch die Suche leeren** (Fremdprüfung 03.08.2026, B8): nur
+              // den Filter umzustellen zeigte die Ausgewählten weiterhin
+              // gefiltert — der Knopf verspricht „anzeigen" und zeigte dann
+              // wieder nicht alle. Ein Knopf, der sein eigenes Versprechen
+              // halb einlöst, ist schlimmer als keiner.
+              setSuche('')
+              setFilter('gewaehlt')
+            }}
+          >
+            {gewaehlt.size} ausgewählt, nicht alle sichtbar — anzeigen
+          </button>
+        ) : null}
       </div>
     </>
   )

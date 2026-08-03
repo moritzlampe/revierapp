@@ -23,6 +23,78 @@ export type Kontakt = {
   notiz: string | null
   /** Übersteuerung aus Migration 086. `null` heißt „ableiten", nicht „keins". */
   kuerzel: string | null
+  /** Migration 094. NOT NULL mit Vorgabe `{}` — leer, nie `null`. */
+  kategorien: Kategorie[]
+  standard_tags: Tag[]
+}
+
+/**
+ * Die Werte aus 094, mit ihrer Beschriftung — **eine** Liste für Formular,
+ * Inspektor und (später) den Einlade-Dialog.
+ *
+ * Die Reihenfolge ist die des Enums `kontakt_kategorie` und zugleich die
+ * Anzeige- und Speicherordnung (`normiert()`). Sie doppelt zu führen
+ * hieße, dass Bildschirm und Spalte irgendwann Verschiedenes sagen.
+ */
+export const KATEGORIEN = [
+  { wert: 'schuetze', label: 'Schütze' },
+  { wert: 'jaegerei', label: 'Jägerei' },
+  { wert: 'treiber', label: 'Treiber' },
+  { wert: 'schweisshundfuehrer', label: 'Schweißhundführer' },
+] as const satisfies readonly { wert: string; label: string }[]
+
+export type Kategorie = (typeof KATEGORIEN)[number]['wert']
+
+/**
+ * Vorgewählte Funktionen. **Dasselbe Enum wie `hunt_participants.tags`**
+ * (094: „ein zweites Enum mit denselben Werten wäre eine Übersetzung") — beim
+ * Einladen wandern die Werte unverändert hinüber.
+ *
+ * **Das ist der Grund, warum sie nicht blind übernommen werden dürfen:**
+ * `gruppenleiter` steuert an einer Jagd die Positionssichtbarkeit (059), und
+ * `standard_tags` darf auch ein Mitführender setzen. Wer beim Einladen kopiert,
+ * ohne zu prüfen, lässt einen Mitführenden ein Recht an fremder Jagd vergeben.
+ * Hier wird nur gepflegt; die Prüfung gehört an den Übernahmepfad.
+ */
+export const TAGS = [
+  { wert: 'gruppenleiter', label: 'Gruppenleiter' },
+  { wert: 'hundefuehrer', label: 'Hundeführer' },
+] as const satisfies readonly { wert: string; label: string }[]
+
+export type Tag = (typeof TAGS)[number]['wert']
+
+/**
+ * Mehrfachfelder in Anzeige- und Speicherordnung, ohne Dubletten und ohne
+ * Unbekanntes.
+ *
+ * **Die Sortierung ist kein Schönheitsdienst, sondern die Voraussetzung dafür,
+ * dass `aenderungen()` funktioniert.** Dort wird der gespeicherte Wert genauso
+ * normalisiert wie der Entwurf und beides verglichen — käme `['treiber',
+ * 'schuetze']` aus der Spalte und `['schuetze','treiber']` aus dem Formular,
+ * meldete jedes Öffnen-und-Speichern eine Änderung, die niemand vorgenommen
+ * hat. Dieselbe Überlegung wie das Trimmen bei den Textfeldern.
+ *
+ * Unbekannte Werte fallen raus: die Spalte ist ein Enum, ein fremder Wert kann
+ * nur aus einem veralteten Client stammen und würde beim Schreiben ohnehin mit
+ * `22P02` abgewiesen.
+ */
+export function normiert<T extends string>(
+  werte: readonly string[] | null | undefined,
+  erlaubt: readonly { wert: T }[],
+): T[] {
+  return erlaubt.map((e) => e.wert).filter((w) => werte?.includes(w))
+}
+
+/** Beschriftungen einer Auswahl, in Anzeigeordnung — oder `null`, wenn leer. */
+export function mehrfachText(
+  werte: readonly string[],
+  erlaubt: readonly { wert: string; label: string }[],
+): string | null {
+  const text = erlaubt
+    .filter((e) => werte.includes(e.wert))
+    .map((e) => e.label)
+    .join(', ')
+  return text || null
 }
 
 /**
@@ -239,6 +311,15 @@ export function suchtext(wert: string): string {
  *
  * Mehrere Wörter werden UND-verknüpft und dürfen in verschiedenen Feldern
  * stehen: „alston alison" findet den Kontakt über Nachname und Begleitung.
+ *
+ * **Kategorien und Funktionen sind mit dabei** (Fremdprüfung 03.08.2026, offener
+ * Punkt): sonst tippt man „Treiber" und findet niemanden, obwohl 24 Kontakte so
+ * markiert sind. Das ist keine Zugabe, sondern die einzige Kontrolle über die
+ * Pflege — wer 154 Zeilen einordnet, muss nachsehen können, was er eingeordnet
+ * hat. Gesucht wird über die **Beschriftung**, nicht über den Enum-Wert:
+ * „Schütze" ist das Wort, das auf dem Bildschirm steht, `schuetze` sieht
+ * niemand. `suchtext()` wirft die Umlaute auf beiden Seiten weg, „schutze"
+ * findet also genauso.
  */
 export function passtZuSuche(k: Kontakt, suche: string): boolean {
   const woerter = suchtext(suche).split(/\s+/).filter(Boolean)
@@ -247,7 +328,11 @@ export function passtZuSuche(k: Kontakt, suche: string): boolean {
   // trotzdem hier: das Formular füllt sie ab jetzt, und ein Suchfeld, das ein
   // eingebbares Feld stillschweigend auslässt, ist später schwer zu bemerken.
   const heuhaufen = suchtext(
-    [k.vorname, k.nachname, k.begleitung, k.email, k.telefon, k.handy, k.adresse, k.notiz]
+    [
+      k.vorname, k.nachname, k.begleitung, k.email, k.telefon, k.handy, k.adresse, k.notiz,
+      mehrfachText(k.kategorien ?? [], KATEGORIEN),
+      mehrfachText(k.standard_tags ?? [], TAGS),
+    ]
       .filter(Boolean)
       .join(' '),
   )
@@ -448,6 +533,8 @@ export type Entwurf = {
   adresse: string
   geburtstag: string
   notiz: string
+  kategorien: Kategorie[]
+  standard_tags: Tag[]
 }
 
 export const LEERER_ENTWURF: Entwurf = {
@@ -461,7 +548,38 @@ export const LEERER_ENTWURF: Entwurf = {
   adresse: '',
   geburtstag: '',
   notiz: '',
+  kategorien: [],
+  standard_tags: [],
 }
+
+/**
+ * Die Mehrfachfelder — sie stehen **nicht** in `FELDER`.
+ *
+ * `FELDER` beschreibt Textfelder: eine Beschriftung, ein Eingabefeld, ein
+ * Wert. Ein Mehrfachfeld ist eine Gruppe von Kästchen und im Inspektor eine
+ * Aufzählung. Ein `art: 'mehrfach'` hätte beide Renderstellen und die
+ * `Feld`-Komponente um einen Sonderfall erweitert, der mit dem Rest nichts
+ * teilt — zwei kurze Blöcke sind weniger Code als ein Feldtyp, der überall
+ * ausweichen muss.
+ */
+type MehrfachFeld<K extends 'kategorien' | 'standard_tags'> = {
+  key: K
+  label: string
+  /**
+   * **Die Optionen sind an den Schlüssel gebunden, nicht bloß `string`.**
+   * Ohne die Bindung bestünde `{ key: 'kategorien', optionen: TAGS }` den
+   * Typcheck (Fremdprüfung 03.08.2026, offener Punkt) — und richtete stillen
+   * Schaden an: `normiert()` vergliche die gesetzten Kategorien gegen die
+   * Tag-Werte, fände nie eine Übereinstimmung und schriebe bei jedem Speichern
+   * ein leeres Array. Die Kategorien eines Kontakts wären weg, ohne Fehler.
+   */
+  optionen: readonly { wert: Entwurf[K][number]; label: string }[]
+}
+
+export const MEHRFACH = [
+  { key: 'kategorien', label: 'Kategorien', optionen: KATEGORIEN },
+  { key: 'standard_tags', label: 'Funktionen', optionen: TAGS },
+] as const satisfies readonly [MehrfachFeld<'kategorien'>, MehrfachFeld<'standard_tags'>]
 
 /**
  * Die Reihenfolge der Felder — **eine** Liste für Formular und Inspektor.
@@ -473,8 +591,21 @@ export const LEERER_ENTWURF: Entwurf = {
  * Vor- und Nachname tragen `imKopf`, weil sie im Inspektor die Überschrift sind
  * und nicht noch einmal als Zeile darunter stehen sollen.
  */
+/**
+ * Die Felder des Entwurfs, die Text tragen — also alles außer den
+ * Mehrfachfeldern.
+ *
+ * **Das ist der Riegel, der `FELDER` und `MEHRFACH` auseinanderhält.** Wer ein
+ * Array-Feld versehentlich in `FELDER` einträgt, bekommt hier einen Typfehler
+ * statt eines `<input value={['schuetze']}>`, das zur Laufzeit „schuetze"
+ * anzeigt und beim Speichern eine Zeichenkette in eine Enum-Spalte schriebe.
+ */
+export type TextFeld = {
+  [K in keyof Entwurf]: Entwurf[K] extends string ? K : never
+}[keyof Entwurf]
+
 export const FELDER: readonly {
-  key: keyof Entwurf
+  key: TextFeld
   label: string
   art?: 'email' | 'tel' | 'date' | 'mehrzeilig'
   imKopf?: true
@@ -508,6 +639,11 @@ export function entwurfVon(k: Kontakt): Entwurf {
     adresse: k.adresse ?? '',
     geburtstag: k.geburtstag ?? '',
     notiz: k.notiz ?? '',
+    // `?? []` obwohl beide Spalten NOT NULL sind: eine ältere `.select()`-Liste
+    // liefert sie schlicht nicht mit, und `undefined.includes` wäre ein Absturz
+    // im Formular statt einer fehlenden Angabe.
+    kategorien: normiert(k.kategorien, KATEGORIEN),
+    standard_tags: normiert(k.standard_tags, TAGS),
   }
 }
 
@@ -525,8 +661,15 @@ export function entwurfVon(k: Kontakt): Entwurf {
  * - `kontakt_braucht_namen` prüft `coalesce(vorname,'') ~ '[^[:space:]]'` —
  *   für den Constraint sind NULL, `''` und `'   '` dasselbe. Die Spalte soll
  *   das auch sein, sonst steht in der Liste ein Name aus drei Leerzeichen.
+ *
+ * **Die Mehrfachfelder gehen NICHT durch `wert()`.** Sie sind NOT NULL mit
+ * Vorgabe `{}`: leer heißt dort ein leeres Array, nicht `null`. Ein `null`
+ * würde mit `23502` abgewiesen — „keine Kategorie" ist ein gültiger Zustand,
+ * kein fehlender.
  */
-export function alsSpalten(e: Entwurf): Record<keyof Entwurf, string | null> {
+export function alsSpalten(e: Entwurf): {
+  [K in keyof Entwurf]: Entwurf[K] extends string ? string | null : Entwurf[K]
+} {
   const wert = (s: string) => s.trim() || null
   return {
     vorname: wert(e.vorname),
@@ -539,6 +682,8 @@ export function alsSpalten(e: Entwurf): Record<keyof Entwurf, string | null> {
     adresse: wert(e.adresse),
     geburtstag: wert(e.geburtstag),
     notiz: wert(e.notiz),
+    kategorien: normiert(e.kategorien, KATEGORIEN),
+    standard_tags: normiert(e.standard_tags, TAGS),
   }
 }
 
@@ -587,10 +732,38 @@ export function pruefeEntwurf(e: Entwurf): string | null {
 export function aenderungen(
   e: Entwurf,
   k: Kontakt,
-): Record<string, string | null> | null {
+): Record<string, string | string[] | null> | null {
   const neu = alsSpalten(e)
-  const patch: Record<string, string | null> = {}
+  const patch: Record<string, string | string[] | null> = {}
+
+  // Die Mehrfachfelder zuerst, getrennt vom String-Vergleich darunter: für sie
+  // ist `!==` immer wahr (zwei Arrays sind nie identisch), ein
+  // Öffnen-und-Speichern schriebe sie also bei JEDEM Mal mit. Verglichen wird
+  // der Inhalt, und beide Seiten laufen durch dieselbe Normalisierung — die
+  // Reihenfolge in der Spalte ist damit ohne Belang.
+  for (const { key, optionen } of MEHRFACH) {
+    // **`undefined` heißt „nicht geladen" und darf NICHT als „leer" gelten**
+    // (Fremdprüfung 03.08.2026, A9). Beide Spalten sind NOT NULL mit Vorgabe
+    // `{}` — aus der Datenbank kommt nie `undefined`, wohl aber aus einem
+    // `.select()`, das sie nicht mitnimmt. Dann zeigte der Inspektor eine leere
+    // Aufzählung, und der erste Klick schriebe genau diese Leere zurück:
+    // stiller Verlust der echten Werte, mit Erfolgsmeldung. Dieselbe Klasse wie
+    // die Normalisierung des Alt-Werts unten, nur teurer.
+    //
+    // Heute lädt die einzige Aufruferin beide Spalten (`page.tsx`); der Riegel
+    // steht hier statt dort, weil er dann für JEDE künftige Aufruferin gilt.
+    if (k[key] === undefined) continue
+    const alt = normiert(k[key], optionen)
+    if (neu[key].join(',') !== alt.join(',')) patch[key] = neu[key]
+  }
+
   for (const feld of Object.keys(neu) as (keyof Entwurf)[]) {
+    const wert = neu[feld]
+    // Weiter über `Object.keys` statt über `FELDER`: ein künftiges Textfeld
+    // wird so auch dann verglichen, wenn jemand es nur dem Entwurf hinzufügt.
+    // Die Alternative liefe still ins Leere — das Feld ließe sich eintippen und
+    // würde beim Speichern verworfen.
+    if (Array.isArray(wert)) continue // oben behandelt
     // **Der gespeicherte Wert wird GENAUSO normalisiert wie der Entwurf**, sonst
     // meldet der Vergleich eine Änderung, die niemand vorgenommen hat: liegt in
     // der Spalte `'  intern  '`, ist der Entwurf daraus `'intern'` — und ein
@@ -599,8 +772,9 @@ export function aenderungen(
     // Heute (01.08.2026) trägt keine der 154 Zeilen Leerraum an den Rändern und
     // keine einen Leerstring — der Fall kommt mit dem vCard-Import.
     // (Codex, 01.08.2026, „mittel"; die Zählung ist danach nachgeholt worden.)
-    const alt = (k[feld] ?? '').trim() || null
-    if (neu[feld] !== alt) patch[feld] = neu[feld]
+    const gespeichert = k[feld]
+    const alt = (typeof gespeichert === 'string' ? gespeichert : '').trim() || null
+    if (wert !== alt) patch[feld] = wert
   }
   return Object.keys(patch).length > 0 ? patch : null
 }

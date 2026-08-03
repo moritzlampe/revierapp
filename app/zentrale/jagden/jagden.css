@@ -350,3 +350,106 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* --- Einladen: Filter, Suche, Link ---------------------------------------- */
+/* Seit 03.08.2026 stehen hier Konten UND das Adressbuch (154 Kontakte statt 9
+   Profile). Die Chips oben sind dieselben wie über der Jagdliste — dieselbe
+   Geste soll gleich aussehen; neu sind nur Suche, Rollknopf und der Link. */
+
+.zentrale .jagden-einladen-kopf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+/* Die Chips tragen ihren eigenen Außenabstand nach oben; im Kopf hier stört er. */
+.zentrale .jagden-einladen-kopf .jagden-filter { margin: 0; flex: 1 1 auto; }
+
+.zentrale .jagden-suche {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 220px;
+}
+.zentrale .jagden-suche-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--z-text-secondary);
+}
+.zentrale .jagden-suche input {
+  font: inherit;
+  font-size: 0.875rem;
+  width: 100%;
+  padding: 6px 8px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+
+/* **Die Höhenbegrenzung ist neu und nötig:** die Liste trug 9 Namen und trägt
+   jetzt bis zu 154. Ohne sie schöbe „Alle" den Einladen-Knopf und den
+   Einladungslink weit unter den Bildschirmrand — der Knopf muss erreichbar
+   bleiben, ohne an 154 Kästchen vorbeizuscrollen. */
+.zentrale .jagden-einladen {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.zentrale .jagden-gast {
+  margin-left: 6px;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+
+.zentrale .jagden-alle,
+.zentrale .jagden-versteckt {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--z-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.zentrale .jagden-versteckt { margin: 0; align-self: center; }
+.zentrale .jagden-alle:disabled { color: var(--z-text-secondary); cursor: default; }
+
+.zentrale .jagden-leer {
+  margin: 0;
+  padding: 12px;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 8px;
+}
+
+.zentrale .jagden-link-text {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--z-text-secondary);
+}
+.zentrale .jagden-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--z-bg-sunken);
+  border-radius: 8px;
+}
+/* `break-all`, nicht `nowrap`: der Link ist lang, und abgeschnitten kann man
+   ihn nicht von Hand abtippen, wenn die Zwischenablage fehlt (kein HTTPS). */
+.zentrale .jagden-link a {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  word-break: break-all;
+  color: var(--z-text-primary);
+}

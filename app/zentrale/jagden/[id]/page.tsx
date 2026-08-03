@@ -3,7 +3,13 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { geladen } from '../../laden'
 import Detail from './detail'
-import { ersterWert, type Jagd, type Teilnehmer } from '../jagden'
+import {
+  ersterWert,
+  type EinladbarerKontakt,
+  type Jagd,
+  type Profil,
+  type Teilnehmer,
+} from '../jagden'
 import '../jagden.css'
 
 /**
@@ -18,11 +24,6 @@ import '../jagden.css'
 interface Revier {
   id: string
   name: string
-}
-
-interface Profil {
-  id: string
-  display_name: string | null
 }
 
 export default async function JagdDetailPage({
@@ -117,6 +118,26 @@ export default async function JagdDetailPage({
     'Profile'
   )
 
+  // **Das Adressbuch — die Menschen ohne Konto** (Moritz, 03.08.2026: „wir
+  // werden aber ja auch jagden anlegen mit leuten die noch keinen haben oder
+  // nie haben werden"). RLS ist die Grenze, nicht eine `.eq()`-Bedingung:
+  // `get_my_kontaktbuecher()` deckt das eigene Adressbuch plus die, für die man
+  // als Mitführender eingetragen ist (Migration 085) — dieselbe Haltung wie in
+  // `../../gaeste/page.tsx`.
+  //
+  // **`profil_id` wird NICHT geladen**, obwohl das Zusammenlegen von Konto und
+  // Kontakt daran hinge: sie beantwortete „ist diese Person schon Nutzer?" und
+  // ist deshalb aus der Oberfläche verbannt (Konzept Kontaktliste §5.3, das
+  // Orakel-Verbot). Im Bestand ist sie ohnehin bei 0 von 154 gesetzt.
+  const kontakte = geladen<EinladbarerKontakt[]>(
+    await supabase
+      .from('kontakte')
+      .select('id, vorname, nachname, kategorien')
+      .order('nachname', { ascending: true, nullsFirst: false })
+      .order('vorname', { ascending: true, nullsFirst: false }),
+    'Kontakte'
+  )
+
   // **Die Rechtefrage, und sie ist der Grund, warum diese Seite sie serverseitig
   // stellt:** Ersteller ODER wer die Rolle trägt UND zugesagt hat. Zeichengleich
   // zu `istJagdleiter()` in `src/lib/hunt/leitung.ts` der App, additiv seit
@@ -148,6 +169,7 @@ export default async function JagdDetailPage({
         revierId={revier?.id ?? null}
         teilnehmer={teilnehmer}
         profile={profile}
+        kontakte={kontakte}
         eigeneId={user.id}
         erstellerId={jagd.creator_id}
         istLeiter={istLeiter}

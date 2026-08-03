@@ -44,7 +44,21 @@ import {
   type JagdEntwurf,
   type Teilnahme,
   type Teilnehmer,
+  gastZustand,
+  leerText,
+  GAST_ZUSTAENDE,
+  filterZaehler,
+  imFilter,
+  kandidaten,
+  kontaktName,
+  namensschluessel,
+  sichtbareKandidaten,
+  EINLADE_FILTER,
+  KONTAKT_SCHLUESSEL,
+  KONTO_SCHLUESSEL,
+  OHNE_NAMEN,
 } from './jagden.ts'
+import { suchtext, KATEGORIEN } from '../gaeste/kontakte.ts'
 
 function jagd(teil: Partial<Jagd>): Jagd {
   return {
@@ -682,4 +696,287 @@ assert.equal(namensvorschlag('2026-08-15T00:30'), 'Jagd am 15.8.2026')
   assert.equal(alsJahr('', bestand), ALLE_JAHRE)
   // Leerer Bestand: jedes Jahr faellt zurueck.
   assert.equal(alsJahr('2026', []), ALLE_JAHRE)
+}
+
+// --- Einladen: Konten UND Gaeste ohne Konto ---------------------------------
+
+const P = (id: string, name: string) => ({ id, display_name: name })
+const K = (id: string, vorname: string, nachname: string, kategorien: string[] = []) => ({
+  id,
+  vorname,
+  nachname,
+  kategorien,
+})
+const T = (teil: Partial<{ user_id: string | null; guest_name: string | null; status: string | null }>) => ({
+  user_id: null,
+  guest_name: null,
+  status: 'invited',
+  ...teil,
+})
+
+// kontaktName: die TEILNEHMER-Schreibweise, nicht die Adressbuch-Sortierung.
+// Der Wert landet als guest_name in der DB und steht danach auf jeder Liste.
+assert.equal(kontaktName({ vorname: 'Ferdinand', nachname: 'v. Alvensleben' }), 'Ferdinand v. Alvensleben')
+assert.equal(kontaktName({ vorname: null, nachname: 'Ahlwes' }), 'Ahlwes')
+assert.equal(kontaktName({ vorname: 'Ian', nachname: null }), 'Ian')
+// Der Check-Constraint verhindert das — die Ansicht darf sich nicht drauf verlassen.
+assert.equal(kontaktName({ vorname: null, nachname: null }), '(ohne Namen)')
+assert.equal(kontaktName({ vorname: '  ', nachname: ' Ahlwes ' }), 'Ahlwes')
+
+assert.equal(namensschluessel('  Henner   Ahlwes '), 'henner ahlwes')
+assert.equal(namensschluessel('HENNER AHLWES'), namensschluessel('Henner Ahlwes'))
+
+// --- kandidaten ---
+const profile = [P('u1', 'Moritz'), P('u2', 'Heinrich'), P('u3', 'Jobst')]
+const buch = [
+  K('k1', 'Henner', 'Ahlwes', ['schuetze']),
+  K('k2', 'Ferdinand', 'v. Alvensleben', ['schuetze', 'jaegerei']),
+  K('k3', 'Anna', 'Beck', ['treiber']),
+  K('k4', 'Ohne', 'Kategorie'),
+]
+const kontoNamen = { u1: 'Moritz', u2: 'Heinrich', u3: 'Jobst' }
+
+// Der Ersteller (u1) faellt raus — er steht als Jagdleiter schon drin.
+const frisch = kandidaten(profile, buch, [T({ user_id: 'u1', status: 'joined' })], 'u1', kontoNamen)
+assert.deepEqual(
+  frisch.map((k) => k.name),
+  ['Heinrich', 'Jobst', 'Henner Ahlwes', 'Ferdinand v. Alvensleben', 'Anna Beck', 'Ohne Kategorie'],
+  'Konten zuerst, dann das Adressbuch',
+)
+assert.equal(frisch[0].schluessel, KONTO_SCHLUESSEL + 'u2')
+assert.equal(frisch[2].schluessel, KONTAKT_SCHLUESSEL + 'k1')
+
+// Wer schon eine Zeile hat, steht nicht mehr zur Wahl.
+const mitHeinrich = kandidaten(
+  profile,
+  buch,
+  [T({ user_id: 'u1', status: 'joined' }), T({ user_id: 'u2', status: 'invited' })],
+  'u1',
+  kontoNamen,
+)
+assert.equal(mitHeinrich.some((k) => k.userId === 'u2'), false, 'schon eingeladen')
+
+// **Der Dublettenschutz fuer Gaeste haengt am Namen** (kein kontakt_id, s. dort).
+// Ein bereits eingetragener Gast darf nicht ein zweites Mal angeboten werden.
+const mitGast = kandidaten(
+  profile,
+  buch,
+  [T({ user_id: 'u1', status: 'joined' }), T({ guest_name: 'Henner Ahlwes', status: 'invited' })],
+  'u1',
+  kontoNamen,
+)
+assert.equal(mitGast.some((k) => k.name === 'Henner Ahlwes'), false, 'Gast schon dabei')
+assert.equal(mitGast.some((k) => k.name === 'Anna Beck'), true, 'die anderen bleiben')
+// Und er greift auch, wenn die Schreibweise abweicht — sonst genuegte ein
+// Leerzeichen fuer eine zweite Zeile derselben Person.
+const schiefGeschrieben = kandidaten(
+  profile,
+  buch,
+  [T({ user_id: 'u1', status: 'joined' }), T({ guest_name: '  henner   ahlwes  ' })],
+  'u1',
+  kontoNamen,
+)
+assert.equal(schiefGeschrieben.some((k) => k.name === 'Henner Ahlwes'), false)
+
+// Abgesagte Konten kommen als „erneut" zurueck (UPDATE statt INSERT, Migration 088).
+const mitAbsage = kandidaten(
+  profile,
+  buch,
+  [T({ user_id: 'u1', status: 'joined' }), T({ user_id: 'u2', status: 'declined' })],
+  'u1',
+  kontoNamen,
+)
+const wieder = mitAbsage.find((k) => k.userId === 'u2')
+assert.equal(wieder?.erneut, true, 'abgesagt heisst wieder einladbar')
+// **Genau EINMAL, nicht zweimal.** Er hat eine Zeile, faellt also aus dem
+// ersten Zweig — und kommt ueber den Absage-Zweig zurueck. Stuende er in
+// beiden, waeren es zwei Kaestchen fuer eine Person.
+assert.equal(mitAbsage.filter((k) => k.userId === 'u2').length, 1)
+// `left` ist NICHT wieder einladbar (nur `declined` ist es, s. wiederEinladbar).
+const ausgetreten = kandidaten(
+  profile,
+  buch,
+  [T({ user_id: 'u1', status: 'joined' }), T({ user_id: 'u2', status: 'left' })],
+  'u1',
+  kontoNamen,
+)
+assert.equal(ausgetreten.some((k) => k.userId === 'u2'), false)
+
+// --- Filter ---
+const leer = new Set<string>()
+
+const sicht = (f: string, g: ReadonlySet<string> = leer) =>
+  sichtbareKandidaten(frisch, f as never, '', g, suchtext).map((k) => k.name)
+
+// **Moritz' Anforderung, woertlich: „wenn ich schuetzen einlade will ich die
+// treiber da nicht sehen."**
+assert.deepEqual(sicht('schuetze'), ['Henner Ahlwes', 'Ferdinand v. Alvensleben'])
+assert.deepEqual(sicht('treiber'), ['Anna Beck'])
+// Mehrfach kategorisiert heisst: in JEDEM passenden Filter, aber nie doppelt
+// in derselben Ansicht.
+assert.deepEqual(sicht('jaegerei'), ['Ferdinand v. Alvensleben'])
+assert.deepEqual(sicht('schweisshundfuehrer'), [])
+// Konten haben keine Kategorien — sie gehoeren in ihren eigenen Filter und
+// NICHT unter „Ohne Kategorie": „hat die App" und „ist nicht eingeordnet" sind
+// zwei verschiedene Zustaende.
+assert.deepEqual(sicht('konten'), ['Heinrich', 'Jobst'])
+assert.deepEqual(sicht('ohne'), ['Ohne Kategorie'])
+assert.equal(sicht('alle').length, 6)
+
+// --- Die Auswahl ueberlebt den Filterwechsel — und der Filter „Ausgewaehlt"
+// ist der Riegel dagegen, dass man dabei jemanden uebersieht. ---
+const gewaehlt = new Set([KONTAKT_SCHLUESSEL + 'k1', KONTAKT_SCHLUESSEL + 'k3'])
+assert.deepEqual(sicht('gewaehlt', gewaehlt), ['Henner Ahlwes', 'Anna Beck'])
+// Der Schuetzen-Filter zeigt Anna nicht — obwohl sie ausgewaehlt IST. Genau
+// dieser Fall ist der Grund fuer den Zaehler am Knopf.
+assert.deepEqual(sicht('schuetze', gewaehlt), ['Henner Ahlwes', 'Ferdinand v. Alvensleben'])
+
+// --- Suche: wirkt INNERHALB des Filters, hebt ihn nicht auf ---
+const suche = (f: string, q: string) =>
+  sichtbareKandidaten(frisch, f as never, q, leer, suchtext).map((k) => k.name)
+assert.deepEqual(suche('alle', 'ahlwes'), ['Henner Ahlwes'])
+assert.deepEqual(suche('treiber', 'ahlwes'), [], 'die Suche darf den Filter nicht aufheben')
+assert.deepEqual(suche('alle', 'ALHWES'), [], 'kein Fuzzy — getippt ist getippt')
+assert.deepEqual(suche('alle', 'AHLWES'), ['Henner Ahlwes'], 'Grossschreibung egal')
+assert.deepEqual(suche('alle', '  '), sicht('alle'), 'nur Leerraum sucht nicht')
+
+// --- filterZaehler: die Zahlen am Schalter ---
+const zahlen = filterZaehler(frisch, gewaehlt)
+assert.equal(zahlen.alle, 6)
+assert.equal(zahlen.schuetze, 2)
+assert.equal(zahlen.treiber, 1)
+assert.equal(zahlen.schweisshundfuehrer, 0, 'null heisst: niemand eingeordnet, nicht: niemand da')
+assert.equal(zahlen.konten, 2)
+assert.equal(zahlen.ohne, 1)
+assert.equal(zahlen.gewaehlt, 2)
+// Jeder Filter hat eine Zahl — sonst stuende an einem Schalter nichts und der
+// Leser hielte ihn fuer kaputt.
+for (const f of EINLADE_FILTER) {
+  assert.equal(typeof zahlen[f.wert], 'number', `${f.wert} ohne Zahl`)
+}
+// imFilter und filterZaehler muessen dasselbe sagen — sonst zaehlt der Schalter
+// etwas anderes, als die Liste darunter zeigt.
+for (const f of EINLADE_FILTER) {
+  assert.equal(
+    zahlen[f.wert],
+    frisch.filter((k) => imFilter(k, f.wert, gewaehlt)).length,
+    `Zaehler und Liste weichen bei ${f.wert} ab`,
+  )
+}
+
+// **Jede Kategorie aus 094 braucht einen Filter.** `EINLADE_FILTER` fuehrt die
+// vier Werte ein zweites Mal (mit Plural-Beschriftung, absichtlich — „Schuetzen"
+// liest sich als Gruppe, „Schuetze" als Eigenschaft). Bekommt das Enum einen
+// fuenften Wert, faellt er sonst lautlos aus dem Einladen heraus: die Kontakte
+// traegen ihn, und kein Schalter zeigt sie.
+// (Ponytail-Lesung 03.08.2026 — zwei Listen, kein Riegel dazwischen.)
+for (const kat of KATEGORIEN) {
+  assert.equal(
+    EINLADE_FILTER.some((f) => f.wert === kat.wert),
+    true,
+    `Kategorie ${kat.wert} hat keinen Einlade-Filter`,
+  )
+}
+
+// --- Fixes auf die Fremdpruefung vom 03.08.2026 -----------------------------
+
+// **B10: ein Kontakt ohne Namen wird nicht angeboten.** Der Name landet als
+// `guest_name` dauerhaft in der DB und ist danach in keiner Oberflaeche mehr
+// aenderbar — „(ohne Namen)" waere Datenmuell, den man nur durch Entfernen und
+// Neu-Einladen loswird. Der Check-Constraint macht den Fall heute unerreichbar
+// (0 von 154); die Ansicht darf sich darauf nicht verlassen.
+assert.equal(kontaktName({ vorname: null, nachname: null }), OHNE_NAMEN)
+const mitNamenlosem = kandidaten(
+  [],
+  [K('leer', '', ''), K('gut', 'Henner', 'Ahlwes')],
+  [],
+  'u1',
+  {},
+)
+assert.deepEqual(mitNamenlosem.map((k) => k.name), ['Henner Ahlwes'])
+// Nur ein Nachname genuegt — das ist KEIN namenloser Kontakt.
+assert.deepEqual(
+  kandidaten([], [K('nur', '', 'Ahlwes')], [], 'u1', {}).map((k) => k.name),
+  ['Ahlwes'],
+)
+
+// **B1, Grenze 1: zwei Kontakte mit identischem Namen.** Beide stehen zur Wahl
+// (verschiedene Schluessel) — der Dublettenschutz greift erst, wenn einer
+// EINGELADEN ist, und nimmt dann auch den anderen weg. Im Bestand gibt es
+// 0 solche Paare (gemessen 03.08.2026); der Test haelt das Verhalten fest,
+// damit ein kuenftiger Umbau auf `kontakt_id` sieht, was er repariert.
+const zwillinge = [K('a', 'Hans', 'Meyer'), K('b', 'Hans', 'Meyer')]
+assert.equal(kandidaten([], zwillinge, [], 'u1', {}).length, 2, 'beide zur Wahl')
+assert.equal(
+  kandidaten([], zwillinge, [T({ guest_name: 'Hans Meyer' })], 'u1', {}).length,
+  0,
+  'einer eingeladen nimmt beide weg — bekannte Grenze, laut statt still',
+)
+
+// **B2, Grenze 2: geaenderte Schreibweise.** Satzzeichen normalisiert
+// `namensschluessel()` NICHT — „Hans-Peter" und „Hans Peter" sind zwei.
+assert.notEqual(namensschluessel('Hans-Peter Meyer'), namensschluessel('Hans Peter Meyer'))
+assert.equal(
+  kandidaten([], [K('c', 'Hans-Peter', 'Meyer')], [T({ guest_name: 'Hans Peter Meyer' })], 'u1', {}).length,
+  1,
+  'andere Schreibweise wird erneut angeboten — bekannte Grenze',
+)
+
+// --- Fixes auf die Schlusslesung vom 03.08.2026 -----------------------------
+
+// **Der Leer-Text darf nicht luegen.** „In dieser Kategorie ist niemand
+// eingeordnet" stand auch unter „Mit Konto" (dort gibt es keine Kategorie) und
+// unter „Ohne Kategorie" — wo leer das GEGENTEIL bedeutet, naemlich dass alle
+// eingeordnet sind.
+assert.match(leerText('konten', ''), /Konto/)
+assert.doesNotMatch(leerText('konten', ''), /Kategorie/, 'Konten haben keine Kategorie')
+assert.match(leerText('treiber', ''), /Treiber/, 'der Filter wird beim Namen genannt')
+assert.match(leerText('ohne', ''), /ohne Kategorie/)
+// **Kein Text behauptet eine URSACHE** (Delta-Durchgang 03.08.2026, D4). Die
+// Liste zeigt nur Nicht-Eingeladene: „keine Schuetzen zur Wahl" kann heissen,
+// dass niemand so eingeordnet ist ODER dass alle schon eingeladen sind. Von
+// hier aus ist das nicht zu unterscheiden, also wird es auch nicht behauptet.
+for (const f of ['treiber', 'ohne', 'schuetze'] as const) {
+  assert.match(leerText(f, ''), /oder alle sind schon eingeladen/, `${f} behauptet eine Ursache`)
+}
+assert.match(leerText('gewaehlt', ''), /ausgewählt/)
+assert.match(leerText('alle', ''), /Niemand steht mehr zur Wahl/)
+// Die Suche schlaegt jeden Filter — sonst stuende „niemand eingeordnet" da,
+// obwohl nur der Suchtext nicht passt.
+for (const f of EINLADE_FILTER) {
+  assert.match(leerText(f.wert, 'xyz'), /diesem Namen/, `Suche schlaegt ${f.wert} nicht`)
+}
+// Jeder Filter hat einen Text — ein leerer waere eine leere Flaeche.
+for (const f of EINLADE_FILTER) {
+  assert.equal(leerText(f.wert, '').length > 0, true, `${f.wert} ohne Text`)
+}
+
+// **gastZustand: der Zeitstempel gehoert zum Zustand.** Eine Zeile auf
+// `invited` mit einem Absagedatum daneben behauptet zwei Dinge gleichzeitig —
+// dieselbe Falle wie im Wiedereinladen-Zweig.
+const zu = gastZustand('joined')
+assert.equal(zu.status, 'joined')
+assert.equal(typeof zu.joined_at, 'string')
+assert.equal(zu.left_at, null, 'zugesagt heisst kein Absagedatum')
+
+const ab = gastZustand('declined')
+assert.equal(ab.status, 'declined')
+assert.equal(typeof ab.left_at, 'string')
+assert.equal(ab.joined_at, null, 'abgesagt heisst kein Zusagedatum')
+
+// Zurueck auf „eingeladen" raeumt BEIDE Stempel ab — sonst bliebe der alte
+// stehen und die Zeile saehe aus wie eine Antwort, die es nicht mehr gibt.
+const zurueck = gastZustand('invited')
+assert.equal(zurueck.status, 'invited')
+assert.equal(zurueck.joined_at, null)
+assert.equal(zurueck.left_at, null)
+
+// Ein unbekannter Wert faellt auf `invited` zurueck statt in die DB zu laufen
+// (dort waere es `22P02` als roher Postgres-Text im Gesicht des Nutzers).
+assert.equal(gastZustand('quatsch').status, 'invited')
+assert.equal(gastZustand('left').status, 'invited', 'left ist kein setzbarer Zustand')
+// Jeder angebotene Zustand kommt auch heil zurueck — sonst zeigte das
+// Auswahlfeld einen Wert, den der Patch dann austauscht.
+for (const z of GAST_ZUSTAENDE) {
+  assert.equal(gastZustand(z).status, z, `${z} kommt nicht heil durch`)
 }
