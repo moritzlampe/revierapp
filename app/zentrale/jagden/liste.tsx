@@ -253,12 +253,36 @@ export default function Liste({
           .insert({ name, emoji: '🎯', created_by: eigeneId, hunt_id: huntId })
           .select('id')
       )
-      await schreibe('Die eigene Chat-Mitgliedschaft', () =>
-        client
-          .from('chat_group_members')
-          .insert({ group_id: gruppe.id, user_id: eigeneId })
-          .select('id')
-      )
+      /**
+       * **Dieser eine Insert läuft NICHT über `schreibe()`, und das ist kein
+       * Schlendrian.**
+       *
+       * `schreibe()` verlangt ein `.select()` und liest „0 betroffene Zeilen"
+       * als Fehler. Hier sind 0 zurückgelesene Zeilen aber der Normalfall: die
+       * SELECT-Policy auf `chat_group_members` läuft über
+       * `get_my_group_ids()`, und die Funktion ist **STABLE** — sie sieht den
+       * Snapshot vom Anweisungsbeginn und damit die gerade eingefügte Zeile
+       * nicht. Die Zeile versteckt sich also vor ihrer eigenen Rückgabe.
+       *
+       * Am 03.08.2026 an einer echten Testjagd gemessen: Gruppe angelegt (1),
+       * Mitglied 0 — der Insert war durchgelaufen, `schreibe()` hatte ihn zum
+       * Fehlschlag erklärt und der Chat-Hinweis erschien, obwohl nur die
+       * Rückgabe fehlte. Die App macht denselben Insert aus demselben Grund
+       * ohne Rückgabe (`createHunt`).
+       *
+       * Der Fehler wird trotzdem geprüft — nur eben der echte, nicht die
+       * ausbleibende Zeile. Es ist die dokumentierte Projektregel: eine normale
+       * Rolle kann eine Zeile nicht in einen Zustand schreiben, den die
+       * SELECT-Policies verbergen.
+       */
+      const { error: mitgliedFehler } = await client
+        .from('chat_group_members')
+        .insert({ group_id: gruppe.id, user_id: eigeneId })
+      if (mitgliedFehler) {
+        throw new Error(
+          `Die eigene Chat-Mitgliedschaft konnte nicht geschrieben werden: ${mitgliedFehler.message}`
+        )
+      }
     } catch (err) {
       chatFehler = err instanceof Error ? err.message : String(err)
     }
