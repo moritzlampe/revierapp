@@ -56,6 +56,29 @@
 --      Chat. Wer es später öffnen will, soll das bewusst tun.
 --
 --
+-- BEKANNT UND NICHT HIER GESCHLOSSEN: DAS FK-ORAKEL IN hunt_drive_stands
+--
+-- Befund 8 des Codex-Reviews vom 03.08.2026. Das `with check` prüft nur
+-- `drive_id`. Die übrigen Fremdschlüssel der Zeile — `map_object_id`,
+-- `seat_assignment_id`, `participant_id` — müssen nicht zur selben Jagd oder
+-- zum selben Revier gehören. Weil FK-Prüfungen RLS umgehen, kann ein
+-- Jagdleiter darüber die EXISTENZ fremder UUIDs abfragen: Erfolg heißt "gibt
+-- es", `23503` heißt "gibt es nicht".
+--
+-- Bewusst nicht in dieser Migration behoben, aus zwei Gründen:
+--   1. Es ist VORBESTEHEND. `drive_stands_creator_insert` trägt dasselbe
+--      `with check`, Zeichen für Zeichen. 089 weitet den Kreis der Betroffenen
+--      von "Ersteller" auf "Ersteller plus benannte Jagdleiter" aus — das sind
+--      Leute, denen der Revierbesitzer die Jagd anvertraut hat.
+--   2. Der richtige Fix gehört auf BEIDE Policy-Familien gleichzeitig, sonst
+--      entsteht ein Gefälle zwischen Ersteller und Vertreter — genau das, was
+--      diese Migration abschafft. Das ist ein eigener Vorgang mit eigenen
+--      Gegenproben, kein Nebenzug.
+--
+-- Der Ertrag des Orakels ist außerdem gering: es beantwortet "existiert diese
+-- UUID", nicht "was steht drin". Wer die UUID schon hat, hat sie woanders her.
+--
+--
 -- `to authenticated` IST PFLICHT, KEINE KOSMETIK
 --
 -- Beide Policies rufen eine Funktion auf. Policy-Ausdrücke laufen mit den

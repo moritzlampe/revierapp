@@ -119,10 +119,71 @@ begin
   -- Der Wortlaut spiegelt jagd_verlassen() aus 067.
   get diagnostics betroffen = row_count;
   if betroffen = 0 then
+    -- Aber: schon abgesagt ist kein Fehlschlag, sondern das Ziel.
+    -- Befund 2 des Codex-Reviews vom 03.08.2026: der Doppelklick-Riegel im
+    -- nativen handleDecline ist ein State (`processing`), kein Ref — zwei
+    -- schnelle Tipps kommen beide durch. Der zweite Aufruf träfe 0 Zeilen und
+    -- risse einen Alert "Ablehnen fehlgeschlagen" hoch, OBWOHL die Absage
+    -- gerade geglückt ist. Unter dem alten DELETE fiel das nicht auf, weil ein
+    -- Treffer-loses DELETE schwieg.
+    -- Idempotenz gehört hierher und nicht in den Client: sonst braucht jeder
+    -- Aufrufer denselben Riegel, und einer vergisst ihn.
+    if exists (
+      select 1 from hunt_participants
+       where hunt_id = p_hunt_id and user_id = v_uid and status = 'declined'
+    ) then
+      return;
+    end if;
     raise exception 'Keine offene Einladung zu dieser Jagd gefunden';
   end if;
 end;
 $function$;
+
+
+-- ---------------------------------------------------------------------------
+-- BLOCK 2b — hunt_photos_delete: das Loch, das diese Migration sonst aufrisse
+--
+-- BEFUND 11 des Codex-Reviews vom 03.08.2026, an der Produktion nachgeprüft.
+--
+-- `hunt_photos_delete` prüft heute:
+--     uploaded_by = auth.uid()
+--     OR hunt_id IN (select hunt_id from hunt_participants
+--                     where user_id = auth.uid()
+--                       and role = 'jagdleiter')
+--
+-- Da steht KEINE Statusbedingung. Solange eine Absage die Zeile löschte, war
+-- das folgenlos — mit der Zeile verschwand das Recht. Ab Block 2 bleibt die
+-- Zeile stehen, und ein als Jagdleiter Eingeladener, der ABSAGT, dürfte
+-- weiterhin **sämtliche Fotos dieser Jagd löschen**. Die Migration risse also
+-- ein Loch, das sie nicht meint.
+--
+-- Es ist zugleich ein VORBESTEHENDER Fehler: dasselbe gilt für `status='left'`
+-- seit 067. Aufgefallen ist es nie, weil im ganzen Bestand 0 Zeilen auf 'left'
+-- stehen — jagd_verlassen() hat nativ keinen Knopf. Der Fix repariert beide
+-- Fälle in einem.
+--
+-- Die neue Fassung spiegelt istJagdleiter() im Client (src/lib/hunt/leitung.ts,
+-- 03.08.2026): eigenes Foto ODER Ersteller ODER Jagdleiter, der auch dabei ist.
+-- `get_my_joined_hunt_ids_as_leader()` ist die etablierte Fassung dieser Frage
+-- und prüft 'joined' UND 'jagdleiter' — sie hier zu benutzen ist billiger und
+-- weniger fehleranfällig, als die Bedingung ein zweites Mal auszuschreiben.
+--
+-- `to authenticated` ist NICHT nötig und wird bewusst weggelassen: `anon` hat
+-- EXECUTE auf die Funktion (gemessen 03.08.2026), es kann also kein 42501
+-- entstehen; und für `anon` ist auth.uid() null, die Policy trifft nichts.
+-- Die Rolle unverändert zu lassen hält den Diff auf der Bedingung.
+-- ---------------------------------------------------------------------------
+
+drop policy if exists hunt_photos_delete on public.hunt_photos;
+
+create policy hunt_photos_delete
+  on public.hunt_photos
+  for delete
+  using (
+    uploaded_by = auth.uid()
+    or hunt_id in (select id from hunts where creator_id = auth.uid())
+    or hunt_id in (select get_my_joined_hunt_ids_as_leader())
+  );
 
 
 -- ---------------------------------------------------------------------------
@@ -139,4 +200,19 @@ $function$;
 --   4. Erneutes Einladen nach Absage: INSERT muss an 23505 scheitern,
 --      UPDATE auf status='invited' muss durchgehen. Das ist der Beleg für die
 --      Falle oben — der Portal-Einladepfad muss den zweiten Weg nehmen.
+--   5. IDEMPOTENZ (Befund 2): zweiter Aufruf auf eine bereits abgesagte
+--      Einladung muss OHNE Fehler zurückkehren — und die Zeile unverändert
+--      lassen (left_at darf NICHT neu gesetzt werden, der frühe `return`
+--      steht vor jedem weiteren Schreiben).
+--   6. FOTO-RECHT (Befund 11), die Probe, ohne die diese Migration ein Loch
+--      aufmacht. Aufbau: Heinrich mit role='jagdleiter', status='invited' auf
+--      der Wegwerf-Jagd; ein Foto, das Moritz hochgeladen hat.
+--        a) VOR dem Fix, zur Kontrolle: als Heinrich absagen, dann
+--           `delete from hunt_photos where id=<fremdes foto>` → 1 Zeile.
+--           Das ist der Befund.
+--        b) NACH dem Fix: derselbe Ablauf → 0 Zeilen.
+--        c) POSITIVKONTROLLE, damit der Fix nicht zu viel schließt: Heinrich
+--           als joined Jagdleiter → 1 Zeile. Und Moritz als Ersteller,
+--           ohne joined-Zeile → 1 Zeile.
+--        d) Eigenes Foto bleibt immer löschbar (uploaded_by-Zweig).
 -- ---------------------------------------------------------------------------
