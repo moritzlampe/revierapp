@@ -32,6 +32,18 @@ Ziel: Kommerzielle SaaS-Lösung für Jagdpächter, Jagdleiter, Berufsjäger.
 
 ---
 
+## Projektübergreifendes Wissen (AgenticOS-Vault)
+
+Obsidian-Vault `~/Desktop/AgenticOS` = Second Brain über alle Projekte und den
+Söder-Verbund (Firmen-Kontext, Strategie, Schwesterprojekt Belegverwaltung, Betriebs-Ablage).
+Bei Kontextfragen außerhalb dieses Repos: dort zuerst index.md lesen.
+Richtung der Wahrheit: dieses Repo → Vault (täglicher Delta-Ingest, Mo–Sa 09:33).
+Projektfakten NIE aus dem Vault beziehen — maßgeblich sind Migrationen/Doku in
+diesem Repo und die neuesten Übergaben in quickhunt-native/docs/; der Vault kann
+bis zu einem Tag hinterherhinken.
+
+---
+
 ## Tech-Stack
 
 - **Frontend:** Next.js 16 (App Router, TypeScript), Tailwind CSS, shadcn/ui
