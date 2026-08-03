@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -11,8 +11,11 @@ import {
   einladungscode,
   filtere,
   jagdart,
+  jagdjahre,
+  jagdjahrLabel,
   jagdstatus,
   laeuft,
+  nachJagdjahr,
   namensvorschlag,
   pruefeJagdEntwurf,
   sortiere,
@@ -20,9 +23,13 @@ import {
   terminText,
   vorbereitbar,
   VORBEREITBARE_STATUS,
+  ALLE_JAHRE,
   FILTER,
   JAGDARTEN,
+  KEINE_ANTWORTEN,
   KEINE_ZUSAGEN,
+  type Antwort,
+  type Antworten,
   type Filter,
   type Jagd,
   type JagdEntwurf,
@@ -47,37 +54,74 @@ type AngelegteJagd = { current: string | null }
 export default function Liste({
   jagden,
   zusagen,
+  antworten,
   filter,
+  jahr,
   revierId,
   eigeneId,
 }: {
   jagden: Jagd[]
   /** Aus einer Map serialisiert — Server-Komponenten reichen keine Map durch. */
   zusagen: Record<string, Zusagen>
+  antworten: Record<string, Antworten>
   filter: Filter
+  jahr: string
   revierId: string
   eigeneId: string
 }) {
   const router = useRouter()
   const [anlegen, setAnlegen] = useState(false)
 
-  const sichtbare = useMemo(() => sortiere(filtere(jagden, filter)), [jagden, filter])
+  // **Erst das Jahr, dann der Zustandsfilter.** Die Reihenfolge ist gleichgültig
+  // für das Ergebnis, aber nicht für die Zähler auf den Chips: die sollen sagen,
+  // wie viele es *im gewählten Jahr* gibt, nicht im ganzen Bestand.
+  const imJahr = useMemo(() => nachJagdjahr(jagden, jahr), [jagden, jahr])
+  const sichtbare = useMemo(() => sortiere(filtere(imJahr, filter)), [imJahr, filter])
+
+  const jahre = useMemo(() => jagdjahre(jagden), [jagden])
 
   const zaehler = useMemo(
     () => ({
-      alle: jagden.length,
-      offen: jagden.filter((j) => !beendet(j.status)).length,
-      geplant: jagden.filter((j) => j.status === 'scheduled' || j.status === 'draft').length,
-      beendet: jagden.filter((j) => beendet(j.status)).length,
+      alle: imJahr.length,
+      offen: imJahr.filter((j) => !beendet(j.status)).length,
+      geplant: imJahr.filter((j) => j.status === 'scheduled' || j.status === 'draft').length,
+      beendet: imJahr.filter((j) => beendet(j.status)).length,
     }),
-    [jagden]
+    [imJahr]
   )
 
   // Der Filterzustand gehört in die URL (Konzept §2.4) — ein geteilter Link
   // zeigt dieselbe Ansicht. `scroll: false`, damit die Liste stehen bleibt.
-  const setzeFilter = (f: Filter) => {
-    const ziel = f === 'alle' ? `?revier=${revierId}` : `?revier=${revierId}&filter=${f}`
-    router.replace(`/zentrale/jagden${ziel}`, { scroll: false })
+  //
+  // Beide Filter schreiben durch dieselbe Stelle, damit keiner den anderen
+  // wegwirft. Genau diesen Fehler hatte der Revierwechsler der Seitenleiste
+  // einmal: er setzte `?revier=` als ganze Query und leerte damit das Suchfeld
+  // der Gästeliste.
+  //
+  // **Das aktuelle Paar liegt in einem Ref, nicht in den Props.** Die Props
+  // kommen vom Server und treffen erst ein, wenn die Navigation durch ist; wer
+  // in dieser Lücke den zweiten Filter bedient, baute seine URL sonst aus dem
+  // ALTEN Wert des ersten. „Jahr wählen, sofort Offen klicken" hätte auf einer
+  // langsamen Leitung das gerade gewählte Jahr wieder entfernt
+  // (Fremdprüfung 03.08.2026). Ein Ref, weil er synchron im selben Klick gelten
+  // muss — ein State wäre erst beim nächsten Rendern da und hätte dasselbe
+  // Problem eine Ebene tiefer.
+  // Die Zuweisung gehört in einen Effekt, NICHT in den Renderkörper: dort liefe
+  // sie bei jedem Rendern und machte den optimistischen Wert sofort wieder
+  // zunichte — der Ref hätte sich selbst aufgehoben. So gewinnen die Props erst,
+  // wenn sie wirklich neu sind (auch beim Zurück-Knopf des Browsers).
+  const gewaehlt = useRef({ filter, jahr })
+  useEffect(() => {
+    gewaehlt.current = { filter, jahr }
+  }, [filter, jahr])
+
+  const setzeAdresse = (neu: { filter?: Filter; jahr?: string }) => {
+    const paar = { ...gewaehlt.current, ...neu }
+    gewaehlt.current = paar
+    const p = new URLSearchParams({ revier: revierId })
+    if (paar.filter !== 'alle') p.set('filter', paar.filter)
+    if (paar.jahr !== ALLE_JAHRE) p.set('jahr', paar.jahr)
+    router.replace(`/zentrale/jagden?${p.toString()}`, { scroll: false })
   }
 
   /**
@@ -223,10 +267,27 @@ export default function Liste({
     return chatFehler
   }
 
-  const anlegenKnopf = (
-    <button type="button" className="haupt" onClick={() => setAnlegen(true)}>
-      Jagd anlegen
-    </button>
+  /**
+   * Titel und die einzige erzeugende Handlung auf einer Achse.
+   *
+   * Der Knopf stand vorher in einer eigenen Zeile zwischen Überschrift und
+   * Filtern — also genau dort, wo das Auge schon drei Elemente abgearbeitet
+   * hatte, und ging unter (Moritz, 03.08.2026: „nicht präsent genug"). Rechts
+   * auf Titelhöhe bekommt er die Stelle, die jedes Werkzeug dafür benutzt, und
+   * der Kopf wird eine Zeile kürzer.
+   *
+   * Er ist das **einzige** Element im Seitenkopf mit voller Akzentfläche.
+   * Deshalb hat der aktive Filter-Chip seine Füllung abgegeben: ein
+   * Ansichtszustand darf nicht mit der wichtigsten Handlung um dieselbe Farbe
+   * konkurrieren (Codex-Designlesung, dritter Fund).
+   */
+  const kopf = (
+    <div className="jagden-titelzeile">
+      <h1>Jagden</h1>
+      <button type="button" className="jagden-haupt" onClick={() => setAnlegen(true)}>
+        Jagd anlegen
+      </button>
+    </div>
   )
 
   if (anlegen) {
@@ -236,6 +297,7 @@ export default function Liste({
   if (jagden.length === 0) {
     return (
       <>
+        {kopf}
         <div className="zentrale-note">
           <p style={{ margin: 0 }}>
             Für dieses Revier ist keine Jagd angelegt. Hier entsteht eine
@@ -243,14 +305,35 @@ export default function Liste({
             Feld-App.
           </p>
         </div>
-        <div className="jagden-kopfzeile">{anlegenKnopf}</div>
       </>
     )
   }
 
   return (
     <>
-      <div className="jagden-kopfzeile">{anlegenKnopf}</div>
+      {kopf}
+
+      {/* Das Jagdjahr steht vor den Zustands-Chips: es ist der gröbere Schnitt,
+          und die Zahlen auf den Chips gelten innerhalb des gewählten Jahres.
+          Nur anzeigen, wenn es überhaupt mehr als eines gibt — ein Auswahlfeld
+          mit einer Wahl ist ein Möbelstück. */}
+      {jahre.length > 1 ? (
+        <div className="jagden-jahr">
+          <label htmlFor="jagden-jahr">Jagdjahr</label>
+          <select
+            id="jagden-jahr"
+            value={jahr}
+            onChange={(e) => setzeAdresse({ jahr: e.target.value })}
+          >
+            <option value={ALLE_JAHRE}>Alle</option>
+            {jahre.map((k) => (
+              <option key={k} value={k}>
+                {jagdjahrLabel(k)}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       <div className="jagden-filter" role="group" aria-label="Jagden filtern">
         {FILTER.map((f) => (
@@ -259,7 +342,7 @@ export default function Liste({
             type="button"
             className={`jagden-chip${f === filter ? ' ist-aktiv' : ''}`}
             aria-pressed={f === filter}
-            onClick={() => setzeFilter(f)}
+            onClick={() => setzeAdresse({ filter: f })}
           >
             {f === 'alle' ? 'Alle' : f === 'offen' ? 'Offen' : f === 'geplant' ? 'Geplant' : 'Beendet'}
             <span className="jagden-chip-zahl">{zaehler[f]}</span>
@@ -312,11 +395,7 @@ export default function Liste({
                     ) : null}
                   </td>
                   <td className="jagden-zahl">
-                    {z.zugesagt}
-                    {z.offen > 0 ? <span className="jagden-offen"> +{z.offen} offen</span> : null}
-                    {z.abgesagt > 0 ? (
-                      <span className="jagden-abgesagt"> −{z.abgesagt} abgesagt</span>
-                    ) : null}
+                    <Zusagenzelle zusagen={z} antworten={antworten[j.id] ?? KEINE_ANTWORTEN} />
                   </td>
                 </tr>
               )
@@ -331,6 +410,97 @@ export default function Liste({
         </p>
       ) : null}
     </>
+  )
+}
+
+/**
+ * Die Zusagen-Zelle: die Zahlen, und dahinter wer.
+ *
+ * **Ein `popover`, kein absolut positionierter Kasten** — und das ist keine
+ * Modeentscheidung: die Tabelle steht in `.jagden-tabellenkasten` mit
+ * `overflow-x: auto`, und ein normales Popup würde daran abgeschnitten. Die
+ * Popover-API rendert im Top-Layer, außerhalb jedes Überlaufs; Escape,
+ * Klick-daneben und die Fokusrückgabe kommen vom Browser.
+ *
+ * **Aufgehen tut es beim Überfahren mit der Maus** (Moritz' Vorgabe), **und
+ * beim Klicken und beim Tastaturfokus** — Hover allein wäre auf einem
+ * Touchgerät und für die Tastatur eine Sackgasse. `popovertarget` macht den
+ * Klickweg von selbst; die zwei Zeilen JS darüber sind nur für die Maus da.
+ */
+function Zusagenzelle({ zusagen: z, antworten: a }: { zusagen: Zusagen; antworten: Antworten }) {
+  const id = useId()
+  const popRef = useRef<HTMLDivElement>(null)
+
+  const zeigen = () => popRef.current?.showPopover()
+  const verbergen = () => popRef.current?.hidePopover()
+
+  const leer = z.zugesagt === 0 && z.offen === 0 && z.abgesagt === 0
+
+  return (
+    <span className="jagden-zusagen" onMouseEnter={leer ? undefined : zeigen} onMouseLeave={verbergen}>
+      <button
+        type="button"
+        className="jagden-zusagen-knopf"
+        popoverTarget={leer ? undefined : id}
+        // **`show`, nicht das voreingestellte `toggle`.** Sonst schließt der
+        // Klick genau das Popover wieder, das Hover oder Fokus einen Moment
+        // vorher geöffnet haben — und weil Fokus dem Klick immer vorausgeht,
+        // wäre das der Normalfall gewesen, nicht der Sonderfall. Das Feature
+        // hätte nur aufgeblitzt (Fremdprüfung 03.08.2026). Mit `show` ist jede
+        // Aktivierung idempotent; geschlossen wird über Escape, Klick daneben
+        // (beides von `popover="auto"`), Mausaustritt und Fokusverlust.
+        popoverTargetAction="show"
+        disabled={leer}
+        aria-label={
+          leer
+            ? 'Niemand eingeladen'
+            : `${z.zugesagt} zugesagt, ${z.offen} offen, ${z.abgesagt} abgesagt — Namen anzeigen`
+        }
+        onFocus={leer ? undefined : zeigen}
+        onBlur={verbergen}
+      >
+        {z.zugesagt}
+        {z.offen > 0 ? <span className="jagden-offen"> +{z.offen} offen</span> : null}
+        {z.abgesagt > 0 ? <span className="jagden-abgesagt"> −{z.abgesagt} abgesagt</span> : null}
+      </button>
+
+      {leer ? null : (
+        <div ref={popRef} id={id} popover="auto" className="jagden-popover">
+          <Antwortgruppe titel="Zugesagt" eintraege={a.zugesagt} />
+          <Antwortgruppe titel="Offen" eintraege={a.offen} />
+          <Antwortgruppe titel="Abgesagt" eintraege={a.abgesagt} />
+        </div>
+      )}
+    </span>
+  )
+}
+
+/**
+ * Eine Gruppe im Aufklapper. Leere Gruppen fallen weg statt als „(0)"
+ * dazustehen — drei Überschriften ohne Inhalt sind keine Auskunft.
+ *
+ * Das Datum steht ohne Uhrzeit: wann jemand zugesagt hat, ist eine Angabe auf
+ * Tagesebene; die Minute daneben behauptete eine Genauigkeit, die niemand
+ * braucht.
+ */
+function Antwortgruppe({ titel, eintraege }: { titel: string; eintraege: Antwort[] }) {
+  if (eintraege.length === 0) return null
+  return (
+    <div className="jagden-popover-gruppe">
+      <h3>
+        {titel} <span className="jagden-popover-zahl">{eintraege.length}</span>
+      </h3>
+      <ul>
+        {eintraege.map((e, i) => (
+          <li key={`${e.name}-${i}`}>
+            <span className="jagden-popover-name">{e.name}</span>
+            {e.datum ? (
+              <span className="jagden-popover-datum">{terminText(e.datum, false)}</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

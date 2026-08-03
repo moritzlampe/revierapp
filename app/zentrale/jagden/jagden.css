@@ -23,10 +23,17 @@
   cursor: pointer;
 }
 .zentrale .jagden-chip:hover { background: var(--z-bg-sunken); }
+/* **Der aktive Chip trägt keine volle Akzentfläche mehr.**
+   Er ist ein Ansichtszustand, und als gefüllte grüne Fläche konkurrierte er mit
+   dem Hauptknopf um dieselbe Farbe — die im Seitenkopf allein der einzigen
+   erzeugenden Handlung gehört (Codex-Designlesung 03.08.2026, dritter Fund).
+   Rand und Schrift in Akzentfarbe plus halbfett sind deutlich genug; der
+   Unterschied zum Hover-Zustand liegt im Rand, nicht nur im Hintergrund. */
 .zentrale .jagden-chip[aria-pressed='true'] {
-  background: var(--z-accent);
+  background: var(--z-bg-sunken);
   border-color: var(--z-accent);
-  color: var(--z-on-accent);
+  color: var(--z-accent);
+  font-weight: 600;
 }
 .zentrale .jagden-chip:focus-visible {
   outline: 2px solid var(--z-accent);
@@ -40,8 +47,65 @@
   opacity: 0.65;
 }
 
+/* Titel und Hauptknopf auf einer Achse. `space-between` statt eines Abstands:
+   der Knopf sitzt am rechten Rand des Inhaltsbereichs, wo ihn jedes Werkzeug
+   erwartet. Umbruch erlaubt, damit er auf schmalen Fenstern unter den Titel
+   rutscht statt ihn zu quetschen. */
+.zentrale .jagden-titelzeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.zentrale .jagden-titelzeile h1 { margin-bottom: 0; }
+
+/* Die einzige volle Akzentfläche im Seitenkopf — s. die Chip-Regel oben. */
+.zentrale .jagden-haupt {
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  height: 2.625rem;
+  padding: 0 1.125rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--z-accent);
+  color: var(--z-on-accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.zentrale .jagden-haupt:hover { background: var(--z-accent-hover); }
+.zentrale .jagden-haupt:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+
+.zentrale .jagden-jahr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 1.25rem;
+  font-size: 0.8125rem;
+}
+.zentrale .jagden-jahr label { color: var(--z-text-secondary); }
+.zentrale .jagden-jahr select {
+  font: inherit;
+  padding: 4px 8px;
+  border: 1px solid var(--z-border);
+  border-radius: 6px;
+  background: var(--z-bg-elevated);
+  color: inherit;
+  cursor: pointer;
+}
+/* Steht das Jahr darüber, braucht die Chip-Reihe ihren eigenen Abstand nicht
+   doppelt. */
+.zentrale .jagden-jahr + .jagden-filter { margin-top: 0.75rem; }
+
 .zentrale .jagden-tabellenkasten {
-  /* Wide content scrollt in seinem eigenen Kasten, nie die Seite. */
+  /* Wide content scrollt in seinem eigenen Kasten, nie die Seite.
+     ACHTUNG: Deshalb kann in dieser Tabelle kein absolut positioniertes Popup
+     stehen — es würde hier abgeschnitten. Der Zusagen-Aufklapper ist ein
+     echtes `popover` und rendert im Top-Layer, außerhalb dieses Kastens. */
   overflow-x: auto;
 }
 
@@ -163,6 +227,75 @@
   margin-left: 6px;
   font-size: 0.75rem;
   color: var(--z-text-secondary);
+}
+
+/* --- Zusagen: Zahl mit Aufklapper ---------------------------------------- */
+
+.zentrale .jagden-zusagen { display: inline-block; }
+
+/* Der Knopf sieht aus wie die Zahl, die er ersetzt hat — er ist der
+   Aufklapp-Griff, nicht eine neue Schaltfläche im Layout. */
+.zentrale .jagden-zusagen-knopf {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.zentrale .jagden-zusagen-knopf:hover:not(:disabled) { background: var(--z-bg-sunken); }
+.zentrale .jagden-zusagen-knopf:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 1px;
+}
+/* Ohne Teilnehmer gibt es nichts aufzuklappen: dann ist es wieder nur Text. */
+.zentrale .jagden-zusagen-knopf:disabled { cursor: default; opacity: 1; }
+
+.zentrale .jagden-popover,
+.jagden-popover {
+  /* Popover sitzen im Top-Layer, also AUSSERHALB von `.zentrale` — die
+     Verschachtelung greift dort nicht, deshalb steht der Selektor zweimal. */
+  margin: 0;
+  padding: 12px 14px;
+  min-width: 15rem;
+  max-width: 22rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--z-border-strong, #C9C2AE);
+  border-radius: 10px;
+  background: var(--z-bg-elevated, #FFFDF7);
+  color: var(--z-text-primary, #2A2721);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+  font-size: 0.8125rem;
+}
+.jagden-popover:popover-open { position: fixed; inset: auto; }
+
+.jagden-popover-gruppe + .jagden-popover-gruppe { margin-top: 10px; }
+.jagden-popover-gruppe h3 {
+  margin: 0 0 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary, #6B655A);
+}
+.jagden-popover-zahl { font-variant-numeric: tabular-nums; opacity: 0.7; }
+.jagden-popover-gruppe ul { margin: 0; padding: 0; list-style: none; }
+.jagden-popover-gruppe li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+.jagden-popover-name { min-width: 0; }
+.jagden-popover-datum {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--z-text-secondary, #6B655A);
 }
 
 /* Nur für Vorleser: die Aktionsspalte braucht eine Überschrift, aber keine

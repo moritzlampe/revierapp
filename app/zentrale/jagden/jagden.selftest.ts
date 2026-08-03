@@ -9,13 +9,20 @@ import assert from 'node:assert/strict'
 import {
   alsEingabewert,
   alsFilter,
+  alsJahr,
+  ALLE_JAHRE,
   alsZeitstempel,
+  antworten,
   beendet,
   einladungscode,
   ersterWert,
   filtere,
   jagdAenderungen,
   jagdart,
+  jagdjahre,
+  jagdjahrLabel,
+  jagdjahrVon,
+  nachJagdjahr,
   jagdstatus,
   laeuft,
   namensvorschlag,
@@ -34,6 +41,7 @@ import {
   zusagen,
   type Jagd,
   type JagdEntwurf,
+  type Teilnahme,
   type Teilnehmer,
 } from './jagden.ts'
 
@@ -167,12 +175,20 @@ assert.equal(terminText('2027-04-15T08:00:00Z', false), '15.04.2027')
 
 // --- Zusagen ----------------------------------------------------------------
 
+// Die Testzeilen tragen alle Felder, die auch die Query laedt — sonst prueft
+// der Test eine andere Form als die Produktion. (`--experimental-strip-types`
+// entfernt Typen, es prueft sie nicht; und die selftest-Dateien sind aus
+// tsconfig ausgeschlossen. Der Compiler faengt so etwas hier also nicht.)
+function zeile(teil: Partial<Teilnahme> & { hunt_id: string }): Teilnahme {
+  return { status: 'joined', user_id: null, guest_name: null, joined_at: null, left_at: null, ...teil }
+}
+
 {
   const z = zusagen([
-    { hunt_id: 'j1', status: 'joined' },
-    { hunt_id: 'j1', status: 'invited' },
-    { hunt_id: 'j1', status: 'invited' },
-    { hunt_id: 'j2', status: 'joined' },
+    zeile({ hunt_id: 'j1', status: 'joined' }),
+    zeile({ hunt_id: 'j1', status: 'invited' }),
+    zeile({ hunt_id: 'j1', status: 'invited' }),
+    zeile({ hunt_id: 'j2', status: 'joined' }),
   ])
   assert.deepEqual(z.get('j1'), { zugesagt: 1, offen: 2, abgesagt: 0 })
   assert.deepEqual(z.get('j2'), { zugesagt: 1, offen: 0, abgesagt: 0 })
@@ -183,8 +199,8 @@ assert.equal(terminText('2027-04-15T08:00:00Z', false), '15.04.2027')
 // aber schon und muss dann ohne weitere Aenderung greifen.
 {
   const z = zusagen([
-    { hunt_id: 'j1', status: 'declined' },
-    { hunt_id: 'j1', status: 'joined' },
+    zeile({ hunt_id: 'j1', status: 'declined' }),
+    zeile({ hunt_id: 'j1', status: 'joined' }),
   ])
   assert.deepEqual(z.get('j1'), { zugesagt: 1, offen: 0, abgesagt: 1 })
 }
@@ -192,8 +208,100 @@ assert.equal(terminText('2027-04-15T08:00:00Z', false), '15.04.2027')
 // 'left' ist KEINE Absage: wer erst zusagt und dann geht, hat etwas anderes
 // getan als wer nie zusagt. Beides zu vermischen waere eine falsche Auskunft.
 {
-  const z = zusagen([{ hunt_id: 'j1', status: 'left' }])
+  const z = zusagen([zeile({ hunt_id: 'j1', status: 'left' })])
   assert.deepEqual(z.get('j1'), { zugesagt: 0, offen: 0, abgesagt: 0 })
+}
+
+// --- Antworten: wer, nicht nur wie viele -------------------------------------
+
+{
+  const liste = [
+    zeile({ hunt_id: 'j1', status: 'joined', user_id: 'a', joined_at: '2026-07-02T10:00:00Z' }),
+    zeile({ hunt_id: 'j1', status: 'joined', user_id: 'b', joined_at: '2026-07-01T10:00:00Z' }),
+    zeile({ hunt_id: 'j1', status: 'invited', user_id: 'c' }),
+    zeile({ hunt_id: 'j1', status: 'declined', guest_name: 'Zacharias', left_at: '2026-07-03T10:00:00Z' }),
+    zeile({ hunt_id: 'j1', status: 'left', user_id: 'd' }),
+  ]
+  const a = antworten(liste, { a: 'Anton', b: 'Berta', c: 'Cäsar', d: 'Dora' })!.get('j1')!
+
+  // Zugesagte nach Zeitpunkt, die frueheste Antwort oben.
+  assert.deepEqual(a.zugesagt.map((x) => x.name), ['Berta', 'Anton'])
+  assert.equal(a.zugesagt[0].datum, '2026-07-01T10:00:00Z')
+  // Offene haben keinen Zeitpunkt — dort entscheidet der Name.
+  assert.deepEqual(a.offen.map((x) => x.name), ['Cäsar'])
+  assert.equal(a.offen[0].datum, null)
+  // Absagen tragen `left_at`, und ein Gast ohne Konto steht mit seinem Namen da.
+  assert.deepEqual(a.abgesagt.map((x) => x.name), ['Zacharias'])
+  assert.equal(a.abgesagt[0].datum, '2026-07-03T10:00:00Z')
+  // `left` taucht in KEINER der drei Listen auf — wie bei zusagen().
+  assert.equal(a.zugesagt.length + a.offen.length + a.abgesagt.length, 4)
+}
+
+// **Die Zahl in der Tabelle und die Namen dahinter kommen aus derselben
+// Quelle.** Liefen sie auseinander, stuende "3" ueber einer Liste mit zwei
+// Namen — deshalb leitet zusagen() seine Zahlen aus antworten() ab.
+{
+  const liste = [
+    zeile({ hunt_id: 'j1', status: 'joined', user_id: 'a' }),
+    zeile({ hunt_id: 'j1', status: 'invited', user_id: 'b' }),
+    zeile({ hunt_id: 'j1', status: 'declined', user_id: 'c' }),
+    zeile({ hunt_id: 'j1', status: 'left', user_id: 'd' }),
+  ]
+  const z = zusagen(liste).get('j1')!
+  const a = antworten(liste, {}).get('j1')!
+  assert.equal(z.zugesagt, a.zugesagt.length)
+  assert.equal(z.offen, a.offen.length)
+  assert.equal(z.abgesagt, a.abgesagt.length)
+}
+
+// Ein Konto ohne Profilnamen faellt nicht als leere Zeile heraus.
+{
+  const a = antworten([zeile({ hunt_id: 'j1', user_id: 'abcdefgh-1234' })], {}).get('j1')!
+  assert.equal(a.zugesagt[0].name, 'Konto abcdefgh')
+}
+
+// --- Jagdjahr ---------------------------------------------------------------
+
+// Die Grenze ist der 1. April, und sie wird in BERLINER Zeit gezogen. Der
+// zweite Fall ist der, auf den es ankommt: 31.03. um 23:30 Berlin ist
+// 21:30 UTC — wer in UTC rechnet, wirft ihn ins falsche Jagdjahr.
+assert.equal(jagdjahrVon('2026-04-01T00:30:00+02:00'), '2026')
+assert.equal(jagdjahrVon('2026-03-31T23:30:00+02:00'), '2025')
+assert.equal(jagdjahrVon('2026-12-24T10:00:00Z'), '2026')
+assert.equal(jagdjahrVon('2027-01-06T10:00:00Z'), '2026')
+assert.equal(jagdjahrVon(null), null)
+assert.equal(jagdjahrVon('unsinn'), null)
+
+// Mitternacht am 1. April gehoert ins neue Jagdjahr, nicht ins alte.
+assert.equal(jagdjahrVon('2026-03-31T22:00:00Z'), '2026') // = 1.4. 00:00 Berlin
+
+assert.equal(jagdjahrLabel('2026'), '26/27')
+assert.equal(jagdjahrLabel('2099'), '99/00') // Jahrhundertwechsel bleibt lesbar
+assert.equal(jagdjahrLabel('quatsch'), 'quatsch')
+
+// Die Auswahl kommt aus dem Bestand, nicht aus einem erfundenen Bereich —
+// neueste zuerst, keine Luecken-Jahre.
+{
+  const liste = [
+    jagd({ id: 'a', scheduled_for: '2026-05-01T08:00:00Z' }), // 2026
+    jagd({ id: 'b', scheduled_for: '2027-06-01T08:00:00Z' }), // 2027
+    jagd({ id: 'c', scheduled_for: '2026-11-01T08:00:00Z' }), // 2026
+    jagd({ id: 'd' }), // ohne Termin -> kein Jahr
+  ]
+  assert.deepEqual(jagdjahre(liste), ['2027', '2026'])
+  assert.deepEqual(nachJagdjahr(liste, '2026').map((j) => j.id), ['a', 'c'])
+  assert.deepEqual(nachJagdjahr(liste, '2027').map((j) => j.id), ['b'])
+  // "Alle" gibt alles zurueck, auch die ohne Termin.
+  assert.equal(nachJagdjahr(liste, ALLE_JAHRE).length, 4)
+  // Eine Jagd ohne Termin verschwindet, sobald ein Jahr gewaehlt ist — sie
+  // gehoert in keines, und sie in alle zu zeigen waere eine falsche Auskunft.
+  assert.equal(nachJagdjahr(liste, '2026').some((j) => j.id === 'd'), false)
+}
+
+// nachJagdjahr() gibt immer eine neue Liste zurueck, auch bei "alle".
+{
+  const eingabe = [jagd({ id: 'a' })]
+  assert.notEqual(nachJagdjahr(eingabe, ALLE_JAHRE), eingabe)
 }
 
 // --- Filter -----------------------------------------------------------------
@@ -468,3 +576,27 @@ assert.equal(namensvorschlag('2027-01-05T06:00'), 'Jagd am 5.1.2027')
 // (Fremdpruefung 03.08.2026). Dieser Test faellt in jeder Zone gleich aus.
 assert.equal(namensvorschlag('2026-08-15T23:30'), 'Jagd am 15.8.2026')
 assert.equal(namensvorschlag('2026-08-15T00:30'), 'Jagd am 15.8.2026')
+
+// --- Jahr aus der Adresse ----------------------------------------------------
+
+// Ohne diese Schranke wird ein unbekanntes Jahr zu einer Luege: es filtert
+// alles heraus, das Auswahlfeld zeigt mangels passender <option> aber "Alle" —
+// leere Liste, Zaehler auf null, kein erkennbarer Filter (Fremdpruefung
+// 03.08.2026). Betrifft nicht nur getippte Adressen: ein gemerkter Link auf
+// ?jahr=2025 verhaelt sich genauso, sobald dort die letzte Jagd verschwunden ist.
+{
+  const bestand = [
+    jagd({ id: 'a', scheduled_for: '2026-05-01T08:00:00Z' }), // Jagdjahr 2026
+    jagd({ id: 'b', scheduled_for: '2027-06-01T08:00:00Z' }), // Jagdjahr 2027
+  ]
+  assert.equal(alsJahr('2026', bestand), '2026')
+  assert.equal(alsJahr('2027', bestand), '2027')
+  assert.equal(alsJahr(ALLE_JAHRE, bestand), ALLE_JAHRE)
+  assert.equal(alsJahr(undefined, bestand), ALLE_JAHRE)
+  // Kein Jahr im Bestand -> zurueck auf "Alle", statt alles auszublenden.
+  assert.equal(alsJahr('2025', bestand), ALLE_JAHRE)
+  assert.equal(alsJahr('quatsch', bestand), ALLE_JAHRE)
+  assert.equal(alsJahr('', bestand), ALLE_JAHRE)
+  // Leerer Bestand: jedes Jahr faellt zurueck.
+  assert.equal(alsJahr('2026', []), ALLE_JAHRE)
+}

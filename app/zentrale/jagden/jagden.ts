@@ -39,6 +39,12 @@ export interface Jagd {
 export interface Teilnahme {
   hunt_id: string
   status: string | null
+  user_id: string | null
+  guest_name: string | null
+  /** Wann zugesagt wurde. 48 von 88 Zeilen tragen es (03.08.2026). */
+  joined_at: string | null
+  /** Wann abgesagt oder verlassen wurde. */
+  left_at: string | null
 }
 
 export interface Zusagen {
@@ -48,6 +54,21 @@ export interface Zusagen {
 }
 
 export const KEINE_ZUSAGEN: Zusagen = { zugesagt: 0, offen: 0, abgesagt: 0 }
+
+/** Eine Zeile im Aufklapper hinter der Zusagen-Zahl. */
+export interface Antwort {
+  name: string
+  /** Wann geantwortet wurde — `null`, wenn die Zeile keinen Zeitpunkt trägt. */
+  datum: string | null
+}
+
+export interface Antworten {
+  zugesagt: Antwort[]
+  offen: Antwort[]
+  abgesagt: Antwort[]
+}
+
+export const KEINE_ANTWORTEN: Antworten = { zugesagt: [], offen: [], abgesagt: [] }
 
 // ---------------------------------------------------------------------------
 // Beschriftungen
@@ -197,14 +218,136 @@ export function sortiere(jagden: readonly Jagd[]): Jagd[] {
  */
 export function zusagen(teilnahmen: readonly Teilnahme[]): Map<string, Zusagen> {
   const map = new Map<string, Zusagen>()
-  for (const t of teilnahmen) {
-    const z = map.get(t.hunt_id) ?? { ...KEINE_ZUSAGEN }
-    if (t.status === 'joined') z.zugesagt += 1
-    else if (t.status === 'invited') z.offen += 1
-    else if (t.status === 'declined') z.abgesagt += 1
-    map.set(t.hunt_id, z)
+  // Aus denselben Listen gezählt, die der Aufklapper zeigt. Zwei getrennte
+  // Zählungen wären zwei Wahrheiten, die beim nächsten Statuswert auseinander-
+  // laufen — die Zahl in der Tabelle muss dieselbe sein wie die Anzahl der
+  // Namen dahinter.
+  for (const [huntId, a] of antworten(teilnahmen, {})) {
+    map.set(huntId, {
+      zugesagt: a.zugesagt.length,
+      offen: a.offen.length,
+      abgesagt: a.abgesagt.length,
+    })
   }
   return map
+}
+
+/**
+ * Wer je Jagd zugesagt, noch nicht geantwortet oder abgesagt hat — mit Namen
+ * und Zeitpunkt, für den Aufklapper hinter der Zahl.
+ *
+ * **`left` fehlt hier wie in `zusagen()`**: wer erst zusagt und dann geht, hat
+ * etwas anderes getan als wer absagt. Die Zeile taucht damit in keiner der drei
+ * Listen auf — sichtbar wird sie im Detail der Jagd, wo alle vier Zustände
+ * stehen.
+ *
+ * Sortiert wird nach Zeitpunkt (früheste Antwort zuerst), Namenlose ans Ende;
+ * bei den Offenen gibt es keinen Zeitpunkt, dort entscheidet der Name.
+ */
+export function antworten(
+  teilnahmen: readonly Teilnahme[],
+  namen: Record<string, string>,
+): Map<string, Antworten> {
+  const map = new Map<string, Antworten>()
+
+  for (const t of teilnahmen) {
+    const a = map.get(t.hunt_id) ?? { zugesagt: [], offen: [], abgesagt: [] }
+    const name = teilnehmerName(t, namen)
+    if (t.status === 'joined') a.zugesagt.push({ name, datum: t.joined_at })
+    else if (t.status === 'invited') a.offen.push({ name, datum: null })
+    else if (t.status === 'declined') a.abgesagt.push({ name, datum: t.left_at })
+    map.set(t.hunt_id, a)
+  }
+
+  const sortiere = (liste: Antwort[]) =>
+    liste.sort((x, y) => {
+      if (x.datum && y.datum) return new Date(x.datum).getTime() - new Date(y.datum).getTime()
+      if (x.datum) return -1
+      if (y.datum) return 1
+      return x.name.localeCompare(y.name, 'de')
+    })
+
+  for (const a of map.values()) {
+    sortiere(a.zugesagt)
+    sortiere(a.offen)
+    sortiere(a.abgesagt)
+  }
+  return map
+}
+
+// ---------------------------------------------------------------------------
+// Jagdjahr
+// ---------------------------------------------------------------------------
+
+/**
+ * Das Jagdjahr läuft vom 1. April bis zum 31. März — deutsche Konvention,
+ * daran hängen Schonzeiten und Hegering-Statistiken.
+ *
+ * **Die Regel steht hier nachgebaut, nicht importiert.** Die App hat sie in
+ * `src/lib/tagebuch/season.ts`, aber das ist ein anderes Repo; ein gemeinsames
+ * Paket gibt es nicht. Wer eine der beiden ändert, muss an die andere denken —
+ * die Grenze ist bewusst die einzige Zahl in dieser Datei, damit das auffällt.
+ *
+ * Der Schlüssel ist das Startjahr als Zeichenkette: `'2026'` heißt 2026/27.
+ * Gerechnet wird in **Berliner** Zeit, wie überall hier: eine Jagd am 1. April
+ * um 00:30 gehört ins neue Jagdjahr, und `toISOString()` würde sie auf den
+ * 31. März zurückwerfen.
+ */
+const JAGDJAHR_BEGINN_MONAT = 4
+
+export function jagdjahrVon(wert: string | null): string | null {
+  const lokal = alsEingabewert(wert)
+  if (!lokal) return null
+  const jahr = Number(lokal.slice(0, 4))
+  const monat = Number(lokal.slice(5, 7))
+  return String(monat >= JAGDJAHR_BEGINN_MONAT ? jahr : jahr - 1)
+}
+
+/** `'2026'` → `'26/27'`. Kompakt, weil es in einem Auswahlfeld steht. */
+export function jagdjahrLabel(key: string): string {
+  const start = Number(key)
+  if (!Number.isFinite(start)) return key
+  return `${String(start % 100).padStart(2, '0')}/${String((start + 1) % 100).padStart(2, '0')}`
+}
+
+/**
+ * Die Jagdjahre, die im Bestand wirklich vorkommen — absteigend, das neueste
+ * zuerst.
+ *
+ * Bewusst aus den Daten abgeleitet statt aus einem Von-Bis-Bereich erzeugt:
+ * ein Auswahlfeld mit zehn leeren Jahren ist eine Liste von Sackgassen.
+ */
+export function jagdjahre(jagden: readonly Jagd[]): string[] {
+  const gesehen = new Set<string>()
+  for (const j of jagden) {
+    const k = jagdjahrVon(termin(j))
+    if (k) gesehen.add(k)
+  }
+  return [...gesehen].sort((a, b) => Number(b) - Number(a))
+}
+
+/** `ALLE_JAHRE` ist kein Jagdjahr, sondern die Abwesenheit des Filters. */
+export const ALLE_JAHRE = 'alle'
+
+/**
+ * Prüft einen Jahreswert aus der Adresse gegen den Bestand — Gegenstück zu
+ * `alsFilter()`.
+ *
+ * **Ohne diese Schranke wird ein unbekanntes Jahr zu einer Lüge:** es filtert
+ * alles heraus, und weil kein `<option>` dazu passt, zeigt das Auswahlfeld
+ * „Alle". Der Nutzer sieht eine leere Liste, Zähler auf null, und nichts, was
+ * auf einen aktiven Filter hindeutet. Das trifft nicht nur getippte Adressen:
+ * ein gemerkter Link auf `?jahr=2025` verhält sich genauso, sobald aus diesem
+ * Jagdjahr die letzte Jagd verschwunden ist.
+ */
+export function alsJahr(wert: string | undefined, jagden: readonly Jagd[]): string {
+  if (!wert || wert === ALLE_JAHRE) return ALLE_JAHRE
+  return jagdjahre(jagden).includes(wert) ? wert : ALLE_JAHRE
+}
+
+export function nachJagdjahr(jagden: readonly Jagd[], key: string): Jagd[] {
+  if (key === ALLE_JAHRE) return [...jagden]
+  return jagden.filter((j) => jagdjahrVon(termin(j)) === key)
 }
 
 // ---------------------------------------------------------------------------
@@ -352,7 +495,13 @@ export function sortiereTeilnehmer(
  * Design, sondern eine Notbremse: ein Profil, das RLS nicht durchlässt, soll
  * eine unterscheidbare Zeile ergeben statt einer leeren.
  */
-export function teilnehmerName(t: Teilnehmer, namen: Record<string, string>): string {
+export function teilnehmerName(
+  // Nur die zwei Felder, aus denen der Name entsteht — damit dieselbe Funktion
+  // die Detailzeile (`Teilnehmer`) und die Listenzeile (`Teilnahme`) bedient,
+  // ohne dass eine von beiden Felder mitschleppen muss, die sie nicht lädt.
+  t: { user_id: string | null; guest_name: string | null },
+  namen: Record<string, string>,
+): string {
   if (t.guest_name) return t.guest_name
   if (!t.user_id) return 'Unbekannt'
   return namen[t.user_id] || `Konto ${t.user_id.slice(0, 8)}`

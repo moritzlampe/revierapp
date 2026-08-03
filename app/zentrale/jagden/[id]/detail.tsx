@@ -294,10 +294,15 @@ export default function Detail({
         />
       ) : (
         <>
+          {/* Derselbe Revierkopf wie auf der Liste. Wer eine Jagd bearbeitet,
+              soll ohne Hinsehen wissen, wessen Revier er gerade anfasst. */}
+          <div className="zentrale-revier">
+            <span className="zentrale-revier-label">Revier</span>
+            <span className="zentrale-revier-name">{revierName ?? 'Unbekannt'}</span>
+          </div>
           <h1>{jagd.name || 'Ohne Namen'}</h1>
           <p className="zentrale-sub">
-            {revierName ?? 'Revier unbekannt'} · {jagdart(jagd.type)} ·{' '}
-            {terminText(termin(jagd))}
+            {jagdart(jagd.type)} · {terminText(termin(jagd))}
           </p>
 
           <div className="jagden-kopfzeile">

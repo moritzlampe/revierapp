@@ -76,15 +76,26 @@
 }
 .zentrale-switch .val { font-weight: 500; }
 /* Natives <select>: entkleidet, damit es wie Text im Kasten sitzt. Tastatur-
-   und Screenreader-Verhalten bleibt dabei geschenkt. */
+   und Screenreader-Verhalten bleibt dabei geschenkt.
+
+   **Größer und in Displayschrift seit dem 03.08.2026.** Der Reviername ist der
+   Kontext, in dem alles auf jeder Seite steht — als normal große Zeile neben
+   einem Mini-Label war er zu leise (Moritz: „muss deutlicher werden, in welchem
+   Revier ich gerade bin"). `font: inherit` musste dafür weichen; die einzelnen
+   Eigenschaften stehen jetzt ausgeschrieben da, sonst überschriebe die
+   Kurzform die Größe wieder. Ein Auswahlfeld bleibt es trotzdem — gewechselt
+   wird hier, nicht anderswo. */
 .zentrale-switch select.val {
   width: 100%;
   border: 0;
   padding: 0;
   background: transparent;
   color: inherit;
-  font: inherit;
+  font-family: var(--font-display);
+  font-size: 1.125rem;
   font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
   cursor: pointer;
 }
 .zentrale-switch select.val:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 3px; }
@@ -164,6 +175,44 @@
   text-wrap: balance;
 }
 .zentrale-sub { color: var(--z-text-secondary); font-size: 0.875rem; margin: 0; }
+
+/* Das Revier ÜBER der Überschrift, in zwei Ebenen.
+
+   **Das konstante Wort klein, der variable Name groß** — und genau darum geht
+   es. Die erste Fassung war ein Kicker, der den Reviernamen selbst klein,
+   gesperrt und versal setzte; damit las er sich wie eine Rubrik statt wie die
+   entscheidende Angabe. Der Name ist aber die Voraussetzung von allem, was
+   darunter steht: jede Zahl auf der Seite gilt nur für dieses eine Revier, und
+   davon gibt es sieben.
+
+   Bewusst **linksbündig**, nicht mittig über der Tabelle. Mittig war der erste
+   Gedanke (Moritz, 03.08.2026) und wäre die einzige zentrierte Achse im ganzen
+   Portal gewesen — laut Codex' Designlesung „eher ein Bruch als eine Stärke",
+   weil der Kontext dann zu spät und wie eine Tabellenüberschrift erscheint.
+   Vorgelegt und so entschieden.
+
+   Der Wechsler in der Seitenleiste bleibt unverändert: dort wird gewechselt,
+   hier wird bestätigt. */
+.zentrale-revier {
+  margin: 0 0 12px;
+}
+.zentrale-revier-label {
+  display: block;
+  margin: 0 0 2px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--z-accent);
+}
+.zentrale-revier-name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--z-text-primary);
+}
 .zentrale-note {
   margin-top: 24px;
   max-width: 70ch;

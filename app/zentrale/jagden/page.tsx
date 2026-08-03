@@ -2,7 +2,15 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { geladen } from '../laden'
 import Liste from './liste'
-import { alsFilter, ersterWert, zusagen, type Jagd, type Teilnahme } from './jagden'
+import {
+  alsFilter,
+  alsJahr,
+  antworten,
+  ersterWert,
+  zusagen,
+  type Jagd,
+  type Teilnahme,
+} from './jagden'
 import './jagden.css'
 
 /**
@@ -31,7 +39,7 @@ export default async function JagdenPage({
 }: {
   searchParams: Promise<Suchparameter>
 }) {
-  const { revier: revierParam, filter } = await searchParams
+  const { revier: revierParam, filter, jahr: jahrParam } = await searchParams
   const gewuenscht = ersterWert(revierParam)
   const supabase = await createClient()
   const {
@@ -134,7 +142,10 @@ export default async function JagdenPage({
       : geladen<Teilnahme[]>(
           await supabase
             .from('hunt_participants')
-            .select('hunt_id, status')
+            // `user_id`, `guest_name` und die zwei Zeitpunkte kommen für den
+            // Aufklapper hinter der Zusagen-Zahl mit: er zeigt, WER zugesagt
+            // hat und wann, nicht nur wie viele.
+            .select('hunt_id, status, user_id, guest_name, joined_at, left_at')
             .in(
               'hunt_id',
               jagden.map((j) => j.id)
@@ -143,6 +154,34 @@ export default async function JagdenPage({
           'Teilnehmer'
         )
 
+  // **Nur die Konten, die hier auch vorkommen** — nicht alle.
+  //
+  // Die erste Fassung lud `profiles` ungefiltert mit `limit(GRENZE)`. Heute
+  // sind das 9 Zeilen, aber sobald der Bestand die Grenze überschreitet, fehlt
+  // eine beliebige Teilmenge der Namen, und die betroffenen Teilnehmer stehen
+  // still als „Konto <uuid>" da — eine degradierte Auskunft, die wie eine
+  // gültige aussieht (Fremdprüfung 03.08.2026). Mit `.in()` kann die Abfrage
+  // gar nicht erst unvollständig werden: sie fragt genau so viele, wie es
+  // Teilnehmer gibt.
+  const kontoIds = [...new Set(teilnahmen.map((t) => t.user_id).filter((id): id is string => !!id))]
+
+  const profile =
+    kontoIds.length === 0
+      ? []
+      : geladen<{ id: string; display_name: string | null }[]>(
+          await supabase.from('profiles').select('id, display_name').in('id', kontoIds),
+          'Profile'
+        )
+
+  // **Ein Jahr aus der Adresse, das es nicht gibt, wird zu „Alle".**
+  // Ohne diese Zeile filterte `?jahr=quatsch` (oder ein Jahr, aus dem inzwischen
+  // die letzte Jagd verschwunden ist) alles heraus: leere Liste, Zähler auf
+  // null — und das Auswahlfeld zeigte „Alle", weil kein `<option>` passt. Der
+  // Nutzer sähe einen leeren Bestand ohne erkennbaren Filter
+  // (Fremdprüfung 03.08.2026). `filter` läuft längst durch `alsFilter()`;
+  // `jahr` hatte keine solche Schranke.
+  const jahr = alsJahr(ersterWert(jahrParam), jagden)
+
   // Die Teilnehmerabfrage erreicht die Grenze deutlich früher als die Jagden —
   // 39 Jagden tragen heute 88 Zeilen. Lieber ein sichtbarer Hinweis als eine
   // stille Falschzahl; die Haltung ist dieselbe wie in `geladen()`.
@@ -150,8 +189,12 @@ export default async function JagdenPage({
 
   return (
     <div className="zentrale-wrap">
-      <h1>Jagden</h1>
-      <p className="zentrale-sub">{revier.name}</p>
+      {/* Das Revier steht über dem Titel, nicht darunter: jede Zahl auf dieser
+          Seite gilt nur für dieses eine. Kleines Label, großer Name. */}
+      <div className="zentrale-revier">
+        <span className="zentrale-revier-label">Revier</span>
+        <span className="zentrale-revier-name">{revier.name}</span>
+      </div>
       {unvollstaendig ? (
         <div className="zentrale-note" role="alert">
           <p style={{ margin: 0 }}>
@@ -163,7 +206,11 @@ export default async function JagdenPage({
       <Liste
         jagden={jagden}
         zusagen={Object.fromEntries(zusagen(teilnahmen))}
+        antworten={Object.fromEntries(
+          antworten(teilnahmen, Object.fromEntries(profile.map((p) => [p.id, p.display_name ?? ''])))
+        )}
         filter={alsFilter(ersterWert(filter))}
+        jahr={jahr}
         revierId={revier.id}
         eigeneId={user.id}
       />
