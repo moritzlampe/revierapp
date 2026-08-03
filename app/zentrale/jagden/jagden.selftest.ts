@@ -45,6 +45,8 @@ import {
   type Teilnahme,
   type Teilnehmer,
   gastZustand,
+  rolleBeimEinladen,
+  rollenVerteilung,
   leerText,
   GAST_ZUSTAENDE,
   filterZaehler,
@@ -56,6 +58,7 @@ import {
   EINLADE_FILTER,
   KONTAKT_SCHLUESSEL,
   KONTO_SCHLUESSEL,
+  SETZBARE_ROLLEN,
   OHNE_NAMEN,
 } from './jagden.ts'
 import { suchtext, KATEGORIEN } from '../gaeste/kontakte.ts'
@@ -979,4 +982,114 @@ assert.equal(gastZustand('left').status, 'invited', 'left ist kein setzbarer Zus
 // Auswahlfeld einen Wert, den der Patch dann austauscht.
 for (const z of GAST_ZUSTAENDE) {
   assert.equal(gastZustand(z).status, z, `${z} kommt nicht heil durch`)
+}
+
+// --- Rolle beim Einladen (Moritz' Freigabe 03.08.2026 auf Codex B12) --------
+
+const kand = (kategorien: string[] = [], userId: string | null = null): Kandidat => ({
+  schluessel: 'kontakt:x',
+  name: 'Test',
+  userId,
+  kategorien,
+  erneut: false,
+})
+
+// **Der Filter schlaegt die Kategorie.** Wer ausdruecklich unter „Treiber"
+// auswaehlt, meint einen Treiber — auch wenn dieselbe Person zusaetzlich
+// Schuetze ist. Das ist der Sinn des Durchgangs „erst alle Schuetzen, dann alle
+// Treiber": die Auswahl sagt etwas, und das darf die Stammdaten uebersteuern.
+assert.equal(rolleBeimEinladen(kand(['schuetze']), 'treiber'), 'treiber')
+assert.equal(rolleBeimEinladen(kand(['schuetze', 'treiber']), 'treiber'), 'treiber')
+assert.equal(rolleBeimEinladen(kand([]), 'treiber'), 'treiber')
+
+// Ohne Rollen-Filter entscheidet die Kategorie — und `schuetze` schlaegt
+// `treiber`: wer beides ist, ist an der Jagd ein Schuetze. Die teurere
+// Berechtigung ist der Rueckfall, nicht die billigere.
+assert.equal(rolleBeimEinladen(kand(['schuetze', 'treiber']), 'alle'), 'schuetze')
+assert.equal(rolleBeimEinladen(kand(['treiber']), 'alle'), 'treiber')
+assert.equal(rolleBeimEinladen(kand(['schuetze']), 'alle'), 'schuetze')
+assert.equal(rolleBeimEinladen(kand([]), 'alle'), 'schuetze', 'ohne Kategorie: Schuetze')
+
+// `jaegerei` und `schweisshundfuehrer` haben KEINE Rolle (094 begruendet das
+// ausfuehrlich: als Rolle zoege der Schweisshundfuehrer die Streckenmaskierung
+// nach sich, die nicht gebaut ist).
+assert.equal(rolleBeimEinladen(kand(['jaegerei']), 'jaegerei'), 'schuetze')
+assert.equal(rolleBeimEinladen(kand(['schweisshundfuehrer']), 'schweisshundfuehrer'), 'schuetze')
+// Ein Schweisshundfuehrer, der auch Treiber ist, wird unter seinem eigenen
+// Filter zum Treiber — die Kategorie traegt, wenn der Filter nichts sagt.
+assert.equal(rolleBeimEinladen(kand(['schweisshundfuehrer', 'treiber']), 'schweisshundfuehrer'), 'treiber')
+
+// Konten haben keine Kategorien — fuer sie entscheidet allein der Filter.
+assert.equal(rolleBeimEinladen(kand([], 'u1'), 'treiber'), 'treiber')
+assert.equal(rolleBeimEinladen(kand([], 'u1'), 'konten'), 'schuetze')
+
+// **`jagdleiter` kommt hier nie heraus** — die Leitung wird nicht beim Einladen
+// vergeben, und das Portal kann sie ueberhaupt nicht setzen.
+for (const f of EINLADE_FILTER) {
+  for (const kats of [[], ['schuetze'], ['treiber'], ['schuetze', 'treiber'], ['jaegerei']]) {
+    const r = rolleBeimEinladen(kand(kats), f.wert)
+    assert.equal(
+      (SETZBARE_ROLLEN as readonly string[]).includes(r),
+      true,
+      `${f.wert}/${kats.join('+')} ergab ${r}`,
+    )
+  }
+}
+
+// --- rollenVerteilung: die Ableitung wird gezeigt, nicht still angewandt ----
+assert.equal(rollenVerteilung(['schuetze', 'treiber']), 'Schütze 1 · Treiber 1')
+assert.equal(rollenVerteilung(['schuetze', 'schuetze', 'treiber']), 'Schütze 2 · Treiber 1')
+// Eine einzige Rolle braucht keine Aufschluesselung — „12 einladen (12 Schuetze)"
+// waere Laerm. Erst die Mischung ist die Auskunft.
+assert.equal(rollenVerteilung(['schuetze', 'schuetze']), '')
+assert.equal(rollenVerteilung(['treiber']), '')
+assert.equal(rollenVerteilung([]), '')
+
+// --- Fixes auf den Delta-Durchgang vom 03.08.2026 ---------------------------
+
+// **R3: die Sammelauswahl darf keine festgehaltene Rolle ueberschreiben.**
+// Der Ablauf, um den es geht: „Schuetzen" filtern, alle auswaehlen, dann zu
+// „Treiber" wechseln und dort alle auswaehlen. Wer BEIDE Kategorien traegt,
+// steht dann schon als Schuetze in der Auswahl — und muss es bleiben, sonst ist
+// „beim Anhaken festgehalten" eine Luege.
+//
+// Der Test bildet die Schleife aus `alleSichtbaren()` nach; die Funktion selbst
+// haengt an React-State und ist von hier nicht aufrufbar.
+{
+  const beides = kand(['schuetze', 'treiber'])
+  const wahl = new Map<string, string>()
+  // Durchgang 1: Filter „Schuetzen"
+  if (!wahl.has(beides.schluessel)) wahl.set(beides.schluessel, rolleBeimEinladen(beides, 'schuetze'))
+  assert.equal(wahl.get(beides.schluessel), 'schuetze')
+  // Durchgang 2: Filter „Treiber" — dieselbe Person ist wieder sichtbar
+  if (!wahl.has(beides.schluessel)) wahl.set(beides.schluessel, rolleBeimEinladen(beides, 'treiber'))
+  assert.equal(wahl.get(beides.schluessel), 'schuetze', 'die erste Wahl gilt')
+  // Die Gegenprobe: OHNE den Riegel waere daraus ein Treiber geworden — genau
+  // der Befund. (Kein `if`, so wie es vorher stand.)
+  const ohneRiegel = new Map<string, string>([[beides.schluessel, 'schuetze']])
+  ohneRiegel.set(beides.schluessel, rolleBeimEinladen(beides, 'treiber'))
+  assert.equal(ohneRiegel.get(beides.schluessel), 'treiber', 'so sah der Fehler aus')
+}
+
+// **R7: die Verteilung zaehlt nur, was wirklich eine Rolle bekommt.**
+// Ein wieder eingeladener Abgesagter laeuft ueber ein UPDATE, das `role` NICHT
+// anfasst. Zaehlte er mit, verspraeche der Text neben dem Knopf eine
+// Einordnung, die nie geschrieben wird.
+{
+  const neu = kand(['treiber'])
+  const abgesagt: Kandidat = { ...kand(['schuetze'], 'u9'), schluessel: 'konto:u9', erneut: true }
+  const alle = [neu, abgesagt]
+  const wahl = new Map<string, SetzbareRolle>([
+    [neu.schluessel, 'treiber'],
+    [abgesagt.schluessel, 'schuetze'],
+  ])
+  // So rechnet die Komponente (s. `verteilung` in detail.tsx).
+  const nurNeue = [...wahl.entries()]
+    .filter(([sch]) => !alle.find((k) => k.schluessel === sch)?.erneut)
+    .map(([, r]) => r)
+  assert.deepEqual(nurNeue, ['treiber'], 'der Wieder-Eingeladene faellt raus')
+  assert.equal(rollenVerteilung(nurNeue), '', 'eine einzige Rolle braucht keine Aufschluesselung')
+  // Ohne den Filter waere es „Schuetze 1 · Treiber 1" gewesen — eine Zahl, die
+  // eine Einordnung des Abgesagten behauptet, die das UPDATE nie schreibt.
+  assert.equal(rollenVerteilung([...wahl.values()]), 'Schütze 1 · Treiber 1', 'so sah der Fehler aus')
 }

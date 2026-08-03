@@ -782,7 +782,8 @@ export interface Kandidat {
   /**
    * **Über beide Quellen eindeutig**, deshalb mit Präfix: eine Kontakt-ID und
    * eine Konto-ID sind beide UUIDs und könnten sich sonst nicht unterscheiden.
-   * Die Auswahl ist ein `Set<string>` über genau diese Schlüssel.
+   * Die Auswahl ist eine `Map` über genau diese Schlüssel — der Wert darin ist
+   * die Rolle, unter der die Person angehakt wurde.
    */
   schluessel: string
   name: string
@@ -973,12 +974,21 @@ export function einladeFilterLabel(filter: EinladeFilter): string {
   return EINLADE_FILTER.find((f) => f.wert === filter)?.label ?? filter
 }
 
+/**
+ * Eine Auswahl, so weit das Filtern sie braucht.
+ *
+ * **Nur `has`, weder `Set` noch `Map`** — die Oberfläche führt seit dem
+ * Rollen-Fix eine `Map<schluessel, Rolle>`, die Selbsttests reichen ein `Set`
+ * herein, und beide Stellen wollen dasselbe wissen: steht dieser Schlüssel
+ * drin? Der Typ nennt genau diese Frage, statt eine Bauform vorzuschreiben,
+ * die hier niemanden interessiert.
+ */
+export interface Auswahl {
+  has(schluessel: string): boolean
+}
+
 /** Gehört der Kandidat in diesen Filter? */
-export function imFilter(
-  k: Kandidat,
-  filter: EinladeFilter,
-  gewaehlt: ReadonlySet<string>,
-): boolean {
+export function imFilter(k: Kandidat, filter: EinladeFilter, gewaehlt: Auswahl): boolean {
   switch (filter) {
     case 'alle':
       return true
@@ -1017,7 +1027,7 @@ export function sichtbareKandidaten(
   alle: readonly Kandidat[],
   filter: EinladeFilter,
   suche: string,
-  gewaehlt: ReadonlySet<string>,
+  gewaehlt: Auswahl,
   normalisiere: (s: string) => string,
 ): Kandidat[] {
   const gesucht = normalisiere(suche).trim()
@@ -1038,7 +1048,7 @@ export function sichtbareKandidaten(
  */
 export function filterZaehler(
   alle: readonly Kandidat[],
-  gewaehlt: ReadonlySet<string>,
+  gewaehlt: Auswahl,
 ): Record<EinladeFilter, number> {
   const zahlen = {} as Record<EinladeFilter, number>
   for (const f of EINLADE_FILTER) {
@@ -1089,4 +1099,71 @@ export function gastZustand(wert: string): Record<string, unknown> {
     joined_at: zustand === 'joined' ? new Date().toISOString() : null,
     left_at: zustand === 'declined' ? new Date().toISOString() : null,
   }
+}
+
+/**
+ * Als welche Rolle wird dieser Kandidat eingeladen?
+ *
+ * **Der Anlass ist Moritz' eigentliches Ziel, das der Filter allein nicht
+ * erreicht** (Fremdprüfung 03.08.2026, offener Punkt B12, von Moritz am selben
+ * Tag zum Bauen freigegeben): wer über „Treiber" auswählt, landete trotzdem als
+ * Schütze in der Jagd und musste einzeln umgestellt werden — genau die
+ * Wiederholung, gegen die Migration 094 gebaut wurde („dann muss das nicht bei
+ * jeder jagd neu gemacht werden").
+ *
+ * **Zwei Quellen, und der Filter schlägt die Kategorie.** Wer ausdrücklich
+ * unter „Treiber" auswählt, meint einen Treiber — auch wenn dieselbe Person
+ * zusätzlich Schütze ist. Das ist der ganze Sinn des Durchgangs „erst alle
+ * Schützen, dann alle Treiber": die Auswahl SAGT etwas, und diese Aussage darf
+ * die Stammdaten übersteuern.
+ *
+ * Steht kein Filter mit einer Rolle an (also unter „Alle", „Mit Konto", „Ohne
+ * Kategorie", „Ausgewählt" oder einer Kategorie ohne eigene Rolle), entscheidet
+ * die Kategorie des Kontakts — und dort schlägt `schuetze` den `treiber`: wer
+ * beides ist, ist an der Jagd ein Schütze, denn ein Schütze schießt und ein
+ * Treiber nicht. Die teurere Berechtigung ist der Rückfall, nicht die
+ * billigere.
+ *
+ * **`jaegerei` und `schweisshundfuehrer` haben keine Rolle**, und das ist kein
+ * Versehen: `participant_role` kennt nur `jagdleiter | schuetze | treiber`.
+ * Migration 094 begründet ausführlich, warum `schweisshundfuehrer` ausdrücklich
+ * KEINE Rolle wird — als Rolle zöge er die Streckenmaskierung nach sich, die
+ * nicht gebaut ist. Beide werden hier also zu `schuetze`, wie jeder andere
+ * Gast auch.
+ *
+ * **`jagdleiter` kommt hier nie heraus.** Die Leitung wird nicht beim Einladen
+ * vergeben; das Portal kann sie überhaupt nicht setzen (`SETZBARE_ROLLEN`).
+ */
+export function rolleBeimEinladen(k: Kandidat, filter: EinladeFilter): SetzbareRolle {
+  if (filter === 'treiber') return 'treiber'
+  if (k.kategorien.includes('schuetze')) return 'schuetze'
+  if (k.kategorien.includes('treiber')) return 'treiber'
+  return 'schuetze'
+}
+
+/**
+ * Wie viele je Rolle — für die Beschriftung des Einladen-Knopfes.
+ *
+ * **Bekommt nur die Neuen gereicht, nicht die Wieder-Eingeladenen** — deren
+ * Zeile existiert schon, und der UPDATE-Zweig in `einladen()` fasst `role`
+ * ausdrücklich nicht an (Delta-Durchgang 03.08.2026, R7).
+ *
+ * **Ohne diese Zahl wäre die Ableitung eine stille Entscheidung.** Der
+ * Jagdleiter soll vor dem Klick sehen, als was er einlädt: „12 einladen" sagt
+ * nichts darüber, dass vier davon als Treiber in die Jagd gehen. Dieselbe
+ * Überlegung wie beim Zähler „N ausgewählt, nicht alle sichtbar" — wer
+ * automatisch entscheidet, muss die Entscheidung zeigen.
+ */
+export function rollenVerteilung(rollen: readonly SetzbareRolle[]): string {
+  const zahl = (r: SetzbareRolle) => rollen.filter((x) => x === r).length
+  // **`Schütze 8`, nicht `8 Schütze`** (Delta-Durchgang 03.08.2026, R8): die
+  // Zahl vorangestellt verlangt einen Plural, und deutsche Plurale sind
+  // unregelmäßig („Schützen", aber „Treiber"). Eine zweite Beschriftungsliste
+  // nur dafür wäre eine zweite Wahrheit neben `ROLLE_LABEL`. Nachgestellt ist
+  // das Wort eine Bezeichnung und der Singular richtig — und es liest sich wie
+  // die Filter-Schalter darüber, die genau so gebaut sind.
+  const teile = SETZBARE_ROLLEN.filter((r) => zahl(r) > 0).map((r) => `${rolle(r)} ${zahl(r)}`)
+  // Eine einzige Rolle braucht keine Aufschlüsselung — „12 einladen (12
+  // Schütze)" ist Lärm. Erst die Mischung ist die Auskunft.
+  return teile.length > 1 ? teile.join(' · ') : ''
 }

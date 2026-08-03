@@ -453,3 +453,11 @@
   word-break: break-all;
   color: var(--z-text-primary);
 }
+
+/* Die abgeleitete Rolle am Einladen-Knopf. Ruhig und klein: sie ist eine
+   Auskunft über den nächsten Klick, kein Alarm. */
+.zentrale .jagden-verteilung {
+  align-self: center;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}

@@ -16,6 +16,8 @@ import {
   pruefeJagdEntwurf,
   rolle,
   gastZustand,
+  rolleBeimEinladen,
+  rollenVerteilung,
   leerText,
   gruppiereTeilnehmer,
   kandidaten,
@@ -37,6 +39,7 @@ import {
   type Jagd,
   type JagdEntwurf,
   type Kandidat,
+  type SetzbareRolle,
   type Profil,
   type Teilnehmer,
 } from '../jagden'
@@ -249,9 +252,10 @@ export default function Detail({
    * Token wäre eine Behauptung, und die Join-Seite liest genau dieses Feld, um
    * Eingetragene von Beigetretenen zu unterscheiden.
    */
-  const einladen = async (schluessel: string[]) => {
+  const einladen = async (wahl: ReadonlyMap<string, SetzbareRolle>) => {
     await pruefeZustand()
     const client = createClient()
+    const schluessel = [...wahl.keys()]
     const vorhandene = new Map(teilnehmer.filter((t) => t.user_id).map((t) => [t.user_id!, t]))
     // Aus dem Schlüssel zurück auf den Kandidaten: er trägt Name und `userId`,
     // und beides braucht der Write. Über die Kandidatenliste statt über zwei
@@ -298,6 +302,8 @@ export default function Detail({
     let geschrieben = 0
     try {
       for (const kandidat of gewaehlteKandidaten) {
+        // Die Rolle steht in der Auswahl, nicht im aktiven Filter — s. dort.
+        const rolleFuer = wahl.get(kandidat.schluessel) ?? 'schuetze'
         if (!kandidat.userId) {
           await schreibe('Die Einladung', () =>
             client
@@ -306,7 +312,7 @@ export default function Detail({
                 hunt_id: jagd.id,
                 user_id: null,
                 guest_name: kandidat.name,
-                role: 'schuetze',
+                role: rolleFuer,
                 status: 'invited',
               })
               .select('id')
@@ -343,7 +349,7 @@ export default function Detail({
               .insert({
                 hunt_id: jagd.id,
                 user_id: kandidat.userId,
-                role: 'schuetze',
+                role: rolleFuer,
                 status: 'invited',
               })
               .select('id')
@@ -911,9 +917,19 @@ function Einladen({
   kandidaten: Kandidat[]
   /** Ein Refresh läuft — die Kandidatenliste ist bis dahin veraltet. */
   gesperrt: boolean
-  aufEinladen: (schluessel: string[]) => Promise<void>
+  aufEinladen: (wahl: ReadonlyMap<string, SetzbareRolle>) => Promise<void>
 }) {
-  const [gewaehlt, setGewaehlt] = useState<Set<string>>(new Set())
+  /**
+   * **Eine `Map`, kein `Set` — der Wert ist die Rolle.**
+   *
+   * Die Rolle wird beim ANHAKEN festgehalten, nicht beim Absenden, und daran
+   * hängt der ganze Durchgang „erst alle Schützen, dann alle Treiber": beim
+   * Absenden ist nur noch EIN Filter aktiv, die Auswahl stammt aber aus
+   * mehreren. Ein `rolleBeimEinladen(k, filter)` im Schreibpfad hätte die
+   * vorher gewählten Schützen zu Treibern gemacht — schlimmer als die
+   * Pauschalrolle, die es vorher gab, weil es aussieht wie eine Verbesserung.
+   */
+  const [gewaehlt, setGewaehlt] = useState<Map<string, SetzbareRolle>>(new Map())
   const [filter, setFilter] = useState<EinladeFilter>('alle')
   const [suche, setSuche] = useState('')
   const [fehler, setFehler] = useState<string | null>(null)
@@ -923,16 +939,32 @@ function Einladen({
   const blockiert = laeuft || gesperrt
 
   const zahlen = useMemo(() => filterZaehler(kandidaten, gewaehlt), [kandidaten, gewaehlt])
+
+  /**
+   * Die Aufschlüsselung neben dem Knopf — **nur über die, die wirklich eine
+   * Rolle bekommen** (Delta-Durchgang 03.08.2026, R7).
+   *
+   * Ein wieder eingeladener Abgesagter läuft über ein UPDATE, das `role`
+   * ausdrücklich NICHT anfasst (s. `einladen()`). Zählte er hier mit, versprach
+   * der Text eine Einordnung, die nie geschrieben wird — und beim ersten
+   * Durchgang mit gemischter Auswahl wäre die Zahl schlicht falsch.
+   */
+  const verteilung = useMemo(() => {
+    const neue = [...gewaehlt.entries()]
+      .filter(([sch]) => !kandidaten.find((k) => k.schluessel === sch)?.erneut)
+      .map(([, r]) => r)
+    return rollenVerteilung(neue)
+  }, [gewaehlt, kandidaten])
   const sichtbar = useMemo(
     () => sichtbareKandidaten(kandidaten, filter, suche, gewaehlt, suchtext),
     [kandidaten, filter, suche, gewaehlt]
   )
 
-  const umschalten = (schluessel: string) =>
+  const umschalten = (k: Kandidat) =>
     setGewaehlt((v) => {
-      const neu = new Set(v)
-      if (neu.has(schluessel)) neu.delete(schluessel)
-      else neu.add(schluessel)
+      const neu = new Map(v)
+      if (neu.has(k.schluessel)) neu.delete(k.schluessel)
+      else neu.set(k.schluessel, rolleBeimEinladen(k, filter))
       return neu
     })
 
@@ -947,10 +979,16 @@ function Einladen({
   const alleSichtbaren = () => {
     const alleDrin = sichtbar.length > 0 && sichtbar.every((k) => gewaehlt.has(k.schluessel))
     setGewaehlt((v) => {
-      const neu = new Set(v)
+      const neu = new Map(v)
       for (const k of sichtbar) {
         if (alleDrin) neu.delete(k.schluessel)
-        else neu.add(k.schluessel)
+        // **`if (!neu.has(...))` — die Sammelauswahl fasst keine schon
+        // festgehaltene Rolle an** (Delta-Durchgang 03.08.2026, R3). Ohne den
+        // Riegel machte sie aus „beim Anhaken festgehalten" eine Lüge: wer als
+        // Schütze gewählt war und beim Treiber-Durchgang mit erfasst wird, weil
+        // er beide Kategorien trägt, wäre stillschweigend zum Treiber geworden.
+        // Genau der Fall, für den die Map überhaupt gebaut wurde.
+        else if (!neu.has(k.schluessel)) neu.set(k.schluessel, rolleBeimEinladen(k, filter))
       }
       return neu
     })
@@ -962,7 +1000,7 @@ function Einladen({
     setLaeuft(true)
     setFehler(null)
     try {
-      await aufEinladen([...gewaehlt])
+      await aufEinladen(gewaehlt)
     } catch (err) {
       setFehler(err instanceof Error ? err.message : 'Unbekannter Fehler beim Einladen.')
     } finally {
@@ -973,7 +1011,7 @@ function Einladen({
       // einladen" bei einer sichtbaren Zeile), und beim nächsten Klick erneut
       // mitgeschickt. Nach dem Refresh steht ohnehin der frische Stand da; wer
       // weitermachen will, wählt aus dem, was wirklich noch offen ist.
-      setGewaehlt(new Set())
+      setGewaehlt(new Map())
       inArbeit.current = false
       setLaeuft(false)
     }
@@ -1041,7 +1079,7 @@ function Einladen({
                   type="checkbox"
                   checked={gewaehlt.has(k.schluessel)}
                   disabled={blockiert}
-                  onChange={() => umschalten(k.schluessel)}
+                  onChange={() => umschalten(k)}
                 />
                 {k.name}
                 {/* „hatte abgesagt" ist eine Warnung, „ohne Konto" eine
@@ -1081,6 +1119,11 @@ function Einladen({
         >
           {laeuft ? 'Wird eingeladen …' : `${gewaehlt.size || ''} einladen`.trim()}
         </button>
+        {/* **Die abgeleitete Rolle wird gezeigt, nicht still angewandt.** „12
+            einladen" sagt nichts darüber, dass vier davon als Treiber in die
+            Jagd gehen. Steht nur bei gemischter Auswahl da — bei einer
+            einzigen Rolle wäre es Lärm. */}
+        {verteilung ? <span className="jagden-verteilung">{verteilung}</span> : null}
         {/* **Der Riegel gegen den einen Fehler, den dieser Entwurf ermöglicht**
             (Codex' eigener Punkt 7): wer Schützen wählt, zu Treibern wechselt
             und dort weiterwählt, lädt beide Gruppen ein, ohne es zu sehen.
