@@ -124,7 +124,13 @@ export default function Liste({
     gewaehlt.current = paar
     const p = new URLSearchParams({ revier: revierId })
     if (paar.filter !== 'alle') p.set('filter', paar.filter)
-    if (paar.jahr !== ALLE_JAHRE) p.set('jahr', paar.jahr)
+    // **`jahr` steht IMMER in der Adresse, seit die Voreinstellung das aktuelle
+    // Jagdjahr ist.** Vorher fiel `alle` heraus, weil es die Voreinstellung war.
+    // Jetzt wäre jedes Auslassen zeitabhängig: ein gemerkter Link ohne `jahr`
+    // bedeutete im März „25/26" und im April „26/27" — dieselbe Adresse, zwei
+    // Listen. Und ein ausdrückliches „Alle" MUSS geschrieben werden, sonst führt
+    // der Klick darauf zurück auf die Voreinstellung.
+    p.set('jahr', paar.jahr)
     router.replace(`/zentrale/jagden?${p.toString()}`, { scroll: false })
   }
 
@@ -379,33 +385,35 @@ export default function Liste({
           kostet einen Klick ohne Wirkung — und spart, die Achse überhaupt zu
           suchen. Moritz hat das gegeneinander abgewogen und so entschieden.
 
-          **Bei `jahre.length === 0` steht nichts, und das heißt „kein
-          ABLEITBARES Jagdjahr", nicht „keine Jagden"** — die beiden sind nicht
-          dasselbe (Fremdprüfung 04.08.2026, offener Punkt). `jagdjahre()`
-          verwirft Jagden ohne ableitbaren Termin, und `hunts.created_at` ist
-          **nullable** mit `default now()`: der Default greift nur bei
-          weggelassener Spalte, ein ausdrückliches `null` läuft daran vorbei. Eine
-          solche Jagd stünde unter „Alle" in der Liste, ohne zu einem Jahr zu
-          gehören. **Gemessen: 0 von 43 Jagden**, heute also nicht eingetreten.
-          Fällig, sobald eine solche Zeile auftaucht — dann gehört sie
+          **Es steht ohne Bedingung da.** Ein Guard `jahre.length > 0` stand hier
+          und war TOTER CODE, seit `jagdjahre()` das aktuelle Jahr immer mitführt:
+          die Liste kann nicht leer sein. Der Kommentar daneben beschrieb den
+          unerreichbaren Fall und war damit falsch — gefunden im Delta-Durchgang
+          vom 04.08.2026. Heute viermal eine Klasse ohne Regel; das hier war der
+          umgekehrte Fall.
+
+          **Wahr bleibt die Sachaussage dahinter, nur betrifft sie das FILTERN
+          und nicht die Sichtbarkeit:** eine Jagd ohne ableitbaren Termin hängt an
+          keinem Jahr und erscheint nur unter „Alle". `hunts.created_at` ist
+          nullable mit `default now()` — der Default greift nur bei weggelassener
+          Spalte, ein ausdrückliches `null` läuft daran vorbei. Gemessen: 0 von 43
+          Jagden. Fällig, sobald eine solche Zeile auftaucht; dann gehört sie
           ausgewiesen, nicht verschwiegen. */}
-      {jahre.length > 0 ? (
-        <div className="jagden-jahr">
-          <label htmlFor="jagden-jahr">Jagdjahr</label>
-          <select
-            id="jagden-jahr"
-            value={jahr}
-            onChange={(e) => setzeAdresse({ jahr: e.target.value })}
-          >
-            <option value={ALLE_JAHRE}>Alle</option>
-            {jahre.map((k) => (
-              <option key={k} value={k}>
-                {jagdjahrLabel(k)}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
+      <div className="jagden-jahr">
+        <label htmlFor="jagden-jahr">Jagdjahr</label>
+        <select
+          id="jagden-jahr"
+          value={jahr}
+          onChange={(e) => setzeAdresse({ jahr: e.target.value })}
+        >
+          <option value={ALLE_JAHRE}>Alle</option>
+          {jahre.map((k) => (
+            <option key={k} value={k}>
+              {jagdjahrLabel(k)}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="jagden-filter" role="group" aria-label="Jagden filtern">
         {FILTER.map((f) => (

@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import {
   alsEingabewert,
   alsFilter,
+  aktuellesJagdjahr,
   alsJahr,
   ALLE_JAHRE,
   alsZeitstempel,
@@ -306,7 +307,13 @@ assert.equal(jagdjahrLabel('quatsch'), 'quatsch')
     jagd({ id: 'c', scheduled_for: '2026-11-01T08:00:00Z' }), // 2026
     jagd({ id: 'd' }), // ohne Termin -> kein Jahr
   ]
-  assert.deepEqual(jagdjahre(liste), ['2027', '2026'])
+  // `heute` eingespeist, weil `jagdjahre()` das aktuelle Jahr immer mitfuehrt
+  // und die Zusicherung sonst nur an dem Tag gilt, an dem man sie schreibt.
+  assert.deepEqual(jagdjahre(liste, '2026-08-04T10:00:00Z'), ['2027', '2026'])
+  // Das aktuelle Jahr kommt dazu, auch wenn keine Jagd darin liegt — die
+  // Bedingung dafuer, dass die Vorauswahl eine passende <option> hat.
+  assert.deepEqual(jagdjahre(liste, '2028-08-04T10:00:00Z'), ['2028', '2027', '2026'])
+  assert.deepEqual(jagdjahre([], '2026-08-04T10:00:00Z'), ['2026'], 'leerer Bestand: nur heute')
   assert.deepEqual(nachJagdjahr(liste, '2026').map((j) => j.id), ['a', 'c'])
   assert.deepEqual(nachJagdjahr(liste, '2027').map((j) => j.id), ['b'])
   // "Alle" gibt alles zurueck, auch die ohne Termin.
@@ -689,17 +696,74 @@ assert.equal(namensvorschlag('2026-08-15T00:30'), 'Jagd am 15.8.2026')
     jagd({ id: 'a', scheduled_for: '2026-05-01T08:00:00Z' }), // Jagdjahr 2026
     jagd({ id: 'b', scheduled_for: '2027-06-01T08:00:00Z' }), // Jagdjahr 2027
   ]
-  assert.equal(alsJahr('2026', bestand), '2026')
-  assert.equal(alsJahr('2027', bestand), '2027')
-  assert.equal(alsJahr(ALLE_JAHRE, bestand), ALLE_JAHRE)
-  assert.equal(alsJahr(undefined, bestand), ALLE_JAHRE)
-  // Kein Jahr im Bestand -> zurueck auf "Alle", statt alles auszublenden.
-  assert.equal(alsJahr('2025', bestand), ALLE_JAHRE)
-  assert.equal(alsJahr('quatsch', bestand), ALLE_JAHRE)
-  assert.equal(alsJahr('', bestand), ALLE_JAHRE)
-  // Leerer Bestand: jedes Jahr faellt zurueck.
-  assert.equal(alsJahr('2026', []), ALLE_JAHRE)
+  // **`heute` wird ueberall eingespeist**, seit `jagdjahre()` das aktuelle Jahr
+  // mitfuehrt: ohne die Angabe waeren diese Zusicherungen zeitabhaengig und
+  // wuerden irgendwann aus einem Grund gruen bleiben, der nichts mit der Regel
+  // zu tun hat. Hier ist "heute" der 04.08.2026, also Jagdjahr 2026.
+  const H = '2026-08-04T10:00:00Z'
+  assert.equal(alsJahr('2026', bestand, H), '2026')
+  assert.equal(alsJahr('2027', bestand, H), '2027')
+  assert.equal(alsJahr(ALLE_JAHRE, bestand, H), ALLE_JAHRE)
+  // Ein Jahr, das weder im Bestand noch das aktuelle ist -> zurueck auf "Alle",
+  // statt alles auszublenden.
+  assert.equal(alsJahr('2024', bestand, H), ALLE_JAHRE)
+  assert.equal(alsJahr('quatsch', bestand, H), ALLE_JAHRE)
+  // **Leerer Bestand: das AKTUELLE Jahr bleibt waehlbar** (es steht im Menue und
+  // liefert eine leere Liste), jedes andere faellt zurueck. Vorher fiel hier
+  // jedes Jahr zurueck — die Zusicherung war mit der woertlichen Lesart der
+  // Vorgabe nicht mehr wahr.
+  assert.equal(alsJahr('2026', [], H), '2026')
+  assert.equal(alsJahr('2027', [], H), ALLE_JAHRE)
+
+  // --- Voreinstellung: das AKTUELLE Jagdjahr (Moritz, 04.08.2026) ---
+  // `heute` wird eingespeist, weil eine Zusicherung gegen `new Date()` nur an
+  // dem Tag gilt, an dem man sie schreibt.
+  assert.equal(alsJahr(undefined, bestand, H), '2026')
+  assert.equal(alsJahr('', bestand, H), '2026')
+  assert.equal(alsJahr(undefined, bestand, '2027-06-01T10:00:00Z'), '2027')
+  // **"immer" heisst woertlich immer** (Moritz auf Rueckfrage, 04.08.2026): auch
+  // wenn in der Saison nichts liegt. Ein erster Entwurf fiel hier auf "Alle"
+  // zurueck, um eine leere Liste zu vermeiden — verworfen.
+  assert.equal(alsJahr(undefined, bestand, '2025-06-01T10:00:00Z'), '2025')
+  assert.equal(alsJahr(undefined, [], H), '2026')
+  // Und die Vorauswahl steht immer im Menue — sonst zeigte das Feld einen
+  // anderen Wert als den, nach dem gefiltert wird.
+  for (const h of ['2025-06-01T10:00:00Z', '2026-08-04T10:00:00Z', '2030-01-01T10:00:00Z']) {
+    const vorwahl = alsJahr(undefined, bestand, h)
+    assert.ok(
+      jagdjahre(bestand, h).includes(vorwahl),
+      `${h}: Vorwahl ${vorwahl} fehlt im Menue`,
+    )
+  }
+  // Ein ausdrueckliches "Alle" schlaegt die Voreinstellung — sonst waere der
+  // Klick darauf wirkungslos.
+  assert.equal(alsJahr(ALLE_JAHRE, bestand, H), ALLE_JAHRE)
+  // Ein unbekanntes Jahr geht NICHT auf das aktuelle: der Nutzer wollte
+  // ausdruecklich ein anderes.
+  assert.equal(alsJahr('2024', bestand, H), ALLE_JAHRE)
 }
+
+// --- aktuellesJagdjahr: die Aprilgrenze, in Berliner Zeit -------------------
+// Dieselbe Regel wie jede Jagd (JAGDJAHR_BEGINN_MONAT = 4), nicht eine zweite.
+assert.equal(aktuellesJagdjahr('2026-08-04T10:00:00Z'), '2026')
+assert.equal(aktuellesJagdjahr('2026-04-01T10:00:00Z'), '2026', 'der 1. April gehoert ins neue')
+assert.equal(aktuellesJagdjahr('2026-03-31T10:00:00Z'), '2025', 'der 31. Maerz noch ins alte')
+assert.equal(aktuellesJagdjahr('2027-01-15T10:00:00Z'), '2026', 'Januar zaehlt zum Vorjahr')
+// **Die Zeitzone entscheidet an der Grenze, und zwar auf die Minute.**
+// 2026 gilt am 31. Maerz schon Sommerzeit (UTC+2), die Jagdjahr-Grenze liegt
+// also bei 2026-03-31T22:00:00Z — nicht bei Mitternacht UTC. Eine Zusicherung
+// bei 23:30Z liegt dahinter und beweist die Grenze nicht (Fremdpruefung
+// 04.08.2026, Befunde 2 und 6: "der Test liegt nicht direkt an der Grenze").
+assert.equal(aktuellesJagdjahr('2026-03-31T21:59:00Z'), '2025', 'eine Minute davor')
+assert.equal(aktuellesJagdjahr('2026-03-31T22:00:00Z'), '2026', 'genau auf der Grenze')
+assert.equal(aktuellesJagdjahr('2026-03-31T23:30:00Z'), '2026', 'dahinter')
+// Gegenkontrolle in der WINTERZEIT: dort ist Berlin UTC+1, eine Grenze am
+// 1. April gibt es dann nicht — aber der Jahreswechsel im Januar muss halten.
+assert.equal(aktuellesJagdjahr('2027-01-01T00:30:00Z'), '2026', 'Neujahr zaehlt zum Vorjahr')
+assert.equal(aktuellesJagdjahr('2026-12-31T23:30:00Z'), '2026')
+// Unbrauchbare Eingabe: kein Absturz, kein erfundenes Jahr.
+assert.equal(aktuellesJagdjahr('quatsch'), ALLE_JAHRE)
+assert.equal(aktuellesJagdjahr(''), ALLE_JAHRE)
 
 // --- Einladen: Konten UND Gaeste ohne Konto ---------------------------------
 

@@ -182,6 +182,29 @@ export default async function JagdenPage({
   // `jahr` hatte keine solche Schranke.
   const jahr = alsJahr(ersterWert(jahrParam), jagden)
 
+  // **Fehlt `jahr` in der Adresse, wird sie kanonisiert — dieselbe Bauform wie
+  // beim `revier`-Parameter oben.**
+  //
+  // Ohne das war die Behauptung „`jahr` steht immer in der Adresse" falsch, und
+  // zwar genau beim ersten Seitenaufbau (Fremdprüfung 04.08.2026, Befund 4):
+  // `setzeAdresse()` im Client läuft erst nach einer Bedienhandlung. Ein sofort
+  // kopierter Link trüge also kein `jahr` und bedeutete im März etwas anderes als
+  // im April — dieselbe Adresse, zwei Listen. Genau das, was die Voreinstellung
+  // auf das aktuelle Jagdjahr vermeiden soll.
+  //
+  // **Kein Umleitungskreis:** die Bedingung prüft die ROHE Angabe, und das Ziel
+  // trägt immer ein nicht-leeres `jahr`. Ist eine Angabe da, wird nicht
+  // umgeleitet — auch dann nicht, wenn `alsJahr()` sie zu etwas anderem macht
+  // (`?jahr=quatsch` bleibt in der Adresse und zeigt „Alle", wie bisher). Ein
+  // LEERES `?jahr=` gilt dabei als „fehlt" und wird kanonisiert; `ersterWert()`
+  // liefert dafür `''`.
+  if (!ersterWert(jahrParam)) {
+    const p = new URLSearchParams({ revier: revier.id, jahr })
+    const f = ersterWert(filter)
+    if (f) p.set('filter', f)
+    redirect(`/zentrale/jagden?${p.toString()}`)
+  }
+
   // Die Teilnehmerabfrage erreicht die Grenze deutlich früher als die Jagden —
   // 39 Jagden tragen heute 88 Zeilen. Lieber ein sichtbarer Hinweis als eine
   // stille Falschzahl; die Haltung ist dieselbe wie in `geladen()`.

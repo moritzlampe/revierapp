@@ -311,14 +311,30 @@ export function jagdjahrLabel(key: string): string {
 }
 
 /**
- * Die Jagdjahre, die im Bestand wirklich vorkommen — absteigend, das neueste
- * zuerst.
+ * Die wählbaren Jagdjahre — die im Bestand vorkommenden **plus immer das
+ * aktuelle**, absteigend, das neueste zuerst.
  *
- * Bewusst aus den Daten abgeleitet statt aus einem Von-Bis-Bereich erzeugt:
- * ein Auswahlfeld mit zehn leeren Jahren ist eine Liste von Sackgassen.
+ * Aus den Daten abgeleitet statt aus einem Von-Bis-Bereich erzeugt: ein
+ * Auswahlfeld mit zehn leeren Jahren ist eine Liste von Sackgassen.
+ *
+ * **Das aktuelle Jahr kommt immer mit, und das ist keine Bequemlichkeit, sondern
+ * die Bedingung für die Voreinstellung** (Moritz, 04.08.2026: „ja immer das
+ * aktuelle Jahr vorauswählen"). `alsJahr()` wählt es ohne Angabe vor; stünde es
+ * dann nicht in dieser Liste, hätte das `<select>` einen `value` ohne passende
+ * `<option>` — es zeigte das erste Jahr an und filterte nach einem anderen. Genau
+ * die Lüge, gegen die die Schranke in `alsJahr()` geschrieben wurde, nur von der
+ * anderen Seite.
+ *
+ * **Folge, gewollt: das Auswahlfeld steht damit immer da**, auch in einem Revier
+ * ohne jede Jagd — dann mit „Alle" und dem aktuellen Jahr, und die Liste ist
+ * leer. Das ist die wörtliche Lesart der Vorgabe: die Saison ist der
+ * Ausgangspunkt, auch wenn in ihr noch nichts steht.
+ *
+ * **Damit ist die Funktion zeitabhängig.** Jede Zusicherung darauf muss `heute`
+ * einspeisen, sonst gilt sie nur an dem Tag, an dem man sie schreibt.
  */
-export function jagdjahre(jagden: readonly Jagd[]): string[] {
-  const gesehen = new Set<string>()
+export function jagdjahre(jagden: readonly Jagd[], heute?: string): string[] {
+  const gesehen = new Set<string>([aktuellesJagdjahr(heute)])
   for (const j of jagden) {
     const k = jagdjahrVon(termin(j))
     if (k) gesehen.add(k)
@@ -330,19 +346,62 @@ export function jagdjahre(jagden: readonly Jagd[]): string[] {
 export const ALLE_JAHRE = 'alle'
 
 /**
+ * Das Jagdjahr, in dem wir gerade stehen — nach derselben Regel wie jede Jagd.
+ *
+ * **Geht durch `jagdjahrVon()`, statt die Aprilgrenze ein zweites Mal zu
+ * schreiben.** Damit kommt auch die Zeitzone von dort: `alsEingabewert()`
+ * formatiert auf `Europe/Berlin`, und die Grenze liegt am 1. April. Auf UTC
+ * gerechnet läge sie zwei Stunden falsch — für zwei Stunden im Jahr, in denen
+ * das Portal das falsche Jagdjahr vorwählen würde. Dieselbe Wurzel wie der
+ * Gültigkeitsvergleich in Migration 087.
+ *
+ * `heute` ist einspeisbar, weil die Funktion sonst nicht prüfbar wäre: eine
+ * Zusicherung gegen `new Date()` gilt nur an dem Tag, an dem man sie schreibt.
+ */
+export function aktuellesJagdjahr(heute: string = new Date().toISOString()): string {
+  return jagdjahrVon(heute) ?? ALLE_JAHRE
+}
+
+/**
  * Prüft einen Jahreswert aus der Adresse gegen den Bestand — Gegenstück zu
  * `alsFilter()`.
  *
- * **Ohne diese Schranke wird ein unbekanntes Jahr zu einer Lüge:** es filtert
- * alles heraus, und weil kein `<option>` dazu passt, zeigt das Auswahlfeld
- * „Alle". Der Nutzer sieht eine leere Liste, Zähler auf null, und nichts, was
- * auf einen aktiven Filter hindeutet. Das trifft nicht nur getippte Adressen:
- * ein gemerkter Link auf `?jahr=2025` verhält sich genauso, sobald aus diesem
- * Jagdjahr die letzte Jagd verschwunden ist.
+ * **Ohne Angabe steht das AKTUELLE Jagdjahr da, immer** (Moritz, 04.08.2026:
+ * „voreingestellt bitte immer auf das aktuelle Jagdjahr" und auf Rückfrage „ja
+ * immer das aktuelle Jahr vorauswählen"). Die Liste beantwortet damit beim Öffnen
+ * die Frage, die man beim Öffnen hat — „was ist diese Saison?" —, statt Jahre zu
+ * mischen. Auf Brockwinel sind das 18 statt 19 Jagden; die eine für April 2027
+ * gehört ins nächste Jagdjahr.
+ *
+ * **„immer" heißt wörtlich immer, auch wenn in der Saison nichts liegt.** Ein
+ * erster Entwurf fiel in diesem Fall auf „Alle" zurück, um eine leere Liste zu
+ * vermeiden; Moritz hat das ausdrücklich verworfen. Die leere Liste ist hier
+ * keine Sackgasse, weil das Auswahlfeld daneben den Grund nennt — es zeigt „26/27",
+ * und „Alle" ist einen Klick entfernt. Voraussetzung dafür ist, dass
+ * `jagdjahre()` das aktuelle Jahr immer mitführt; sonst zeigte das Feld einen
+ * anderen Wert als den, nach dem gefiltert wird.
+ *
+ * **Ohne Angabe und mit unbekannter Angabe sind jetzt verschiedene Fälle, und das
+ * ist Absicht.** Ohne Angabe → aktuelles Jahr. Unbekanntes Jahr → „Alle", nicht
+ * das aktuelle: **ohne diese Schranke wird ein unbekanntes Jahr zu einer Lüge**,
+ * es filtert alles heraus, und weil kein `<option>` dazu passt, zeigt das
+ * Auswahlfeld etwas anderes an als es filtert. Das trifft nicht nur getippte
+ * Adressen — ein gemerkter Link auf `?jahr=2025` verhält sich genauso, sobald aus
+ * diesem Jagdjahr die letzte Jagd verschwunden ist. Ihn auf das aktuelle Jahr zu
+ * schicken wäre schlimmer als auf „Alle": der Nutzer wollte ausdrücklich ein
+ * anderes.
  */
-export function alsJahr(wert: string | undefined, jagden: readonly Jagd[]): string {
-  if (!wert || wert === ALLE_JAHRE) return ALLE_JAHRE
-  return jagdjahre(jagden).includes(wert) ? wert : ALLE_JAHRE
+export function alsJahr(
+  wert: string | undefined,
+  jagden: readonly Jagd[],
+  heute?: string,
+): string {
+  // `jagdjahre()` führt das aktuelle Jahr immer mit — der Rückfall unten kann es
+  // also nie treffen, und das ist der Punkt.
+  const vorhanden = jagdjahre(jagden, heute)
+  if (!wert) return aktuellesJagdjahr(heute)
+  if (wert === ALLE_JAHRE) return ALLE_JAHRE
+  return vorhanden.includes(wert) ? wert : ALLE_JAHRE
 }
 
 export function nachJagdjahr(jagden: readonly Jagd[], key: string): Jagd[] {
