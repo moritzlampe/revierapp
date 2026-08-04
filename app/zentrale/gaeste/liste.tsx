@@ -116,6 +116,9 @@ export default function Liste({
   const weitereRef = useRef<HTMLDetailsElement>(null)
   /** Ob die Rückfrage offen WAR — für die Fokus-Rückgabe, s. den Effekt unten. */
   const warGefragt = useRef(false)
+  const standRef = useRef<HTMLSpanElement>(null)
+  /** Ob ein Sammel-Write lief — für die Fokus-Rückgabe danach. */
+  const warBatch = useRef(false)
   const gesperrt = neu || imEingriff
   /** Die Tabelle nimmt keine Markierung an, während geschrieben oder gefragt wird. */
   const markierenGesperrt = zuordnungLaeuft || entfernenFrage
@@ -143,6 +146,34 @@ export default function Liste({
     warGefragt.current = false
     weitereRef.current?.querySelector<HTMLElement>('summary')?.focus()
   }, [entfernenFrage])
+
+  /**
+   * Fokus nach einem durchgelaufenen Sammel-Write — auf die **Standzeile**.
+   *
+   * Der offene Befund der Schlusslesung vom 04.08.2026: alle Prüfer sahen den
+   * Abbruch-Pfad, niemand den Erfolgs-Pfad. Das `finally` leert die Markierung,
+   * damit wird der Hauptknopf `disabled` und das `<details>` ausgebaut — der
+   * Browser wirft den Fokus auf `body`. Wer per Tastatur arbeitet, verliert nach
+   * JEDEM Durchgang die Stelle und muss sich von oben zurücktabben.
+   *
+   * **Warum die Standzeile und nicht das Kopf-Kästchen:** sie trägt schon
+   * `aria-live` und sagt „Niemand markiert" — wer dort landet, hört das Ergebnis
+   * UND steht an der Leiste, an der es weitergeht. Das Kästchen wäre der nächste
+   * Handgriff, ist aber leer und stumm, und bei leerer Trefferliste zusätzlich
+   * gesperrt, also gar nicht fokussierbar.
+   *
+   * `tabIndex={-1}`: nicht in der Tabulatorfolge, nur programmatisch — dieselbe
+   * Bauform wie `kopfRef` im Inspektor weiter unten.
+   */
+  useEffect(() => {
+    if (zuordnungLaeuft) {
+      warBatch.current = true
+      return
+    }
+    if (!warBatch.current) return
+    warBatch.current = false
+    standRef.current?.focus()
+  }, [zuordnungLaeuft])
 
   /**
    * Die Zahlen an den Schaltern — **aus `sichtbare()` selbst, nicht aus einer
@@ -271,10 +302,55 @@ export default function Liste({
       zuordnungInArbeit.current = true
       setZuordnungLaeuft(true)
       setZuordnungFehler(null)
-      const betroffen = kontakte.filter((k) => markiert.has(k.id))
+      const ids = [...markiert]
       let geschrieben = 0
       try {
-        for (const k of betroffen) {
+        /**
+         * **Der Stand kommt frisch aus der Datenbank, nicht aus dem Prop**
+         * (Schlusslesung 04.08.2026, offener Befund zu S6).
+         *
+         * `zuordnungsPatch()` ist ein Read-Modify-Write über das VOLLE
+         * `kategorien`-Array — die übrigen Marken müssen erhalten bleiben, ein
+         * Sammel-UPDATE über `.in('id', …)` ginge deshalb nicht. Gerechnet wurde
+         * bisher aus `kontakte`, und das ist der Stand vom letzten Laden: trug
+         * ein Mitführender in derselben Minute „Jägerei" ein, warf dieser Lauf
+         * es lautlos weg. Zwei Personen führen dieselbe Liste (085).
+         *
+         * **Eine Abfrage, nicht eine je Kontakt.** Sie verengt das Fenster von
+         * „seit dem Seitenaufbau" auf „seit dem Klick" — dieselbe Zusicherung,
+         * die `router.refresh()` sonst gibt, nur an der Stelle, an der gerechnet
+         * wird.
+         *
+         * ponytail: kein Compare-and-Swap. Ein Write, der zwischen dieser
+         * Abfrage und dem UPDATE landet, geht weiter verloren. Ein echter Riegel
+         * wäre eine SECURITY-DEFINER-RPC, die `kategorien` in der Datenbank
+         * verknüpft (`array_append`) — das ist DDL, also nativer Track und
+         * Anker 2. Fällig, wenn zwei Leute die Liste wirklich gleichzeitig
+         * pflegen; heute ist `kontakt_mitfuehrende` leer.
+         */
+        // Ausgeschrieben, nicht über `schreibe()`: das ist strikt einzeilig und
+        // wirft bei mehr als einer Zeile — der Vermerk in `../schreiben.ts` sagt
+        // ausdrücklich, ein Mehrzeiler bekomme eine eigene Funktion statt einer
+        // Lockerung. Für EINEN Aufrufer ist das hier die eigene Funktion.
+        const { data: frisch, error: leseFehler } = await createClient()
+          .from('kontakte')
+          .select('id, kategorien')
+          .in('id', ids)
+        if (leseFehler) {
+          throw new Error(`Der Stand der Kontakte war nicht lesbar: ${leseFehler.message}`)
+        }
+        // **Fehlt eine markierte Zeile, wird laut abgebrochen, bevor irgendetwas
+        // geschrieben ist.** Dieselbe Lehre wie beim Einladen (Fremdprüfung
+        // 03.08.2026): dort fiel ein Schlüssel still durch `.filter(Boolean)`,
+        // der Knopf sagte „12 einladen" und geschrieben wurden 10.
+        if (!frisch || frisch.length !== ids.length) {
+          throw new Error(
+            `Von ${ids.length} markierten Kontakten waren nur ${frisch?.length ?? 0} lesbar — ` +
+              'einer ist inzwischen gelöscht oder nicht mehr freigegeben. Nichts geändert; ' +
+              'die Liste lädt neu.',
+          )
+        }
+        for (const k of frisch) {
           const neu = zuordnungsPatch(k, zuordnen, aktion)
           if (!neu) continue
           await schreibe('Die Zuordnung', () =>
@@ -301,7 +377,10 @@ export default function Liste({
         router.refresh()
       }
     },
-    [kontakte, markiert, zuordnen, router],
+    // **`kontakte` steht hier nicht mehr drin, und das ist der Beleg für den
+    // Fix**: die Funktion rechnet nicht länger aus dem Prop, sondern aus dem
+    // frisch gelesenen Stand. ESLint hat die überflüssige Abhängigkeit gemeldet.
+    [markiert, zuordnen, router],
   )
 
   /**
@@ -502,7 +581,12 @@ export default function Liste({
               2
             </span>
             <span className="gaeste-auftrag-was">Gäste</span>
-            <span className="gaeste-auftrag-stand" aria-live="polite">
+            <span
+              className="gaeste-auftrag-stand"
+              aria-live="polite"
+              ref={standRef}
+              tabIndex={-1}
+            >
               {markiert.size === 0 ? 'Niemand markiert' : `${markiert.size} markiert`}
             </span>
 

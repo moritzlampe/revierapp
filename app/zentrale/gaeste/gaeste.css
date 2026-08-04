@@ -506,3 +506,24 @@
   font-size: 0.8125rem;
   color: var(--z-text-secondary);
 }
+
+/* Die Standzeile bekommt den Fokus nach einem Sammel-Write (s. liste.tsx). Sie
+   ist kein Bedienelement, also kein Rahmen — nur der Ring, damit man SIEHT, wo
+   man gelandet ist.
+
+   Die Regel ERSETZT den Ring des Browsers, sie stellt ihn nicht her: das
+   UA-Stylesheet zeichnet `:focus-visible` auf jedem fokussierten Element, auch
+   auf einem `span`, und dieses Projekt hat keinen globalen Outline-Reset (das
+   einzige `outline: none` sitzt lokal am Inspektor-Griff). Ein erster Kommentar
+   behauptete hier das Gegenteil — falsch, gefunden im Delta-Durchgang vom
+   04.08.2026.
+
+   Und sie greift verlässlich nur für TASTATUR-Nutzer: nach einem Mausklick
+   matcht `:focus-visible` bei einem programmatischen `focus()` meist nicht, dann
+   zeichnet auch diese Regel nichts. Das ist das erklärte Publikum — der
+   Fokusverlust traf niemanden sonst —, aber „immer sichtbar" wäre gelogen. */
+.zentrale .gaeste-auftrag-stand:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
