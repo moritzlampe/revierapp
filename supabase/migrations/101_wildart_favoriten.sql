@@ -1,0 +1,212 @@
+-- 101_wildart_favoriten.sql
+-- Nativer Track, 04.08.2026. Schritt 4 des Wildartenkatalogs (Konzept §11).
+--
+-- WOFUER
+-- ------
+-- `profiles.wildart_favoriten` — die Voreinstellung, die das Kachelraster des
+-- Erlegungs-Sheets belegt. Heute stehen dort acht feste Gruppen; kuenftig die
+-- Arten, die der Melder selbst gewaehlt hat. Moritz, 03.08.2026:
+-- „sonstige braucht man nicht oft. was man braucht hat man in seinen
+-- favoriten."
+--
+-- Ein Favorit ist eine ZEILE des Katalogs aus 096, keine Gruppe und kein
+-- Enum-Wert. Erst 097 macht das eindeutig: mit `eltern_id` ist „Schwarzwild als
+-- Favorit" von „Keiler als Favorit" unterscheidbar, ohne zu raten. Vorher
+-- waere „Oberkategorie ODER Einzelart" (Moritz' Modell) nicht ausdrueckbar
+-- gewesen.
+--
+-- WARUM EIN ARRAY UND KEINE TABELLE
+-- ---------------------------------
+-- Eine Zeile DDL statt einer Tabelle mit eigener RLS-Flaeche und einem Join.
+-- Reihenfolge = Array-Reihenfolge, Umsortieren ist ein einziger Write, und
+-- `profiles_update_own` traegt es unveraendert:
+--
+--     for update using (auth.uid() = id)     -- ohne eigenes `with check`
+--
+-- Postgres zieht das USING dann auch fuer die NEUE Zeile heran. Es braucht
+-- also KEINE neue Policy und keinen Grant. Praezedenzfall im selben Schema:
+-- `hunts.wild_presets wild_art[]` (Migration 003).
+--
+-- Preis, benannt: keine FK-Integritaet. Eine geloeschte Art hinterlaesst eine
+-- tote id im Array. Der naechste Absatz erklaert, warum das hier folgenlos ist
+-- — und warum genau dieselbe Eigenschaft anderswo der Angriff war.
+--
+-- DER RIEGEL IST EIN NICHT-TUN
+-- ----------------------------
+-- **KEINE Policy darf `wildart_favoriten` auswerten.** Diese Migration legt
+-- deshalb ausser der Spalte nichts an: keinen Trigger, keine Funktion, keinen
+-- Grant, keine Policy-Aenderung.
+--
+-- Ein `uuid[]` ohne Fremdschluessel, das der Nutzer selbst beschreibt, ist
+-- zeichengleich die Bauform, an der `hunts.wildart_ids` in 096 gescheitert ist.
+-- Dort fand die Fremdpruefung einen Lesegrant, den der Angreifer selbst
+-- schreibt: ein Policy-Zweig leitete aus dem Array Leserecht ab, und wer eine
+-- fremde PRIVATE `wildarten.id` kannte, trug sie in seine eigene Zeile ein und
+-- las die Art. Dieselbe Wurzel wie 083.
+--
+-- Hier ist die Spalte eine ANZEIGEVORLIEBE. Der Client filtert den Katalog,
+-- den `wildarten_select` ihm ohnehin zeigt; eine unbekannte oder unsichtbare id
+-- faellt dabei weg, ohne dass irgendetwas sie aufloest. Damit ist der fehlende
+-- Fremdschluessel folgenlos — er waere sonst der Angriff.
+--
+-- Wer die Spalte spaeter in einer Policy lesen will, baut 096 nach. Der Satz
+-- steht hier, damit er beim naechsten Mal im Weg steht.
+--
+-- Gegenprobe, damit ein spaeterer Lauf pruefen statt lesen kann (0 Zeilen):
+--
+--     select polname from pg_policy
+--      where pg_get_expr(polqual, polrelid) ilike '%wildart_favoriten%'
+--         or pg_get_expr(polwithcheck, polrelid) ilike '%wildart_favoriten%';
+--
+-- **Die tragende Invariante, und sie ist ab Schritt 6 nicht mehr trivial:**
+-- eine `wildarten.id` ist KEIN Geheimnis und darf nie als eines behandelt
+-- werden (Schlusslesung 04.08.2026, Punkt 1). Der Absatz oben argumentiert nur
+-- die Leserichtung — eine unsichtbare id faellt beim Filtern weg. Die
+-- Gegenrichtung fehlte: sobald jemand eine EIGENE private Art favorisiert,
+-- steht deren uuid in einer Spalte, die jeder Angemeldete liest. Genau mit „wer
+-- eine fremde private `wildarten.id` KENNT" beginnt die Angriffsklasse aus 083
+-- und 096; diese Spalte macht deren Vorbedingung von „schwer" zu „trivial".
+-- Heute folgenlos — 096 hat den ableitenden Policy-Zweig entfernt, der
+-- Kill-Trigger wirft auf eine fremde private id `42501`, und Schritt 5 bringt
+-- die Eigentumspruefung mit. Wer das aufweicht, muss hier vorbei.
+--
+-- WAS BEWUSST IN KAUF GENOMMEN IST
+-- --------------------------------
+-- **Jeder Angemeldete kann die Favoritenliste jedes anderen lesen, und zwar
+-- aufgeloest.** Der erste Entwurf dieses Absatzes behauptete weniger — „nur die
+-- id einer eigenen privaten Art" — und das war zu schwach formuliert (Codex,
+-- 04.08.2026, M8). Richtig ist: `profiles_select_authenticated`
+-- (`using (auth.role() = 'authenticated')`) gibt jede Profilzeile frei, und die
+-- ids der GLOBALEN Katalogarten sind ueber `wildarten_select` ebenfalls fuer
+-- jeden Angemeldeten aufloesbar. Wer will, liest also im Klartext, welche
+-- Wildarten ein anderer voreingestellt hat.
+--
+-- Nachgemessen am 04.08.2026 als Heinrich (`set local role authenticated` plus
+-- `request.jwt.claim.role`): **8 von 8 fremden Profilen sichtbar.** Ohne den
+-- Rollen-Claim sind es nur 3 — dann greift die Policy naemlich gar nicht und
+-- man misst `profiles_select_co_hunters`/`_chat_members`. Wer das nicht
+-- mitsetzt, haelt die Tabelle faelschlich fuer eng.
+--
+-- **`profiles_select_authenticated` steht in KEINER Migrationsdatei** — kein
+-- einziges `auth.role()` in den bisherigen 100 (nachgeprueft 04.08.2026,
+-- Schlusslesung Punkt 9). Die Dateien legen nur `profiles_select_own`,
+-- `_update_own`, `_insert_own`, `_co_hunters` und `_chat_members` an. Das Loch
+-- ist also QUELLENLOS: AGENTS.md nennt die Migrationen „Source of Truth fuer
+-- das Schema", und fuer diese Policy stimmt das nicht — ein Neuaufbau aus den
+-- Dateien ergaebe eine ENGERE Tabelle als die Produktion. Wer die
+-- Wurzel-Migration schreibt, sucht ihre Definition sonst vergeblich. Bis dahin
+-- ist dieser Absatz die einzige Stelle im Repo, die die Offenheit dokumentiert.
+--
+-- ES BLEIBT TROTZDEM BEI DER SPALTE, und der Grund ist die Reichweite des
+-- Lochs: **die Tabelle ist offen, nicht diese Spalte.** `profiles` traegt
+-- daneben `phone`, `jagdschein_nr`, `waffe` und `kaliber` — alle vier stehen
+-- unter derselben Policy und waeren ungleich heikler. Heute ist keine davon
+-- befuellt (gemessen: 0 von 9), das Loch ist also unausgenutzt, aber geladen.
+--
+-- Codex' Empfehlung, die Favoriten in eine eigene Tabelle mit
+-- `auth.uid() = profile_id` zu legen, schuetzt genau die harmloseste Spalte und
+-- laesst die vier heiklen stehen. Das ist eine Symptombehandlung an der
+-- falschen Stelle: die Wurzel ist `profiles_select_authenticated`, und die
+-- gehoert in einer EIGENEN Migration eng gezogen — mit einer View oder einem
+-- schmalen Lesepfad fuer das, was fremde Zeilen wirklich hergeben muessen
+-- (`display_name`, `avatar_url`). Spalten-GRANTs allein reichen dafuer nicht:
+-- sie kennen keine Zeilen, und am EIGENEN Profil braucht `authenticated` alle
+-- Spalten.
+--
+-- Eine Vorliebe fuer Wildarten ist ausserdem derselbe Rang wie
+-- `availability_status` und `anonymize_kills`, die seit je unter derselben
+-- Policy stehen. Die Spalte macht die Tabelle nicht offener, als sie ist.
+--
+-- NEBENLAEUFIGKEIT: LAST-WRITE-WINS, UND ZWAR ABSICHTLICH
+-- -------------------------------------------------------
+-- Ein Array wird immer als GANZER Wert geschrieben. Zwei Geraete desselben
+-- Kontos, die denselben Ausgangswert gelesen und danach je etwas anderes
+-- ergaenzt haben: RLS und CHECK nehmen beide Updates an, der spaetere
+-- ueberschreibt den frueheren **ohne Fehler und ohne Hinweis** (Codex, M7/S6).
+--
+-- Das wird hier nicht verhindert, sondern entschieden. Ein Compare-and-Swap
+-- ueber `updated_at` waere die Bauform fuer Daten, deren Verlust weh tut —
+-- diese hier ist eine Anzeigevorliebe: der Preis eines verlorenen Schreibvorgangs
+-- ist eine fehlende Kachel, und der Nutzer setzt sie in zwei Sekunden erneut.
+-- Kein Datenverlust, keine unerfasste Meldung, kein Weg zurueck noetig.
+--
+-- **Die Grenze, ab der das kippt, steht hier, damit sie jemand wiederfindet:**
+-- sobald ein ZWEITER Mensch dieselbe Zeile schreiben darf. Dann ist ein
+-- verlorener Schreibvorgang nicht mehr die eigene Unaufmerksamkeit, sondern ein
+-- stiller Konflikt zwischen zweien — und dann braucht es CAS oder eine RPC, die
+-- ein einzelnes Element ergaenzt statt das Array zu ersetzen. Heute kann das
+-- niemand: `profiles_update_own` laesst nur `auth.uid() = id` durch.
+--
+-- DIE OBERGRENZE KOMMT AUS DEM RASTER
+-- -----------------------------------
+-- Moritz, 04.08.2026: „12 haette ich gesagt, das waeren drei zeilen wenn man
+-- den kill button drueckt (inkl sonstiges, das muss immer unten rechts dabei
+-- sein)."
+--
+-- Das Kachelraster ist vierspaltig (`KillCaptureSheet.tsx`, `tileSize` teilt
+-- die Breite durch 4). Zwoelf Kacheln sind drei volle Zeilen, und die letzte
+-- gehoert „Sonstiges" — bleiben **elf** Favoriten. Die Zahl im CHECK ist
+-- deshalb 11 und nicht 12.
+--
+-- Dass „Sonstiges" immer dabei ist, ist keine Kosmetik: eine Vorgabe BELEGT
+-- die Kacheln, sie SPERRT nicht (Projektregel „Melden wird nie verhindert, nur
+-- ausgewiesen"). Wer etwas erlegt, das nicht in seinen Favoriten steht, muss es
+-- trotzdem melden koennen — sonst entsteht ein unerfasster statt eines
+-- regelkonformen Abschusses.
+--
+-- Die Grenze ist zugleich der Riegel gegen Muell in einer weltlesbaren Spalte
+-- ohne Fremdschluessel.
+--
+-- WAS NICHT DAZUGEHOERT
+-- ---------------------
+-- **`hunts.wildart_ids` (Schritt 5, Jagdleiter-Vorgabe) NICHT.** 096 hat sie
+-- ausdruecklich vertagt: „Die Spalte kommt mit Schritt 5, zusammen mit ihrem
+-- Schreiber und der Pruefung ‚global oder gehoert dem Jagdleiter'." Sie
+-- braucht genau die Eigentumspruefung, die diese Migration nicht hat und nicht
+-- haben muss — weil ihr Array niemandem etwas erlaubt.
+--
+-- **Und Schritt 5 liegt JENSEITS der Last-Write-Wins-Grenze von oben — ab Tag
+-- eins** (Schlusslesung 04.08.2026, Punkt 2). Auf `hunts` duerfen mehrere
+-- Menschen dieselbe Zeile schreiben: `hunts_leader_update` (067) plus die
+-- additiven Mehrfach-Jagdleiter aus 089. Ein verlorener Schreibvorgang waere
+-- dort kein eigener Fluechtigkeitsfehler mehr, sondern ein stiller Konflikt
+-- zwischen zweien. Der Auswahl-Screen wird wiederverwendet — die
+-- LWW-Entscheidung dieser Datei darf NICHT mitwandern. Schritt 5 braucht eine
+-- RPC, die ein einzelnes Element ergaenzt, oder ein Compare-and-Swap. Der Satz
+-- steht hier, weil der wahrscheinliche Fehlweg das Kopieren des Screens samt
+-- Ganzwert-Write ist.
+--
+-- **Keine Dubletten-Pruefung im CHECK.** Eine Art zweimal zu favorisieren
+-- ergaebe zwei gleiche Kacheln. Das gehoert in die Oberflaeche, die ohnehin nur
+-- ueber eine Liste mit Haken bedient wird — ein Constraint dagegen waere ein
+-- zweiter Ort fuer dieselbe Regel. Fehlt der Haken einmal, ist die Folge eine
+-- doppelte Kachel, kein falscher Datensatz.
+--
+-- **Kein Aufraeumen toter ids.** Es gibt heute 0 eigene Arten (Schritt 6 ist
+-- nicht gebaut), also nichts, was verschwinden koennte. Der Client filtert
+-- Unbekanntes weg; ein Trigger dagegen waere Arbeit fuer einen Fall, den es
+-- nicht gibt.
+
+alter table public.profiles
+  add column if not exists wildart_favoriten uuid[] not null default '{}';
+
+comment on column public.profiles.wildart_favoriten is
+  'Katalogzeilen (wildarten.id), die das Kachelraster des Erlegungs-Sheets belegen. '
+  'Reihenfolge = Anzeigereihenfolge. Anzeigevorliebe, KEIN Berechtigungstraeger — '
+  'keine Policy darf sie auswerten (s. 096, hunts.wildart_ids). Ohne Fremdschluessel: '
+  'unbekannte ids filtert der Client weg.';
+
+-- Hoechstens elf. **`cardinality` und nicht `array_length`, und das ist kein
+-- Geschmack:** `uuid[]` legt in Postgres die Dimensionen nicht fest, ein
+-- `'{{a,b},{c,d}}'::uuid[]` ist gueltig. `array_length(x, 1)` zaehlt dann die
+-- erste Dimension — hier 2 — und liesse vier ids durch einen Riegel, der elf
+-- erlaubt. `cardinality` zaehlt ALLE Elemente, unabhaengig von der Form.
+--
+-- Es liefert ausserdem 0 statt NULL fuer das leere Array. Das erspart ein
+-- `coalesce`: ein CHECK gilt als erfuellt, wenn sein Ausdruck NULL ist, der
+-- Default `'{}'` kaeme sonst nur zufaellig durch statt aus einem Vergleich.
+alter table public.profiles
+  drop constraint if exists profiles_wildart_favoriten_max;
+alter table public.profiles
+  add constraint profiles_wildart_favoriten_max
+  check (cardinality(wildart_favoriten) <= 11);
