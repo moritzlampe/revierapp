@@ -87,7 +87,13 @@
   margin-top: 1.25rem;
   font-size: 0.8125rem;
 }
-.zentrale .jagden-jahr label { color: var(--z-text-secondary); }
+/* Die Beschriftung ist zurückgenommen — beim Auswahlfeld ein `label`, bei der
+   festen Angabe ein `span`: dort gibt es kein Bedienelement, auf das ein `label`
+   zeigen könnte. Eine Selektorliste statt zweier Regeln. */
+.zentrale .jagden-jahr label,
+.zentrale .jagden-jahr-fest > span { color: var(--z-text-secondary); }
+/* Ein `<p>` bringt UA-Ränder mit; der obere kommt aus `.jagden-jahr`. */
+.zentrale .jagden-jahr-fest { margin: 1.25rem 0 0; }
 .zentrale .jagden-jahr select {
   font: inherit;
   padding: 4px 8px;

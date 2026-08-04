@@ -358,8 +358,30 @@ export default function Liste({
 
       {/* Das Jagdjahr steht vor den Zustands-Chips: es ist der gröbere Schnitt,
           und die Zahlen auf den Chips gelten innerhalb des gewählten Jahres.
-          Nur anzeigen, wenn es überhaupt mehr als eines gibt — ein Auswahlfeld
-          mit einer Wahl ist ein Möbelstück. */}
+
+          **Die Achse ist immer sichtbar, aber nur bedienbar, wenn es etwas zu
+          bedienen gibt** (Moritz, 04.08.2026). Vorher stand das Auswahlfeld erst
+          ab zwei Jahren da, begründet mit „ein Auswahlfeld mit einer Wahl ist ein
+          Möbelstück". Das stimmt für das FELD und verkennt, was ohne es fehlt:
+          auf Söder — ein Revier mit einem Jagdjahr — deutete nichts auf der Seite
+          überhaupt eine Zeitachse hin. Moritz suchte den Jahresschnitt und las
+          die Abwesenheit als fehlende Funktion, nicht als „hier gibt es nichts zu
+          wählen". Ein verstecktes Bedienelement erklärt sich nicht.
+
+          Der Möbelstück-Einwand bleibt gewahrt: bei einem Jahr steht die Angabe
+          als TEXT da, kein Feld mit einer Wahl.
+
+          **Der dritte Zweig heißt „kein ableitbares Jagdjahr", nicht „keine
+          Jagden"** — die beiden sind nicht dasselbe (Fremdprüfung 04.08.2026,
+          offener Punkt). `jagdjahre()` verwirft Jagden ohne ableitbaren Termin,
+          und `hunts.created_at` ist **nullable** mit `default now()`: der Default
+          greift nur, wenn die Spalte weggelassen wird, ein ausdrückliches `null`
+          läuft daran vorbei. Eine solche Jagd stünde unter „Alle" in der Liste,
+          ohne zu einem Jahr zu gehören.
+          **Gemessen am 04.08.2026: 0 von 43 Jagden**, also heute nicht
+          eingetreten — und deshalb steht hier ein richtiger Satz statt eines
+          Zweigs für einen Zustand, den es nicht gibt. Fällig, sobald eine solche
+          Zeile auftaucht; dann gehört sie ausgewiesen, nicht verschwiegen. */}
       {jahre.length > 1 ? (
         <div className="jagden-jahr">
           <label htmlFor="jagden-jahr">Jagdjahr</label>
@@ -376,6 +398,13 @@ export default function Liste({
             ))}
           </select>
         </div>
+      ) : jahre.length === 1 ? (
+        // Dieselbe Zeile, damit die Achse an derselben Stelle steht wie mit
+        // Auswahlfeld — wer von Brockwinel nach Söder wechselt, findet sie dort,
+        // wo er sie verlassen hat, nur unbedienbar.
+        <p className="jagden-jahr jagden-jahr-fest">
+          <span>Jagdjahr</span> {jagdjahrLabel(jahre[0])}
+        </p>
       ) : null}
 
       <div className="jagden-filter" role="group" aria-label="Jagden filtern">
