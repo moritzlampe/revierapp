@@ -1,0 +1,180 @@
+-- 100_kontakt_inaktiv.sql — nativer Track, 04.08.2026
+--
+-- Ein Gast kann stillgelegt werden, ohne dass seine Angaben verlorengehen.
+--
+-- ANLASS, GEMESSEN
+-- ================
+-- 32 der 154 Kontakte tragen das Wort „streichen" in der Notiz — ein Vermerk
+-- des Revierinhabers aus der 2005er Excel-Liste, wen er aus dem Adressbuch
+-- nehmen will. Er hat sich nie entschieden, und der Freitext konnte die
+-- Entscheidung auch nicht tragen: die Gästeliste filtert danach (Filter
+-- „streichen"), aber niemand kann daraus ableiten, ob die Person noch
+-- eingeladen werden soll.
+--
+-- Auf `kontakte.id` zeigt KEIN Fremdschlüssel (gemessen 04.08.2026 über
+-- information_schema). Löschen wäre also gefahrlos möglich, und „inaktiv" ist
+-- ausdrücklich KEIN Ersatz dafür: der Grund für die Spalte ist, Notiz,
+-- Geburtstag und Begleitung eines Menschen zu behalten, den man nicht mehr
+-- einlädt. Wer wirklich löschen will, löscht weiter.
+--
+-- WARUM EIN ZEITPUNKT UND KEIN BOOLEAN
+-- ====================================
+-- `NULL` heißt aktiv, ein Wert heißt „stillgelegt am". Dieselbe Bauform wie
+-- `deleted_at` beim Papierkorb (072/073) und wie `kuerzel` als Übersteuerung
+-- (086), wo `NULL` ebenfalls „nichts gesetzt" heißt und nicht „leer".
+--
+-- Ein `boolean aktiv default true` wäre die kleinere Spalte und an jeder
+-- Abfrage direkter zu lesen. Der Punkt, der dagegen entscheidet, ist die
+-- Unumkehrbarkeit: „seit wann" ist nur im Moment der Handlung erfassbar. Wer
+-- später einen Zeitpunkt nachrüstet, hat ihn für den gesamten Altbestand
+-- verloren — bei einer Liste, die 21 Jahre alt ist, ist das die eine Angabe,
+-- die man irgendwann sucht. Ein Feld dagegen wieder auf „aktiv" zu setzen ist
+-- ein `NULL`, kostet also nichts.
+--
+-- WAS DER ZEITPUNKT NICHT IST: EIN NACHWEIS
+-- =========================================
+-- Der Wert kommt vom Client. Die DB erzeugt ihn nicht und prüft ihn nicht —
+-- wer den Kontakt bearbeiten darf, kann `inaktiv_seit` beliebig vor-, rück-
+-- oder zukunftsdatieren. „Seit wann" ist damit eine **Behauptung des
+-- Bearbeiters**, keine belegte Historie (Fremdprüfung 04.08.2026, offener
+-- Punkt 9 — gefunden nicht vom Katalog, sondern vom Suchauftrag).
+--
+-- Das steht hier ausdrücklich, statt per Trigger geheilt zu werden, und der
+-- Unterschied zu 087/091 ist der Grund: dort hing an einem client-gesetzten
+-- `erlegt_am` die Gültigkeit eines Begehungsscheins und damit der Schreibweg
+-- in ein fremdes Revier — der Wert war ein Berechtigungsnachweis. Hier hängt
+-- an `inaktiv_seit` nichts: schreiben darf nur, wer das Adressbuch ohnehin
+-- führt (Besitzer oder Mitführender), und wer den Zeitpunkt in seinem EIGENEN
+-- Adressbuch verstellt, schädigt niemanden. Ein Trigger samt EXECUTE-Entzug
+-- (082) und `pg_temp`-Pflicht wäre Aufwand ohne geschütztes Gut.
+--
+-- Fällig, sobald aus dem Zeitpunkt eine Auskunft an Dritte wird — etwa „war zu
+-- diesem Jagdtermin noch aktiv". Dann gehört der Wechsel `NULL → now()` in
+-- einen vertrauenswürdigen Schreibpfad, nicht in ein Formularfeld.
+--
+-- KEINE POLICY-ÄNDERUNG — UND DAS IST DER KERN
+-- ============================================
+-- Das Ausblenden inaktiver Kontakte gehört ausdrücklich in den Client, nicht
+-- in RLS.
+--
+-- `kontakte` trägt vier Policies, je eine pro Kommando (`kontakte_select`,
+-- `_insert`, `_update`, `_delete`), alle mit demselben Ausdruck
+-- `besitzer_id in (select get_my_kontaktbuecher())`. Nachgesehen am
+-- 04.08.2026, weil ein erster Entwurf dieses Kopfes „zwei `for all`-Policies"
+-- behauptete — das ist FALSCH und die Prüfung hätte sich auf eine erfundene
+-- Bauform gestützt.
+--
+-- Zwei Gründe, und der zweite ist der, der ohne jede Annahme trägt.
+--
+-- (1) Eine normale Rolle kann eine Zeile nie in einen Zustand schreiben, den
+-- die SELECT-Policies verbergen (AGENTS.md, „SQL-Regeln"; am 31.07.2026 an
+-- einer Wegwerf-Tabelle dreifach belegt, und der Fehler, den 072 machte und
+-- 073 reparieren musste — dort blieb er nur folgenlos, weil keine Zeile
+-- `deleted_at` gesetzt hatte). 073 belegt für genau diese Bauform einen
+-- `42501`.
+--
+-- (2) **Wer inaktive Zeilen per Policy versteckt, kann sie nicht wieder
+-- aufnehmen.** Ein Filter „Inaktive" ist Teil der Anforderung — Moritz will sie
+-- ansehen und einzeln zurückholen können. Versteckte Zeilen sind nicht
+-- auflistbar, also nicht auswählbar, also nur über eine SECURITY-DEFINER-RPC
+-- reaktivierbar. Eine ganze Funktion samt Grant-Pflege für etwas, das der
+-- Client mit einer Bedingung erledigt (Fremdprüfung 04.08.2026, Punkt 2).
+--
+-- **Diese Migration setzt KEINE Zeile auf inaktiv.** Unmittelbar nach dem
+-- Applizieren zeigt der Filter „Inaktive" also 0 — alle 154 Zeilen tragen
+-- `NULL`. Das Stilllegen der 32 „Markierung streichen"-Kontakte ist eine
+-- eigene Datenkorrektur mit eigener Freigabe (Moritz am 04.08.2026 auf
+-- Rückfrage: „alles Leute die auf inaktiv müssen"). Wer hier 32 erwartet,
+-- diagnostiziert einen Fehler, wo keiner ist (Schlusslesung, Befund 6a).
+--
+-- NICHT der Grund, obwohl zwei Entwürfe dieses Kopfes es behaupteten: eine
+-- Kette über PostgREST (das `RETURNING` werde durch die SELECT-Policy
+-- gefiltert, `schreibe()` melde deshalb einen Fehlschlag für einen geglückten
+-- Write). Bei dieser Bauform wirft es vorher, die Zeile wird gar nicht
+-- geschrieben. Ebenso falsch war „zwei `for all`-Policies" — es sind vier
+-- einzelne. Beide Male ungeprüfte Mechanik, beide von der Fremdprüfung
+-- kassiert.
+--
+-- Die Spalte braucht deshalb: keinen Trigger, keine Funktion, keinen Grant,
+-- keine Policy. Die vier bestehenden decken sie unverändert mit ab, weil sie
+-- über `besitzer_id` gehen und keine Spaltenliste nennen.
+--
+-- WER DARF SIE SETZEN
+-- ===================
+-- Wer den Kontakt ändern darf: der Besitzer und ein Mitführender
+-- (`get_my_kontaktbuecher()`, 085). Das ist gewollt und keine Nachlässigkeit —
+-- Moritz und sein Vater führen dieselbe Liste, und wer einen Kontakt
+-- bearbeiten darf, darf ihn auch stilllegen.
+--
+-- Der Trigger `kontakt_feste_spalten()` aus 085 hält `besitzer_id` und
+-- `profil_id` fest und fasst andere Spalten nicht an; er bleibt unberührt und
+-- muss nicht angepasst werden. `inaktiv_seit` gehört ausdrücklich NICHT dazu:
+-- Stilllegen und Wiederaufnehmen sind beides erlaubte, wiederholbare
+-- Handlungen.
+--
+-- RÜCKWÄRTSKOMPATIBEL
+-- ===================
+-- Nullable ohne Default: jede der 154 bestehenden Zeilen ist damit aktiv, und
+-- kein Client muss die Spalte kennen. Der native Client liest `kontakte`
+-- heute überhaupt nicht, die PWA-Zentrale liest sie über eine Spaltenliste,
+-- die um `inaktiv_seit` erweitert wird.
+--
+-- Additiv im Sinne der Projektregel: kein DROP, kein ALTER an Bestehendem,
+-- keine Änderung an einem Enum.
+--
+-- ZWEI PFLICHTEN IM CLIENT, DIE DIESE SPALTE ERZEUGT
+-- ==================================================
+-- Beide aus der Fremdprüfung vom 04.08.2026, beide NICHT in dieser Datei
+-- lösbar — sie stehen hier, weil der nächste Leser sonst annimmt, mit der
+-- Spalte sei die Sache erledigt:
+--
+-- (1) **Die Einlade-Abfrage kennt die Spalte nicht** (Punkt 7). Es gibt ZWEI
+-- PWA-Lesepfade auf `kontakte`, nicht einen: die Gästeliste
+-- (`app/zentrale/gaeste/page.tsx`) und die Kandidatenliste des
+-- Einlade-Dialogs (`app/zentrale/jagden/[id]/page.tsx` → `kandidaten()` in
+-- `app/zentrale/jagden/jagden.ts`). Ohne Bedingung im zweiten würden inaktive
+-- Kontakte weiter zum Einladen angeboten — der Zustand wäre genau dort
+-- wirkungslos, wo er seinen Zweck hat.
+--
+-- (2) **Die Anzeige muss ausdrücklich mit `Europe/Berlin` formatieren**
+-- (Punkt 3). `alsDatum()` in `app/zentrale/gaeste/kontakte.ts` schneidet den
+-- ISO-String (`iso.slice(8, 10)`) und liefert damit die UTC-Kalenderdate. Für
+-- `geburtstag` ist das folgenlos, weil die Spalte ein `date` ist; für einen
+-- `timestamptz` nicht: `2026-08-04T22:30:00Z` ist in Berlin der **05.08.**
+-- Wer `alsDatum()` weiterverwendet, zeigt „inaktiv seit" einen Tag zu früh.
+-- Dieselbe Wurzel wie der Gültigkeitsvergleich in 087, nur auf der Anzeigeseite.
+--
+-- (3) **Stilllegen und Wiederaufnehmen gehören in einen EIGENEN, einspaltigen
+-- Write — nie in den Formular-Patch** (Schlusslesung 04.08.2026, offener
+-- Befund 7). Das Kontaktformular schreibt mit `update(patch)` mehrere Felder
+-- auf einmal (`liste.tsx`, `alsSpalten()`/`aenderungen()`), und **zwei Personen
+-- führen dieselbe Liste** (085: Moritz und sein Vater). Nähme der generische
+-- Patch `inaktiv_seit` mit, überschriebe ein Öffnen-Bearbeiten-Speichern des
+-- einen lautlos die Stilllegung des anderen — es gibt kein Compare-and-Swap.
+-- Das ist der S6-Fall des Standard-Focus, an einer Spalte, die es noch nicht
+-- gibt: er lässt sich nur beim Bauen vermeiden, nicht hinterher finden.
+
+alter table public.kontakte
+  add column if not exists inaktiv_seit timestamptz;
+
+comment on column public.kontakte.inaktiv_seit is
+  'NULL = aktiv. Sonst der Zeitpunkt, zu dem der Kontakt stillgelegt wurde: er '
+  'wird nicht mehr zum Einladen angeboten, seine Angaben bleiben aber '
+  'vollstaendig erhalten. Der Wert kommt vom Client und ist KEIN Nachweis. '
+  'Ausblenden geschieht im Client, NICHT in RLS: versteckte Zeilen waeren nicht '
+  'wieder aufnehmbar, und eine normale Rolle kann eine Zeile ohnehin nicht in '
+  'einen Zustand schreiben, den die SELECT-Policies verbergen (Dateikopf, 073).';
+
+-- KEIN INDEX, und das ist eine Entscheidung gegen einen ersten Entwurf.
+--
+-- Er sah einen Teilindex `(besitzer_id, inaktiv_seit) where inaktiv_seit is not
+-- null` vor, begründet mit „die Spalte ist die Bedingung, nach der künftig jede
+-- Liste filtert". Die Begründung widerlegt sich selbst: bei 154 Zeilen ist ein
+-- Seq Scan schneller als jeder Indexzugriff, und die Zentrale filtert ohnehin
+-- NICHT in der Abfrage — sie liest alle Zeilen des Besitzers als einen Rutsch
+-- und filtert im Client (`sichtbare()` in `app/zentrale/gaeste/kontakte.ts`,
+-- dort ausdrücklich so begründet). Der Index wäre für eine Abfrage angelegt,
+-- die es nicht gibt.
+--
+-- Fällig, wenn ein Adressbuch vierstellig wird UND das Filtern in die Abfrage
+-- wandert — beides zusammen, nicht einzeln.

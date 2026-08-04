@@ -142,10 +142,21 @@
   color: var(--z-text-secondary);
 }
 
-/* „Neuer Kontakt" steht rechts außen in der Leiste, hinter der Trefferzahl:
-   Suchen und Filtern ist das, was man hier den ganzen Tag tut, Anlegen die
-   Ausnahme. Kein Akzentgrün — sonst zöge der Knopf mehr Blick als die Liste. */
-.zentrale .gaeste-neu {
+/* Ein Knopf im Bereich sieht überall gleich aus — eine Selektorliste statt
+   dreier Beschreibungen. Kein Akzentgrün: „Neuer Kontakt" steht hinter der
+   Trefferzahl, und Suchen ist das, was man hier den ganzen Tag tut.
+
+   **`> button`, nicht `button`:** die Kategorie-Schalter in Schritt 1 sind
+   `.gaeste-chip` in einem eigenen `div`. Ein Nachfahren-Selektor hätte sie mit
+   höherer Spezifität übersteuert und ihnen die Gestalt der Handlungsknöpfe
+   gegeben — genau die Verwechslung, die der Entwurf trennt.
+
+   `.gaeste-neu` bleibt aufgeführt, obwohl `.gaeste-leiste > button` es schon
+   deckt: eine Klasse im Markup ohne auffindbare Regel ist die Falle, die uns
+   diesen Modus gekostet hat. */
+.zentrale .gaeste-neu,
+.zentrale .gaeste-leiste > button,
+.zentrale .gaeste-auftrag-schritt > button {
   height: 30px;
   padding: 0 12px;
   font: inherit;
@@ -156,9 +167,17 @@
   border-radius: 8px;
   cursor: pointer;
 }
-.zentrale .gaeste-neu:hover:not(:disabled) { background: var(--z-bg-sunken); }
-.zentrale .gaeste-neu:disabled { opacity: 0.5; cursor: default; }
-.zentrale .gaeste-neu:focus-visible {
+.zentrale .gaeste-neu:hover:not(:disabled),
+.zentrale .gaeste-leiste > button:hover:not(:disabled),
+.zentrale .gaeste-auftrag-schritt > button:hover:not(:disabled) {
+  background: var(--z-bg-sunken);
+}
+.zentrale .gaeste-neu:disabled,
+.zentrale .gaeste-leiste > button:disabled,
+.zentrale .gaeste-auftrag-schritt > button:disabled { opacity: 0.5; cursor: default; }
+.zentrale .gaeste-neu:focus-visible,
+.zentrale .gaeste-leiste > button:focus-visible,
+.zentrale .gaeste-auftrag-schritt > button:focus-visible {
   outline: 2px solid var(--z-accent);
   outline-offset: 2px;
 }
@@ -311,35 +330,176 @@
   color: var(--z-text-secondary);
 }
 
-/* Zuordnen-Modus: Kategorie waehlen, Zeilen markieren, zuweisen.
-   Die Leiste sitzt auf --z-bg-sunken wie die Gruppenzeile der Teilnehmerliste
-   — sie liest sich als Fach ueber der Tabelle, nicht als Banner. */
-.zentrale .gaeste-zuordnen {
+/* **Auftragsleiste des Zuordnen-Modus (Entwurf B, 04.08.2026).**
+
+   Die Vorgängerin stand auf `justify-content: space-between` — bei 1200 px
+   Inhaltsbreite riss das die Kategorie an den linken und den Knopf an den
+   rechten Rand, 1400 px auseinander. Moritz: „ich muss ganz links Schütze
+   anklicken und ganz rechts Kategorie hinzufügen." Beides steht jetzt in
+   derselben Spur, die Schritte untereinander statt nebeneinander.
+
+   `space-between` kommt hier NICHT mehr vor, und das ist der ganze Fix. */
+.zentrale .gaeste-auftrag {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
   margin: 0 0 12px;
   padding: 10px 12px;
   background: var(--z-bg-sunken);
   border-radius: 8px;
+  /* Auf die Tabellenbreite begrenzt, nicht auf die Inhaltsbreite: die Leiste
+     handelt von der Tabelle, nicht vom Inspektor daneben. */
+  max-width: 800px;
 }
-.zentrale .gaeste-zuordnen-wahl,
-.zentrale .gaeste-zuordnen-tat {
+.zentrale .gaeste-auftrag-schritt {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
-.zentrale .gaeste-zuordnen-tat > span {
+/* Die Nummer ist eine Ordnungsangabe, kein Zierrat — Mono, zurückgenommen,
+   und `aria-hidden`, weil die Reihenfolge im Markup sie schon trägt. */
+.zentrale .gaeste-auftrag-nr {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+  opacity: 0.7;
+  min-width: 12px;
+}
+.zentrale .gaeste-auftrag-was {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+  min-width: 76px;
+}
+.zentrale .gaeste-auftrag-wahl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.zentrale .gaeste-auftrag-stand {
   font-size: 0.8125rem;
   color: var(--z-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
-.zentrale .gaeste-zuordnen .zentrale-inspektor-fehler { flex-basis: 100%; margin: 0; }
+.zentrale .gaeste-auftrag .zentrale-inspektor-fehler,
+.zentrale .gaeste-auftrag .zentrale-inspektor-warnung { margin: 0; }
+
+/* Der Rückweg als `<details>`: das Dreieck kommt vom Browser, das Aufklappen
+   auch. Die Zusammenfassung ist ein Knopf ohne Knopfgestalt — sie öffnet nur,
+   sie tut nichts. */
+.zentrale .gaeste-weitere { position: relative; }
+.zentrale .gaeste-weitere > summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  padding: 0 4px;
+}
+.zentrale .gaeste-weitere > summary:hover { color: var(--z-text-primary); }
+.zentrale .gaeste-weitere[open] > summary { color: var(--z-text-primary); }
+/* Aufgeklappt schwebt der Eintrag über der Tabelle, statt die Leiste
+   auseinanderzuschieben — sonst rutschte die ganze Liste beim Aufklappen. */
+.zentrale .gaeste-weitere > button {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 4px);
+  left: 0;
+  white-space: nowrap;
+  height: 30px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+}
+.zentrale .gaeste-weitere > button:hover:not(:disabled) { background: var(--z-bg-sunken); }
+/* Gesperrt muss man SEHEN. Der Kindselektor der Handlungsknöpfe erfasst diesen
+   Eintrag absichtlich nicht (er liegt im `<details>`), also fehlte ihm auch
+   dessen `:disabled`-Regel: während des Schreibens stand er voll deckend und
+   mit Zeigefinger da, obwohl er nichts tat (Fremdprüfung 04.08.2026, Paket A,
+   Punkt 7). Genau der Preis dafür, eine Regel per `>` zu verengen — die
+   Ausnahme muss ihre eigene mitbringen. */
+.zentrale .gaeste-weitere > button:disabled { opacity: 0.5; cursor: default; }
+.zentrale .gaeste-weitere > button:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+
+/* Der Sammelklick trägt seine Zahl als Text. Er darf nicht umbrechen — eine
+   Zahl in der zweiten Zeile liest sich nicht mehr als Teil derselben Angabe. */
+.zentrale .gaeste-alle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Nur `nowrap`: das `width: auto`, das hier stand, war TOT — `.gaeste-haken`
+   weiter unten setzt bei gleicher Spezifität `32px` und gewinnt über die
+   Quellordnung (Ponytail-Lesung 04.08.2026). Aufgefallen ist es nicht, weil die
+   Tabelle die Spalte wegen `nowrap` ohnehin aufzieht. Die Breite steht jetzt am
+   `td`, damit der Kopf sich selbst bemessen darf. */
+.zentrale .gaeste-haken-kopf { white-space: nowrap; }
+
+/* Die erzeugende Handlung trägt die Akzentfläche. Sie ist hier eindeutig, weil
+   die Kategorie-Schalter daneben Ansichtszustände sind und nur Rand und Schrift
+   färben.
+
+   **`.haupt` allein genügt NICHT** (04.08.2026, von Moritz am Bildschirm
+   gefunden): die Klasse ist in zentrale.css ausschließlich als
+   `.zentrale-inspektor-fuss button.haupt` definiert, außerhalb des
+   Inspektor-Fußes tut sie nichts — und das fällt nicht auf, weil ein
+   ungestylter Knopf klickbar bleibt. „Kategorie hinzufügen" stand als nackter
+   Text neben nackten Text.
+
+   ponytail: dritte Fassung derselben Hauptknopf-Regel im Portal (zentrale.css
+   für den Inspektor-Fuß, jagderlaubnisse.css für `.jes-form`/`.jes-einloesen`,
+   hier für dieses Fach). Zusammenführen zu einem `.zentrale button.haupt` ist
+   die richtige Lösung, greift aber in zwei funktionierende Bereiche mit je
+   eigener Knopfgeometrie — eigene Aufgabe, nicht nebenbei. */
+.zentrale .gaeste-auftrag-schritt > button.haupt {
+  color: var(--z-on-accent);
+  background: var(--z-accent);
+  border-color: var(--z-accent);
+  font-weight: 600;
+}
+.zentrale .gaeste-auftrag-schritt > button.haupt:hover:not(:disabled) {
+  background: var(--z-accent-hover);
+}
+
+/* Stillgelegt: das Wort trägt den Zustand, die Farbe nimmt ihn nur zurück.
+   Mono wie das Kürzel daneben, damit es als Kennung liest und nicht als
+   zweiter Namensteil. */
+.zentrale .gaeste-inaktiv-marke {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  color: var(--z-text-secondary);
+  white-space: nowrap;
+}
+
+/* Die Zustandszeile im Inspektor. Kein Alarmrot: Stilllegen ist eine
+   Aufräumhandlung, kein Fehler (Zentrale-Konzept §2.6). */
+.zentrale .gaeste-zustand {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--z-text-secondary);
+  background: var(--z-bg-sunken);
+  border-radius: 6px;
+}
 
 /* Die Hakenspalte bleibt schmal — sie ist ein Werkzeug, keine Angabe. */
-.zentrale .gaeste-haken { width: 32px; }
+.zentrale td.gaeste-haken { width: 32px; }
 .zentrale .gaeste-haken input { cursor: pointer; }
 
 .zentrale .gaeste-kategorien {

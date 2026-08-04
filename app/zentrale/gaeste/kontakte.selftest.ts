@@ -19,7 +19,8 @@ import {
   initialen,
   kuerzelVon,
   nachnameSortiert,
-  istGestrichen,
+  istInaktiv,
+  alsBerlinDatum,
   passtZuSuche,
   pruefeEntwurf,
   sichtbare,
@@ -28,6 +29,8 @@ import {
   suchtext,
   mehrfachText,
   normiert,
+  kategorieLabel,
+  zuordnungLabel,
   zuordnungsPatch,
   FELDER,
   KATEGORIEN,
@@ -56,6 +59,7 @@ function k(teil: Partial<Kontakt>): Kontakt {
     kuerzel: null,
     kategorien: [],
     standard_tags: [],
+    inaktiv_seit: null,
     ...teil,
   }
 }
@@ -243,19 +247,49 @@ assert.equal(ersterWert(null), '')
 // Und der Weg, den der Fehler genommen haette, ist damit zu:
 assert.equal(passtZuSuche(alston, ersterWert(['alston', 'egal'])), true)
 
-// --- alsFilter: alles Unbekannte wird `alle`, nie eine leere Liste ---
-assert.equal(alsFilter('code'), 'code')
-assert.equal(alsFilter('streichen'), 'streichen')
+// --- alsFilter: alles Unbekannte wird `aktiv`, nie eine leere Liste ---
+// Die Voreinstellung ist seit 04.08.2026 `aktiv`, nicht `alle`: der Zweck des
+// Stilllegens ist, jemanden aus dem Weg zu haben.
+assert.equal(alsFilter('inaktiv'), 'inaktiv')
+assert.equal(alsFilter('ohne_mail'), 'ohne_mail')
 assert.equal(alsFilter('alle'), 'alle')
-assert.equal(alsFilter(null), 'alle')
-assert.equal(alsFilter('Code'), 'alle', 'kein Rateversuch bei Grossschreibung')
-assert.equal(alsFilter('quatsch'), 'alle')
+assert.equal(alsFilter('aktiv'), 'aktiv')
+assert.equal(alsFilter(null), 'aktiv')
+assert.equal(alsFilter('Inaktiv'), 'aktiv', 'kein Rateversuch bei Grossschreibung')
+assert.equal(alsFilter('quatsch'), 'aktiv')
+// **Die alte Adresse bleibt brauchbar.** `?filter=streichen` ist teilbar und
+// steht womoeglich in einem Lesezeichen; sie zeigt jetzt dieselbe Menge wie
+// vorher, nur ueber den Zustand statt ueber den Freitext.
+assert.equal(alsFilter('streichen'), 'inaktiv', 'alte Adresse zeigt dieselbe Menge')
+// `code` war der alte Schluessel dieser Arbeitsliste und wird abgebildet. Die
+// Menge ist nicht identisch (die alte enthielt auch Stillgelegte) — aber der
+// Rueckfall auf `aktiv` zeigte zusaetzlich alle MIT Adresse und verfehlte den
+// Zweck ganz, statt ihn nur zu verengen (Fremdpruefung 04.08.2026, B1).
+assert.equal(alsFilter('code'), 'ohne_mail')
 
-// --- istGestrichen: der Vermerk steht im Freitext, nicht in einem Feld ---
-assert.equal(istGestrichen({ notiz: 'Kürzel Adalbert; Markierung streichen' }), true)
-assert.equal(istGestrichen({ notiz: 'STREICHEN' }), true, 'Grossschreibung egal')
-assert.equal(istGestrichen({ notiz: 'Kürzel Henner' }), false)
-assert.equal(istGestrichen({ notiz: null }), false)
+// --- istInaktiv: der Zustand steht in einer Spalte, nicht im Freitext ---
+assert.equal(istInaktiv({ inaktiv_seit: '2026-08-04T07:49:32.721Z' }), true)
+assert.equal(istInaktiv({ inaktiv_seit: null }), false)
+
+// --- alsBerlinDatum: der Grund, warum es alsDatum() nicht sein darf ---
+// 22:30 UTC ist in Berlin der Folgetag. `alsDatum()` schneidet den ISO-String
+// und zeigte den Vortag — bei `geburtstag` (ein `date`) richtig, bei einem
+// `timestamptz` falsch (Fremdpruefung 04.08.2026, Punkt 3).
+assert.equal(alsBerlinDatum('2026-08-04T22:30:00Z'), '05.08.2026')
+assert.equal(alsDatum('2026-08-04T22:30:00Z'), '04.08.2026', 'die Falle, dokumentiert')
+// Sommer- und Winterzeit kommen von Intl, nicht von Hand.
+assert.equal(alsBerlinDatum('2026-01-15T23:30:00Z'), '16.01.2026')
+assert.equal(alsBerlinDatum('2026-08-04T09:49:32.721Z'), '04.08.2026')
+assert.equal(alsBerlinDatum(null), '—')
+assert.equal(alsBerlinDatum('quatsch'), '—', 'kein Invalid Date in der Oberflaeche')
+// **Die Funktion PRUEFT nicht, sie formatiert** (Fremdpruefung 04.08.2026, B4).
+// `Date` normalisiert stillschweigend: der 30. Februar wird der 2. Maerz, und
+// `'0'` wird der 01.01.2000. Das steht hier als Zusicherung, damit niemand die
+// Funktion fuer eine Wache haelt — die Eingabe ist eine `timestamptz`-Spalte
+// aus der eigenen Datenbank, also immer gueltiges ISO. Waere das je nicht so,
+// gehoerte ein Riegel davor und nicht hierher.
+assert.equal(alsBerlinDatum('2026-02-30T12:00:00Z'), '02.03.2026', 'normalisiert, prueft nicht')
+assert.equal(alsBerlinDatum('0'), '01.01.2000', 'normalisiert, prueft nicht')
 
 // --- sortiert: die Entscheidung vom 01.08.2026, an echten Namen ---
 // „Graf v. Hardenberg" gehoert zwischen Grote und Meyer, nicht zu den G's.
@@ -291,14 +325,48 @@ const bestand: Kontakt[] = [
   k({ id: '4', nachname: 'Baron v. Buchholtz', vorname: 'Werner', email: null }),
 ]
 assert.deepEqual(sichtbare(bestand, '', 'alle').map((x) => x.id), ['1', '2', '3', '4'])
-assert.deepEqual(sichtbare(bestand, '', 'code').map((x) => x.id), ['2', '4'])
-assert.deepEqual(sichtbare(bestand, 'a', 'code').map((x) => x.id), ['2', '4'])
-assert.deepEqual(sichtbare(bestand, 'buchholtz', 'code').map((x) => x.id), ['4'])
+assert.deepEqual(sichtbare(bestand, '', 'ohne_mail').map((x) => x.id), ['2', '4'])
+assert.deepEqual(sichtbare(bestand, 'a', 'ohne_mail').map((x) => x.id), ['2', '4'])
+assert.deepEqual(sichtbare(bestand, 'buchholtz', 'ohne_mail').map((x) => x.id), ['4'])
 // Suche und Filter sind UND-verknuepft: Alston hat eine Adresse, faellt also
-// trotz Treffer aus dem Code-Filter.
-assert.deepEqual(sichtbare(bestand, 'alston', 'code').map((x) => x.id), [])
+// trotz Treffer aus der Arbeitsliste.
+assert.deepEqual(sichtbare(bestand, 'alston', 'ohne_mail').map((x) => x.id), [])
 // Die Reihenfolge kommt aus der Abfrage und wird nicht angefasst.
 assert.deepEqual(sichtbare(bestand, '', 'alle'), bestand)
+
+// --- sichtbare: der Zustand als Achse (Migration 100) ---
+const gemischterZustand: Kontakt[] = [
+  k({ id: 'a1', nachname: 'Ahlwes', vorname: 'Henner', email: 'h@web.de' }),
+  k({ id: 'i1', nachname: 'Braband', vorname: 'Moritz', email: 'm@web.de',
+      inaktiv_seit: '2026-08-04T07:49:32.721Z' }),
+  k({ id: 'a2', nachname: 'Crisp', vorname: 'Edward', email: null }),
+  k({ id: 'i2', nachname: 'Daewes', vorname: 'Henning', email: null,
+      inaktiv_seit: '2026-08-04T07:49:32.721Z' }),
+]
+// Voreinstellung: die Stillgelegten sind weg.
+assert.deepEqual(sichtbare(gemischterZustand, '', 'aktiv').map((x) => x.id), ['a1', 'a2'])
+assert.deepEqual(sichtbare(gemischterZustand, '', 'inaktiv').map((x) => x.id), ['i1', 'i2'])
+assert.deepEqual(
+  sichtbare(gemischterZustand, '', 'alle').map((x) => x.id),
+  ['a1', 'i1', 'a2', 'i2'],
+  'unter „Alle" stehen beide, in der Reihenfolge der Abfrage',
+)
+// **Die Arbeitsliste zeigt nur Aktive.** Nachtragen tut man fuer Leute, die man
+// noch einlaedt — Daewes hat keine Adresse UND ist stillgelegt, er faellt raus.
+assert.deepEqual(sichtbare(gemischterZustand, '', 'ohne_mail').map((x) => x.id), ['a2'])
+// **Keine Zusicherung mehr, dass die Zahl am Schalter passt** — sie zaehlt seit
+// der Ponytail-Lesung vom 04.08.2026 ueber `sichtbare()` selbst. Ein Test, der
+// zwei Formulierungen desselben Praedikats vergleicht, haelt sie nur
+// synchron; eine Quelle braucht keinen Vergleich.
+// Zustand UND Suche sind UND-verknuepft.
+assert.deepEqual(sichtbare(gemischterZustand, 'braband', 'aktiv').map((x) => x.id), [])
+assert.deepEqual(sichtbare(gemischterZustand, 'braband', 'inaktiv').map((x) => x.id), ['i1'])
+// Jeder Kontakt steht in genau EINEM der beiden Zustaende — es gibt kein Drittes.
+for (const x of gemischterZustand) {
+  const inAktiv = sichtbare([x], '', 'aktiv').length
+  const inInaktiv = sichtbare([x], '', 'inaktiv').length
+  assert.equal(inAktiv + inInaktiv, 1, `${x.id} steht in keinem oder in beiden Zustaenden`)
+}
 
 // ===========================================================================
 // Bearbeiten, Anlegen, Loeschen (Block 2)
@@ -594,3 +662,83 @@ for (const kat of KATEGORIEN) {
   const erwartet = beides.kategorien.filter((x) => x !== kat.wert)
   assert.deepEqual(runter, erwartet, `${kat.wert} hin und zurueck`)
 }
+
+// --- Die Beschriftung des Zuordnen-Knopfes (Entwurf B, 04.08.2026) ----------
+// Sie traegt die ganze Bedeutung der Handlung: WELCHE Kategorie, an WIE VIELE,
+// in welche RICHTUNG. „Kategorie hinzufuegen" liess alle drei offen — das war
+// Moritz' Befund. Deshalb steht sie unter Test und nicht als Ternaer im JSX.
+
+// Ohne Auswahl nennt der Knopf die fehlende Vorbedingung, nicht die Handlung.
+// Ein gesperrter Knopf, der „zu 0 Gaesten hinzufuegen" verspricht, sagt nicht,
+// was fehlt.
+assert.equal(zuordnungLabel('schuetze', 0, 'hinzufuegen'), 'Erst Gäste markieren')
+assert.equal(zuordnungLabel('treiber', 0, 'entfernen'), 'Erst Gäste markieren')
+
+// Singular. „zu 1 Gaesten" liest sich als Fehler und laesst an der Zahl
+// zweifeln, die daneben die Wirkung eines Sammelklicks ausweist.
+assert.equal(zuordnungLabel('schuetze', 1, 'hinzufuegen'), '„Schütze" zu 1 Gast hinzufügen')
+assert.equal(zuordnungLabel('schuetze', 1, 'entfernen'), '„Schütze" von 1 Gast entfernen')
+
+assert.equal(zuordnungLabel('treiber', 12, 'hinzufuegen'), '„Treiber" zu 12 Gästen hinzufügen')
+assert.equal(zuordnungLabel('treiber', 12, 'entfernen'), '„Treiber" von 12 Gästen entfernen')
+
+// Die Richtung MUSS im Text stehen und die beiden duerfen sich nie gleichen —
+// sonst ist der Rueckweg nicht vom Hinweg zu unterscheiden.
+for (const kat of KATEGORIEN) {
+  for (const n of [1, 2, 40, 154]) {
+    const hin = zuordnungLabel(kat.wert, n, 'hinzufuegen')
+    const zurueck = zuordnungLabel(kat.wert, n, 'entfernen')
+    assert.notEqual(hin, zurueck, `${kat.wert}/${n}: Richtung nicht unterscheidbar`)
+    for (const text of [hin, zurueck]) {
+      assert.ok(text.includes(kat.label), `${text}: Kategorie fehlt`)
+      assert.ok(text.includes(String(n)), `${text}: Anzahl fehlt`)
+    }
+    assert.ok(hin.includes('hinzufügen'), hin)
+    assert.ok(zurueck.includes('entfernen'), zurueck)
+  }
+}
+
+// Jede Kategorie hat eine Beschriftung — ein durchgereichter Enum-Wert im Knopf
+// („schweisshundfuehrer zu 12 Gaesten hinzufuegen") waere sichtbar falsch.
+for (const kat of KATEGORIEN) {
+  assert.equal(kategorieLabel(kat.wert), kat.label)
+  assert.notEqual(kategorieLabel(kat.wert), kat.wert, `${kat.wert}: Enum-Wert statt Label`)
+}
+
+// --- Der Riegel gegen lautloses Ueberschreiben (Schlusslesung 04.08.2026, 7) --
+// `inaktiv_seit` darf NIE im Formular-Patch stehen. Das Formular schreibt
+// mehrere Felder auf einmal, und zwei Personen fuehren dieselbe Liste (085):
+// naehme der Patch die Spalte mit, ueberschriebe ein
+// Oeffnen-Bearbeiten-Speichern des einen lautlos die Stilllegung des anderen.
+// Compare-and-Swap gibt es nicht — getrennte Schreibwege sind der Ersatz.
+//
+// Der Test steht hier, weil der Fehler beim ERWEITERN entsteht, nicht heute:
+// wer `inaktiv_seit` als Feld in FELDER oder MEHRFACH eintraegt, faellt hier
+// auf, statt es in der Produktion zu tun.
+const stillgelegt = k({
+  id: 's1',
+  vorname: 'Werner',
+  nachname: 'Baron v. Buchholtz',
+  inaktiv_seit: '2026-08-04T07:49:32.721Z',
+})
+assert.equal(
+  Object.keys(alsSpalten(entwurfVon(stillgelegt))).includes('inaktiv_seit'),
+  false,
+  'inaktiv_seit gehoert NICHT in alsSpalten() — s. Kommentar',
+)
+assert.equal(
+  Object.prototype.hasOwnProperty.call(entwurfVon(stillgelegt), 'inaktiv_seit'),
+  false,
+  'inaktiv_seit gehoert NICHT in den Entwurf',
+)
+// **Eine Zeile statt zwoelf Durchlaeufen** (Ponytail-Lesung 04.08.2026):
+// `aenderungen()` baut seinen Patch aus `Object.keys(alsSpalten(e))`, ein
+// Schluessel ausserhalb von `Entwurf` ist strukturell unmoeglich. Die zwoelf
+// Durchlaeufe prueften also zwoelfmal dieselbe Tatsache. Die beiden
+// Zusicherungen oben fallen in genau dem Szenario, das der Kommentar nennt:
+// jemand traegt `inaktiv_seit` in `Entwurf`/`FELDER`/`MEHRFACH` ein.
+//
+// Eine Positivkontrolle bleibt, damit der Test nicht durch eine leere Menge
+// gruen wird — genau der Fehler, den sein erster Anlauf hatte.
+const einPatch = aenderungen({ ...entwurfVon(stillgelegt), kuerzel: 'WvB2' }, stillgelegt)
+assert.deepEqual(einPatch, { kuerzel: 'WvB2' }, 'Positivkontrolle: der Patch traegt genau das Feld')

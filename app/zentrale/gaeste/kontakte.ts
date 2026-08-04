@@ -26,6 +26,20 @@ export type Kontakt = {
   /** Migration 094. NOT NULL mit Vorgabe `{}` — leer, nie `null`. */
   kategorien: Kategorie[]
   standard_tags: Tag[]
+  /**
+   * Migration 100. `null` heißt aktiv, sonst der Zeitpunkt der Stilllegung.
+   *
+   * **Gehört ausdrücklich NICHT in `Entwurf`** und damit nicht in den
+   * Formular-Patch: das Formular schreibt mehrere Felder auf einmal, und zwei
+   * Personen führen dieselbe Liste (085). Läge die Spalte im Patch, überschriebe
+   * ein Öffnen-Bearbeiten-Speichern des einen lautlos die Stilllegung des
+   * anderen — es gibt kein Compare-and-Swap (Schlusslesung 04.08.2026, offener
+   * Befund 7). Stilllegen ist deshalb ein eigener, einspaltiger Write.
+   *
+   * **Der Wert ist keine belegte Historie**, sondern eine Behauptung des
+   * Bearbeiters: er kommt vom Client, die DB prüft ihn nicht.
+   */
+  inaktiv_seit: string | null
 }
 
 /**
@@ -439,6 +453,30 @@ export function alsDatum(iso: string | null): string {
 }
 
 /**
+ * Ein Zeitpunkt als Berliner Kalenderdate.
+ *
+ * **Warum nicht `alsDatum()`** (Fremdprüfung 04.08.2026, Punkt 3): das schneidet
+ * den ISO-String und liefert damit die **UTC**-Date. Für `geburtstag` ist das
+ * richtig, weil die Spalte ein `date` ist und keine Zeitzone kennt. Für
+ * `inaktiv_seit` — ein `timestamptz` — wäre es einen Tag zu früh: wer um 00:30
+ * Berliner Zeit stilllegt, steht in UTC noch auf dem Vortag. Dieselbe Wurzel wie
+ * der Gültigkeitsvergleich in Migration 087, nur auf der Anzeigeseite.
+ *
+ * `Intl` statt eigener Rechnung, weil Sommerzeit sonst von Hand käme.
+ */
+export function alsBerlinDatum(iso: string | null): string {
+  if (!iso) return '—'
+  const t = new Date(iso)
+  if (Number.isNaN(t.getTime())) return '—'
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(t)
+}
+
+/**
  * Ein Suchparameter aus der URL als einzelner Wert.
  *
  * Next liefert **`string[]`**, sobald ein Parameter mehrfach vorkommt
@@ -452,29 +490,48 @@ export function ersterWert(wert: string | string[] | undefined | null): string {
 }
 
 /**
- * Die drei Listenfilter. Der Zustand gehört in die URL (Zentrale-Konzept §2.4).
+ * Die Listenfilter. Der Zustand gehört in die URL (Zentrale-Konzept §2.4).
  *
- * `code` heißt „kann nur per weitergegebenem Code eingeladen werden" und deckt
- * damit alle drei Wege außer E-Mail. Der **Schlüssel bleibt `code`**, obwohl
- * der Knopf inzwischen „Ohne E-Mail" heißt: er steht in geteilten Links
- * (`?filter=code`), und die Bedeutung hat sich nicht geändert — nur die
- * Beschriftung sagt jetzt, wonach gefiltert wird, statt was daraus folgt.
+ * **Eine Achse, vier Werte** — nicht zwei Achsen, die sich kreuzen.
  *
- * `streichen` ist ausdrücklich **kein Datenfeld**, sondern ein Suchausdruck mit
- * eigenem Knopf: der Vermerk steht als Freitext in der Notiz, wo der Import ihn
- * abgelegt hat. Sind alle 32 entschieden, läuft der Filter leer und es bleibt
- * keine Spalte zurück, die die übrigen 122 nie gebraucht haben.
+ * `aktiv` ist die Voreinstellung: der Zweck des Stilllegens ist, jemanden aus
+ * dem Weg zu haben (Moritz, 04.08.2026). Die Kopfzeile nennt trotzdem beide
+ * Zahlen, damit die 154 nie stillschweigend kleiner wird.
+ *
+ * **`ohne_mail` meint die AKTIVEN ohne Adresse** — nachtragen tut man für Leute,
+ * die man noch einlädt.
+ *
+ * **`streichen` ist entfallen** — die 32 „Markierung streichen"-Kontakte sind
+ * seit dem 04.08.2026 stillgelegt, der Filter zeigte damit dieselbe Menge wie
+ * `inaktiv`, nur aus einem Freitext geraten. Die Notiz bleibt an den Zeilen,
+ * sie ist kein Filterkriterium mehr. `alsFilter()` bildet die alte Adresse ab.
  */
-export type Filter = 'alle' | 'code' | 'streichen'
+export type Filter = 'aktiv' | 'inaktiv' | 'alle' | 'ohne_mail'
 
-/** Alles Unbekannte wird `alle` — ein getippter Parameter soll nicht leeren. */
+/**
+ * Alles Unbekannte wird `aktiv` — ein getippter Parameter soll nicht leeren.
+ *
+ * **`streichen` wird ausdrücklich auf `inaktiv` abgebildet**, nicht auf die
+ * Voreinstellung: die Adresse `?filter=streichen` ist teilbar und steht
+ * womöglich in einem Lesezeichen. Sie zeigt jetzt dieselbe Menge wie vorher —
+ * nur über den Zustand statt über den Freitext.
+ */
 export function alsFilter(wert: string | null | undefined): Filter {
-  return wert === 'code' || wert === 'streichen' ? wert : 'alle'
+  if (wert === 'streichen') return 'inaktiv'
+  // **`code` war der alte Schlüssel dieser Arbeitsliste und wird abgebildet**
+  // (Fremdprüfung 04.08.2026, Paket B, Punkt 1). Ein erster Entwurf ließ ihn auf
+  // die Voreinstellung fallen, weil die Menge sich geändert hat — `ohne_mail`
+  // zeigt nur noch Aktive. Das war das schwächere Argument: der Rückfall auf
+  // `aktiv` zeigt zusätzlich alle Kontakte MIT Adresse und verfehlt damit den
+  // Zweck der Liste vollständig, während die Beschränkung auf Aktive ihn nur
+  // verengt. Dieselbe Überlegung wie bei `streichen` eine Zeile höher.
+  if (wert === 'code') return 'ohne_mail'
+  return wert === 'inaktiv' || wert === 'alle' || wert === 'ohne_mail' ? wert : 'aktiv'
 }
 
-/** Trägt die Notiz den unentschiedenen Vermerk? */
-export function istGestrichen(k: Pick<Kontakt, 'notiz'>): boolean {
-  return suchtext(k.notiz ?? '').includes('streichen')
+/** Ist der Kontakt stillgelegt? */
+export function istInaktiv(k: Pick<Kontakt, 'inaktiv_seit'>): boolean {
+  return k.inaktiv_seit !== null
 }
 
 /**
@@ -501,8 +558,10 @@ export function sortiert(alle: readonly Kontakt[]): Kontakt[] {
 /** Die sichtbaren Zeilen. Filtern erhält die Reihenfolge aus `sortiert()`. */
 export function sichtbare(alle: readonly Kontakt[], suche: string, filter: Filter): Kontakt[] {
   return alle.filter((k) => {
-    if (filter === 'code' && einladungsweg(k) === 'email') return false
-    if (filter === 'streichen' && !istGestrichen(k)) return false
+    if (filter === 'aktiv' && istInaktiv(k)) return false
+    if (filter === 'inaktiv' && !istInaktiv(k)) return false
+    // Arbeitsliste zum Nachtragen: nur Aktive, s. die Begründung am Typ.
+    if (filter === 'ohne_mail' && (istInaktiv(k) || einladungsweg(k) === 'email')) return false
     return passtZuSuche(k, suche)
   })
 }
@@ -828,4 +887,30 @@ export function zuordnungsPatch(
   if (aktion === 'entfernen' && !hat) return null
   const neu = aktion === 'hinzufuegen' ? [...jetzt, kategorie] : jetzt.filter((x) => x !== kategorie)
   return normiert(neu, KATEGORIEN)
+}
+
+/** Die Beschriftung einer Kategorie — für Meldungen, die sie benennen. */
+export function kategorieLabel(kategorie: Kategorie): string {
+  return KATEGORIEN.find((k) => k.wert === kategorie)?.label ?? kategorie
+}
+
+/**
+ * Die Beschriftung des Zuordnen-Knopfes — **der ganze Satz, nicht ein Verb.**
+ *
+ * Der Knopf trägt Kategorie, Anzahl und Richtung, damit daneben kein Hilfetext
+ * stehen muss — „Kategorie hinzufügen" ließ offen, WELCHE und an WIE VIELE.
+ * Bei `anzahl === 0` nennt er die fehlende Vorbedingung statt der Handlung.
+ * Die Fälle stehen ausführbar im Selbsttest.
+ */
+export function zuordnungLabel(
+  kategorie: Kategorie,
+  anzahl: number,
+  aktion: Zuordnung,
+): string {
+  if (anzahl === 0) return 'Erst Gäste markieren'
+  const wen = anzahl === 1 ? '1 Gast' : `${anzahl} Gästen`
+  const was = `„${kategorieLabel(kategorie)}"`
+  return aktion === 'hinzufuegen'
+    ? `${was} zu ${wen} hinzufügen`
+    : `${was} von ${wen} entfernen`
 }

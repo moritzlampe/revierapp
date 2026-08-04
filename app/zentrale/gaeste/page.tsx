@@ -77,7 +77,7 @@ export default async function GaestePage({
     await supabase
       .from('kontakte')
       .select(
-        'id, vorname, nachname, begleitung, email, telefon, handy, adresse, geburtstag, notiz, kuerzel, kategorien, standard_tags',
+        'id, vorname, nachname, begleitung, email, telefon, handy, adresse, geburtstag, notiz, kuerzel, kategorien, standard_tags, inaktiv_seit',
       )
       .order('nachname', { ascending: true, nullsFirst: false })
       .order('vorname', { ascending: true, nullsFirst: false }),

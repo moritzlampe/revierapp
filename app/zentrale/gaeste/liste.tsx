@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../schreiben'
 import {
   aenderungen,
+  alsBerlinDatum,
   alsDatum,
   alsSpalten,
   anzeigeName,
@@ -14,9 +15,11 @@ import {
   entwurfVon,
   initialen,
   kuerzelVon,
-  istGestrichen,
+  istInaktiv,
   mehrfachText,
   normiert,
+  kategorieLabel,
+  zuordnungLabel,
   zuordnungsPatch,
   pruefeEntwurf,
   sichtbare,
@@ -47,7 +50,7 @@ import {
  * bei jedem Kontakt weg und nähme die Scrollposition mit; der Inspektor lässt
  * die Zeile stehen, an der man gerade ist.
  *
- * **Die drei Schreibwege liegen hier oben**, nicht in den Formularen darunter —
+ * **Die fünf Schreibwege liegen hier oben**, nicht in den Formularen darunter —
  * dieselbe Aufteilung wie `revierkarte.tsx` und `objekt-inspektor.tsx`. Die
  * Formulare kennen nur ein Versprechen: *schreibt und wirft bei Misserfolg*.
  * Dadurch steht die Fehlerbehandlung dort, wo der Nutzer sie sieht, und der
@@ -98,14 +101,87 @@ export default function Liste({
   const [markiert, setMarkiert] = useState<Set<string>>(new Set())
   const [zuordnungLaeuft, setZuordnungLaeuft] = useState(false)
   const [zuordnungFehler, setZuordnungFehler] = useState<string | null>(null)
+  /**
+   * Die Rückfrage vor dem Entfernen (Entwurf B, 04.08.2026).
+   *
+   * **Sie friert die Markierung ein, und das ist keine Zugabe:** die Frage nennt
+   * eine Zahl („bei 12 Kontakten"), und der Knopf daneben nennt sie auch. Blieben
+   * die Kästchen bedienbar, träfe der Klick eine andere Menge als die, die
+   * dasteht — eine Rückfrage, die über etwas anderes verhandelt als das, was
+   * passiert, ist schlimmer als keine.
+   */
+  const [entfernenFrage, setEntfernenFrage] = useState(false)
   const zuordnungInArbeit = useRef(false)
+  const behaltenRef = useRef<HTMLButtonElement>(null)
+  const weitereRef = useRef<HTMLDetailsElement>(null)
+  /** Ob die Rückfrage offen WAR — für die Fokus-Rückgabe, s. den Effekt unten. */
+  const warGefragt = useRef(false)
   const gesperrt = neu || imEingriff
+  /** Die Tabelle nimmt keine Markierung an, während geschrieben oder gefragt wird. */
+  const markierenGesperrt = zuordnungLaeuft || entfernenFrage
 
-  const ohneMail = useMemo(
-    () => kontakte.filter((k) => einladungsweg(k) !== 'email').length,
+  /**
+   * Fokus auf **„Behalten"**, sobald die Rückfrage aufgeht — wörtlich dieselbe
+   * Überlegung wie beim Kontakt-Löschen weiter unten: der gedrückte Knopf
+   * verschwindet, und ohne das fiele der Fokus auf den Seitenanfang. Vor allem
+   * aber macht ein zweites, reflexhaftes Enter aus der Rückfrage sonst eine
+   * Bestätigung.
+   */
+  useEffect(() => {
+    if (entfernenFrage) {
+      warGefragt.current = true
+      behaltenRef.current?.focus()
+      return
+    }
+    // **Und zurück, wenn sie geschlossen wird** (Fremdprüfung 04.08.2026,
+    // Paket A, Punkt 5). „Behalten" trägt den Fokus und verschwindet beim
+    // Klick — ohne Rückgabe fiele er an den Seitenanfang, und wer per Tastatur
+    // arbeitet, müsste sich zurücktabben. Dieselbe Bauform wie `warImFormular`
+    // im Inspektor weiter unten: ein Ref merkt, dass es etwas zurückzugeben
+    // gibt, damit der Effekt nicht beim ersten Rendern greift.
+    if (!warGefragt.current) return
+    warGefragt.current = false
+    weitereRef.current?.querySelector<HTMLElement>('summary')?.focus()
+  }, [entfernenFrage])
+
+  /**
+   * Die Zahlen an den Schaltern — **aus `sichtbare()` selbst, nicht aus einer
+   * zweiten Formulierung derselben Bedingung** (Ponytail-Lesung 04.08.2026).
+   *
+   * Vorher stand hier `!istInaktiv(k) && einladungsweg(k) !== 'email'`, also das
+   * Prädikat von `sichtbare()` ein zweites Mal — und im Selbsttest eine
+   * Zusicherung, die die Übereinstimmung *bewies* statt sie *herzustellen*. Eine
+   * Zahl, die etwas anderes zählt als der Klick zeigt, kann jetzt nicht mehr
+   * entstehen: es gibt nur noch ein Prädikat.
+   *
+   * Leere Suche heißt „alles" — `passtZuSuche(k, '')` ist für jeden Kontakt wahr.
+   */
+  const zahl = useCallback(
+    (f: Filter) => sichtbare(kontakte, '', f).length,
     [kontakte],
   )
-  const gestrichen = useMemo(() => kontakte.filter(istGestrichen).length, [kontakte])
+  const aktive = useMemo(() => zahl('aktiv'), [zahl])
+  const inaktive = useMemo(() => zahl('inaktiv'), [zahl])
+  const ohneMail = useMemo(() => zahl('ohne_mail'), [zahl])
+
+  /**
+   * Stilllegen und Wiederaufnehmen — **ein eigener Write über EINE Spalte**,
+   * niemals über den Formular-Patch daneben. Warum: s. `Kontakt.inaktiv_seit`
+   * in `./kontakte`.
+   */
+  const zustandSetzen = useCallback(
+    async (id: string, stilllegen: boolean) => {
+      await schreibe('Der Kontakt', () =>
+        createClient()
+          .from('kontakte')
+          .update({ inaktiv_seit: stilllegen ? new Date().toISOString() : null })
+          .eq('id', id)
+          .select('id'),
+      )
+      router.refresh()
+    },
+    [router],
+  )
   // Einmal sortieren, nicht pro Tastenanschlag: die Ordnung hängt am Bestand,
   // nicht an der Suche.
   const geordnet = useMemo(() => sortiert(kontakte), [kontakte])
@@ -134,7 +210,10 @@ export default function Liste({
     const p = new URLSearchParams(window.location.search)
     if (neueSuche.trim()) p.set('q', neueSuche)
     else p.delete('q')
-    if (neuerFilter === 'alle') p.delete('filter')
+    // **`aktiv` ist die Voreinstellung und fällt aus der Adresse heraus**, nicht
+    // mehr `alle`. Sonst trüge die nackte Adresse `/zentrale/gaeste` einen
+    // anderen Zustand als dieselbe Adresse nach einem Klick auf „Aktive".
+    if (neuerFilter === 'aktiv') p.delete('filter')
     else p.set('filter', neuerFilter)
     const rest = p.toString()
     window.history.replaceState(null, '', rest ? `?${rest}` : window.location.pathname)
@@ -212,6 +291,11 @@ export default function Liste({
         )
       } finally {
         setMarkiert(new Set())
+        // **Die Rückfrage geht mit der Markierung, auf die sie sich bezog.**
+        // Bliebe sie stehen, verhandelte sie über „0 markiert" — und der Knopf
+        // daneben hieße „Erst Gäste markieren", während darüber eine Warnung
+        // über 12 Kontakte steht.
+        setEntfernenFrage(false)
         zuordnungInArbeit.current = false
         setZuordnungLaeuft(false)
         router.refresh()
@@ -268,10 +352,53 @@ export default function Liste({
           aria-label="Gäste durchsuchen"
         />
 
-        {/* Zwei Filter, beide beschriftet mit ihrer Zahl. „Ohne E-Mail" ist die
-            Arbeitsliste zum Nachtragen — und der einzige Weg dorthin, denn eine
-            fehlende Adresse ist als Abwesenheit nicht suchbar. */}
+        {/* **Der Zustand steht zuerst, „Aktive" ist die Voreinstellung.** Der
+            Zweck des Stilllegens ist, jemanden aus dem Weg zu haben — wer ihn
+            weiter sieht, hat nichts gewonnen (Moritz, 04.08.2026).
+
+            „Ohne E-Mail" ist die Arbeitsliste zum Nachtragen und der einzige Weg
+            dorthin, denn eine fehlende Adresse ist als Abwesenheit nicht
+            suchbar. Sie zeigt nur Aktive, s. `Filter` in `./kontakte`.
+
+            **Der Schalter „streichen" ist entfallen**, weil er dieselbe Menge
+            zeigte wie „Inaktive" — nur aus einem Freitext geraten statt am
+            Zustand gelesen. Die Notiz bleibt an den Zeilen. */}
         <div className="gaeste-filter" role="group" aria-label="Liste filtern">
+          <button
+            type="button"
+            className="gaeste-chip"
+            aria-pressed={filter === 'aktiv'}
+            onClick={() => filterGeaendert('aktiv')}
+          >
+            Aktive {aktive}
+          </button>
+          {/* Nur da, wenn es welche gibt — sonst ein Schalter, der auf eine
+              leere Liste zeigt und fragen lässt, ob etwas kaputt ist.
+
+              **`|| filter === 'inaktiv'` ist der Riegel dagegen, dass er unter
+              den Füßen verschwindet** (Fremdprüfung 04.08.2026, Paket A, Punkt
+              9): wer den letzten Stillgelegten wieder aufnimmt, stand sonst vor
+              einer leeren Liste, deren aktiver Filter aus dem Markup gefallen
+              war — kein Schalter gedrückt, nichts zu sehen, kein Weg zurück
+              außer Raten. Er bleibt jetzt stehen und zeigt „Inaktive 0". */}
+          {(inaktive > 0 || filter === 'inaktiv') && (
+            <button
+              type="button"
+              className="gaeste-chip"
+              aria-pressed={filter === 'inaktiv'}
+              onClick={() => filterGeaendert('inaktiv')}
+            >
+              Inaktive {inaktive}
+            </button>
+          )}
+          <button
+            type="button"
+            className="gaeste-chip"
+            aria-pressed={filter === 'ohne_mail'}
+            onClick={() => filterGeaendert('ohne_mail')}
+          >
+            Ohne E-Mail {ohneMail}
+          </button>
           <button
             type="button"
             className="gaeste-chip"
@@ -280,27 +407,6 @@ export default function Liste({
           >
             Alle {kontakte.length}
           </button>
-          <button
-            type="button"
-            className="gaeste-chip"
-            aria-pressed={filter === 'code'}
-            onClick={() => filterGeaendert('code')}
-          >
-            Ohne E-Mail {ohneMail}
-          </button>
-          {/* Nur da, solange es unentschiedene Vermerke gibt. Sind alle 32
-              abgearbeitet, verschwindet der Knopf von selbst — und es bleibt
-              kein Feld zurück, das die übrigen Kontakte nie gebraucht haben. */}
-          {gestrichen > 0 && (
-            <button
-              type="button"
-              className="gaeste-chip"
-              aria-pressed={filter === 'streichen'}
-              onClick={() => filterGeaendert('streichen')}
-            >
-              {`„streichen“ ${gestrichen}`}
-            </button>
-          )}
         </div>
 
         <span className="gaeste-treffer" aria-live="polite">
@@ -320,13 +426,18 @@ export default function Liste({
             setGewaehlt(null)
             setNeu(false)
             setZuordnungFehler(null)
+            setEntfernenFrage(false)
             setMarkiert(new Set())
             setZuordnen(zuordnen ? null : KATEGORIEN[0].wert)
           }}
-          disabled={imEingriff}
+          disabled={imEingriff || zuordnungLaeuft}
           aria-pressed={zuordnen !== null}
         >
-          {zuordnen ? 'Fertig' : 'Mehrere zuordnen'}
+          {/* „Kategorien zuordnen" statt „Mehrere zuordnen": „mehrere" benannte
+              die Menge, nicht den Zweck — man erfuhr erst nach dem Klick, worum
+              es geht. „Modus beenden" statt „Fertig", weil nichts abgeschlossen
+              wird: jeder Klick war schon geschrieben. */}
+          {zuordnen ? 'Modus beenden' : 'Kategorien zuordnen'}
         </button>
 
         <button
@@ -342,54 +453,155 @@ export default function Liste({
         </button>
       </div>
 
-      {/* **Die Kategorie steht VOR der Auswahl**, wie Moritz es beschrieben hat:
+      {/* **Die Auftragsleiste** (Entwurf B, 04.08.2026, von Moritz gewählt).
+          Beide Schritte numeriert untereinander in DERSELBEN Spur, die
+          erzeugende Handlung neben ihrem Zähler. Die Vorgängerin riss
+          `space-between` über 1200 px auseinander — s. `.gaeste-auftrag` in
+          `./gaeste.css`.
+
+          **Die Kategorie steht VOR der Auswahl**, Moritz' Vorgabe vom 03.08.:
           „erst auf Schützen klicken, dann alle anwählen die als Schütze
-          eingeladen werden sollen." Umgekehrt — erst markieren, dann zuordnen —
-          waere derselbe Klickaufwand, aber man wuesste bis zuletzt nicht, wofuer
-          man gerade sammelt. */}
+          eingeladen werden sollen." */}
       {zuordnen ? (
-        <div className="gaeste-zuordnen">
-          <div className="gaeste-zuordnen-wahl" role="group" aria-label="Kategorie zum Zuordnen">
-            {KATEGORIEN.map((kat) => (
-              <button
-                key={kat.wert}
-                type="button"
-                className="jagden-chip"
-                aria-pressed={zuordnen === kat.wert}
-                disabled={zuordnungLaeuft}
-                onClick={() => setZuordnen(kat.wert)}
-              >
-                {kat.label}
-              </button>
-            ))}
+        <div className="gaeste-auftrag">
+          <div className="gaeste-auftrag-schritt">
+            <span className="gaeste-auftrag-nr" aria-hidden="true">
+              1
+            </span>
+            <span className="gaeste-auftrag-was">Kategorie</span>
+            <div className="gaeste-auftrag-wahl" role="group" aria-label="Kategorie zum Zuordnen">
+              {KATEGORIEN.map((kat) => (
+                <button
+                  key={kat.wert}
+                  type="button"
+                  // **`gaeste-chip`, nicht `jagden-chip`** (04.08.2026, von
+                  // Moritz beim ersten Durchklicken gefunden): `jagden.css` wird
+                  // nur von `../jagden/page.tsx` importiert. Auf DIESER Seite
+                  // war `jagden-chip` eine Klasse ohne jede Regel — der aktive
+                  // Zustand war unsichtbar, der Schalter sah aus wie ein Knopf,
+                  // der nichts tut. Und zwar nur beim direkten Laden: kam man
+                  // per Klick von der Jagdliste, hing deren Stylesheet noch im
+                  // Dokument und es sah richtig aus.
+                  className="gaeste-chip"
+                  aria-pressed={zuordnen === kat.wert}
+                  disabled={markierenGesperrt}
+                  onClick={() => setZuordnen(kat.wert)}
+                >
+                  {/* „· ausgewählt" trägt den Zustand als WORT mit, nicht nur
+                      als Fläche — dieselbe Haltung wie „Status immer als
+                      Text-Pill, nie nur über Farbe" (Zentrale-Konzept §2.4). */}
+                  {kat.label}
+                  {zuordnen === kat.wert ? ' · ausgewählt' : ''}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="gaeste-zuordnen-tat">
-            <span aria-live="polite">
-              {markiert.size === 0
-                ? 'Niemand markiert'
-                : `${markiert.size} markiert`}
+          <div className="gaeste-auftrag-schritt">
+            <span className="gaeste-auftrag-nr" aria-hidden="true">
+              2
             </span>
-            <button
-              type="button"
-              className="haupt"
-              disabled={zuordnungLaeuft || markiert.size === 0}
-              onClick={() => void massenZuordnung('hinzufuegen')}
-            >
-              {zuordnungLaeuft ? 'Wird gespeichert …' : 'Kategorie hinzufügen'}
-            </button>
-            {/* **Der Rückweg gehört dazu, nicht in eine spätere Runde.** Ein
-                Sammelklick auf 40 Zeilen ist genau die Handlung, bei der man
-                sich vergreift; ohne „Entfernen" waere der einzige Ausweg, 40
-                Kontakte einzeln zu oeffnen. */}
-            <button
-              type="button"
-              disabled={zuordnungLaeuft || markiert.size === 0}
-              onClick={() => void massenZuordnung('entfernen')}
-            >
-              Entfernen
-            </button>
+            <span className="gaeste-auftrag-was">Gäste</span>
+            <span className="gaeste-auftrag-stand" aria-live="polite">
+              {markiert.size === 0 ? 'Niemand markiert' : `${markiert.size} markiert`}
+            </span>
+
+            {entfernenFrage ? (
+              /* **Rückfrage nach dem Muster des Kontakt-Löschens** (s. `Details`
+                 weiter unten): Warnzeile plus getauschte Knöpfe, Fokus auf der
+                 harmlosen Seite. Kein Dialog — die Seite hat keinen, und einer
+                 nur hierfür wäre ein zweites Muster für dieselbe Frage.
+
+                 **Nur „Entfernen" fragt zurück, „Hinzufügen" nicht.** Additiv
+                 zuordnen ist mit demselben Weg zurückgenommen; entfernen kann
+                 eine Marke treffen, die jemand vor Wochen einzeln gesetzt hat. */
+              <>
+                <button
+                  type="button"
+                  className="haupt"
+                  disabled={zuordnungLaeuft}
+                  aria-describedby="gaeste-entfernen-folgen"
+                  onClick={() => void massenZuordnung('entfernen')}
+                >
+                  {zuordnungLaeuft
+                    ? 'Wird gespeichert …'
+                    : zuordnungLabel(zuordnen, markiert.size, 'entfernen')}
+                </button>
+                <button
+                  ref={behaltenRef}
+                  type="button"
+                  disabled={zuordnungLaeuft}
+                  aria-describedby="gaeste-entfernen-folgen"
+                  onClick={() => setEntfernenFrage(false)}
+                >
+                  Behalten
+                </button>
+              </>
+            ) : (
+              <>
+                {/* **Der Knopf trägt den ganzen Satz** — Kategorie, Anzahl,
+                    Richtung. Ohne Auswahl nennt er stattdessen die fehlende
+                    Vorbedingung, statt als gesperrter Knopf eine Handlung an
+                    0 Gästen zu versprechen. */}
+                <button
+                  type="button"
+                  className="haupt"
+                  disabled={zuordnungLaeuft || markiert.size === 0}
+                  onClick={() => void massenZuordnung('hinzufuegen')}
+                >
+                  {zuordnungLaeuft
+                    ? 'Wird gespeichert …'
+                    : zuordnungLabel(zuordnen, markiert.size, 'hinzufuegen')}
+                </button>
+
+                {/* **`<details>` statt eines gebauten Menüs.** Aufklappen,
+                    Fokusfolge und Klick-nach-außen macht der Browser —
+                    Escape NICHT, s. unten. Es steht nur da, wenn etwas markiert
+                    ist: ein Rückweg für niemanden ist keiner.
+                    Beim Öffnen der Rückfrage wird es AUSGEBAUT und kommt
+                    geschlossen zurück; ein `open`-State wäre ein zweiter Ort für
+                    dieselbe Wahrheit.
+
+                    **Escape schließt es von Hand** (Fremdprüfung 04.08.2026,
+                    Paket A, Punkt 5): `<details>` bringt das nicht mit, und der
+                    Kommentar behauptete vorher, der Browser erledige es. Ohne
+                    das bleibt ein Tastaturnutzer im offenen Fach stehen. */}
+                {markiert.size > 0 ? (
+                  <details
+                    className="gaeste-weitere"
+                    ref={weitereRef}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Escape') return
+                      const d = e.currentTarget
+                      if (!d.open) return
+                      d.open = false
+                      d.querySelector('summary')?.focus()
+                    }}
+                  >
+                    <summary>Weitere</summary>
+                    <button
+                      type="button"
+                      disabled={zuordnungLaeuft}
+                      onClick={() => {
+                        setZuordnungFehler(null)
+                        setEntfernenFrage(true)
+                      }}
+                    >
+                      {zuordnungLabel(zuordnen, markiert.size, 'entfernen')} …
+                    </button>
+                  </details>
+                ) : null}
+              </>
+            )}
           </div>
+
+          {entfernenFrage ? (
+            <p id="gaeste-entfernen-folgen" className="zentrale-inspektor-warnung gaeste-meldung">
+              Die Kategorie „{kategorieLabel(zuordnen)}&ldquo; wird bei {markiert.size}{' '}
+              {markiert.size === 1 ? 'Kontakt' : 'Kontakten'} entfernt. Andere
+              Kategorien dieser Kontakte bleiben erhalten.
+            </p>
+          ) : null}
 
           {zuordnungFehler ? (
             <p className="zentrale-inspektor-fehler" role="alert">
@@ -412,29 +624,59 @@ export default function Liste({
               <thead>
                 <tr>
                   {zuordnen ? (
-                    <th scope="col" className="gaeste-haken">
+                    <th scope="col" className="gaeste-haken gaeste-haken-kopf">
                       {/* Ein Kästchen im Kopf, das alles Sichtbare erfasst —
                           bei 154 Zeilen der eigentliche Zeitgewinn. Es wirkt
                           NUR auf das, was Suche und Filter gerade zeigen; die
                           Auswahl ist die sichtbare Liste, der Haken führt sie
-                          nur aus. */}
-                      <input
-                        type="checkbox"
-                        checked={zeilen.length > 0 && zeilen.every((z) => markiert.has(z.id))}
-                        disabled={zuordnungLaeuft}
-                        aria-label="Alle sichtbaren markieren"
-                        onChange={(e) =>
-                          setMarkiert(
-                            e.target.checked ? new Set(zeilen.map((z) => z.id)) : new Set(),
-                          )
-                        }
-                      />
+                          nur aus.
+
+                          **Die Zahl steht als Wort daneben** (Entwurf B): „alle
+                          markieren" ließe offen, wie viele das gerade sind —
+                          nach einem Filter sind es 26 und nicht 154, und genau
+                          diese Verwechslung ist der Sammelklick, der zu weit
+                          greift. Der Tabellenkopf ist ohnehin `sticky`, die
+                          Angabe bleibt beim Blättern stehen. */}
+                      <label className="gaeste-alle">
+                        <input
+                          type="checkbox"
+                          checked={zeilen.length > 0 && zeilen.every((z) => markiert.has(z.id))}
+                          // Teilzustand: sichtbar gemacht, nicht nur behauptet —
+                          // sonst sieht „ein paar markiert" wie „keiner" aus.
+                          //
+                          // **Über die SICHTBAREN, nicht über `markiert.size`**
+                          // (Fremdprüfung 04.08.2026, Paket A, Punkt 8): die
+                          // Auswahl überlebt den Filterwechsel. Sind nur
+                          // unsichtbare Kontakte markiert, meldete das Kästchen
+                          // „Alle N sichtbaren" sonst `mixed`, obwohl von diesen
+                          // N keiner markiert ist — eine Aussage über eine
+                          // andere Menge als die, an der sie steht.
+                          ref={(el) => {
+                            if (el)
+                              el.indeterminate =
+                                zeilen.some((z) => markiert.has(z.id)) &&
+                                !zeilen.every((z) => markiert.has(z.id))
+                          }}
+                          disabled={markierenGesperrt || zeilen.length === 0}
+                          onChange={(e) =>
+                            setMarkiert(
+                              e.target.checked ? new Set(zeilen.map((z) => z.id)) : new Set(),
+                            )
+                          }
+                        />
+                        Alle {zeilen.length} sichtbaren
+                      </label>
                     </th>
                   ) : null}
                   <th scope="col">Name</th>
                   <th scope="col">Begleitung</th>
                   <th scope="col">Notiz</th>
-                  <th scope="col">Geburtstag</th>
+                  {/* **Der Geburtstag fällt im Modus weg** (Entwurf B): beim
+                      Einordnen von 154 Zeilen entscheidet man am Namen, an der
+                      Begleitung und an der Notiz — das Datum trägt dabei nichts
+                      und kostet die Breite, die der Markier-Kopf braucht. Im
+                      Inspektor steht es weiter. */}
+                  {zuordnen ? null : <th scope="col">Geburtstag</th>}
                   {/* Im Zuordnen-Modus zeigt die letzte Spalte die Kategorien
                       statt des Einladungswegs: dort schaut man hin, um zu
                       sehen, was der Klick bewirkt hat. */}
@@ -450,7 +692,7 @@ export default function Liste({
                       // Im Zuordnen-Modus markiert der Zeilenklick, statt den
                       // Inspektor zu oeffnen — sonst zeigten zwei Klickziele auf
                       // dieselbe Zeile.
-                      if (zuordnungLaeuft) return
+                      if (markierenGesperrt) return
                       if (zuordnen) {
                         setMarkiert((v) => {
                           const neu = new Set(v)
@@ -468,7 +710,7 @@ export default function Liste({
                         <input
                           type="checkbox"
                           checked={markiert.has(z.id)}
-                          disabled={zuordnungLaeuft}
+                          disabled={markierenGesperrt}
                           aria-label={`${anzeigeName(z)} markieren`}
                           onChange={() => {
                             /* Der Zeilenklick oben erledigt das Umschalten.
@@ -495,10 +737,18 @@ export default function Liste({
                           lässt sich die Ableitung über alle Zeilen auf einen
                           Blick prüfen, statt 154-mal den Inspektor zu öffnen. */}
                       <span className="gaeste-kuerzel">{kuerzelVon(z)}</span>
+                      {/* **Als Wort, nicht nur zurückgenommen dargestellt.**
+                          Unter „Alle" stehen Aktive und Stillgelegte
+                          nebeneinander; ein blasserer Ton allein wäre eine
+                          Zustandsangabe über Farbe (Zentrale-Konzept §2.4
+                          verbietet das ausdrücklich). */}
+                      {istInaktiv(z) ? (
+                        <span className="gaeste-inaktiv-marke"> inaktiv</span>
+                      ) : null}
                     </td>
                     <td>{z.begleitung || '—'}</td>
                     <td className="gaeste-notiz">{z.notiz || '—'}</td>
-                    <td className="num">{alsDatum(z.geburtstag)}</td>
+                    {zuordnen ? null : <td className="num">{alsDatum(z.geburtstag)}</td>}
                     <td>
                       {zuordnen ? (
                         <span className="gaeste-kategorien">
@@ -540,6 +790,7 @@ export default function Liste({
               aufModus={setImEingriff}
               aufSpeichern={speichern}
               aufLoeschen={loeschen}
+              aufZustand={zustandSetzen}
             />
           ) : (
             <p className="zentrale-leer">Einen Kontakt wählen, um Details zu sehen.</p>
@@ -563,6 +814,7 @@ function Details({
   aufModus,
   aufSpeichern,
   aufLoeschen,
+  aufZustand,
 }: {
   kontakt: Kontakt
   /** Meldet nach oben, dass die Liste gesperrt gehört. */
@@ -571,6 +823,8 @@ function Details({
   aufSpeichern: (id: string, patch: Record<string, string | string[] | null>) => Promise<void>
   /** Löscht und wirft bei Misserfolg — die Rückfrage bleibt dann stehen. */
   aufLoeschen: (id: string) => Promise<void>
+  /** Stilllegen oder wieder aufnehmen. **Eigener Weg, nicht `aufSpeichern`.** */
+  aufZustand: (id: string, stilllegen: boolean) => Promise<void>
 }) {
   const [bearbeiten, setBearbeiten] = useState<{ fokus?: keyof Entwurf } | null>(null)
   const [loeschFrage, setLoeschFrage] = useState(false)
@@ -629,6 +883,22 @@ function Details({
     // Nichts geändert heißt nichts schreiben — der Weg zurück ist derselbe.
     if (patch) await aufSpeichern(kontakt.id, patch)
     setBearbeiten(null)
+  }
+
+  /**
+   * Stilllegen/Wiederaufnehmen. Keine Rückfrage, weil derselbe Knopf der
+   * Rückweg ist; ein Fehlschlag bleibt aber sichtbar stehen.
+   */
+  const zustandWechseln = async () => {
+    setLaeuft(true)
+    setFehler(null)
+    try {
+      await aufZustand(kontakt.id, !istInaktiv(kontakt))
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : 'Unbekannter Fehler beim Ändern des Zustands.')
+    } finally {
+      setLaeuft(false)
+    }
   }
 
   const loeschen = async () => {
@@ -716,10 +986,28 @@ function Details({
         ))}
       </dl>
 
+      {/* **Der Zustand steht als eigene Zeile, nicht als Feld in der Liste
+          darüber.** Er ist kein Stammdatum des Menschen, sondern eine
+          Entscheidung über ihn — und er wird nicht wie die Felder über „+
+          hinzufügen" und das Formular gepflegt, sondern über einen eigenen
+          Write (s. `zustandSetzen` oben). Stünde er zwischen Geburtstag und
+          Kategorien, wäre genau das nicht zu sehen. */}
+      {istInaktiv(kontakt) && (
+        <p className="gaeste-zustand">
+          Stillgelegt seit {alsBerlinDatum(kontakt.inaktiv_seit)} — wird nicht
+          mehr zum Einladen angeboten.
+        </p>
+      )}
+
       {/* Der Bildschirm sagt, WOFÜR der Kontakt unvollständig ist — er
           verweigert nichts (Konzept §4). Neutraler Ton, kein Alarmrot: eine
-          fehlende Adresse ist kein Feldalarm (Zentrale-Konzept §2.6). */}
-      {hinweis && <p className="gaeste-hinweis">{hinweis}</p>}
+          fehlende Adresse ist kein Feldalarm (Zentrale-Konzept §2.6).
+
+          **Bei einem stillgelegten Kontakt entfällt er:** „Für eine Einladung
+          fehlt die E-Mail" ist eine Aufforderung, und niemand soll aufgefordert
+          werden, einen Kontakt zu vervollständigen, den er gerade aus dem Weg
+          geräumt hat. */}
+      {hinweis && !istInaktiv(kontakt) && <p className="gaeste-hinweis">{hinweis}</p>}
 
       {fehler && (
         <p className="zentrale-inspektor-fehler gaeste-meldung" role="alert">
@@ -770,14 +1058,37 @@ function Details({
           </>
         ) : (
           <>
+            {/* **Gesperrt, solange ein Write läuft** (Fremdprüfung 04.08.2026,
+                Paket A, Punkt 1). Sonst öffnet ein Klick das Formular, der
+                frühe Return darunter verdeckt die Fehlermeldung — und ein
+                gescheitertes Stilllegen sähe aus wie ein gelungenes. Genau der
+                Riegel, den die Felder darüber mit `gesperrt` schon haben; dieser
+                Knopf hatte ihn als einziger nicht. */}
             <button
               type="button"
+              disabled={laeuft}
               onClick={() => {
                 setFehler(null)
                 setBearbeiten({})
               }}
             >
               Bearbeiten
+            </button>
+            {/* **Der Zustandswechsel steht neben „Bearbeiten", nicht neben
+                „Löschen".** Er ist umkehrbar und braucht deshalb keine
+                Rückfrage — der Knopf selbst ist der Rückweg, und er benennt
+                beide Richtungen. Löschen daneben bleibt das Unumkehrbare mit
+                seiner Rückfrage. */}
+            <button
+              type="button"
+              disabled={laeuft}
+              onClick={() => void zustandWechseln()}
+            >
+              {laeuft
+                ? 'Speichert …'
+                : istInaktiv(kontakt)
+                  ? 'Wieder aufnehmen'
+                  : 'Stilllegen'}
             </button>
             <button
               type="button"

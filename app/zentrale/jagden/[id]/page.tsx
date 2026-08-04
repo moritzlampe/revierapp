@@ -129,10 +129,18 @@ export default async function JagdDetailPage({
   // Kontakt daran hinge: sie beantwortete „ist diese Person schon Nutzer?" und
   // ist deshalb aus der Oberfläche verbannt (Konzept Kontaktliste §5.3, das
   // Orakel-Verbot). Im Bestand ist sie ohnehin bei 0 von 154 gesetzt.
+  // **Stillgelegte Kontakte kommen hier gar nicht an** (Migration 100,
+  // Fremdprüfung 04.08.2026, Punkt 7). Der Filter sitzt in der ABFRAGE und nicht
+  // in `kandidaten()`: dann kann kein Codeweg im Client versehentlich einen
+  // inaktiven Kontakt anbieten, und der Zustand ist genau dort wirksam, wo er
+  // seinen Zweck hat. Wer als Aktiver eingeladen wurde und danach stillgelegt
+  // wird, bleibt Teilnehmer — die `hunt_participants`-Zeile ist unberührt, hier
+  // geht es allein um die Auswahl der NOCH NICHT Eingeladenen.
   const kontakte = geladen<EinladbarerKontakt[]>(
     await supabase
       .from('kontakte')
       .select('id, vorname, nachname, kategorien')
+      .is('inaktiv_seit', null)
       .order('nachname', { ascending: true, nullsFirst: false })
       .order('vorname', { ascending: true, nullsFirst: false }),
     'Kontakte'
