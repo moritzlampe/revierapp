@@ -311,11 +311,37 @@ export function jagdjahrLabel(key: string): string {
 }
 
 /**
- * Die wählbaren Jagdjahre — die im Bestand vorkommenden **plus immer das
- * aktuelle**, absteigend, das neueste zuerst.
+ * Wie viele Jahre im Menü stehen, auch ohne eine einzige Jagd darin.
  *
- * Aus den Daten abgeleitet statt aus einem Von-Bis-Bereich erzeugt: ein
- * Auswahlfeld mit zehn leeren Jahren ist eine Liste von Sackgassen.
+ * **Die Zahl kommt von Moritz (04.08.2026): „ich denke dass wir noch alte
+ * Statistiken einlesen werden, die gehen dann ca. 30 Jahre zurück."** Sie ist
+ * damit keine Schätzung, sondern die Reichweite des Bestands, der noch kommt.
+ *
+ * **Es sind 30 EINTRÄGE, nicht 30 Jahre Abstand** — das aktuelle mitgezählt,
+ * also 2026 bis 1997 und nicht bis 1996. Bei einem „ca." ist der Unterschied
+ * belanglos; er steht hier, weil er beim Lesen der Zusicherungen sonst jedes
+ * Mal neu ausgerechnet werden muss (Fremdprüfung Codex, 04.08.2026, Punkt 1).
+ */
+const JAHRE_ZURUECK = 30
+
+/**
+ * Die wählbaren Jagdjahre — die letzten {@link JAHRE_ZURUECK} ab heute, plus
+ * jedes im Bestand vorkommende, absteigend, das neueste zuerst.
+ *
+ * **Ein leeres Jahr steht im Menü und sagt es in der Liste** (`liste.tsx`).
+ * Ein Klick ohne Treffer ist der Preis dafür, dass die Achse vollständig ist.
+ *
+ * **Die vorkommenden Jahre bleiben zusätzlich drin, nicht ersatzweise** — eine
+ * importierte Jagd von vor 40 Jahren fiele sonst aus ihrer eigenen Liste, und
+ * `alsJahr()` schickte einen Link darauf auf „Alle". Der Zeitraum ist eine
+ * **Mindestreichweite**, keine Grenze.
+ *
+ * **Lückenlos ist die Liste nur INNERHALB des Zeitraums** — außerhalb, in beide
+ * Richtungen, stehen nur Jahre mit Jagden. Eine Jagd im Jagdjahr 2030 ergibt
+ * heute `2030, 2026, 2025, …` mit einem Loch bei 2027–2029, und ein Link auf
+ * `?jahr=2028` fällt auf „Alle". Erreichbar ist das, weil `datetime-local` im
+ * Anlege-Formular beliebig weit voraus zulässt. Hier stand „oberhalb ist sie
+ * lückenlos", was schlicht falsch war (Schlusslesung Fable 5, 04.08.2026).
  *
  * **Das aktuelle Jahr kommt immer mit, und das ist keine Bequemlichkeit, sondern
  * die Bedingung für die Voreinstellung** (Moritz, 04.08.2026: „ja immer das
@@ -323,18 +349,27 @@ export function jagdjahrLabel(key: string): string {
  * dann nicht in dieser Liste, hätte das `<select>` einen `value` ohne passende
  * `<option>` — es zeigte das erste Jahr an und filterte nach einem anderen. Genau
  * die Lüge, gegen die die Schranke in `alsJahr()` geschrieben wurde, nur von der
- * anderen Seite.
- *
- * **Folge, gewollt: das Auswahlfeld steht damit immer da**, auch in einem Revier
- * ohne jede Jagd — dann mit „Alle" und dem aktuellen Jahr, und die Liste ist
- * leer. Das ist die wörtliche Lesart der Vorgabe: die Saison ist der
- * Ausgangspunkt, auch wenn in ihr noch nichts steht.
+ * anderen Seite. Es ist der erste Eintrag des Zeitraums (`i = 0`) und braucht
+ * deshalb keine eigene Zeile — **außer bei unbrauchbarem `heute`, wo es
+ * absichtlich gar kein Jahr gibt** (s. den Riegel im Rumpf).
  *
  * **Damit ist die Funktion zeitabhängig.** Jede Zusicherung darauf muss `heute`
  * einspeisen, sonst gilt sie nur an dem Tag, an dem man sie schreibt.
  */
 export function jagdjahre(jagden: readonly Jagd[], heute?: string): string[] {
-  const gesehen = new Set<string>([aktuellesJagdjahr(heute)])
+  const gesehen = new Set<string>()
+  // **`ALLE_JAHRE` darf hier nicht hinein, und das ist der Grund für den Riegel.**
+  // `aktuellesJagdjahr()` liefert bei unbrauchbarer Eingabe `'alle'` — die
+  // Abwesenheit eines Filters, kein Jahr. In dieser Liste stünde es als zweite
+  // `<option>` neben dem festen „Alle" (`liste.tsx`), und `Number('alle')` ist
+  // `NaN` in genau dem Vergleich, der die Sortierung trägt: die ganze Reihenfolge
+  // würde unbestimmt. Ein früherer Entwurf legte den Wert ausdrücklich ab und
+  // fing nur die Zeitraum-Rechnung ab — die Fremdprüfung hat das gefunden
+  // (Codex, 04.08.2026, Punkt 2).
+  const start = Number(aktuellesJagdjahr(heute))
+  if (Number.isFinite(start)) {
+    for (let i = 0; i < JAHRE_ZURUECK; i++) gesehen.add(String(start - i))
+  }
   for (const j of jagden) {
     const k = jagdjahrVon(termin(j))
     if (k) gesehen.add(k)

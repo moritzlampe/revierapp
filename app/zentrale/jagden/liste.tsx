@@ -484,9 +484,19 @@ export default function Liste({
         </table>
       </div>
 
+      {/* **Zwei Gründe für eine leere Liste, zwei Sätze**: kein Jahr, dann kein
+          Zustand. Seit `jagdjahre()` einen Zeitraum abdeckt, ist „leer" der
+          Normalfall — „Kein Treffer für diesen Filter" wäre dort die falsche
+          Auskunft, es liegt nicht am Filter.
+          **Ein dritter Zweig für den leeren Bestand stand hier und war toter
+          Code** (Fremdprüfung Codex, 04.08.2026, Punkt 5): die Komponente kehrt
+          bei `jagden.length === 0` weiter oben zurück und sagt es dort bereits.
+          Wer hier einen Fall ergänzt, prüfe zuerst, ob er überhaupt herkommt. */}
       {sichtbare.length === 0 ? (
         <p className="zentrale-sub" style={{ marginTop: '1rem' }}>
-          Kein Treffer für diesen Filter.
+          {imJahr.length === 0 && jahr !== ALLE_JAHRE
+            ? `Im Jagdjahr ${jagdjahrLabel(jahr)} haben keine Jagden stattgefunden.`
+            : 'Kein Treffer für diesen Filter.'}
         </p>
       ) : null}
     </>

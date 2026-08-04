@@ -298,8 +298,8 @@ assert.equal(jagdjahrLabel('2026'), '26/27')
 assert.equal(jagdjahrLabel('2099'), '99/00') // Jahrhundertwechsel bleibt lesbar
 assert.equal(jagdjahrLabel('quatsch'), 'quatsch')
 
-// Die Auswahl kommt aus dem Bestand, nicht aus einem erfundenen Bereich —
-// neueste zuerst, keine Luecken-Jahre.
+// Die Auswahl deckt einen ZEITRAUM ab (30 Jahre zurueck) und nimmt jedes
+// vorkommende Jahr zusaetzlich auf — neueste zuerst, keine Luecken.
 {
   const liste = [
     jagd({ id: 'a', scheduled_for: '2026-05-01T08:00:00Z' }), // 2026
@@ -307,13 +307,55 @@ assert.equal(jagdjahrLabel('quatsch'), 'quatsch')
     jagd({ id: 'c', scheduled_for: '2026-11-01T08:00:00Z' }), // 2026
     jagd({ id: 'd' }), // ohne Termin -> kein Jahr
   ]
-  // `heute` eingespeist, weil `jagdjahre()` das aktuelle Jahr immer mitfuehrt
-  // und die Zusicherung sonst nur an dem Tag gilt, an dem man sie schreibt.
-  assert.deepEqual(jagdjahre(liste, '2026-08-04T10:00:00Z'), ['2027', '2026'])
-  // Das aktuelle Jahr kommt dazu, auch wenn keine Jagd darin liegt — die
+  // `heute` eingespeist, weil `jagdjahre()` den Zeitraum daraus rechnet und die
+  // Zusicherung sonst nur an dem Tag gilt, an dem man sie schreibt.
+  const H = '2026-08-04T10:00:00Z'
+  {
+    const jahre = jagdjahre(liste, H)
+    // 30 Jahre ab dem aktuellen (2026 … 1997) plus das zukuenftige 2027 aus dem
+    // Bestand. Als Laenge geprueft, nicht als Liste: eine 31-Elemente-deepEqual
+    // waere unlesbar und pruefte nichts, was die Zusicherungen darunter nicht
+    // schaerfer treffen.
+    // Laenge und Raender; die Menge selbst ist damit NICHT vollstaendig gepinnt
+    // (Codex 04.08.2026, Punkt 10 — der Kommentar behauptete hier zu viel).
+    assert.equal(jahre.length, 31, '30 Eintraege + ein zusaetzliches Jahr aus dem Bestand')
+    assert.equal(jahre.at(-1), '1997', 'die Untergrenze: 30 Eintraege ab 2026 enden bei 1997')
+    // **Absteigend paarweise geprueft, NICHT gegen `[...jahre].sort(cmp)`.** Der
+    // alte Test erzeugte seine Erwartung mit demselben Comparator wie die
+    // Implementierung und konnte nur fehlschlagen, wenn `Array.sort` kaputt ist.
+    for (let i = 1; i < jahre.length; i++) {
+      assert.ok(Number(jahre[i - 1]) > Number(jahre[i]), `absteigend bei ${jahre[i - 1]}/${jahre[i]}`)
+    }
+    // **Der Kern der Aenderung**: ein leeres Jahr ist waehlbar. Vorher fiel es
+    // aus der Liste, und die Vorsaison war nicht erreichbar.
+    assert.ok(jahre.includes('2025'), 'ein Jahr ohne jede Jagd steht trotzdem drin')
+  }
+  // Das aktuelle Jahr kommt immer mit, auch wenn keine Jagd darin liegt — die
   // Bedingung dafuer, dass die Vorauswahl eine passende <option> hat.
-  assert.deepEqual(jagdjahre(liste, '2028-08-04T10:00:00Z'), ['2028', '2027', '2026'])
-  assert.deepEqual(jagdjahre([], '2026-08-04T10:00:00Z'), ['2026'], 'leerer Bestand: nur heute')
+  assert.equal(jagdjahre(liste, '2028-08-04T10:00:00Z')[0], '2028')
+  assert.equal(jagdjahre([], H).length, 30, 'leerer Bestand: der nackte Zeitraum')
+  assert.equal(jagdjahre([], H)[0], '2026', 'leerer Bestand: heute zuerst')
+  // Ein Import von vor 40 Jahren faellt NICHT aus seiner eigenen Liste — der
+  // Zeitraum ist die Untergrenze, nicht die Grenze. Ohne das schickte `alsJahr()`
+  // einen Link auf so ein Jahr auf "Alle".
+  {
+    const alt = [jagd({ id: 'x', scheduled_for: '1986-11-01T08:00:00Z' })]
+    const jahre = jagdjahre(alt, H)
+    assert.ok(jahre.includes('1986'), 'vorkommendes Jahr vor dem Zeitraum bleibt drin')
+    assert.equal(jahre.at(-1), '1986', 'und steht als aeltestes am Ende')
+    assert.equal(alsJahr('1986', alt, H), '1986', 'und ist damit auch waehlbar')
+  }
+  // **Unbrauchbares `heute`: NUR der Bestand, kein einziger Nicht-Jahres-Wert.**
+  // Ein frueherer Stand legte hier `ALLE_JAHRE` ab und der Test schrieb das fest —
+  // es waere als zweite <option> "alle" im Menue gelandet und haette mit `NaN` die
+  // Sortierung unbestimmt gemacht (Codex 04.08.2026, Punkt 2 und 10).
+  {
+    // Eine zusaetzliche Zeile "filter(Nicht-Jahr) === []" stand hier und war von
+    // der naechsten vollstaendig subsumiert — sie konnte nie allein fehlschlagen
+    // (Schlusslesung Fable 5, 04.08.2026). Genau der Befund, der eine Zeile
+    // vorher schon an einer anderen Zusicherung getroffen hatte.
+    assert.deepEqual(jagdjahre(liste, 'quatsch'), ['2027', '2026'], 'nur der Bestand, absteigend')
+  }
   assert.deepEqual(nachJagdjahr(liste, '2026').map((j) => j.id), ['a', 'c'])
   assert.deepEqual(nachJagdjahr(liste, '2027').map((j) => j.id), ['b'])
   // "Alle" gibt alles zurueck, auch die ohne Termin.
@@ -704,16 +746,25 @@ assert.equal(namensvorschlag('2026-08-15T00:30'), 'Jagd am 15.8.2026')
   assert.equal(alsJahr('2026', bestand, H), '2026')
   assert.equal(alsJahr('2027', bestand, H), '2027')
   assert.equal(alsJahr(ALLE_JAHRE, bestand, H), ALLE_JAHRE)
-  // Ein Jahr, das weder im Bestand noch das aktuelle ist -> zurueck auf "Alle",
-  // statt alles auszublenden.
-  assert.equal(alsJahr('2024', bestand, H), ALLE_JAHRE)
+  // **Ein leeres Jahr INNERHALB des Zeitraums ist jetzt gueltig, nicht mehr
+  // "Alle"** — das ist die Aenderung vom 04.08.2026 abends, an ihrer schaerfsten
+  // Stelle. Bis dahin fiel 2024 hier zurueck, weil es im Bestand fehlte.
+  assert.equal(alsJahr('2024', bestand, H), '2024')
+  // **Die Schranke greift weiter, nur an anderer Stelle — und die Zusicherung
+  // liegt AUF der Grenze, nicht daneben.** Ein erster Anlauf pruefte 1990 gegen
+  // eine Untergrenze bei 1997 und haette jede Verschiebung um sechs Jahre
+  // durchgelassen (Codex 04.08.2026, Punkt 10; dieselbe Falle wie beim
+  // Aprilgrenzen-Test am 03.08.).
+  assert.equal(alsJahr('1997', bestand, H), '1997', 'Positivkontrolle: genau die Untergrenze')
+  assert.equal(alsJahr('1996', bestand, H), ALLE_JAHRE, 'ein Jahr darunter faellt zurueck')
+  // …und nach vorn — der Zeitraum reicht zurueck, nicht voraus.
+  assert.equal(alsJahr('2028', bestand, H), ALLE_JAHRE, 'ein Jahr ueber dem Bestand')
   assert.equal(alsJahr('quatsch', bestand, H), ALLE_JAHRE)
-  // **Leerer Bestand: das AKTUELLE Jahr bleibt waehlbar** (es steht im Menue und
-  // liefert eine leere Liste), jedes andere faellt zurueck. Vorher fiel hier
-  // jedes Jahr zurueck — die Zusicherung war mit der woertlichen Lesart der
-  // Vorgabe nicht mehr wahr.
+  // **Leerer Bestand: der ganze Zeitraum bleibt waehlbar** (jedes Jahr steht im
+  // Menue und liefert eine leere Liste), alles davor und danach faellt zurueck.
   assert.equal(alsJahr('2026', [], H), '2026')
-  assert.equal(alsJahr('2027', [], H), ALLE_JAHRE)
+  assert.equal(alsJahr('2010', [], H), '2010', 'leeres Jahr im Zeitraum, leerer Bestand')
+  assert.equal(alsJahr('2027', [], H), ALLE_JAHRE, 'die Zukunft bleibt draussen')
 
   // --- Voreinstellung: das AKTUELLE Jagdjahr (Moritz, 04.08.2026) ---
   // `heute` wird eingespeist, weil eine Zusicherung gegen `new Date()` nur an
@@ -738,9 +789,9 @@ assert.equal(namensvorschlag('2026-08-15T00:30'), 'Jagd am 15.8.2026')
   // Ein ausdrueckliches "Alle" schlaegt die Voreinstellung — sonst waere der
   // Klick darauf wirkungslos.
   assert.equal(alsJahr(ALLE_JAHRE, bestand, H), ALLE_JAHRE)
-  // Ein unbekanntes Jahr geht NICHT auf das aktuelle: der Nutzer wollte
-  // ausdruecklich ein anderes.
-  assert.equal(alsJahr('2024', bestand, H), ALLE_JAHRE)
+  // Ein Jahr AUSSERHALB des Zeitraums geht NICHT auf das aktuelle: der Nutzer
+  // wollte ausdruecklich ein anderes. Wieder direkt an der Grenze gemessen.
+  assert.equal(alsJahr('1996', bestand, H), ALLE_JAHRE)
 }
 
 // --- aktuellesJagdjahr: die Aprilgrenze, in Berliner Zeit -------------------
