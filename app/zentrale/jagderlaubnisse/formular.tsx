@@ -6,17 +6,19 @@ import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../schreiben'
 import {
   alsDatum,
-  alsEuro,
   alsEinloeseErgebnis,
   alsSpalten,
   alsStatus,
   betragFehler,
+  betragKanonisch,
   effektiverStatus,
   entgeltSpalten,
+  entgeltZeile,
   einloeseText,
   jagdjahrEnde,
   pruefeEntwurf,
   zuteilungsArt,
+  INTERVALLE,
   STATUS_LABEL,
   type Entwurf,
 } from './scheine'
@@ -39,7 +41,9 @@ export type ScheinZeile = {
   entgeltlich: boolean | null
   /** Migration 104. Kommt als Zahl an; `string` steht defensiv daneben, s. `alsEuro`. */
   entgelt_betrag: string | number | null
-  entgelt_faellig: string | null
+  /** Migration 105. `entgelt_faellig` aus 104 ist abgelöst und wird nicht mehr geladen. */
+  entgelt_intervall: string | null
+  entgelt_erste_zahlung: string | null
 }
 
 /**
@@ -91,9 +95,22 @@ export default function Ausstellen({
   // Keine Vorbelegung: die Angabe soll entschieden werden, nicht ererbt.
   const [entgeltlich, setEntgeltlich] = useState<boolean | null>(null)
   const [betrag, setBetrag] = useState('')
-  const [faellig, setFaellig] = useState('')
+  // Voreingestellt jährlich (Moritz, 05.08.2026) — und zwar aus `INTERVALLE`,
+  // nicht als getippter Schlüssel: eine zweite Stelle, die `'jaehrlich'`
+  // buchstabiert, wäre eine Stelle zu viel für einen Wert, den ein CHECK prüft.
+  const [intervall, setIntervall] = useState<string>(INTERVALLE[0][0])
+  const [ersteZahlung, setErsteZahlung] = useState('')
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
+  /**
+   * Die Konfliktmeldung EINER Listenzeile, gehalten von der Elternkomponente.
+   *
+   * Sie kann nicht in der Zeile selbst stehen: deren React-Schlüssel trägt den
+   * Serverstand mit, und im Konfliktfall hat der sich gerade geändert — der
+   * `router.refresh()` unmittelbar nach der Meldung setzt die Zeile also neu
+   * auf und löscht ihren Zustand. (Codex P2-12, 05.08.2026)
+   */
+  const [konflikt, setKonflikt] = useState<string | null>(null)
 
   /**
    * Der Riegel gegen doppeltes Absenden ist ein Ref, kein State.
@@ -105,7 +122,9 @@ export default function Ausstellen({
    */
   const inArbeit = useRef(false)
 
-  const entwurf: Entwurf = { name, email, von, bis, art, standIds, auflagen, entgeltlich, betrag, faellig }
+  const entwurf: Entwurf = {
+    name, email, von, bis, art, standIds, auflagen, entgeltlich, betrag, intervall, ersteZahlung,
+  }
 
   const absenden = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -161,10 +180,12 @@ export default function Ausstellen({
       setEmail('')
       setAuflagen('')
       setEntgeltlich(null)
-      // Mit der Entgeltlichkeit, aus demselben Grund: Betrag und Fälligkeit
-      // sind je Person verhandelt, nicht je Sitzung.
+      // Mit der Entgeltlichkeit, aus demselben Grund: Betrag und Zahlungsplan
+      // sind je Person verhandelt, nicht je Sitzung. Das Intervall geht auf
+      // seine Voreinstellung zurück, nicht auf leer — es IST eine Vorgabe.
       setBetrag('')
-      setFaellig('')
+      setIntervall(INTERVALLE[0][0])
+      setErsteZahlung('')
       router.refresh()
     } catch (err: unknown) {
       setFehler(err instanceof Error ? err.message : 'Der Schein konnte nicht angelegt werden.')
@@ -306,32 +327,57 @@ export default function Ausstellen({
               <div className="jes-entgelt">
                 <label>
                   <span>Betrag</span>
-                  <input
-                    value={betrag}
-                    onChange={(e) => setBetrag(e.target.value)}
-                    placeholder="z. B. 1.500,50"
-                    inputMode="decimal"
-                    maxLength={14}
-                    autoComplete="off"
-                  />
+                  {/* Das „€" steht NEBEN dem Feld, nie darin: `betragAlsZahl`
+                      verlangt reine Ziffern mit deutschem Trenner, und
+                      „1.500,00 €" fiele durch die Regex — der Wert wäre beim
+                      nächsten Speichern still weg. */}
+                  <span className="mit-einheit">
+                    <input
+                      value={betrag}
+                      onChange={(e) => setBetrag(e.target.value)}
+                      // Beim Verlassen des Feldes die einheitliche Form
+                      // (Moritz, 05.08.2026). Unlesbares bleibt stehen, damit
+                      // der Nutzer seine Eingabe neben der Fehlermeldung
+                      // wiederfindet, statt sie kommentarlos zu verlieren.
+                      onBlur={() => setBetrag(betragKanonisch(betrag))}
+                      placeholder="z. B. 1.500,50"
+                      inputMode="decimal"
+                      maxLength={14}
+                      autoComplete="off"
+                    />
+                    {/* KEIN `aria-hidden`: das „€" ist die Einheit, nicht
+                        Zierrat. Es steht im Label, also liest eine
+                        Vorlesesoftware „Betrag €" — verborgen bliebe nur
+                        „Betrag" und eine nackte Zahl, bei einer
+                        Geldvereinbarung mehrdeutig. (Codex P3-9, 05.08.2026) */}
+                    <span>€</span>
+                  </span>
                 </label>
                 <label>
-                  <span>Fällig</span>
+                  <span>Zahlungsintervall</span>
+                  {/* Kein leerer Eintrag: „jährlich" ist die Voreinstellung,
+                      und ein „keins" daneben wäre eine vierte Antwort auf eine
+                      Frage mit drei. Wer gar nichts vereinbaren will, lässt den
+                      Betrag leer — dann steht das Intervall auf keinem Blatt
+                      (`entgeltZeile`). */}
+                  <select value={intervall} onChange={(e) => setIntervall(e.target.value)}>
+                    {INTERVALLE.map(([wert, text]) => (
+                      <option key={wert} value={wert}>{text}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Erste Zahlung am</span>
                   <input
-                    value={faellig}
-                    onChange={(e) => setFaellig(e.target.value)}
-                    placeholder="z. B. jährlich zum 1. April"
-                    maxLength={80}
-                    // (Schlusslesung 05.08.2026, Befund 3)
-                    // Risiko wie bei den Auflagen, nur hier billig zu haben.
-                    // Riegel gegen einen Text, der das Blatt sprengt — dasselbe
-                    autoComplete="off"
+                    type="date"
+                    value={ersteZahlung}
+                    onChange={(e) => setErsteZahlung(e.target.value)}
                   />
                 </label>
                 <p className="jes-hinweis">
-                  Beides darf offenbleiben. Auf dem gedruckten Blatt erscheint es
-                  nur, wenn du es dort ausdrücklich ankreuzt — der Schein wird
-                  auch Polizeibeamten vorgezeigt.
+                  Betrag und Termin dürfen offenbleiben. Auf dem gedruckten Blatt
+                  erscheinen sie nur, wenn du es dort ausdrücklich ankreuzt — der
+                  Schein wird auch Polizeibeamten vorgezeigt.
                 </p>
               </div>
             ) : null}
@@ -372,6 +418,19 @@ export default function Ausstellen({
 
       <section className="zentrale-block">
         <h2>Ausgestellte Scheine</h2>
+        {/* Der Konflikt einer einzelnen Zeile steht HIER und nicht dort: die
+            Zeile wird nach dem `router.refresh()` neu aufgesetzt (ihr Schlüssel
+            trägt den Serverstand), ihr lokaler Fehlerzustand ginge dabei
+            verloren. `role="alert"` sagt es auch der Vorlesesoftware, denn die
+            Meldung erscheint ohne Seitenwechsel. */}
+        {konflikt ? (
+          <p className="jes-fehler" role="alert">
+            {konflikt}{' '}
+            <button type="button" onClick={() => setKonflikt(null)}>
+              Verstanden
+            </button>
+          </p>
+        ) : null}
         {scheine.length === 0 ? (
           <p className="zentrale-leer">Für dieses Revier ist noch kein Schein ausgestellt.</p>
         ) : (
@@ -385,19 +444,21 @@ export default function Ausstellen({
                 richtige Richtung, denn die Zeile hat sich unter ihm bewegt.
                 (Codex, 31.07.2026)
 
-                **Betrag und Fälligkeit MÜSSEN mit hinein** (Fremdprüfung
-                05.08.2026, S6): fehlten sie, setzte `router.refresh()` die
-                Zeile nach einer konkurrierenden Änderung genau dieser zwei
-                Spalten nicht neu auf. Der lokale Vergleichsstand bliebe alt,
-                und jeder weitere Speicherversuch scheiterte **dauerhaft** am
-                Compare-and-Swap — ein Zustand, aus dem nur ein harter Reload
-                herausführt. */}
+                **JEDE geschriebene Entgelt-Spalte MUSS mit hinein**
+                (Fremdprüfung 05.08.2026, S6): fehlte eine, setzte
+                `router.refresh()` die Zeile nach einer konkurrierenden Änderung
+                genau dieser Spalte nicht neu auf. Der lokale Vergleichsstand
+                bliebe alt, und jeder weitere Speicherversuch scheiterte
+                **dauerhaft** am Compare-and-Swap — ein Zustand, aus dem nur ein
+                harter Reload herausführt. Mit 105 sind es zwei mehr; der
+                Schlüssel wächst mit `zuVergleichen` weiter unten mit. */}
             {scheine.map((s) => (
               <Schein
-                key={`${s.id}:${s.status}:${s.valid_until}:${s.entgeltlich}:${s.entgelt_betrag}:${s.entgelt_faellig}`}
+                key={`${s.id}:${s.status}:${s.valid_until}:${s.entgeltlich}:${s.entgelt_betrag}:${s.entgelt_intervall}:${s.entgelt_erste_zahlung}`}
                 schein={s}
                 heute={heute}
                 staende={staende}
+                meldeKonflikt={setKonflikt}
               />
             ))}
           </ul>
@@ -423,10 +484,15 @@ function Schein({
   schein,
   heute,
   staende,
+  meldeKonflikt,
 }: {
   schein: ScheinZeile
   heute: string
   staende: StandWahl[]
+  /** Meldet einen Compare-and-Swap-Konflikt an die Elternkomponente, die den
+   *  folgenden Remount dieser Zeile überlebt. `null` räumt ihn weg. S.
+   *  `speichern()`. */
+  meldeKonflikt: (text: string | null) => void
 }) {
   const router = useRouter()
   const roh = alsStatus(schein.status)
@@ -448,7 +514,8 @@ function Schein({
     // richtig, wenn schon eine Zahl ankommt — und Postgres vergleicht
     // `eq.1200.5` gegen `numeric 1200.50` numerisch korrekt.
     betrag: schein.entgelt_betrag === null ? null : Number(schein.entgelt_betrag),
-    faellig: schein.entgelt_faellig,
+    intervall: schein.entgelt_intervall,
+    ersteZahlung: schein.entgelt_erste_zahlung,
   })
   const [bis, setBis] = useState(schein.valid_until)
   /**
@@ -468,27 +535,43 @@ function Schein({
   // Nachtragbar, weil es sonst niemand nachtragen könnte: das Ausstellformular
   // erreicht die vier Altscheine nicht mehr.
   const [neuEntgeltlich, setNeuEntgeltlich] = useState<boolean | null>(schein.entgeltlich)
-  // Als Text, damit die deutsche Schreibweise beim Tippen erhalten bleibt.
-  // `numeric` kommt als String aus PostgREST („1200.00"); fuer die Anzeige im
-  // Feld wird daraus die getippte Form.
-  // Der gespeicherte Wert ist eine Zahl — Tausenderpunkte sind beim Speichern
-  // verschwunden, Nachkommanullen auch. Aus `1200` wird „1200", aus `1200.5`
-  // wird „1200,5"; NICHT die getippte und auch nicht die kanonische
-  // Zwei-Nachkomma-Form. `betragAlsZahl` liest beides sauber zurueck, also
-  // bleibt `geaendert` korrekt false. (Zwei Kommentare haben hier schon etwas
-  // Falsches behauptet — Schlusslesung 05.08.2026, Befund 2.)
+  // Als Text, damit die deutsche Schreibweise beim Tippen erhalten bleibt, und
+  // seit 105 gleich in der **kanonischen** Form: aus `1200` wird „1.200,00",
+  // aus `1200.5` wird „1.200,50". Vorher stand hier die rohe Zahl mit
+  // getauschtem Trenner („1200", „1200,5") — dasselbe Feld zeigte also je nach
+  // Herkunft zwei verschiedene Schreibweisen desselben Betrags.
+  //
+  // **`geaendert` bleibt davon unberührt**, und das ist der Grund, warum die
+  // Umformung hier gefahrlos ist: verglichen wird über `betragAlsZahl`, und die
+  // liest „1.200,00" und „1200" beide als `1200`. (Zwei Kommentare haben an
+  // dieser Stelle schon etwas Falsches behauptet — Schlusslesung 05.08.2026,
+  // Befund 2.)
   const [neuBetrag, setNeuBetrag] = useState(
-    schein.entgelt_betrag === null ? '' : String(schein.entgelt_betrag).replace('.', ','),
+    schein.entgelt_betrag === null ? '' : betragKanonisch(Number(schein.entgelt_betrag)),
   )
-  const [neuFaellig, setNeuFaellig] = useState(schein.entgelt_faellig ?? '')
+  // **Der Rohwert, kein `?? 'jaehrlich'`** — dieselbe Falle wie beim Status
+  // darunter (Codex, 05.08.2026, W1/W3/S5). Eine Voreinstellung machte aus
+  // einem `entgelt_intervall = null` beim ersten Rendern eine Änderung: der
+  // Speichern-Knopf wäre ohne Zutun klickbar, und wer nur das Gültigkeitsdatum
+  // verlängert, schriebe ungefragt „jährlich" mit. Die Voreinstellung gehört
+  // ins AUSSTELL-Formular, wo sie eine Vorgabe für etwas Neues ist — hier wäre
+  // sie eine Behauptung über etwas Bestehendes.
+  const [neuIntervall, setNeuIntervall] = useState<string>(schein.entgelt_intervall ?? '')
+  const [neuErsteZahlung, setNeuErsteZahlung] = useState<string>(
+    schein.entgelt_erste_zahlung ?? '',
+  )
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
   const [kopiert, setKopiert] = useState(false)
   const inArbeit = useRef(false)
 
-  const entgeltZusatz = [alsEuro(schein.entgelt_betrag), schein.entgelt_faellig]
-    .filter(Boolean)
-    .join(', ')
+  // Dieselbe Zeile wie auf dem Blatt, aus derselben Funktion — sonst stünde
+  // hier etwas anderes als auf dem Papier, das aus dieser Zeile gedruckt wird.
+  const entgeltZusatz = entgeltZeile(
+    schein.entgelt_betrag,
+    schein.entgelt_intervall,
+    schein.entgelt_erste_zahlung,
+  )
 
   const art = zuteilungsArt(schein.zone_ids, schein.stand_ids)
   const zuteilung =
@@ -499,7 +582,12 @@ function Schein({
         : nenneStaende(schein.stand_ids ?? [], staende)
 
   // Dieselbe Regel wie im Ausstellformular, aus derselben Funktion.
-  const zuSchreiben = entgeltSpalten(neuEntgeltlich, neuBetrag, neuFaellig)
+  const zuSchreiben = entgeltSpalten({
+    entgeltlich: neuEntgeltlich,
+    betrag: neuBetrag,
+    intervall: neuIntervall,
+    ersteZahlung: neuErsteZahlung,
+  })
 
   // Ein unlesbarer Betrag ergibt `null` — genau wie ein leeres Feld. Bei einem
   // Schein, dessen Betrag schon `null` war, faellt der Vergleich damit auf
@@ -514,7 +602,8 @@ function Schein({
     (neuerStatus || null) !== basis.status ||
     neuEntgeltlich !== basis.entgeltlich ||
     zuSchreiben.entgelt_betrag !== basis.betrag ||
-    zuSchreiben.entgelt_faellig !== basis.faellig ||
+    zuSchreiben.entgelt_intervall !== basis.intervall ||
+    zuSchreiben.entgelt_erste_zahlung !== basis.ersteZahlung ||
     betragUnlesbar
 
   /**
@@ -570,18 +659,25 @@ function Schein({
       // **Jede Spalte im UPDATE braucht ihre eigene Bedingung.** Eine dritte
       // Spalte ohne dritten Abgleich hätte das Loch wieder aufgemacht, gegen
       // das die zwei bestehenden gebaut wurden (Codex, 31.07.2026).
-      // **Alle fuenf geschriebenen Spalten in einer Schleife.** Jede Spalte im
-      // UPDATE braucht ihre Bedingung, sonst ist sie das Loch im
-      // Compare-and-Swap (Codex, 31.07.2026). Als Liste statt als fuenf
-      // Verzweigungen: eine sechste Spalte kostet dann einen Eintrag.
+      // **Jede geschriebene Spalte braucht ihre Bedingung**, sonst ist sie das
+      // Loch im Compare-and-Swap (Codex, 31.07.2026). Als Liste statt als
+      // Verzweigungen: eine weitere Spalte kostet dann einen Eintrag.
       // `null` braucht `.is()` — `.eq(spalte, null)` wird zu `spalte=eq.null`
       // und trifft nie.
+      //
+      // **`entgelt_faellig` fehlt hier, weil es auch nicht mehr GESCHRIEBEN
+      // wird.** Die Spalte ist seit 105 stillgelegt und per CHECK auf `NULL`
+      // festgenagelt — es gibt keinen Schreiber mehr, dessen Änderung dieses
+      // UPDATE verlieren könnte. Ein früherer Entwurf schrieb sie hier auf
+      // `null`, ohne sie zu vergleichen; das hätte die Eingabe eines Tabs mit
+      // dem alten Bundle still gelöscht (Codex P1/P2, 05.08.2026).
       const zuVergleichen: readonly (readonly [string, unknown])[] = [
         ['valid_until', basis.bis],
         ['status', basis.status],
         ['entgeltlich', basis.entgeltlich],
         ['entgelt_betrag', basis.betrag],
-        ['entgelt_faellig', basis.faellig],
+        ['entgelt_intervall', basis.intervall],
+        ['entgelt_erste_zahlung', basis.ersteZahlung],
       ]
       for (const [spalte, wert] of zuVergleichen) {
         abfrage = wert === null ? abfrage.is(spalte, null) : abfrage.eq(spalte, wert)
@@ -591,9 +687,18 @@ function Schein({
       if (error) throw new Error(error.message)
 
       if (!data || data.length === 0) {
-        setFehler(
-          'Nicht gespeichert: der Schein wurde inzwischen an anderer Stelle geändert. ' +
-            'Die Liste lädt neu — schau dir den neuen Stand an und entscheide noch einmal.'
+        // **Die Konfliktmeldung geht nach OBEN, nicht in den lokalen Zustand**
+        // (Codex P2-12, 05.08.2026). Der React-Schlüssel dieser Zeile trägt den
+        // Serverstand mit — genau im Konfliktfall hat der sich geändert, das
+        // folgende `router.refresh()` setzt die Zeile also neu auf und ein
+        // `setFehler` hier wäre nach einem Aufblitzen wieder `null`. Der Nutzer
+        // sähe zurückgesetzte Felder und keine Erklärung: ein fehlgeschlagener
+        // Schreibvorgang, der sich wie ein geglückter liest.
+        // Die Elternkomponente ist nicht keyed und überlebt den Refresh.
+        meldeKonflikt(
+          `„${schein.holder_name}" wurde nicht gespeichert: der Schein ist inzwischen an ` +
+            'anderer Stelle geändert worden. Die Liste zeigt jetzt den neuen Stand — ' +
+            'schau ihn dir an und entscheide noch einmal.'
         )
         router.refresh()
         return
@@ -604,8 +709,15 @@ function Schein({
         status: neuerStatus || null,
         entgeltlich: neuEntgeltlich,
         betrag: zuSchreiben.entgelt_betrag,
-        faellig: zuSchreiben.entgelt_faellig,
+        intervall: zuSchreiben.entgelt_intervall,
+        ersteZahlung: zuSchreiben.entgelt_erste_zahlung,
       })
+      // Ein geglücktes Speichern räumt eine stehengebliebene Konfliktmeldung
+      // weg. Ohne diese Zeile stünde über einem gerade erfolgreichen Vorgang
+      // weiterhin „wurde nicht gespeichert", bis jemand „Verstanden" klickt —
+      // ein Erfolg unter einer Fehlermeldung ist dasselbe Übel wie ein
+      // Fehlschlag ohne. (Schlusslesung 05.08.2026, Befund 3a)
+      meldeKonflikt(null)
       router.refresh()
     } catch (err: unknown) {
       setFehler(err instanceof Error ? err.message : 'Die Änderung konnte nicht gespeichert werden.')
@@ -641,7 +753,9 @@ function Schein({
           {schein.entgeltlich === null ? (
             <span className="jes-fehlt">nicht angegeben — vor dem Ausdruck ergänzen</span>
           ) : schein.entgeltlich ? (
-            `Entgeltlich${entgeltZusatz && ` — ${entgeltZusatz}`}`
+            // Ternär, nicht `&&`: `entgeltZeile` liefert `null` statt `''`, und
+            // `null && …` ergäbe `null` — im Template stünde „Entgeltlichnull".
+            `Entgeltlich${entgeltZusatz ? ` — ${entgeltZusatz}` : ''}`
           ) : (
             'Unentgeltlich'
           )}
@@ -731,23 +845,55 @@ function Schein({
           <>
             <label>
               <span>Betrag</span>
-              <input
-                value={neuBetrag}
-                onChange={(e) => setNeuBetrag(e.target.value)}
-                placeholder="1.500,50"
-                inputMode="decimal"
-                maxLength={14}
-                size={10}
-              />
+              {/* „€" neben dem Feld, nie darin — s. das Ausstellformular. */}
+              <span className="mit-einheit">
+                <input
+                  value={neuBetrag}
+                  onChange={(e) => setNeuBetrag(e.target.value)}
+                  onBlur={() => setNeuBetrag(betragKanonisch(neuBetrag))}
+                  placeholder="1.500,50"
+                  inputMode="decimal"
+                  maxLength={14}
+                  size={10}
+                />
+                <span>€</span>
+              </span>
             </label>
             <label>
-              <span>Fällig</span>
+              <span>Intervall</span>
+              {/* **„nicht vereinbart" steht IMMER zur Wahl, anders als beim
+                  Status- und beim Erteilungs-Feld darüber.** Dort ist der leere
+                  Wert ein Altzustand, den man nicht wiederherstellen können
+                  muss; hier ist er eine gültige Vereinbarung („Betrag ja,
+                  Rhythmus offen"). Ohne diesen Eintrag wäre ein einmal
+                  gewähltes Intervall über die Oberfläche nie wieder
+                  wegzubekommen — nur noch über den Umweg „unentgeltlich und
+                  zurück". (Ponytail, 05.08.2026, Randbefund a)
+
+                  Ein unbekannter Wert kommt dazu, wenn er der Ist-Zustand ist:
+                  eine Auswahl, die ihn nicht enthält, überschriebe ihn beim
+                  ersten Speichern still. **Die `null`-Prüfung ist nicht
+                  redundant, obwohl `INTERVALLE.some(null)` schon `false`
+                  ergibt** — ohne sie stünde für einen Schein ohne Intervall
+                  eine ZWEITE leere Option ohne Beschriftung neben „nicht
+                  vereinbart". */}
+              <select value={neuIntervall} onChange={(e) => setNeuIntervall(e.target.value)}>
+                <option value="">nicht vereinbart</option>
+                {basis.intervall !== null &&
+                !INTERVALLE.some(([wert]) => wert === basis.intervall) ? (
+                  <option value={basis.intervall}>{basis.intervall}</option>
+                ) : null}
+                {INTERVALLE.map(([wert, text]) => (
+                  <option key={wert} value={wert}>{text}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Erste Zahlung</span>
               <input
-                value={neuFaellig}
-                onChange={(e) => setNeuFaellig(e.target.value)}
-                placeholder="jährlich zum 1. April"
-                maxLength={80}
-                size={18}
+                type="date"
+                value={neuErsteZahlung}
+                onChange={(e) => setNeuErsteZahlung(e.target.value)}
               />
             </label>
           </>

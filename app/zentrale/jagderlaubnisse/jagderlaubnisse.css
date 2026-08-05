@@ -54,7 +54,8 @@
 .jes-eingriff input:focus-visible,
 .jes-eingriff select:focus-visible,
 .jes-eingriff a:focus-visible,
-.jes-entgelt input:focus-visible {
+.jes-entgelt input:focus-visible,
+.jes-entgelt select:focus-visible {
   outline: 2px solid var(--z-accent);
   outline-offset: 1px;
 }
@@ -297,7 +298,8 @@
 
 .jes-eingriff input,
 .jes-eingriff select,
-.jes-entgelt input {
+.jes-entgelt input,
+.jes-entgelt select {
   font: inherit;
   font-size: 0.875rem;
   color: var(--z-text-primary);
@@ -330,18 +332,52 @@
   outline-offset: 1px;
 }
 
-/* Betrag und Faelligkeit im Ausstellformular — nebeneinander, weil sie
-   zusammen EINE Vereinbarung sind. Aussehen und Fokus erben sie von den
-   `.jes-eingriff`-Regeln oben; eigen ist nur das Raster. */
+/* Betrag, Intervall und erste Zahlung im Ausstellformular — nebeneinander,
+   weil sie zusammen EINE Vereinbarung sind. Aussehen und Fokus erben sie von
+   den `.jes-eingriff`-Regeln oben, die dafuer seit 105 `.jes-entgelt select`
+   mitnennen; eigen ist hier nur das Raster.
+
+   `auto-fit` statt fester Spalten und statt eines Bruchpunkts: ein
+   `date`-Feld nimmt sich eine Mindestbreite, egal was das Raster sagt, und
+   drei Felder in einer 1fr-1fr-1fr-Reihe brechen dann am Laptop. Es waere der
+   erste BREITEN-Bruchpunkt in dieser Datei — `druck.css` hat sehr wohl
+   `@media`-Regeln, aber fuer `print` und `screen`, nicht fuer Fensterbreiten.
+   (Der erste Entwurf behauptete hier „die erste @media-Regel in den
+   Zentrale-Stylesheets ueberhaupt", und das war schlicht falsch: Codex P3-10,
+   05.08.2026.) `auto-fit` kommt ohne aus und gibt mittleren Breiten zwei
+   Spalten statt sofort einer. */
 .jes-entgelt {
   display: grid;
-  grid-template-columns: 1fr 1.6fr;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 8px 12px;
   margin-top: 8px;
 }
 
-.jes-entgelt input { width: 100%; }
+.jes-entgelt input,
+.jes-entgelt select { width: 100%; }
 .jes-entgelt .jes-hinweis { grid-column: 1 / -1; }
+
+/* Die Einheit steht NEBEN dem Feld, nie darin: `betragAlsZahl` verlangt reine
+   Ziffern mit deutschem Trenner, ein „€" im Wert liesse den Betrag beim
+   naechsten Speichern still verschwinden.
+
+   `text-transform` und `letter-spacing` sind Ruecknahmen, keine Setzungen:
+   `.jes-entgelt label > span` und `.jes-eingriff label > span` treffen JEDES
+   direkte span-Kind und setzen es als Feldbeschriftung (klein, versal,
+   gesperrt), gemeint ist damit aber nur das erste.
+   Die FARBE steht hier nicht noch einmal, weil dieselben Selektoren sie schon
+   auf den gewuenschten Wert setzen — nicht, weil sie sich vererbt. Der
+   Unterschied ist real: dies hier ist ein direkt getroffenes Element, kein
+   Nachfahre. (Codex P3-10, 05.08.2026, der erste Entwurf schrieb „erbt".) */
+.jes-entgelt .mit-einheit,
+.jes-eingriff .mit-einheit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
 
 /* Erbt Aussehen und Fokus von `.jes-eingriff button` (s. oben). Eigen ist nur
    die Absetzung nach rechts: alles links davon aendert die Zeile, dies liest

@@ -4,12 +4,12 @@ import { typLabel } from '../../../objekte'
 import {
   alsBerlinDatum,
   alsDatum,
-  alsEuro,
   alsHektar,
   alsStatus,
   darfGedrucktWerden,
   effektiverStatus,
   entgeltAufDemBlatt,
+  entgeltZeile,
   heuteUtc,
   landesrecht,
   STATUS_LABEL,
@@ -60,7 +60,9 @@ type ScheinZeile = {
   stand_ids: string[] | null
   entgeltlich: boolean | null
   entgelt_betrag: string | number | null
-  entgelt_faellig: string | null
+  /** Migration 105. `entgelt_faellig` aus 104 ist abgelöst und wird nicht geladen. */
+  entgelt_intervall: string | null
+  entgelt_erste_zahlung: string | null
   created_at: string | null
   status: string | null
 }
@@ -101,7 +103,7 @@ export default async function ScheinDruckSeite({
       .select(
         'id, district_id, issuer_id, holder_name, holder_jagdschein_nr, valid_from, ' +
           'valid_until, auflagen, zone_ids, stand_ids, entgeltlich, entgelt_betrag, ' +
-          'entgelt_faellig, created_at, status'
+          'entgelt_intervall, entgelt_erste_zahlung, created_at, status'
       )
       .eq('id', id),
     'Der Begehungsschein'
@@ -252,15 +254,25 @@ export default async function ScheinDruckSeite({
   )
 
   const { hinweise, behoerde } = landesrecht(revier.bundesland, schein.entgeltlich)
-  const betrag = alsEuro(schein.entgelt_betrag)
-  const faellig = schein.entgelt_faellig?.trim() || null
+  // Dieselbe Zeile wie in der Liste, aus derselben Funktion: „1.500,00 € ·
+  // jährlich · erste Zahlung am 01.04.2027". Sie liefert `null`, wenn nichts
+  // vereinbart ist — das Intervall allein zählt bewusst nicht, weil es aus
+  // einer Voreinstellung stammen kann, die niemand angefasst hat.
+  const entgelt = entgeltZeile(
+    schein.entgelt_betrag,
+    schein.entgelt_intervall,
+    schein.entgelt_erste_zahlung,
+  )
   // Nur anbieten, wenn es etwas zu drucken GIBT — ein Haekchen ohne Wirkung
   // ist schlimmer als keins.
-  const hatEntgelt = schein.entgeltlich === true && (betrag !== null || faellig !== null)
+  const hatEntgelt = schein.entgeltlich === true && entgelt !== null
   const flaeche = alsHektar(revier.area_ha)
   // `alsBerlinDatum`, NICHT `alsDatum`: `created_at` ist ein `timestamptz`. Der
-  // Schnitt am ISO-String läge einen Tag zu früh, wenn der Schein zwischen 00:00
-  // und 02:00 Berliner Zeit angelegt wurde. Derselbe Fehler wie bei
+  // Schnitt am ISO-String läge einen Tag zu früh, wenn der Schein kurz nach
+  // Berliner Mitternacht angelegt wurde — im Sommer bis 02:00, im Winter nur
+  // bis 01:00, weil der UTC-Versatz dann eine Stunde kleiner ist. (Der erste
+  // Entwurf schrieb pauschal „zwischen 00:00 und 02:00" und war damit für das
+  // halbe Jahr falsch: Codex P3-10, 05.08.2026.) Derselbe Fehler wie bei
   // `kontakte.inaktiv_seit` (Fremdprüfung 04.08.2026, Punkt 3).
   // `alsBerlinDatum` liefert bei Unbrauchbarem `'—'`; auf einem Rechtsdokument
   // ist ein Gedankenstrich hinter „Ausgestellt am" schlechter als gar keine
@@ -289,7 +301,7 @@ export default async function ScheinDruckSeite({
         <p className="druck-anleitung">
           <label>
             <input type="checkbox" id="zeige-entgelt" />
-            Betrag und Fälligkeit mitdrucken
+            Betrag und Zahlungsplan mitdrucken
           </label>
           <span>
             Ohne Häkchen ist das Blatt der Nachweis zum Mitführen (§ 19 NJagdG) — mit
@@ -376,11 +388,19 @@ export default async function ScheinDruckSeite({
         </div>
 
         {hatEntgelt ? (
-          <div className="feld feld--entgelt">
+          // **Das `style` ist der Riegel, nicht das Stylesheet** (Codex P3-1,
+          // 05.08.2026, „high"). Bis dahin versteckte allein
+          // `.feld--entgelt { display: none }` aus `druck.css` den Preis — lädt
+          // diese Datei nicht (gespeicherte Seite, später offline geöffnet,
+          // blockierte Ressource), stand der Betrag ungefragt auf einem Blatt,
+          // das nach § 19 NJagdG Polizeibeamten vorgezeigt wird. Genau der
+          // Fehlerfall, den die Datei selbst als den teuersten benennt.
+          // Ein Inline-`display:none` gilt ohne jedes Stylesheet; sichtbar wird
+          // der Block nur noch durch die `!important`-Regel am gesetzten
+          // Häkchen, und die schlägt eine Inline-Deklaration ohne `!important`.
+          <div className="feld feld--entgelt" style={{ display: 'none' }}>
             <p className="mark">Entgelt</p>
-            <div className="wert">
-              {[betrag, faellig].filter(Boolean).join(' · ')}
-            </div>
+            <div className="wert">{entgelt}</div>
           </div>
         ) : null}
 

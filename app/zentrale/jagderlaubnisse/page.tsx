@@ -91,8 +91,11 @@ export default async function JagderlaubnissePage({
     await supabase
       .from('hunting_licenses')
       .select(
+        // `entgelt_faellig` steht hier bewusst nicht mehr: seit 105 abgelöst,
+        // und was geladen wird, zeigt irgendwann jemand an.
         'id, holder_name, holder_email, holder_id, valid_from, valid_until, status, ' +
-          'auflagen, zone_ids, stand_ids, invite_code, entgeltlich, entgelt_betrag, entgelt_faellig'
+          'auflagen, zone_ids, stand_ids, invite_code, entgeltlich, entgelt_betrag, ' +
+          'entgelt_intervall, entgelt_erste_zahlung'
       )
       .eq('district_id', revier.id)
       .order('valid_until', { ascending: false }),

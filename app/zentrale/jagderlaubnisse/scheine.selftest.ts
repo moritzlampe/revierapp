@@ -16,10 +16,13 @@ import {
   alsStatus,
   betragAlsZahl,
   betragFehler,
+  betragKanonisch,
   darfGedrucktWerden,
   effektiverStatus,
   entgeltAufDemBlatt,
   entgeltSpalten,
+  entgeltZeile,
+  intervallText,
   jagdjahrEnde,
   landesrecht,
   pruefeEntwurf,
@@ -85,7 +88,8 @@ const gut: Entwurf = {
   auflagen: '',
   entgeltlich: false,
   betrag: '',
-  faellig: '',
+  intervall: 'jaehrlich',
+  ersteZahlung: '',
 }
 assert.equal(pruefeEntwurf(gut), null)
 assert.match(pruefeEntwurf({ ...gut, name: '   ' })!, /Name/)
@@ -151,21 +155,157 @@ assert.equal(betragFehler(''), null, 'kein Betrag ist kein Fehler')
 assert.equal(betragFehler('1.500,50'), null)
 assert.match(betragFehler('viel')!, /nicht lesbar/)
 
+// --- Die einheitliche Betragsform (Migration 105) ---
+// Was das Feld beim Verlassen anzeigt: immer zwei Nachkommastellen, immer
+// Tausenderpunkte.
+assert.equal(betragKanonisch('1500'), '1.500,00')
+assert.equal(betragKanonisch('1500,5'), '1.500,50')
+assert.equal(betragKanonisch('1.500,50'), '1.500,50', 'schon kanonisch bleibt gleich')
+assert.equal(betragKanonisch('500'), '500,00')
+assert.equal(betragKanonisch(''), '', 'leer bleibt leer, kein 0,00')
+// **Der Kern: Unlesbares bleibt STEHEN.** Ein Feld, das die Eingabe beim
+// Verlassen verschluckt, hat sie genommen, ohne es zu sagen — daneben steht
+// dann `betragFehler` und erklaert, was los ist.
+assert.equal(betragKanonisch('1.5oo'), '1.5oo')
+assert.equal(betragKanonisch('999999999'), '999999999', 'zu gross: unveraendert zurueck')
+// (Dass kein „€" im Wert landet, steht schon in den exakten Vergleichen oben —
+// `'1.500,00'` enthaelt keins. Der Riegel dagegen ist die Regex in
+// `betragAlsZahl`, und die pruefen die Muell-Faelle weiter oben.)
+//
+// **Die Spaltengrenze, und zwar auf der AUSGABE-Seite.** Der erste Entwurf
+// verglich hier nur den zurueckgeparsten Zahlenwert — er waere gruen geblieben,
+// wenn `betragKanonisch` am Maximum einfach die Eingabe unveraendert
+// durchreicht, also genau das Verhalten NICHT geprueft, das der Kommentar
+// behauptet. (Codex P1-9, 05.08.2026: „prueft nicht die behauptete
+// Ausgabeform.") Jetzt steht die kanonische Form exakt da.
+assert.equal(betragKanonisch('99999999,99'), '99.999.999,99')
+assert.equal(betragAlsZahl('99.999.999,99'), 99999999.99, 'und liest sich zurueck')
+// Der number-Zweig kennt die Spaltengrenze NICHT und soll sie nicht kennen: er
+// formatiert, was aus der DB kommt, und `numeric(10,2)` kann nichts Groesseres
+// liefern. Festgehalten, damit niemand eine Grenze hineinbaut, die dann einen
+// echten Wert verschluckt.
+assert.equal(betragKanonisch(99999999.99), '99.999.999,99')
+assert.equal(betragKanonisch(-20), '-20,00', 'negativ wird gezeigt, nicht verschluckt')
+assert.equal(betragKanonisch(Number.POSITIVE_INFINITY), '')
+// Aus der Datenbank kommt eine ZAHL, kein getippter Text — der Umweg ueber
+// „1200,00" und zurueck entfaellt seit dem Ponytail-Lauf.
+assert.equal(betragKanonisch(1200), '1.200,00')
+assert.equal(betragKanonisch(1200.5), '1.200,50')
+// Der Portal-Client ist untypisiert: eine vergessene Spalte liefert
+// `undefined`, `Number(undefined)` ist `NaN`. Das darf kein „NaN" ins Feld
+// schreiben.
+assert.equal(betragKanonisch(Number.NaN), '')
+
+// --- Zahlungsintervall (Migration 105) ---
+assert.equal(intervallText('jaehrlich'), 'jährlich')
+assert.equal(intervallText('quartalsweise'), 'quartalsweise')
+assert.equal(intervallText('monatlich'), 'monatlich')
+assert.equal(intervallText(null), null)
+assert.equal(intervallText(''), null)
+// Ein Wert, den eine spaetere Migration erlaubt und diese Fassung nicht kennt,
+// kommt ROH zurueck statt zu verschwinden — auf einem Blatt, das zwei Menschen
+// unterschreiben, ist eine unschoene Angabe besser als eine fehlende.
+assert.equal(intervallText('halbjaehrlich'), 'halbjaehrlich')
+
 // --- Die gemeinsame Entgelt-Regel ---
-assert.deepEqual(entgeltSpalten(true, '1.200', ' jährlich '), {
-  entgelt_betrag: 1200,
-  entgelt_faellig: 'jährlich',
-})
-// Der Kern: umschalten auf unentgeltlich nimmt das Entgelt MIT, egal was in
-// den Feldern steht.
-assert.deepEqual(entgeltSpalten(false, '1.200', 'jährlich'), {
-  entgelt_betrag: null,
-  entgelt_faellig: null,
-})
-assert.deepEqual(entgeltSpalten(null, '1.200', 'jährlich'), {
-  entgelt_betrag: null,
-  entgelt_faellig: null,
-})
+assert.deepEqual(
+  entgeltSpalten({
+    entgeltlich: true,
+    betrag: '1.200',
+    intervall: 'quartalsweise',
+    ersteZahlung: '2027-04-01',
+  }),
+  {
+    entgelt_betrag: 1200,
+    entgelt_intervall: 'quartalsweise',
+    entgelt_erste_zahlung: '2027-04-01',
+  },
+)
+// Leere Felder werden `null`, nicht `''` — sonst traegt die Spalte eine leere
+// Zeichenkette, und der CHECK auf die drei Intervalle schluege zu.
+assert.deepEqual(
+  entgeltSpalten({ entgeltlich: true, betrag: '', intervall: '', ersteZahlung: '' }),
+  {
+    entgelt_betrag: null,
+    entgelt_intervall: null,
+    entgelt_erste_zahlung: null,
+  },
+)
+// **Ein Intervall ohne lesbaren Betrag wird NICHT geschrieben** — dieselbe
+// Regel, nach der `entgeltZeile` es verschweigt. Sonst truege eine Zeile ohne
+// Betrag das „jaehrlich" aus der Formular-Voreinstellung, unsichtbar in jeder
+// Anzeige, und genau diese Behauptung lehnt der Kopf von 105 als
+// Spalten-Default ausdruecklich ab. Fuer die Kontenzuordnung, fuer die Moritz
+// die Spalte will, ist ein erfundenes Intervall schlechter als keins.
+assert.equal(
+  entgeltSpalten({ entgeltlich: true, betrag: '', intervall: 'jaehrlich', ersteZahlung: '' })
+    .entgelt_intervall,
+  null,
+  'kein Betrag, kein Intervall',
+)
+// Auch ein UNLESBARER Betrag zaehlt nicht als Betrag — er wird zu `null`, und
+// das Intervall darf ihn nicht ueberleben.
+assert.equal(
+  entgeltSpalten({ entgeltlich: true, betrag: 'viel', intervall: 'monatlich', ersteZahlung: '' })
+    .entgelt_intervall,
+  null,
+)
+// Der Termin steht dagegen fuer sich: eine Vereinbarung, deren Hoehe noch
+// offen ist, laesst 104 ausdruecklich zu.
+assert.equal(
+  entgeltSpalten({ entgeltlich: true, betrag: '', intervall: '', ersteZahlung: '2027-04-01' })
+    .entgelt_erste_zahlung,
+  '2027-04-01',
+)
+// Der Kern: umschalten auf unentgeltlich nimmt ALLES MIT, egal was in den
+// Feldern steht. Seit 105 sind es vier Spalten statt zwei — und das ist
+// zugleich der Riegel gegen `hunting_licenses_ohne_entgelt` (23514), der bei
+// `entgeltlich is not true` alle vier leer verlangt.
+for (const entgeltlich of [false, null]) {
+  assert.deepEqual(
+    entgeltSpalten({
+      entgeltlich,
+      betrag: '1.200',
+      intervall: 'jaehrlich',
+      ersteZahlung: '2027-04-01',
+    }),
+    {
+      entgelt_betrag: null,
+      entgelt_intervall: null,
+      entgelt_erste_zahlung: null,
+    },
+    `entgeltlich=${entgeltlich} muss alle vier Spalten leeren`,
+  )
+}
+
+// --- Die eine Entgelt-Zeile, in Liste und auf dem Blatt ---
+// **Das `\u00a0` ist Absicht und keine Kosmetik:** `Intl` setzt zwischen Zahl
+// und Waehrungszeichen ein GESCHUETZTES Leerzeichen (gemessen 05.08.2026, Code
+// Point a0). Als normales Leerzeichen getippt scheitert der Vergleich an einem
+// Unterschied, den niemand sieht — deshalb steht es hier als ESCAPE. Der erste
+// Entwurf trug ein literales a0 im Quelltext und daneben einen Kommentar, der
+// genau das Gegenteil behauptete. (Ponytail, 05.08.2026, Befund 3)
+// Die Erwartung wird BEWUSST nicht aus `alsEuro()` gebaut: ein Test, der seinen
+// Sollwert mit derselben Funktion erzeugt, die er prueft, kann nicht
+// fehlschlagen. (Die Falle vom 04.08.2026, Sortiertest mit eigenem Comparator.)
+assert.equal(
+  entgeltZeile(1500, 'jaehrlich', '2027-04-01'),
+  '1.500,00\u00a0€ · jährlich · erste Zahlung am 01.04.2027',
+)
+assert.equal(entgeltZeile(1500, null, null), '1.500,00\u00a0€')
+// **Ein Intervall ohne Betrag sagt nichts** und faellt weg: es kann aus der
+// Voreinstellung des Formulars stammen, die niemand angefasst hat.
+assert.equal(entgeltZeile(null, 'jaehrlich', null), null)
+// Ein TERMIN ohne Betrag steht dagegen fuer sich — eine Vereinbarung, deren
+// Hoehe noch offen ist, laesst 104 ausdruecklich zu.
+assert.equal(entgeltZeile(null, null, '2027-04-01'), 'erste Zahlung am 01.04.2027')
+assert.equal(entgeltZeile(null, 'jaehrlich', '2027-04-01'), 'erste Zahlung am 01.04.2027')
+// Gar nichts vereinbart: `null`, damit das Blatt den Block ganz weglaesst
+// statt eine leere Zeile zu drucken.
+assert.equal(entgeltZeile(null, null, null), null)
+assert.equal(entgeltZeile(undefined, undefined, undefined), null)
+// (Dass das Datum deutsch gesetzt wird statt als roher ISO-String auf ein
+// Blatt zu kommen, pinnen die exakten Vergleiche oben bereits — `01.04.2027`.)
 
 // --- Pruefung: ein getippter Betrag muss lesbar sein ---
 assert.equal(pruefeEntwurf({ ...gut, entgeltlich: true, betrag: '500,50' }), null)
@@ -207,15 +347,27 @@ assert.equal(alsSpalten({ ...gut, entgeltlich: true }, 'r', 'i').entgeltlich, tr
 // Entgelt haengt an `entgeltlich`, NICHT am Feldinhalt: wer einen Betrag tippt
 // und danach auf "unentgeltlich" umschaltet, darf ihn nicht mitschreiben.
 const mitGeld = alsSpalten(
-  { ...gut, entgeltlich: true, betrag: '1.200', faellig: '  jährlich zum 1. April  ' }, 'r', 'i')
+  { ...gut, entgeltlich: true, betrag: '1.200', ersteZahlung: '2027-04-01' }, 'r', 'i')
 assert.equal(mitGeld.entgelt_betrag, 1200)
-assert.equal(mitGeld.entgelt_faellig, 'jährlich zum 1. April')
+assert.equal(mitGeld.entgelt_intervall, 'jaehrlich')
+assert.equal(mitGeld.entgelt_erste_zahlung, '2027-04-01')
+// **Die abgeloeste Spalte kommt gar nicht mehr vor.** Sie auf `null` zu
+// schreiben haette die Eingabe eines noch offenen 104-Tabs still geloescht —
+// der Riegel sitzt seit 105 als CHECK in der Datenbank, nicht hier.
+// (Codex P1 und P2, 05.08.2026, unabhaengig voneinander)
+// **`in` und nicht `=== undefined`**, weil es die staerkere Eigenschaft prueft:
+// der Schluessel existiert gar nicht erst. Ein `=== undefined` bliebe gruen,
+// wenn jemand die Spalte spaeter mit dem Wert `undefined` wieder hereinnimmt.
+// (Der erste Entwurf begruendete das mit „PostgREST wuerde ein mitgeschicktes
+// `undefined` als Spalte im Body fuehren" — das ist FALSCH: supabase-js
+// serialisiert per `JSON.stringify`, und das laesst `undefined`-Werte beim
+// Einzelobjekt weg. Schlusslesung 05.08.2026, Befund 2.)
+assert.equal('entgelt_faellig' in mitGeld, false, 'stillgelegt, nicht mitgeschrieben')
 const ohneGeld = alsSpalten(
-  { ...gut, entgeltlich: false, betrag: '1.200', faellig: 'jährlich' }, 'r', 'i')
+  { ...gut, entgeltlich: false, betrag: '1.200', ersteZahlung: '2027-04-01' }, 'r', 'i')
 assert.equal(ohneGeld.entgelt_betrag, null, 'unentgeltlich traegt keinen Betrag')
-assert.equal(ohneGeld.entgelt_faellig, null)
-// Leere Faelligkeit wird null, nicht ''.
-assert.equal(alsSpalten({ ...gut, entgeltlich: true, faellig: '   ' }, 'r', 'i').entgelt_faellig, null)
+assert.equal(ohneGeld.entgelt_intervall, null, 'auch nicht die Voreinstellung jaehrlich')
+assert.equal(ohneGeld.entgelt_erste_zahlung, null)
 
 // --- Das Blatt: drei Zustaende, nicht zwei ---
 assert.equal(entgeltAufDemBlatt(true), 'Entgeltlich')

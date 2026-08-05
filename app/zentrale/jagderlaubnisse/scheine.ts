@@ -153,8 +153,42 @@ export type Entwurf = {
   entgeltlich: boolean | null
   /** Migration 104, als Rohtext aus dem Feld — deutsche Schreibweise erlaubt. */
   betrag: string
-  /** Migration 104, Freitext: „jährlich zum 1. April", „einmalig bei Übergabe". */
-  faellig: string
+  /** Migration 105, einer der drei `INTERVALLE`-Schlüssel. `''` heißt „keins". */
+  intervall: string
+  /** Migration 105, `YYYY-MM-DD` aus einem `date`-Feld. `''` heißt „offen". */
+  ersteZahlung: string
+}
+
+/**
+ * Die drei Zahlungsintervalle: Spaltenwert und Anzeigetext.
+ *
+ * **Eine Liste, die beides trägt**, weil sonst zwei entstünden — eine für die
+ * Auswahl im Formular und eine für die Beschriftung auf dem Blatt. Sie liefen
+ * beim ersten zusätzlichen Intervall auseinander.
+ *
+ * Der Spaltenwert ist ASCII (`jaehrlich`), der Anzeigetext deutsch. Das ist
+ * dieselbe Trennung wie bei `STATUS_LABEL` und kostet hier ein einziges Paar,
+ * das sich unterscheidet.
+ */
+export const INTERVALLE = [
+  ['jaehrlich', 'jährlich'],
+  ['quartalsweise', 'quartalsweise'],
+  ['monatlich', 'monatlich'],
+] as const
+
+/**
+ * Der Anzeigetext zu einem Intervall, oder `null`.
+ *
+ * **Ein unbekannter Wert kommt unverändert zurück, statt zu verschwinden.**
+ * Erweitert eine spätere Migration den CHECK um „halbjährlich", zeigt diese
+ * Fassung das Wort roh an — unschön, aber wahr. Ein `?? null` ließe die Angabe
+ * lautlos vom Blatt fallen, und das Blatt ist das, was zwei Menschen
+ * unterschreiben. Andere Richtung als `alsStatus`, aus dem anderen Grund: dort
+ * hängt ein Zugriffsrecht daran, hier eine Auskunft.
+ */
+export function intervallText(wert: string | null | undefined): string | null {
+  if (!wert) return null
+  return INTERVALLE.find(([schluessel]) => schluessel === wert)?.[1] ?? wert
 }
 
 /**
@@ -194,6 +228,38 @@ export function betragAlsZahl(text: string): number | null {
 }
 
 /**
+ * Ein getippter Betrag in der einheitlichen Form `1.500,00`.
+ *
+ * Moritz, 05.08.2026: „nach dem eintippen wenn ich aus dem fenster gehen
+ * sollte man visuell erkennen können das er einen betrag übernommen hat und den
+ * in einheitlichem zb 1.500,00 euro stehen haben." Gehört ans `onBlur` beider
+ * Betragsfelder.
+ *
+ * **Unlesbares kommt UNVERÄNDERT zurück**, und das ist die eigentliche
+ * Entscheidung: wer „1.5oo" tippt, soll seinen Text am Feld wiederfinden und
+ * daneben `betragFehler()` lesen. Ein Feld, das beim Verlassen leer wird oder
+ * etwas anderes zeigt, hat die Eingabe genommen, ohne es zu sagen.
+ *
+ * **Kein Währungszeichen im Wert**, und das ist der Riegel: `betragAlsZahl()`
+ * verlangt reine Ziffern mit deutschem Trenner, „1.500,00 €" fiele durch die
+ * Regex und ergäbe `null` — ein stiller Wertverlust beim nächsten Speichern.
+ * Das „€" gehört als Beschriftung NEBEN das Feld. `alsEuro()` (mit Zeichen) ist
+ * für die Anzeige da, diese Funktion für den Feldwert; die zwei dürfen nicht
+ * verwechselt werden.
+ *
+ * **Nimmt auch eine `number`**, damit der Wert aus der Datenbank nicht erst
+ * über einen deutschen Text und wieder zurück muss: `String(1200).replace('.',
+ * ',')` und anschließendes Parsen sind zwei Umwandlungen, die sich aufheben.
+ * `NaN` und `Infinity` ergeben `''` — sie kommen aus keiner `numeric(10,2)`,
+ * aber der Portal-Client ist untypisiert (s. `alsEuro`).
+ */
+export function betragKanonisch(wert: string | number): string {
+  const n = typeof wert === 'number' ? wert : betragAlsZahl(wert)
+  if (n === null || !Number.isFinite(n)) return typeof wert === 'string' ? wert : ''
+  return n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/**
  * Der Fehlertext zu einem getippten Betrag, oder `null`.
  *
  * Eigene Funktion, weil BEIDE Schreibwege denselben Satz brauchen — das
@@ -206,7 +272,7 @@ export function betragFehler(betrag: string): string | null {
 }
 
 /**
- * Die zwei Entgelt-Spalten, an `entgeltlich` gebunden.
+ * Die vier Entgelt-Spalten, an `entgeltlich` gebunden.
  *
  * **Eine Regel, ein Ort.** Sie stand zuerst zweimal da — einmal in
  * `alsSpalten`, einmal im Nachtrag-Pfad der Liste — und beide Male gleich:
@@ -214,14 +280,53 @@ export function betragFehler(betrag: string): string | null {
  * nicht mitschreiben, sonst trägt die Zeile ein Entgelt, das der Schein
  * ausdrücklich verneint. Zwei Kopien einer Regel, die in eine Datenbank
  * schreibt, sind eine zu viel. (Ponytail, 05.08.2026)
+ *
+ * **Ein Objekt statt vier Stellungsparametern** (Migration 105): `betrag`,
+ * `intervall` und `ersteZahlung` sind alle drei `string`, und ein vertauschtes
+ * Paar wäre für TypeScript nicht von der richtigen Reihenfolge zu
+ * unterscheiden. Der Wert landet auf einem Papier, das zwei Menschen
+ * unterschreiben.
+ *
+ * **`entgelt_faellig` kommt hier gar nicht mehr vor**, und das ist eine
+ * Korrektur: der erste Entwurf schrieb die Spalte aktiv auf `null` und
+ * begründete das damit, kein Client könne ihr je wieder einen Wert geben.
+ * **Der Satz war an der Deployment-Grenze falsch** — ein Tab mit dem
+ * 104-Bundle kann es sehr wohl, und das Nullschreiben hätte seine Eingabe
+ * still gelöscht (Codex P1 und P2, 05.08.2026, unabhängig voneinander).
+ * Der Riegel sitzt jetzt in der Datenbank, wo er wahr ist:
+ * `hunting_licenses_entgelt_faellig_stillgelegt` lässt nur `NULL` zu, der alte
+ * Tab prallt mit `23514` ab. Damit braucht dieser Mapper die Spalte nicht mehr
+ * zu erwähnen — und der Compare-and-Swap in der Liste keine Bedingung für sie.
+ *
+ * **Das Intervall wird nur neben einem lesbaren Betrag geschrieben**, und das
+ * ist dieselbe Regel, nach der `entgeltZeile()` es anzeigt. Ohne sie trüge eine
+ * Zeile ohne Betrag ein „jährlich", das aus der Voreinstellung des Formulars
+ * stammt und **nirgends sichtbar** wäre — der Migrationskopf von 105 lehnt
+ * genau diese Behauptung als Spalten-Default ausdrücklich ab, und sie durch das
+ * Formular doch hereinzulassen wäre derselbe Fehler durch die Hintertür. Für
+ * die Kontenzuordnung, für die Moritz die Spalte will, ist ein erfundenes
+ * Intervall schlechter als keins. Der Termin steht dagegen für sich: eine
+ * Vereinbarung, deren Höhe noch offen ist, lässt 104 ausdrücklich zu.
  */
-export function entgeltSpalten(
-  entgeltlich: boolean | null,
-  betrag: string,
-  faellig: string,
-): { entgelt_betrag: number | null; entgelt_faellig: string | null } {
-  if (entgeltlich !== true) return { entgelt_betrag: null, entgelt_faellig: null }
-  return { entgelt_betrag: betragAlsZahl(betrag), entgelt_faellig: faellig.trim() || null }
+export function entgeltSpalten(e: {
+  entgeltlich: boolean | null
+  betrag: string
+  intervall: string
+  ersteZahlung: string
+}): {
+  entgelt_betrag: number | null
+  entgelt_intervall: string | null
+  entgelt_erste_zahlung: string | null
+} {
+  if (e.entgeltlich !== true) {
+    return { entgelt_betrag: null, entgelt_intervall: null, entgelt_erste_zahlung: null }
+  }
+  const betrag = betragAlsZahl(e.betrag)
+  return {
+    entgelt_betrag: betrag,
+    entgelt_intervall: betrag !== null && e.intervall ? e.intervall : null,
+    entgelt_erste_zahlung: e.ersteZahlung || null,
+  }
 }
 
 /**
@@ -247,6 +352,34 @@ export function alsEuro(betrag: number | string | null | undefined): string | nu
   const n = typeof betrag === 'string' ? Number(betrag) : betrag
   if (!Number.isFinite(n)) return null
   return n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
+}
+
+/**
+ * Die Entgelt-Angaben als eine Zeile, oder `null`, wenn es nichts zu sagen gibt.
+ *
+ * „1.500,00 € · jährlich · erste Zahlung am 01.04.2027" — dieselbe Zeile in der
+ * Liste und auf dem Blatt. **Zwei Orte, eine Funktion**, sonst stünde in der
+ * Zentrale etwas anderes als auf dem Papier, das daraus gedruckt wird; die
+ * Liste trennte bis dahin mit Komma, das Blatt mit Mittelpunkt.
+ *
+ * **Das Intervall erscheint nur neben einem Betrag.** Ein „jährlich" ohne Summe
+ * beantwortet keine Frage, die jemand hat — es ist der Rest einer
+ * Voreinstellung, die niemand angefasst hat. Die erste Zahlung steht dagegen
+ * für sich: ein Termin ohne Betrag ist eine Vereinbarung, deren Höhe noch offen
+ * ist, und genau das lässt 104 ausdrücklich zu.
+ */
+export function entgeltZeile(
+  betrag: number | string | null | undefined,
+  intervall: string | null | undefined,
+  ersteZahlung: string | null | undefined,
+): string | null {
+  const euro = alsEuro(betrag)
+  const teile = [
+    euro,
+    euro ? intervallText(intervall) : null,
+    ersteZahlung ? `erste Zahlung am ${alsDatum(ersteZahlung)}` : null,
+  ].filter(Boolean)
+  return teile.length > 0 ? teile.join(' · ') : null
 }
 
 /**
@@ -477,7 +610,7 @@ export function alsSpalten(e: Entwurf, revierId: string, ausstellerId: string) {
     stand_ids: e.art === 'staende' ? [...e.standIds] : [],
     auflagen: e.auflagen.trim() || null,
     entgeltlich: e.entgeltlich,
-    ...entgeltSpalten(e.entgeltlich, e.betrag, e.faellig),
+    ...entgeltSpalten(e),
   }
 }
 

@@ -208,9 +208,20 @@
    sichere Voreinstellung war in die unsichere Richtung abgesichert.
    Jetzt ist „unsichtbar" der Grundzustand und `:checked` schaltet ihn EIN:
    faellt `:has()` aus, bleibt der Preis weg. Der Schalter wirkt dann nicht,
-   aber er verraet auch nichts. */
+   aber er verraet auch nichts.
+
+   **Der Grundzustand steht seit dem 05.08.2026 zusaetzlich INLINE am Element**
+   (Codex P3-1). Die Zeile hier war die einzige Absicherung, und sie deckte den
+   Fall „Stylesheet laedt gar nicht" nicht ab — eine gespeicherte und spaeter
+   offline geoeffnete Seite zeigte den Preis. `display: none` steht deshalb
+   jetzt auch im HTML; diese Zeile bleibt als zweite Verteidigung stehen.
+
+   **`!important` ist deswegen noetig und nur deswegen:** eine Inline-Angabe
+   schlaegt jeden Selektor, aber eine `!important`-Deklaration im Stylesheet
+   schlaegt eine Inline-Angabe ohne `!important`. Ohne sie liesse sich der
+   Block per Haken nicht mehr einblenden. */
 .feld--entgelt { display: none; }
-body:has(#zeige-entgelt:checked) .feld--entgelt { display: grid; }
+body:has(#zeige-entgelt:checked) .feld--entgelt { display: grid !important; }
 
 /* **Keine eigene Klasse fuer den Schalter.** Der erste Entwurf gab ihm eine —
    und `.druck-schalter { display: flex }` stand DANACH im Stylesheet, bei
