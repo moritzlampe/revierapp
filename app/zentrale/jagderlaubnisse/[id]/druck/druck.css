@@ -1,0 +1,264 @@
+/*
+ * Das Druckblatt des Begehungsscheins.
+ *
+ * KEINE GETOENTEN FLAECHEN, und das ist kein Geschmack: Chromes Druckdialog hat
+ * „Hintergrundgrafiken" standardmaessig AUS. Ein getoentes Kopfband oder eine
+ * graue Feldunterlegung verschwaende beim Nutzer lautlos. Aus demselben Grund
+ * steht Kleintext auf 100 % Schwarz — 70 % bei 7 pt rastert ein Laser zu
+ * Schmutz statt zu Leichtigkeit. Linien und farbiger Text sind davon nicht
+ * betroffen, deshalb funktioniert die Wortmarke unten trotzdem.
+ *
+ * ZWEI LINIENSTAERKEN, ZWEI BEDEUTUNGEN:
+ *   --hair (0,5 pt)  TRENNT
+ *   --pen  (0,8 pt)  WIRD BESCHRIEBEN  (Ort/Datum, die zwei Unterschriften)
+ * Eine dritte gaebe es nur, wenn es eine dritte Bedeutung gaebe. 0,5 pt ist die
+ * Untergrenze: eine Haarlinie ueberlebt Fotokopie und Falz nicht.
+ *
+ * SCHRIFTEN UEBER DIE TOKENS, NICHT UEBER DIE NAMEN. Die Familien heissen
+ * `'Fraunces Variable'` und `'Inter Variable'` (app/globals.css) — ein
+ * `font-family: Fraunces` faellt LAUTLOS auf den Fallback zurueck, und man
+ * sieht es einem gedruckten Blatt nicht an. Der erste Entwurf tat genau das.
+ */
+
+/* Die Tokens haengen am Blatt, NICHT an `:root` — diese Datei ist globales CSS
+   und kein CSS-Modul (Codex, 05.08.2026, D7). `.druck-anleitung` bekommt die
+   Bronze deshalb direkt. */
+.blatt {
+  --ink: #000;
+  --bronze: #c08e48;
+  --hair: 0.5pt;
+  --pen: 0.8pt;
+}
+
+/* Die Zentrale-Seitenleiste gehoert nicht aufs Papier. Am Bildschirm bleibt sie
+   stehen, damit der Weg zurueck zur Liste da ist.
+   **Diese Regeln und `@page` unten bleiben global, und das ist hingenommen, nicht
+   uebersehen** (Schlusslesung 05.08.2026, Befund 6): `@page` laesst sich in CSS
+   ueberhaupt nicht auf eine Route beschraenken, und die Alternative waere eine
+   eigene Route-Group, die das Blatt aus dem Zentrale-Layout loest — mehr Umbau
+   als der Fehler wert ist. Praktisch trifft es fast nie: der Drucken-Link
+   oeffnet einen eigenen Tab (`target="_blank"`), und nur wer von dort im
+   SELBEN Tab weiternavigiert und dann eine andere Zentrale-Seite druckt,
+   bekommt Rand 0 und keine Seitenleiste. Faellig, wenn jemand das Portal
+   ernsthaft zum Drucken benutzt. */
+@media print {
+  .zentrale { display: block !important; }
+  .zentrale-side { display: none !important; }
+  .druck-anleitung { display: none; }
+}
+
+@page {
+  size: A4 portrait;
+  /* Die Raender traegt .blatt selbst — sonst haetten die Faltmarken keinen
+     Platz, und der Browser wuerde zusaetzlich zu unseren eigenen Raendern
+     beschneiden. */
+  margin: 0;
+}
+
+.druck-anleitung {
+  max-width: 190mm;
+  margin: 0 auto 6mm;
+  padding: 3mm 4mm;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-left: 2px solid #c08e48;
+}
+.druck-anleitung kbd {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0 0.3em;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.blatt {
+  width: 210mm;
+  min-height: 297mm;
+  box-sizing: border-box;
+  padding: 20mm 20mm 14mm;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 10pt;
+  line-height: 1.45;
+}
+
+.blatt--hinweis {
+  min-height: auto;
+  padding: 20mm;
+  font-size: 11pt;
+}
+
+:where(.blatt) p { margin: 0; }
+
+/* Faltmarken bei 99 und 198 mm — Drittelung fuer die Jackentasche, NICHT die
+   DIN-5008-Fensterlochung: dieses Blatt geht in keinen Umschlag. Der Prueflock
+   endet oberhalb der ersten Marke, die Unterschriftszone beginnt unterhalb der
+   zweiten. */
+.falz {
+  position: absolute;
+  left: 8mm;
+  width: 4mm;
+  border-top: var(--hair) solid var(--ink);
+}
+.falz-a { top: 99mm; }
+.falz-b { top: 198mm; }
+
+.blatt h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 19pt;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  /* Fraunces ohne Schnoerkel-Modus: WONK und SOFT auf 0. Ein Display-Schnitt
+     mit Wonk waere hier genau die „Jaegermagazin"-Grenze. */
+  font-variation-settings: 'SOFT' 0, 'WONK' 0, 'opsz' 36;
+}
+.blatt h1 span {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 11pt;
+  letter-spacing: 0;
+  margin-left: 3mm;
+}
+
+.bedingung {
+  margin-top: 1.5mm;
+  font-size: 9pt;
+  font-style: italic;
+  max-width: 130mm;
+}
+
+.regel {
+  border: 0;
+  border-top: var(--hair) solid var(--ink);
+  margin: 4mm 0;
+}
+
+/* Feldbezeichner: klein, versal, gesperrt — und VOLL schwarz. Die Leichtigkeit
+   kommt aus der Versalform, nicht aus einem Grauton. */
+.mark {
+  font-size: 7pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em; /* sonst springt die x-Hoehe gegen Inter */
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Prueflock: was auf Armlaenge lesbar sein muss --- */
+
+.inhaber {
+  margin-top: 0.8mm;
+  font-size: 15pt;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.jsnr { margin-top: 1mm; font-size: 9.5pt; }
+
+.pruefzeile { display: flex; gap: 12mm; margin-top: 5mm; }
+.pruefzeile > * { flex: 1; }
+
+.bezirk { font-size: 12pt; font-weight: 500; }
+.bezirk .sub {
+  display: block;
+  font-size: 9.5pt;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.gueltig {
+  font-family: var(--font-mono);
+  font-size: 12pt;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Erklaerung und Felder --- */
+
+.satz { margin: 0 0 5mm; }
+
+.feld {
+  display: grid;
+  grid-template-columns: 38mm 1fr;
+  column-gap: 6mm;
+  margin-bottom: 4mm;
+}
+.feld .wert { font-size: 10pt; }
+
+.entgelt { text-transform: uppercase; letter-spacing: 0.12em; }
+.streichen { margin-top: 0.8mm; font-size: 7.5pt; }
+
+/* Zweispaltig und nummeriert, damit auch zehn Staende ohne Kuerzung passen.
+   Die Zuteilung ist der rechtlich tragende Teil — ein „und 7 weitere" waere
+   eine Erlaubnis, die ihren eigenen Umfang verschweigt. */
+.staende {
+  margin: 1.5mm 0 0;
+  padding-left: 5mm;
+  columns: 2;
+  column-gap: 8mm;
+  font-size: 8.5pt;
+  line-height: 1.35;
+}
+.staende li { break-inside: avoid; }
+
+/* Drei Zeilen bleiben immer stehen, auch bei „keine": ein gefaltetes Blatt
+   kennt den Fehlerfall „hier wurde etwas abgeschnitten" sehr wohl. */
+.feld--auflagen .wert { min-height: 13mm; }
+
+.recht { margin: 2mm 0 0; font-size: 7pt; line-height: 1.5; }
+.recht p + p { margin-top: 2mm; }
+.recht b { font-weight: 600; }
+/* Unsere Anmerkung, nicht der Gesetzestext — kursiv, damit sie sich am Blatt
+   sichtbar vom Wortlaut daneben absetzt. (Schlusslesung 05.08.2026, Befund 3) */
+.recht .zusatz { font-style: italic; }
+
+/* --- Handlungszone, am Blattfuss verankert --- */
+
+/* `break-inside: avoid` ist der Riegel, nicht `margin-top: auto` (Codex,
+   05.08.2026, D8): die Verankerung am Fuss greift nur, solange Freiraum bleibt.
+   Waechst der Inhalt, wird der Auto-Abstand null — und ohne diese Zeile koennte
+   der Unterschriftsblock geteilt oder auf eine zweite Seite geschoben werden. */
+.unten { margin-top: auto; padding-top: 8mm; break-inside: avoid; }
+.sig, .ortdatum { break-inside: avoid; }
+
+.schreiblinie {
+  display: block;
+  height: 11mm;
+  width: 72mm;
+  border-bottom: var(--pen) solid var(--ink);
+}
+.ortdatum { margin-bottom: 6mm; }
+.ortdatum .mark { margin-top: 1.2mm; }
+
+.sig { display: flex; gap: 26mm; } /* 72 + 26 + 72 = 170 mm Satzbreite */
+.sig > * { width: 72mm; }
+.sig .gedruckt { margin-top: 1.2mm; font-size: 8.5pt; }
+.sig .mark { margin-top: 0.5mm; }
+
+.fuss {
+  display: flex;
+  justify-content: space-between;
+  gap: 8mm;
+  margin-top: 6mm;
+  padding-top: 2mm;
+  border-top: var(--hair) solid var(--ink);
+  font-size: 7pt;
+}
+.wortmarke { font-size: 8pt; font-weight: 600; color: var(--bronze); }
+
+@media screen {
+  .blatt {
+    box-shadow: 0 2px 14px rgb(0 0 0 / 0.18);
+    margin-bottom: 10mm;
+  }
+}

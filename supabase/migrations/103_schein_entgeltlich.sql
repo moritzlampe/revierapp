@@ -1,0 +1,132 @@
+-- 103_schein_entgeltlich.sql
+-- Nativer Track, 05.08.2026. Vorbedingung fuer den druckbaren
+-- Jagderlaubnisschein (Recherche `QuickHunt_Recherche_Begehungsschein_Recht_V1.md`, §9).
+--
+-- WOFUER
+-- ------
+-- `hunting_licenses.entgeltlich` — ob der Begehungsschein gegen Entgelt
+-- erteilt wurde. **Es ist die einzige Angabe eines Begehungsscheins mit
+-- rechtlicher Folge, die die Datenbank bisher nicht kannte.**
+--
+-- Moritz am 05.08.2026, auf die Frage entgeltlich oder unentgeltlich:
+-- „Beides muss moeglich sein."
+--
+-- WARUM AUSGERECHNET DIESE EIGENSCHAFT
+-- ------------------------------------
+-- Die Erteilung von Jagderlaubnisscheinen ist Landesrecht (§ 11 Abs. 1 Satz 3
+-- BJagdG) — es gibt kein Bundesformular, keine bundesweite Anzeigepflicht und
+-- in Niedersachsen nicht einmal eine Schriftform (§ 18 NJagdG). Rechtsfolgen
+-- kommen ueberhaupt nur bei `true` in Betracht:
+--
+--   § 20 Nr. 5 NJagdG        der EMPFAENGER muss einen entgeltlichen Schein in
+--                            seiner eigenen Pachtanzeige nennen
+--   § 11 Abs. 3 BJagdG       Anrechnung auf die 1.000-ha-Grenze des Paechters,
+--   i.V.m. Abs. 6 Satz 2     Verstoss macht die Erlaubnis NICHTIG
+--
+-- **`true` ist notwendig, aber nicht allein hinreichend** (Fremdpruefung
+-- 05.08.2026, M3), und das ist der Punkt, an dem man diese Spalte
+-- ueberschaetzt: § 20 Nr. 5 verlangt zusaetzlich, dass mindestens EINE Wildart
+-- fuer ihre volle Jagdzeit in einem Jagdjahr gestattet ist — ein Tagesschein
+-- oder eine Erlaubnis auf einzelne Stuecke faellt heraus. Die Spalte
+-- BEANTWORTET die Frage also nicht, sie ist ihre Vorbedingung. Wer sie einmal
+-- auswertet, braucht Jagdzeiten dazu, und die kennt das Schema nicht.
+--
+-- Die Pflicht trifft also den Empfaenger, nicht den Aussteller — die Spalte ist
+-- eine Auskunft an ihn, kein Vorgang beim Revierbesitzer. Herleitung samt
+-- Quellen: `QuickHunt_Recherche_Begehungsschein_Recht_V1.md` §§ 2-4.
+--
+-- WARUM NULLABLE UND OHNE DEFAULT
+-- -------------------------------
+-- Das ist der Punkt, an dem man sich vertut. Ein `not null default false`
+-- waere die bequemere Zeile und wuerde ueber die **4 bestehenden Scheine**
+-- (gemessen 05.08.2026) behaupten, sie seien unentgeltlich — obwohl sie
+-- entstanden sind, bevor die Frage ueberhaupt gestellt wurde. Niemand hat das
+-- entschieden, also darf die Spalte es nicht sagen.
+--
+-- `NULL` heisst „nicht angegeben"; was das Blatt daraus macht, steht bei
+-- `entgeltAufDemBlatt()`. Dieselbe Bauform wie `kontakte.kuerzel` (086) und
+-- `kontakte.inaktiv_seit` (100): NULL ist ein eigener, ehrlicher Zustand, kein
+-- fehlender Wert.
+--
+-- DER RIEGEL IST EIN NICHT-TUN
+-- ----------------------------
+-- **KEINE Policy darf `entgeltlich` auswerten.** Diese Migration legt ausser
+-- der Spalte nichts an: keinen Trigger, keine Funktion, keinen Grant, keinen
+-- Index, keine Policy-Aenderung. Dieselbe Haltung wie 101.
+--
+-- Die vier Policies aus 079 bleiben unveraendert und tragen die Spalte
+-- vollstaendig (nachgemessen 05.08.2026 ueber `pg_policy`):
+--
+--   hunting_licenses_issuer_insert  (INSERT) issuer_id = auth.uid()
+--                                            AND district_id in (eigene Reviere)
+--   hunting_licenses_issuer_update  (UPDATE) district_id in (eigene Reviere),
+--                                            USING **und** WITH CHECK
+--   hunting_licenses_issuer_select  (SELECT) Aussteller oder Revierbesitzer
+--   hunting_licenses_holder         (SELECT) holder_id = auth.uid()
+--
+-- Setzen und korrigieren darf sie damit genau der Revierbesitzer. Der
+-- Scheininhaber liest sie mit — und das ist ausdruecklich gewollt: **er** ist
+-- derjenige mit der Anzeigepflicht aus § 20 Nr. 5.
+--
+-- Gegenprobe fuer einen spaeteren Lauf (muss 0 Zeilen liefern):
+--
+--     select polname from pg_policy
+--      where pg_get_expr(polqual, polrelid) ilike '%entgeltlich%'
+--         or pg_get_expr(polwithcheck, polrelid) ilike '%entgeltlich%';
+--
+-- KEIN TRIGGER HAELT SIE FEST, ANDERS ALS BEI 087/090/091
+-- -------------------------------------------------------
+-- Dort stehen `hunting_license_id`, `district_id`, `hunt_id` und `erlegt_am`
+-- nach dem INSERT fest, weil an ihnen eine BERECHTIGUNG haengt: ein
+-- client-gesetzter Wert waere ein Schreibweg in ein fremdes Revier.
+--
+-- An `entgeltlich` haengt keine Berechtigung, nur eine Auskunft. Ein Riegel
+-- machte aus einer schlichten Korrektur ein `disable trigger` — und Korrektur
+-- ist hier der Normalfall: die 4 Altzeilen sollen nachtraeglich beantwortet
+-- werden koennen, ohne dass jemand an die DB muss.
+--
+-- Preis: ein gedrucktes Blatt kann etwas anderes sagen als die Zeile von heute.
+-- Bei Papier ist das ohnehin so — Ort, Datum und zwei Unterschriften sind der
+-- Beleg, nicht die Zeile.
+--
+-- WAS NICHT DAZUGEHOERT
+-- ---------------------
+-- **Keine Spalte fuer die anteilige Flaeche.** § 20 Satz 2 NJagdG verlangt vom
+-- Anzeigenden „die anteilig auf sie oder ihn selbst entfallenden Flaechen".
+-- Wie dieser Anteil zu bilden ist, wenn auf demselben Revier mehrere Scheine
+-- liegen, beantwortet keine der gelesenen Quellen — es ist eine Frage an die
+-- untere Jagdbehoerde. Eine Zahl, die niemand belegen kann, ist schlechter als
+-- keine. Der Ausdruck nennt stattdessen die Reviergroesse aus
+-- `districts.area_ha` und benennt sie als solche.
+--
+-- **Kein `ausgestellt_am`.** `created_at` ist es, seit Migration 003.
+--
+-- **Kein Warnhinweis „ueber 1.000 Hektar", obwohl beide Reviere darueber
+-- liegen** (Soeder 1404,33 ha, L7 1967,63 ha, gemessen 05.08.2026): solange die
+-- Anteilsfrage offen ist, waere die Warnung eine Behauptung.
+--
+-- **Keine Wildart-/Stueckzahltabelle am Schein.** Das ist A-S7 (Freigabemodul)
+-- mit `kontingent jsonb`; bis dahin traegt `auflagen` denselben Inhalt als
+-- Freitext, und 3 von 4 Zeilen tun das bereits.
+--
+-- **Kein „bis auf Widerruf".** Behoerdenvordrucke bieten es als Alternative
+-- zum Zeitraum an; `valid_from`/`valid_until` sind seit 003 beide NOT NULL,
+-- und 077 hat das Datum bewusst zur Zugriffsgrenze gemacht. Ein unbefristeter
+-- Zugriff waere in einer App die schlechtere Voreinstellung.
+--
+-- **`database.types.ts` wird NICHT regeneriert.** Kein Client liest die Spalte
+-- typisiert: das Portal nutzt `createServerClient` ohne `<Database>`-Generic,
+-- und die native App liest `hunting_licenses` in `src/lib/data/licenses.ts`
+-- ohne diese Spalte. `npm run gen:types` schriebe die geteilte Datei und ist
+-- dem Portal-Track ohnehin verboten (R2). Faellig, wenn die native
+-- Schein-Ansicht die Entgeltlichkeit zeigt.
+
+alter table public.hunting_licenses
+  add column if not exists entgeltlich boolean;
+
+comment on column public.hunting_licenses.entgeltlich is
+  'Ob der Begehungsschein gegen Entgelt erteilt wurde. NULL heisst NICHT ANGEGEBEN, '
+  'nicht "unentgeltlich". true ist Vorbedingung fuer Rechtsfolgen (§ 20 Nr. 5 NJagdG, '
+  '§ 11 Abs. 3 i.V.m. Abs. 6 Satz 2 BJagdG), aber nicht allein hinreichend: § 20 Nr. 5 '
+  'verlangt zusaetzlich eine volle Jagdzeit. Reine Auskunft, KEIN Berechtigungstraeger '
+  '— keine Policy darf sie auswerten.';

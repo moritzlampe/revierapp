@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../schreiben'
 import {
+  alsDatum,
   alsEinloeseErgebnis,
   alsSpalten,
   alsStatus,
@@ -31,19 +32,9 @@ export type ScheinZeile = {
   zone_ids: string[] | null
   stand_ids: string[] | null
   invite_code: string | null
+  /** Migration 103. `null` heißt „nicht angegeben", nicht „unentgeltlich". */
+  entgeltlich: boolean | null
 }
-
-// `timeZone: 'UTC'` ist tragend, nicht Kosmetik: der Wert ist ein Kalendertag
-// der DB, kein Zeitpunkt. Ohne die Angabe rutscht `2026-08-01T00:00:00Z` in
-// jeder Zeitzone westlich von UTC auf den 31.07. — die Liste zeigte einen
-// anderen Tag als den, gegen den 077 die Zugriffsgrenze zieht. (Codex, 31.07.2026)
-const datum = new Intl.DateTimeFormat('de-DE', {
-  day: '2-digit',
-  month: '2-digit',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-const alsDatum = (iso: string) => datum.format(new Date(`${iso}T00:00:00Z`))
 
 /**
  * Ausstellen und Verwalten der Begehungsscheine eines Reviers.
@@ -56,12 +47,15 @@ const alsDatum = (iso: string) => datum.format(new Date(`${iso}T00:00:00Z`))
  */
 export default function Ausstellen({
   revierId,
+  bundesland,
   ausstellerId,
   staende,
   scheine,
   heute,
 }: {
   revierId: string
+  /** `districts.bundesland` — entscheidet ueber den Rechtshinweis, s. unten. */
+  bundesland: string | null
   ausstellerId: string
   staende: StandWahl[]
   scheine: ScheinZeile[]
@@ -88,6 +82,8 @@ export default function Ausstellen({
   const [art, setArt] = useState<'revier' | 'staende'>('revier')
   const [standIds, setStandIds] = useState<readonly string[]>([])
   const [auflagen, setAuflagen] = useState('')
+  // Keine Vorbelegung: die Angabe soll entschieden werden, nicht ererbt.
+  const [entgeltlich, setEntgeltlich] = useState<boolean | null>(null)
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
 
@@ -101,7 +97,7 @@ export default function Ausstellen({
    */
   const inArbeit = useRef(false)
 
-  const entwurf: Entwurf = { name, email, von, bis, art, standIds, auflagen }
+  const entwurf: Entwurf = { name, email, von, bis, art, standIds, auflagen, entgeltlich }
 
   const absenden = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -144,12 +140,19 @@ export default function Ausstellen({
           if (!r.ok) console.error('[push] Schein-Benachrichtigung fehlgeschlagen:', r.status)
         })
         .catch((e: unknown) => console.error('[push] Schein-Benachrichtigung nicht abgesetzt:', e))
-      // Zeitraum und Zuteilung stehen lassen: wer zwei Gästen denselben
-      // Zeitraum gibt, tippt ihn sonst zweimal. Person und Auflagen sind
-      // dagegen genau das, was sich je Schein unterscheidet.
+      // Zeitraum und Zuteilung stehen lassen: wer zwei Gästen denselben Zeitraum
+      // gibt, tippt ihn sonst zweimal.
+      //
+      // **Die Entgeltlichkeit wird dagegen zurückgesetzt** (Schlusslesung
+      // 05.08.2026, Befund 4). Sie stehen zu lassen widerspräche der
+      // Begründung eine Bildschirmhöhe weiter oben: eine Angabe, die nicht
+      // durch Trägheit entstehen soll, darf ab dem zweiten Schein nicht
+      // stillschweigend geerbt werden. Ein Zeitraum ist Tipparbeit, die
+      // Entgeltlichkeit eine Entscheidung je Person.
       setName('')
       setEmail('')
       setAuflagen('')
+      setEntgeltlich(null)
       router.refresh()
     } catch (err: unknown) {
       setFehler(err instanceof Error ? err.message : 'Der Schein konnte nicht angelegt werden.')
@@ -259,6 +262,44 @@ export default function Ausstellen({
             ) : null}
           </fieldset>
 
+          <fieldset className="jes-feld jes-radios">
+            <legend>Erteilung</legend>
+            <label>
+              <input
+                type="radio"
+                name="jes-entgelt"
+                checked={entgeltlich === false}
+                onChange={() => setEntgeltlich(false)}
+              />
+              Unentgeltlich
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="jes-entgelt"
+                checked={entgeltlich === true}
+                onChange={() => setEntgeltlich(true)}
+              />
+              Entgeltlich
+            </label>
+            {/* Verzweigt wie das Blatt (`landesrecht()`), statt Landesrecht als
+                allgemeine Auskunft zu setzen: die Erteilung von
+                Jagderlaubnisscheinen ist Laendersache (§ 11 Abs. 1 Satz 3
+                BJagdG), und NRW verlangt eine Anzeige binnen eines Monats, wo
+                Niedersachsen gar keine kennt. (Codex, 05.08.2026, W9) */}
+            <p className="jes-hinweis">
+              {bundesland === 'Niedersachsen'
+                ? 'Betrifft nur den entgeltlichen Fall: der Inhaber muss ihn nach § 20 Nr. 5 '
+                  + 'NJagdG angeben, wenn er selbst einmal einen Jagdpachtvertrag anzeigt — und '
+                  + 'auch dann nur, wenn der Schein mindestens eine Wildart für deren volle '
+                  + 'Jagdzeit gestattet. Du selbst musst dem Landkreis in Niedersachsen nichts '
+                  + 'melden.'
+                : 'Ob eine entgeltliche Erteilung bei der unteren Jagdbehörde anzuzeigen ist, '
+                  + 'richtet sich nach dem Landesjagdgesetz und ist für dieses Revier nicht '
+                  + 'hinterlegt.'}
+            </p>
+          </fieldset>
+
           <div className="jes-feld">
             <label htmlFor="jes-auflagen">Auflagen (optional)</label>
             <textarea
@@ -296,7 +337,7 @@ export default function Ausstellen({
                 (Codex, 31.07.2026) */}
             {scheine.map((s) => (
               <Schein
-                key={`${s.id}:${s.status}:${s.valid_until}`}
+                key={`${s.id}:${s.status}:${s.valid_until}:${s.entgeltlich}`}
                 schein={s}
                 heute={heute}
                 staende={staende}
@@ -342,9 +383,29 @@ function Schein({
    * Eintreffen der neuen Props noch einmal klickbar, weil `geaendert` gegen
    * einen überholten Prop-Wert verglichen würde. (Codex, 31.07.2026)
    */
-  const [basis, setBasis] = useState({ bis: schein.valid_until, status: schein.status })
+  const [basis, setBasis] = useState({
+    bis: schein.valid_until,
+    status: schein.status,
+    entgeltlich: schein.entgeltlich,
+  })
   const [bis, setBis] = useState(schein.valid_until)
-  const [neuerStatus, setNeuerStatus] = useState<string>(schein.status ?? 'aktiv')
+  /**
+   * **Der Rohwert, nicht `?? 'aktiv'`** (Codex, 05.08.2026, W1/W3/S5).
+   *
+   * Die Vorbelegung mit `'aktiv'` machte aus einem `status = null` beim ersten
+   * Rendern eine Aenderung: der Speichern-Knopf war ohne Zutun klickbar, und
+   * wer nur die Entgeltlichkeit nachtrug, schrieb ungefragt `status = 'aktiv'`
+   * mit. Im Bestand heute folgenlos — 0 von 4 Zeilen sind null, die Spalte hat
+   * `default 'aktiv'` — aber sie IST nullable, und der Wert entscheidet ueber
+   * den Revierzugang.
+   *
+   * `''` steht fuer null und wird beim Schreiben zurueckuebersetzt; dieselbe
+   * Bauform wie beim Entgelt-Feld darunter.
+   */
+  const [neuerStatus, setNeuerStatus] = useState<string>(schein.status ?? '')
+  // Nachtragbar, weil es sonst niemand nachtragen könnte: das Ausstellformular
+  // erreicht die vier Altscheine nicht mehr.
+  const [neuEntgeltlich, setNeuEntgeltlich] = useState<boolean | null>(schein.entgeltlich)
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
   const [kopiert, setKopiert] = useState(false)
@@ -358,7 +419,8 @@ function Schein({
         ? `${schein.zone_ids!.length} gezeichnete Bereiche`
         : nenneStaende(schein.stand_ids ?? [], staende)
 
-  const geaendert = bis !== basis.bis || neuerStatus !== basis.status
+  const geaendert =
+    bis !== basis.bis || (neuerStatus || null) !== basis.status || neuEntgeltlich !== basis.entgeltlich
 
   /**
    * Verlängern und Sperren in einem Schreibvorgang — aber nur, wenn die Zeile
@@ -391,17 +453,24 @@ function Schein({
     setLaeuft(true)
     setFehler(null)
     try {
-      const abfrage = createClient()
+      let abfrage = createClient()
         .from('hunting_licenses')
-        .update({ valid_until: bis, status: neuerStatus })
+        .update({ valid_until: bis, status: neuerStatus || null, entgeltlich: neuEntgeltlich })
         .eq('id', schein.id)
         .eq('valid_until', basis.bis)
-      // `status` ist nullable. `.eq(spalte, null)` wird zu `status=eq.null` und
+      // Beide sind nullable: `.eq(spalte, null)` wird zu `spalte=eq.null` und
       // trifft nie — für NULL braucht PostgREST `.is()`.
-      const { data, error } = await (basis.status === null
-        ? abfrage.is('status', null)
-        : abfrage.eq('status', basis.status)
-      ).select('id')
+      //
+      // **Jede Spalte im UPDATE braucht ihre eigene Bedingung.** Eine dritte
+      // Spalte ohne dritten Abgleich hätte das Loch wieder aufgemacht, gegen
+      // das die zwei bestehenden gebaut wurden (Codex, 31.07.2026).
+      abfrage =
+        basis.status === null ? abfrage.is('status', null) : abfrage.eq('status', basis.status)
+      abfrage =
+        basis.entgeltlich === null
+          ? abfrage.is('entgeltlich', null)
+          : abfrage.eq('entgeltlich', basis.entgeltlich)
+      const { data, error } = await abfrage.select('id')
 
       if (error) throw new Error(error.message)
 
@@ -414,7 +483,7 @@ function Schein({
         return
       }
 
-      setBasis({ bis, status: neuerStatus })
+      setBasis({ bis, status: neuerStatus || null, entgeltlich: neuEntgeltlich })
       router.refresh()
     } catch (err: unknown) {
       setFehler(err instanceof Error ? err.message : 'Die Änderung konnte nicht gespeichert werden.')
@@ -440,6 +509,21 @@ function Schein({
         </dd>
         <dt>Zuteilung</dt>
         <dd>{zuteilung}</dd>
+        <dt>Erteilung</dt>
+        {/* In der LISTE steht „nicht angegeben" ausgeschrieben, auf dem
+            AUSDRUCK dagegen bleiben beide Wörter stehen
+            (`entgeltAufDemBlatt`). Zwei Orte, zwei richtige Antworten: hier
+            liest der Revierbesitzer eine Lücke, die er schließen kann; dort
+            liest ein Beamter ein Papier, das nichts behaupten darf. */}
+        <dd>
+          {schein.entgeltlich === null ? (
+            <span className="jes-fehlt">nicht angegeben — vor dem Ausdruck ergänzen</span>
+          ) : schein.entgeltlich ? (
+            'Entgeltlich'
+          ) : (
+            'Unentgeltlich'
+          )}
+        </dd>
         {schein.auflagen ? (
           <>
             <dt>Auflagen</dt>
@@ -487,18 +571,54 @@ function Schein({
               trotzdem einen anderen Wert, kommt er als vierte Option dazu —
               eine Auswahl, die den Ist-Zustand nicht enthält, würde ihn beim
               ersten Speichern still überschreiben. */}
+          {/* Die Zusatz-Option haengt am BASIS-Wert, nicht am aktuellen: sonst
+              verschwindet sie, sobald man einmal etwas anderes waehlt, und der
+              Ausgangszustand ist nur noch per Neuladen erreichbar. Genau die
+              Parität, die der Kommentar am Entgelt-Feld behauptete, ohne dass
+              sie bestand. (Schlusslesung 05.08.2026, Befund 5) */}
           <select value={neuerStatus} onChange={(e) => setNeuerStatus(e.target.value)}>
-            {['aktiv', 'pausiert', 'entzogen'].includes(neuerStatus)
+            {['aktiv', 'pausiert', 'entzogen'].includes(basis.status ?? '')
               ? null
-              : <option value={neuerStatus}>{STATUS_LABEL[alsStatus(neuerStatus)]}</option>}
+              : (
+                  <option value={basis.status ?? ''}>
+                    {basis.status === null
+                      ? STATUS_LABEL.unbekannt
+                      : STATUS_LABEL[alsStatus(basis.status)]}
+                  </option>
+                )}
             <option value="aktiv">Aktiv</option>
             <option value="pausiert">Pausiert</option>
             <option value="entzogen">Entzogen</option>
           </select>
         </label>
+        <label>
+          <span>Erteilung</span>
+          {/* Der leere Wert steht nur zur Wahl, solange er der Ist-Zustand ist —
+              wie beim Status-Feld daneben. Eine Auswahl, die den Ist-Zustand
+              nicht enthält, überschriebe ihn beim ersten Speichern still. */}
+          <select
+            value={neuEntgeltlich === null ? '' : neuEntgeltlich ? 'ja' : 'nein'}
+            onChange={(e) => setNeuEntgeltlich(e.target.value === '' ? null : e.target.value === 'ja')}
+          >
+            {basis.entgeltlich === null ? <option value="">nicht angegeben</option> : null}
+            <option value="nein">Unentgeltlich</option>
+            <option value="ja">Entgeltlich</option>
+          </select>
+        </label>
         <button type="button" onClick={() => void speichern()} disabled={laeuft || !geaendert}>
           {laeuft ? 'Speichert …' : 'Speichern'}
         </button>
+        {/* Neuer Tab, nicht dieselbe Seite: wer druckt, will danach in der
+            Liste weitermachen — und der Druckdialog des Browsers hängt am
+            Tab, aus dem er geöffnet wurde. */}
+        <a
+          className="jes-drucken"
+          href={`/zentrale/jagderlaubnisse/${schein.id}/druck`}
+          target="_blank"
+          rel="noopener"
+        >
+          Blatt drucken
+        </a>
       </div>
 
       {fehler ? <p className="jes-fehler">{fehler}</p> : null}

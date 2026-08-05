@@ -21,7 +21,8 @@
 }
 
 .jes-feld > label,
-.jes-zuteilung legend {
+.jes-zuteilung legend,
+.jes-radios legend {
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -51,7 +52,8 @@
 .jes-feld input:focus-visible,
 .jes-feld textarea:focus-visible,
 .jes-eingriff input:focus-visible,
-.jes-eingriff select:focus-visible {
+.jes-eingriff select:focus-visible,
+.jes-eingriff a:focus-visible {
   outline: 2px solid var(--z-accent);
   outline-offset: 1px;
 }
@@ -69,14 +71,16 @@
   gap: 12px;
 }
 
-.jes-zuteilung {
+.jes-zuteilung,
+.jes-radios {
   border: 1px solid var(--z-border);
   border-radius: 6px;
   padding: 12px;
   gap: 6px;
 }
 
-.jes-zuteilung label {
+.jes-zuteilung label,
+.jes-radios label {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -84,7 +88,8 @@
   cursor: pointer;
 }
 
-.jes-zuteilung label:has(input:disabled) {
+.jes-zuteilung label:has(input:disabled),
+.jes-radios label:has(input:disabled) {
   cursor: default;
   color: var(--z-text-secondary);
 }
@@ -126,6 +131,7 @@
 .jes-form button,
 .jes-einloesen button,
 .jes-eingriff button,
+.jes-eingriff a,
 .jes-code button {
   font: inherit;
   font-size: 0.875rem;
@@ -140,6 +146,7 @@
 .jes-form button:hover:not(:disabled),
 .jes-einloesen button:hover:not(:disabled),
 .jes-eingriff button:hover:not(:disabled),
+.jes-eingriff a:hover,
 .jes-code button:hover {
   border-color: var(--z-accent);
 }
@@ -317,4 +324,13 @@
 .jes-einloesen input:focus-visible {
   outline: 2px solid var(--z-accent);
   outline-offset: 1px;
+}
+
+/* Erbt Aussehen und Fokus von `.jes-eingriff button` (s. oben). Eigen ist nur
+   die Absetzung nach rechts: alles links davon aendert die Zeile, dies liest
+   sie nur. */
+.jes-drucken {
+  margin-left: auto;
+  text-decoration: none;
+  white-space: nowrap;
 }

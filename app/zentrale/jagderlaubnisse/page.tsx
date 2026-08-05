@@ -23,7 +23,7 @@ import { geladen } from '../laden'
  * grenze, sondern das Netz darunter.
  */
 
-type Revier = { id: string; name: string }
+type Revier = { id: string; name: string; bundesland: string | null }
 
 /** Fehler nicht verschlucken — gleiche Haltung wie `geladen()` in ../page.tsx:
  *  eine leere Liste ist von einem RLS-Bruch nicht zu unterscheiden. */
@@ -57,7 +57,7 @@ export default async function JagderlaubnissePage({
   const reviere = geladen<Revier[]>(
     await supabase
       .from('districts')
-      .select('id, name')
+      .select('id, name, bundesland')
       .eq('owner_id', user.id)
       .eq('hidden', false)
       .order('name'),
@@ -92,7 +92,7 @@ export default async function JagderlaubnissePage({
       .from('hunting_licenses')
       .select(
         'id, holder_name, holder_email, holder_id, valid_from, valid_until, status, ' +
-          'auflagen, zone_ids, stand_ids, invite_code'
+          'auflagen, zone_ids, stand_ids, invite_code, entgeltlich'
       )
       .eq('district_id', revier.id)
       .order('valid_until', { ascending: false }),
@@ -117,6 +117,7 @@ export default async function JagderlaubnissePage({
 
       <Ausstellen
         revierId={revier.id}
+        bundesland={revier.bundesland}
         ausstellerId={user.id}
         staende={staende}
         scheine={scheine}

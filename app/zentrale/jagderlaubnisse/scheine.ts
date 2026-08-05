@@ -68,6 +68,24 @@ export function effektiverStatus(
   return 'aktiv'
 }
 
+/**
+ * Ob zu diesem Zustand ein Blatt ausgegeben wird.
+ *
+ * **Zwei Zustaende, nicht einer** — und die zweite Haelfte ist der Fehler, den
+ * der erste Entwurf gemacht hat (Schlusslesung 05.08.2026, Befund 1). Er
+ * pruefte `=== 'aktiv'` und sperrte damit `nochnicht` mit: einen heute fuer die
+ * kommende Saison ausgestellten Schein, also den haeufigsten Fall ueberhaupt.
+ * Die Mitfuehrpflicht aus § 19 NJagdG beginnt am ersten Ansitz, nicht am Tag
+ * des Ausdrucks, und das Blatt nennt seinen Gueltigkeitszeitraum selbst.
+ *
+ * Was NICHT gedruckt wird: `pausiert` und `entzogen` (jemand hat die Erlaubnis
+ * zurueckgenommen), `abgelaufen` (der Zeitraum ist vorbei) und `unbekannt` (ein
+ * Wert, den diese Fassung nicht kennt — im Zweifel kein Dokument).
+ */
+export function darfGedrucktWerden(status: JesStatus): boolean {
+  return status === 'aktiv' || status === 'nochnicht'
+}
+
 export const STATUS_LABEL: Record<JesStatus, string> = {
   aktiv: 'Aktiv',
   pausiert: 'Pausiert',
@@ -127,6 +145,12 @@ export type Entwurf = {
   art: 'revier' | 'staende'
   standIds: readonly string[]
   auflagen: string
+  /**
+   * Migration 103. `null` heißt „nicht angegeben" und wird von `pruefeEntwurf`
+   * abgewiesen: in der DB trägt es die vier Scheine aus der Zeit vor der Frage,
+   * am Formular gibt es diese Zeit nicht.
+   */
+  entgeltlich: boolean | null
 }
 
 /**
@@ -148,7 +172,187 @@ export function pruefeEntwurf(e: Entwurf): string | null {
   // Beide Enden sind einschließend (077), ein Tagesschein ist also gültig.
   if (e.bis < e.von) return 'Das Ende liegt vor dem Beginn.'
   if (e.art === 'staende' && e.standIds.length === 0) return 'Kein Stand ausgewählt.'
+  if (e.entgeltlich === null) return 'Entgeltlich oder unentgeltlich — bitte eins von beidem wählen.'
   return null
+}
+
+/**
+ * Ein `date` aus PostgREST als `DD.MM.YYYY`.
+ *
+ * **Reine Zeichenarbeit, kein `Date`** — dann gibt es die Zeitzonenfalle gar
+ * nicht, statt sie mit `timeZone: 'UTC'` zu entschärfen. `valid_from` und
+ * `valid_until` sind `date` und kennen keine Uhrzeit.
+ *
+ * Zeichengleich mit `alsDatum()` in `../gaeste/kontakte.ts`. **Kopiert statt
+ * importiert, und das ist Absicht:** beide Dateien müssen importfrei bleiben,
+ * damit `node --experimental-strip-types` sie prüfen kann — ein Import bräuchte
+ * die `.ts`-Endung für Node und würde damit `tsc` brechen. `kontakte.ts` löst es
+ * seit dem 04.08.2026 genauso und verweist seinerseits hierher.
+ */
+export function alsDatum(iso: string | null): string {
+  if (!iso || iso.length < 10) return '—'
+  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
+}
+
+/**
+ * Ein `timestamptz` als Berliner Kalendertag.
+ *
+ * **Nicht `alsDatum()`, und das ist der Unterschied, an dem sich dieses Repo
+ * schon einmal vertan hat** (Fremdprüfung 04.08.2026, Punkt 3, an
+ * `kontakte.inaktiv_seit`): der Schnitt am ISO-String liefert die **UTC**-Date.
+ * Für ein `date` ist das richtig, für einen Zeitpunkt einen Tag zu früh — wer um
+ * 00:30 Berliner Zeit einen Schein ausstellt, steht in UTC noch auf dem Vortag.
+ * `hunting_licenses.created_at` ist ein `timestamptz`, das Blatt braucht also
+ * diese Fassung.
+ *
+ * `Intl` statt eigener Rechnung, weil Sommerzeit sonst von Hand käme.
+ */
+export function alsBerlinDatum(iso: string | null): string {
+  if (!iso) return '—'
+  const t = new Date(iso)
+  if (Number.isNaN(t.getTime())) return '—'
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(t)
+}
+
+/**
+ * Eine Flächenangabe in Hektar, deutsch gesetzt.
+ *
+ * Immer zwei Nachkommastellen, damit die Zahl in tabellarischen Ziffern nicht
+ * springt. Fehlt sie, kommt `null` zurück — das Blatt lässt sie dann weg,
+ * statt „0 ha" zu behaupten.
+ */
+export function alsHektar(ha: number | null | undefined): string | null {
+  if (ha == null || !Number.isFinite(ha)) return null
+  return `${ha.toLocaleString('de-DE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ha`
+}
+
+/**
+ * Wie die Entgeltlichkeit auf dem Ausdruck steht — drei Zustände, nicht zwei.
+ *
+ * `null` heißt „nicht angegeben". Dann bleiben BEIDE Wörter stehen und ein
+ * Mensch streicht das Falsche durch, wie auf jedem Behördenvordruck. Das ist
+ * die Form, in der ein Papier „weiß ich nicht" sagen kann, ohne zu lügen.
+ */
+export function entgeltAufDemBlatt(entgeltlich: boolean | null | undefined): string {
+  if (entgeltlich === true) return 'Entgeltlich'
+  if (entgeltlich === false) return 'Unentgeltlich'
+  return 'Entgeltlich – Unentgeltlich'
+}
+
+/**
+ * Was ein Bundesland auf dem Blatt zu stehen hat.
+ *
+ * **Eine Tabelle, kein Ast je Land** (Moritz, 05.08.2026: „erstmal
+ * niedersachsen. später werden wir die anderen bundesländer ergänzen"). Ein
+ * weiteres Land ist damit ein Eintrag und keine Codeänderung — und genau das
+ * war das Versprechen; zwei Funktionen mit je einem `if` hätten es nicht
+ * gehalten.
+ *
+ * Nötig ist die Verzweigung, weil die Erteilung von Jagderlaubnisscheinen
+ * Landesrecht ist (§ 11 Abs. 1 Satz 3 BJagdG) und die Länder weit
+ * auseinandergehen: Niedersachsen kennt keine Anzeigepflicht des Ausstellers,
+ * NRW verlangt eine binnen eines Monats, Brandenburg eine dreiwöchige
+ * Wartefrist (**beides Sekundärquelle, Gesetzeswortlaut ungeprüft** — s. den
+ * Ehrlichkeitsvermerk in §5 der Recherche; wer NRW einträgt, fängt beim
+ * Gesetzestext an, nicht bei diesem Kommentar). Ein Blatt ohne Landesbezug
+ * erweckte den Eindruck, überall gelte dasselbe.
+ *
+ * **Die Gesetzestexte stehen im vollen Wortlaut.** Das Blatt wird nach § 19
+ * NJagdG einem Beamten hingehalten; ein mit „…" gekürzter Paragraph ist genau
+ * dort die schwächere Fassung.
+ */
+type Landesrecht = {
+  /** Kleingedrucktes, immer. `text` ist WORTLAUT, `zusatz` ist unsere Anmerkung. */
+  readonly hinweise: readonly {
+    readonly bezug: string
+    readonly text: string
+    readonly zusatz?: string
+  }[]
+  /**
+   * Steht auf jedem Blatt AUSSER dem ausdrücklich unentgeltlichen — also auch
+   * auf dem Altbestand, der beide Wörter stehen lässt (s. `landesrecht()`).
+   * **Der Text muss seine Entgeltlich-Bedingung deshalb selbst nennen**, sonst
+   * behauptet er auf einem gestrichenen „Entgeltlich" eine Pflicht, die
+   * § 20 Nr. 5 für unentgeltliche Erlaubnisse gar nicht kennt. (Delta-Durchgang
+   * 05.08.2026, D1/D2)
+   */
+  readonly behoerdeWennEntgeltlich: string
+}
+
+const LANDESRECHT: { readonly [bundesland: string]: Landesrecht | undefined } = {
+  Niedersachsen: {
+    hinweise: [
+      {
+        bezug: '§ 19 NJagdG',
+        text:
+          'Jeder Jagdgast muss bei Ausübung der Jagd 1. einen Jagderlaubnisschein mit sich '
+          + 'führen oder 2. von einer jagdausübungsberechtigten Person oder einer angestellten '
+          + 'Jägerin oder einem angestellten Jäger begleitet sein. Für die Begleitung nach '
+          + 'Satz 1 Nr. 2 reicht es aus, wenn die Begleitperson im Jagdbezirk ohne '
+          + 'Schwierigkeiten zu erreichen ist.',
+      },
+      {
+        bezug: '§ 18 Abs. 2 NJagdG',
+        text:
+          'Die angestellten Jägerinnen und Jäger sowie die Jagdgäste dürfen sich, soweit '
+          + 'nichts anderes vereinbart ist, abweichend von § 1 Abs. 1 und 5 des '
+          + 'Bundesjagdgesetzes die Trophäen des von ihnen erlegten Wildes aneignen.',
+        zusatz: 'Eine abweichende Vereinbarung steht, falls getroffen, oben unter „Auflagen".',
+      },
+    ],
+    behoerdeWennEntgeltlich:
+      'Niedersachsen: Diese Erlaubnis ist von der ausstellenden Person nicht bei der '
+      + 'Jagdbehörde anzuzeigen. Wer als Inhaber einen Jagdpachtvertrag anzeigt, hat sie '
+      + 'dabei nach § 20 Nr. 5 NJagdG anzugeben, sofern sie entgeltlich erteilt wurde und '
+      + 'mindestens die Jagd auf eine Wildart für deren volle Jagdzeit gestattet.',
+  },
+}
+
+/**
+ * Der landesrechtliche Teil des Blattes.
+ *
+ * **Ein unbekanntes Land bekommt nichts** — lieber kein Paragraph als ein
+ * fremder. NJagdG-Text auf einem bayerischen Blatt wäre schlicht falsch, und
+ * das Blatt lässt den Abschnitt dann ganz weg.
+ *
+ * Der Behörden-Hinweis richtet sich an den EMPFÄNGER, nicht an den Aussteller:
+ * in Niedersachsen hat der Aussteller keine Pflicht gegenüber der Behörde.
+ *
+ * **Er erscheint auch beim Altbestand (`null`), und das ist eine Entscheidung**
+ * (Schlusslesung 05.08.2026, Befund 9): ein `null`-Blatt lässt beide Wörter
+ * stehen und fordert zum Streichen auf. Streicht der Mensch „Unentgeltlich",
+ * hält der Empfänger ein entgeltliches Papier in der Hand — ohne den Hinweis
+ * wäre es das einzige, das ihn nicht auf seine Pflicht stößt. Nur `false`
+ * unterdrückt ihn, weil dort jemand ausdrücklich „unentgeltlich" entschieden
+ * hat.
+ */
+export function landesrecht(
+  bundesland: string | null | undefined,
+  entgeltlich: boolean | null | undefined,
+): {
+  hinweise: readonly { bezug: string; text: string; zusatz?: string }[]
+  behoerde: string | null
+} {
+  // `Object.hasOwn`, nicht bloß der Zugriff: `LANDESRECHT['constructor']` oder
+  // `['toString']` träfe sonst die Prototyp-Kette, und `landesrecht()` gäbe
+  // entgegen seinem Rückgabetyp `hinweise: undefined` zurück — das Blatt
+  // stürbe an `.map()`. Der Wert kommt aus `districts.bundesland`, einer frei
+  // beschreibbaren Textspalte. (Codex, 05.08.2026, W10)
+  const schluessel = bundesland ?? ''
+  const land = Object.hasOwn(LANDESRECHT, schluessel) ? LANDESRECHT[schluessel] : undefined
+  if (!land) return { hinweise: [], behoerde: null }
+  return {
+    hinweise: land.hinweise,
+    behoerde: entgeltlich === false ? null : land.behoerdeWennEntgeltlich,
+  }
 }
 
 /**
@@ -173,6 +377,7 @@ export function alsSpalten(e: Entwurf, revierId: string, ausstellerId: string) {
     zone_ids: [] as string[],
     stand_ids: e.art === 'staende' ? [...e.standIds] : [],
     auflagen: e.auflagen.trim() || null,
+    entgeltlich: e.entgeltlich,
   }
 }
 
