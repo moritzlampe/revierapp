@@ -53,7 +53,8 @@
 .jes-feld textarea:focus-visible,
 .jes-eingriff input:focus-visible,
 .jes-eingriff select:focus-visible,
-.jes-eingriff a:focus-visible {
+.jes-eingriff a:focus-visible,
+.jes-entgelt input:focus-visible {
   outline: 2px solid var(--z-accent);
   outline-offset: 1px;
 }
@@ -279,13 +280,15 @@
   border-top: 1px solid var(--z-border);
 }
 
-.jes-eingriff label {
+.jes-eingriff label,
+.jes-entgelt label {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.jes-eingriff label > span {
+.jes-eingriff label > span,
+.jes-entgelt label > span {
   font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.02em;
@@ -293,7 +296,8 @@
 }
 
 .jes-eingriff input,
-.jes-eingriff select {
+.jes-eingriff select,
+.jes-entgelt input {
   font: inherit;
   font-size: 0.875rem;
   color: var(--z-text-primary);
@@ -325,6 +329,19 @@
   outline: 2px solid var(--z-accent);
   outline-offset: 1px;
 }
+
+/* Betrag und Faelligkeit im Ausstellformular — nebeneinander, weil sie
+   zusammen EINE Vereinbarung sind. Aussehen und Fokus erben sie von den
+   `.jes-eingriff`-Regeln oben; eigen ist nur das Raster. */
+.jes-entgelt {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.jes-entgelt input { width: 100%; }
+.jes-entgelt .jes-hinweis { grid-column: 1 / -1; }
 
 /* Erbt Aussehen und Fokus von `.jes-eingriff button` (s. oben). Eigen ist nur
    die Absetzung nach rechts: alles links davon aendert die Zeile, dies liest

@@ -92,7 +92,7 @@ export default async function JagderlaubnissePage({
       .from('hunting_licenses')
       .select(
         'id, holder_name, holder_email, holder_id, valid_from, valid_until, status, ' +
-          'auflagen, zone_ids, stand_ids, invite_code, entgeltlich'
+          'auflagen, zone_ids, stand_ids, invite_code, entgeltlich, entgelt_betrag, entgelt_faellig'
       )
       .eq('district_id', revier.id)
       .order('valid_until', { ascending: false }),

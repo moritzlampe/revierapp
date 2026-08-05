@@ -4,6 +4,7 @@ import { typLabel } from '../../../objekte'
 import {
   alsBerlinDatum,
   alsDatum,
+  alsEuro,
   alsHektar,
   alsStatus,
   darfGedrucktWerden,
@@ -58,6 +59,8 @@ type ScheinZeile = {
   zone_ids: string[] | null
   stand_ids: string[] | null
   entgeltlich: boolean | null
+  entgelt_betrag: string | number | null
+  entgelt_faellig: string | null
   created_at: string | null
   status: string | null
 }
@@ -97,7 +100,8 @@ export default async function ScheinDruckSeite({
       .from('hunting_licenses')
       .select(
         'id, district_id, issuer_id, holder_name, holder_jagdschein_nr, valid_from, ' +
-          'valid_until, auflagen, zone_ids, stand_ids, entgeltlich, created_at, status'
+          'valid_until, auflagen, zone_ids, stand_ids, entgeltlich, entgelt_betrag, ' +
+          'entgelt_faellig, created_at, status'
       )
       .eq('id', id),
     'Der Begehungsschein'
@@ -181,6 +185,23 @@ export default async function ScheinDruckSeite({
   )
   const ausstellerName = aussteller[0]?.display_name?.trim() || null
 
+  /**
+   * **Ohne Aussteller kein Blatt** (Fremdpruefung 05.08.2026, S4).
+   *
+   * Derselbe Fall wie beim Revier eine Abfrage hoeher, und er war uebersehen:
+   * `geladen()` wirft nur bei einem DB-Fehler, 0 Zeilen sind ein gueltiges
+   * Ergebnis. Ohne diesen Riegel entstand das vollstaendige Dokument mit dem
+   * Satz „Der Jagdausuebungsberechtigte erteilt die vorstehende … Erlaubnis"
+   * — ohne dass irgendwo steht, WER das ist, und mit einer leeren
+   * Unterschriftszeile darunter. Ein Papier, das eine Erlaubnis behauptet,
+   * deren Urheber es nicht nennt.
+   */
+  if (!ausstellerName) {
+    return (
+      <Hinweisblatt text="Der Aussteller dieses Begehungsscheins ist nicht lesbar — ohne ihn wird kein Blatt ausgegeben." />
+    )
+  }
+
   const art = zuteilungsArt(schein.zone_ids, schein.stand_ids)
   const standIds = schein.stand_ids ?? []
   // Nur laden, wenn es etwas zu laden gibt: ein `.in('id', [])` ist eine Abfrage
@@ -231,6 +252,11 @@ export default async function ScheinDruckSeite({
   )
 
   const { hinweise, behoerde } = landesrecht(revier.bundesland, schein.entgeltlich)
+  const betrag = alsEuro(schein.entgelt_betrag)
+  const faellig = schein.entgelt_faellig?.trim() || null
+  // Nur anbieten, wenn es etwas zu drucken GIBT — ein Haekchen ohne Wirkung
+  // ist schlimmer als keins.
+  const hatEntgelt = schein.entgeltlich === true && (betrag !== null || faellig !== null)
   const flaeche = alsHektar(revier.area_ha)
   // `alsBerlinDatum`, NICHT `alsDatum`: `created_at` ist ein `timestamptz`. Der
   // Schnitt am ISO-String läge einen Tag zu früh, wenn der Schein zwischen 00:00
@@ -251,6 +277,26 @@ export default async function ScheinDruckSeite({
         Zum Drucken <kbd>Strg</kbd>+<kbd>P</kbd> (Mac: <kbd>Cmd</kbd>+<kbd>P</kbd>). Im
         Druckdialog „Kopf- und Fußzeilen“ abwählen und Ränder auf „Standard“ lassen.
       </p>
+
+      {/* **Ohne JavaScript, und das ist keine Sparsamkeit.** Ein Häkchen, das
+          die Seite neu lädt oder React-Zustand braucht, wäre im Moment des
+          Druckens die unzuverlässigere Lösung — der Browser druckt den DOM, wie
+          er dasteht, und `:has()` schlägt direkt darauf durch. Voreinstellung
+          ist AUS: ein versehentlich mitgedruckter Preis auf einem Blatt, das
+          Polizeibeamten vorgezeigt wird, ist der teurere Fehler als ein
+          vergessenes Häkchen. */}
+      {hatEntgelt ? (
+        <p className="druck-anleitung">
+          <label>
+            <input type="checkbox" id="zeige-entgelt" />
+            Betrag und Fälligkeit mitdrucken
+          </label>
+          <span>
+            Ohne Häkchen ist das Blatt der Nachweis zum Mitführen (§ 19 NJagdG) — mit
+            Häkchen zugleich die Vereinbarung zum Unterschreiben.
+          </span>
+        </p>
+      ) : null}
 
       <div className="blatt">
         {/* Faltmarken für die Drittelung. Die einzige Verzierung des Blattes,
@@ -316,9 +362,7 @@ export default async function ScheinDruckSeite({
             Datenzeile. „nicht übertragbar" ist keine Floskel, sondern § 18
             Abs. 1 NJagdG. */}
         <p className="satz">
-          {ausstellerName
-            ? `${ausstellerName} erteilt als Jagdausübungsberechtigter die vorstehende, nicht übertragbare Jagderlaubnis.`
-            : 'Der Jagdausübungsberechtigte erteilt die vorstehende, nicht übertragbare Jagderlaubnis.'}
+          {`${ausstellerName} erteilt als Jagdausübungsberechtigter die vorstehende, nicht übertragbare Jagderlaubnis.`}
         </p>
 
         <div className="feld">
@@ -330,6 +374,15 @@ export default async function ScheinDruckSeite({
             ) : null}
           </div>
         </div>
+
+        {hatEntgelt ? (
+          <div className="feld feld--entgelt">
+            <p className="mark">Entgelt</p>
+            <div className="wert">
+              {[betrag, faellig].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+        ) : null}
 
         <div className="feld">
           <p className="mark">Zuteilung</p>
@@ -390,7 +443,7 @@ export default async function ScheinDruckSeite({
           <div className="sig">
             <div>
               <span className="schreiblinie" />
-              {ausstellerName ? <p className="gedruckt">{ausstellerName}</p> : null}
+              <p className="gedruckt">{ausstellerName}</p>
               <p className="mark">Aussteller (Jagdausübungsberechtigter)</p>
             </div>
             <div>

@@ -151,6 +151,102 @@ export type Entwurf = {
    * am Formular gibt es diese Zeit nicht.
    */
   entgeltlich: boolean | null
+  /** Migration 104, als Rohtext aus dem Feld — deutsche Schreibweise erlaubt. */
+  betrag: string
+  /** Migration 104, Freitext: „jährlich zum 1. April", „einmalig bei Übergabe". */
+  faellig: string
+}
+
+/**
+ * Ein getippter Betrag als Zahl, oder `null`.
+ *
+ * **Deutsche Schreibweise, und das ist kein Komfort, sondern der Fehlerfall:**
+ * wer „500,50" tippt, meint fünfhundertfünfzig Cent — `Number('500,50')` ist
+ * aber `NaN`, und `parseFloat` läse daraus stillschweigend `500`. Ein
+ * abgeschnittener Betrag auf einem Papier, das jemand unterschreibt, ist
+ * schlimmer als eine Fehlermeldung.
+ *
+ * Punkte gelten als Tausendertrenner (`1.500,50`), das Komma als Dezimalzeichen.
+ * Leer ergibt `null` — ein Betrag darf fehlen, auch bei einem entgeltlichen
+ * Schein: eine Absprache muss nicht feststehen.
+ */
+export function betragAlsZahl(text: string): number | null {
+  const roh = text.trim()
+  if (!roh) return null
+  // Erst prüfen, dann umformen: sonst würde „1,2,3" nach dem Ersetzen zu etwas,
+  // das `Number` klaglos frisst.
+  if (!/^(\d{1,3}(\.\d{3})*|\d+)(,\d{1,2})?$/.test(roh)) return null
+  // **Hoechstens acht Vorkommastellen, wie `numeric(10,2)`** (Fremdpruefung
+  // 05.08.2026, W1). Ohne die Grenze passierte eine beliebig lange
+  // Ziffernfolge, `Number` rundete sie still oder machte `Infinity` daraus,
+  // und die Abweisung kaeme erst als `numeric field overflow` aus der DB —
+  // wenn ueberhaupt.
+  //
+  // **Als eigene Pruefung und NICHT in der Regex**, weil das zwei Fragen sind:
+  // „ist das eine wohlgeformte Zahl" und „passt sie in die Spalte". Der erste
+  // Versuch presste beides in ein Muster und war prompt falsch — `\d{1,3}`
+  // plus zwei Dreiergruppen sind NEUN Stellen, nicht acht. Der Selbsttest hat
+  // es gefangen.
+  if (roh.split(',')[0].replace(/\./g, '').length > 8) return null
+  // Kein `Number.isFinite`-Nachtest: nach der Regex sind nur Ziffern und
+  // hoechstens zwei Nachkommastellen uebrig, das ergibt immer eine Zahl.
+  return Number(roh.replace(/\./g, '').replace(',', '.'))
+}
+
+/**
+ * Der Fehlertext zu einem getippten Betrag, oder `null`.
+ *
+ * Eigene Funktion, weil BEIDE Schreibwege denselben Satz brauchen — das
+ * Ausstellformular und das Nachtragen in der Liste. Zweimal wortgleich
+ * getippt liefe er beim ersten Umformulieren auseinander.
+ */
+export function betragFehler(betrag: string): string | null {
+  if (!betrag.trim() || betragAlsZahl(betrag) !== null) return null
+  return 'Der Betrag ist nicht lesbar. Beispiele: 500 oder 1.500,50'
+}
+
+/**
+ * Die zwei Entgelt-Spalten, an `entgeltlich` gebunden.
+ *
+ * **Eine Regel, ein Ort.** Sie stand zuerst zweimal da — einmal in
+ * `alsSpalten`, einmal im Nachtrag-Pfad der Liste — und beide Male gleich:
+ * wer einen Betrag tippt und danach auf „unentgeltlich" umschaltet, darf ihn
+ * nicht mitschreiben, sonst trägt die Zeile ein Entgelt, das der Schein
+ * ausdrücklich verneint. Zwei Kopien einer Regel, die in eine Datenbank
+ * schreibt, sind eine zu viel. (Ponytail, 05.08.2026)
+ */
+export function entgeltSpalten(
+  entgeltlich: boolean | null,
+  betrag: string,
+  faellig: string,
+): { entgelt_betrag: number | null; entgelt_faellig: string | null } {
+  if (entgeltlich !== true) return { entgelt_betrag: null, entgelt_faellig: null }
+  return { entgelt_betrag: betragAlsZahl(betrag), entgelt_faellig: faellig.trim() || null }
+}
+
+/**
+ * Ein Betrag aus der DB als deutscher Eurobetrag.
+ *
+ * `null` bleibt `null` — das Blatt lässt die Zeile dann weg, statt „0,00 €" zu
+ * behaupten.
+ *
+ * **Die Funktion nimmt `number` UND `string`, obwohl PostgREST eine Zahl
+ * liefert.** Der erste Entwurf behauptete hier das Gegenteil („numeric kommt
+ * als String") — gemessen 05.08.2026 gegen die Produktion:
+ * `json_typeof(to_json(1200.50::numeric(10,2)))` ist `number`. Die
+ * String-Annahme bleibt trotzdem im Typ, aber als das, was sie ist: eine
+ * Absicherung gegen einen untypisierten Client, keine belegte Mechanik.
+ *
+ * **`undefined` aus demselben Grund** (Ponytail schlug vor, es zu streichen):
+ * die Spaltenliste ist ein String. Wer sie einmal vergisst, bekommt zur
+ * Laufzeit `undefined` gegen einen Typ, der `null` verspricht — und das Blatt
+ * druckte „0,00 €" statt gar nichts.
+ */
+export function alsEuro(betrag: number | string | null | undefined): string | null {
+  if (betrag === null || betrag === undefined || betrag === '') return null
+  const n = typeof betrag === 'string' ? Number(betrag) : betrag
+  if (!Number.isFinite(n)) return null
+  return n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
 }
 
 /**
@@ -173,6 +269,9 @@ export function pruefeEntwurf(e: Entwurf): string | null {
   if (e.bis < e.von) return 'Das Ende liegt vor dem Beginn.'
   if (e.art === 'staende' && e.standIds.length === 0) return 'Kein Stand ausgewählt.'
   if (e.entgeltlich === null) return 'Entgeltlich oder unentgeltlich — bitte eins von beidem wählen.'
+  // Nur beim entgeltlichen Schein: ein Betrag DARF fehlen, aber ein getippter
+  // muss lesbar sein.
+  if (e.entgeltlich) return betragFehler(e.betrag)
   return null
 }
 
@@ -378,6 +477,7 @@ export function alsSpalten(e: Entwurf, revierId: string, ausstellerId: string) {
     stand_ids: e.art === 'staende' ? [...e.standIds] : [],
     auflagen: e.auflagen.trim() || null,
     entgeltlich: e.entgeltlich,
+    ...entgeltSpalten(e.entgeltlich, e.betrag, e.faellig),
   }
 }
 

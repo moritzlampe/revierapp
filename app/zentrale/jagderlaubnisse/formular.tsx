@@ -6,10 +6,13 @@ import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../schreiben'
 import {
   alsDatum,
+  alsEuro,
   alsEinloeseErgebnis,
   alsSpalten,
   alsStatus,
+  betragFehler,
   effektiverStatus,
+  entgeltSpalten,
   einloeseText,
   jagdjahrEnde,
   pruefeEntwurf,
@@ -34,6 +37,9 @@ export type ScheinZeile = {
   invite_code: string | null
   /** Migration 103. `null` heißt „nicht angegeben", nicht „unentgeltlich". */
   entgeltlich: boolean | null
+  /** Migration 104. Kommt als Zahl an; `string` steht defensiv daneben, s. `alsEuro`. */
+  entgelt_betrag: string | number | null
+  entgelt_faellig: string | null
 }
 
 /**
@@ -84,6 +90,8 @@ export default function Ausstellen({
   const [auflagen, setAuflagen] = useState('')
   // Keine Vorbelegung: die Angabe soll entschieden werden, nicht ererbt.
   const [entgeltlich, setEntgeltlich] = useState<boolean | null>(null)
+  const [betrag, setBetrag] = useState('')
+  const [faellig, setFaellig] = useState('')
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
 
@@ -97,7 +105,7 @@ export default function Ausstellen({
    */
   const inArbeit = useRef(false)
 
-  const entwurf: Entwurf = { name, email, von, bis, art, standIds, auflagen, entgeltlich }
+  const entwurf: Entwurf = { name, email, von, bis, art, standIds, auflagen, entgeltlich, betrag, faellig }
 
   const absenden = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -153,6 +161,10 @@ export default function Ausstellen({
       setEmail('')
       setAuflagen('')
       setEntgeltlich(null)
+      // Mit der Entgeltlichkeit, aus demselben Grund: Betrag und Fälligkeit
+      // sind je Person verhandelt, nicht je Sitzung.
+      setBetrag('')
+      setFaellig('')
       router.refresh()
     } catch (err: unknown) {
       setFehler(err instanceof Error ? err.message : 'Der Schein konnte nicht angelegt werden.')
@@ -287,6 +299,43 @@ export default function Ausstellen({
                 Jagderlaubnisscheinen ist Laendersache (§ 11 Abs. 1 Satz 3
                 BJagdG), und NRW verlangt eine Anzeige binnen eines Monats, wo
                 Niedersachsen gar keine kennt. (Codex, 05.08.2026, W9) */}
+            {/* Nur beim entgeltlichen Schein — beim unentgeltlichen gibt es
+                nichts zu vereinbaren, und `alsSpalten` schreibt dann ohnehin
+                `null`, egal was hier stünde. */}
+            {entgeltlich === true ? (
+              <div className="jes-entgelt">
+                <label>
+                  <span>Betrag</span>
+                  <input
+                    value={betrag}
+                    onChange={(e) => setBetrag(e.target.value)}
+                    placeholder="z. B. 1.500,50"
+                    inputMode="decimal"
+                    maxLength={14}
+                    autoComplete="off"
+                  />
+                </label>
+                <label>
+                  <span>Fällig</span>
+                  <input
+                    value={faellig}
+                    onChange={(e) => setFaellig(e.target.value)}
+                    placeholder="z. B. jährlich zum 1. April"
+                    maxLength={80}
+                    // (Schlusslesung 05.08.2026, Befund 3)
+                    // Risiko wie bei den Auflagen, nur hier billig zu haben.
+                    // Riegel gegen einen Text, der das Blatt sprengt — dasselbe
+                    autoComplete="off"
+                  />
+                </label>
+                <p className="jes-hinweis">
+                  Beides darf offenbleiben. Auf dem gedruckten Blatt erscheint es
+                  nur, wenn du es dort ausdrücklich ankreuzt — der Schein wird
+                  auch Polizeibeamten vorgezeigt.
+                </p>
+              </div>
+            ) : null}
+
             <p className="jes-hinweis">
               {bundesland === 'Niedersachsen'
                 ? 'Betrifft nur den entgeltlichen Fall: der Inhaber muss ihn nach § 20 Nr. 5 '
@@ -328,16 +377,24 @@ export default function Ausstellen({
         ) : (
           <ul className="jes-liste">
             {/* Der Schlüssel trägt den Serverstand mit, nicht nur die ID. Damit
-                setzt React die Zeile neu auf, sobald sich Status oder Datum
-                ändern — und die zwei Eingabefelder, die ihren Anfangswert aus
+                setzt React die Zeile neu auf, sobald sich einer der Werte
+                ändert — und die zwei Eingabefelder, die ihren Anfangswert aus
                 den Props ziehen, können nicht auf einem überholten Stand
                 stehenbleiben, während die Zeile darüber schon den neuen zeigt.
                 Ein halb angefangener Eingriff geht dabei verloren; das ist die
                 richtige Richtung, denn die Zeile hat sich unter ihm bewegt.
-                (Codex, 31.07.2026) */}
+                (Codex, 31.07.2026)
+
+                **Betrag und Fälligkeit MÜSSEN mit hinein** (Fremdprüfung
+                05.08.2026, S6): fehlten sie, setzte `router.refresh()` die
+                Zeile nach einer konkurrierenden Änderung genau dieser zwei
+                Spalten nicht neu auf. Der lokale Vergleichsstand bliebe alt,
+                und jeder weitere Speicherversuch scheiterte **dauerhaft** am
+                Compare-and-Swap — ein Zustand, aus dem nur ein harter Reload
+                herausführt. */}
             {scheine.map((s) => (
               <Schein
-                key={`${s.id}:${s.status}:${s.valid_until}:${s.entgeltlich}`}
+                key={`${s.id}:${s.status}:${s.valid_until}:${s.entgeltlich}:${s.entgelt_betrag}:${s.entgelt_faellig}`}
                 schein={s}
                 heute={heute}
                 staende={staende}
@@ -387,6 +444,11 @@ function Schein({
     bis: schein.valid_until,
     status: schein.status,
     entgeltlich: schein.entgeltlich,
+    // Einmal normalisiert statt bei jedem Vergleich. `Number()` ist auch dann
+    // richtig, wenn schon eine Zahl ankommt — und Postgres vergleicht
+    // `eq.1200.5` gegen `numeric 1200.50` numerisch korrekt.
+    betrag: schein.entgelt_betrag === null ? null : Number(schein.entgelt_betrag),
+    faellig: schein.entgelt_faellig,
   })
   const [bis, setBis] = useState(schein.valid_until)
   /**
@@ -406,10 +468,27 @@ function Schein({
   // Nachtragbar, weil es sonst niemand nachtragen könnte: das Ausstellformular
   // erreicht die vier Altscheine nicht mehr.
   const [neuEntgeltlich, setNeuEntgeltlich] = useState<boolean | null>(schein.entgeltlich)
+  // Als Text, damit die deutsche Schreibweise beim Tippen erhalten bleibt.
+  // `numeric` kommt als String aus PostgREST („1200.00"); fuer die Anzeige im
+  // Feld wird daraus die getippte Form.
+  // Der gespeicherte Wert ist eine Zahl — Tausenderpunkte sind beim Speichern
+  // verschwunden, Nachkommanullen auch. Aus `1200` wird „1200", aus `1200.5`
+  // wird „1200,5"; NICHT die getippte und auch nicht die kanonische
+  // Zwei-Nachkomma-Form. `betragAlsZahl` liest beides sauber zurueck, also
+  // bleibt `geaendert` korrekt false. (Zwei Kommentare haben hier schon etwas
+  // Falsches behauptet — Schlusslesung 05.08.2026, Befund 2.)
+  const [neuBetrag, setNeuBetrag] = useState(
+    schein.entgelt_betrag === null ? '' : String(schein.entgelt_betrag).replace('.', ','),
+  )
+  const [neuFaellig, setNeuFaellig] = useState(schein.entgelt_faellig ?? '')
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
   const [kopiert, setKopiert] = useState(false)
   const inArbeit = useRef(false)
+
+  const entgeltZusatz = [alsEuro(schein.entgelt_betrag), schein.entgelt_faellig]
+    .filter(Boolean)
+    .join(', ')
 
   const art = zuteilungsArt(schein.zone_ids, schein.stand_ids)
   const zuteilung =
@@ -419,8 +498,24 @@ function Schein({
         ? `${schein.zone_ids!.length} gezeichnete Bereiche`
         : nenneStaende(schein.stand_ids ?? [], staende)
 
+  // Dieselbe Regel wie im Ausstellformular, aus derselben Funktion.
+  const zuSchreiben = entgeltSpalten(neuEntgeltlich, neuBetrag, neuFaellig)
+
+  // Ein unlesbarer Betrag ergibt `null` — genau wie ein leeres Feld. Bei einem
+  // Schein, dessen Betrag schon `null` war, faellt der Vergleich damit auf
+  // „nichts geaendert" und der Knopf bliebe gesperrt: der Nutzer tippt Unsinn
+  // und die Oberflaeche reagiert gar nicht. Deshalb zaehlt ein FEHLER als
+  // Aenderung — dann greift der Riegel in `speichern()` und sagt, was los ist.
+  // (Fremdpruefung 05.08.2026, W7)
+  const betragUnlesbar = neuEntgeltlich === true && betragFehler(neuBetrag) !== null
+
   const geaendert =
-    bis !== basis.bis || (neuerStatus || null) !== basis.status || neuEntgeltlich !== basis.entgeltlich
+    bis !== basis.bis ||
+    (neuerStatus || null) !== basis.status ||
+    neuEntgeltlich !== basis.entgeltlich ||
+    zuSchreiben.entgelt_betrag !== basis.betrag ||
+    zuSchreiben.entgelt_faellig !== basis.faellig ||
+    betragUnlesbar
 
   /**
    * Verlängern und Sperren in einem Schreibvorgang — aber nur, wenn die Zeile
@@ -449,27 +544,48 @@ function Schein({
       setFehler('Das Ende liegt vor dem Beginn.')
       return
     }
+    // Ohne diese Zeile wuerde ein unlesbarer Betrag still zu `null` — der Wert
+    // waere weg, und der Nutzer saehe eine Erfolgsmeldung.
+    const betragProblem = neuEntgeltlich ? betragFehler(neuBetrag) : null
+    if (betragProblem) {
+      setFehler(betragProblem)
+      return
+    }
     inArbeit.current = true
     setLaeuft(true)
     setFehler(null)
     try {
       let abfrage = createClient()
         .from('hunting_licenses')
-        .update({ valid_until: bis, status: neuerStatus || null, entgeltlich: neuEntgeltlich })
+        .update({
+          valid_until: bis,
+          status: neuerStatus || null,
+          entgeltlich: neuEntgeltlich,
+          ...zuSchreiben,
+        })
         .eq('id', schein.id)
-        .eq('valid_until', basis.bis)
       // Beide sind nullable: `.eq(spalte, null)` wird zu `spalte=eq.null` und
       // trifft nie — für NULL braucht PostgREST `.is()`.
       //
       // **Jede Spalte im UPDATE braucht ihre eigene Bedingung.** Eine dritte
       // Spalte ohne dritten Abgleich hätte das Loch wieder aufgemacht, gegen
       // das die zwei bestehenden gebaut wurden (Codex, 31.07.2026).
-      abfrage =
-        basis.status === null ? abfrage.is('status', null) : abfrage.eq('status', basis.status)
-      abfrage =
-        basis.entgeltlich === null
-          ? abfrage.is('entgeltlich', null)
-          : abfrage.eq('entgeltlich', basis.entgeltlich)
+      // **Alle fuenf geschriebenen Spalten in einer Schleife.** Jede Spalte im
+      // UPDATE braucht ihre Bedingung, sonst ist sie das Loch im
+      // Compare-and-Swap (Codex, 31.07.2026). Als Liste statt als fuenf
+      // Verzweigungen: eine sechste Spalte kostet dann einen Eintrag.
+      // `null` braucht `.is()` — `.eq(spalte, null)` wird zu `spalte=eq.null`
+      // und trifft nie.
+      const zuVergleichen: readonly (readonly [string, unknown])[] = [
+        ['valid_until', basis.bis],
+        ['status', basis.status],
+        ['entgeltlich', basis.entgeltlich],
+        ['entgelt_betrag', basis.betrag],
+        ['entgelt_faellig', basis.faellig],
+      ]
+      for (const [spalte, wert] of zuVergleichen) {
+        abfrage = wert === null ? abfrage.is(spalte, null) : abfrage.eq(spalte, wert)
+      }
       const { data, error } = await abfrage.select('id')
 
       if (error) throw new Error(error.message)
@@ -483,7 +599,13 @@ function Schein({
         return
       }
 
-      setBasis({ bis, status: neuerStatus || null, entgeltlich: neuEntgeltlich })
+      setBasis({
+        bis,
+        status: neuerStatus || null,
+        entgeltlich: neuEntgeltlich,
+        betrag: zuSchreiben.entgelt_betrag,
+        faellig: zuSchreiben.entgelt_faellig,
+      })
       router.refresh()
     } catch (err: unknown) {
       setFehler(err instanceof Error ? err.message : 'Die Änderung konnte nicht gespeichert werden.')
@@ -519,7 +641,7 @@ function Schein({
           {schein.entgeltlich === null ? (
             <span className="jes-fehlt">nicht angegeben — vor dem Ausdruck ergänzen</span>
           ) : schein.entgeltlich ? (
-            'Entgeltlich'
+            `Entgeltlich${entgeltZusatz && ` — ${entgeltZusatz}`}`
           ) : (
             'Unentgeltlich'
           )}
@@ -605,6 +727,31 @@ function Schein({
             <option value="ja">Entgeltlich</option>
           </select>
         </label>
+        {neuEntgeltlich ? (
+          <>
+            <label>
+              <span>Betrag</span>
+              <input
+                value={neuBetrag}
+                onChange={(e) => setNeuBetrag(e.target.value)}
+                placeholder="1.500,50"
+                inputMode="decimal"
+                maxLength={14}
+                size={10}
+              />
+            </label>
+            <label>
+              <span>Fällig</span>
+              <input
+                value={neuFaellig}
+                onChange={(e) => setNeuFaellig(e.target.value)}
+                placeholder="jährlich zum 1. April"
+                maxLength={80}
+                size={18}
+              />
+            </label>
+          </>
+        ) : null}
         <button type="button" onClick={() => void speichern()} disabled={laeuft || !geaendert}>
           {laeuft ? 'Speichert …' : 'Speichern'}
         </button>

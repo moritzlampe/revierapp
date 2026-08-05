@@ -196,6 +196,37 @@
 .feld .wert { font-size: 10pt; }
 
 .entgelt { text-transform: uppercase; letter-spacing: 0.12em; }
+
+/* **Der Schalter wirkt rein ueber CSS.** `:has()` liest den Haken direkt am
+   DOM — kein JavaScript, kein Neuladen, und der Browser druckt genau den
+   Zustand, den der Mensch gerade sieht.
+
+   **Die Richtung ist der Punkt** (Fremdpruefung 05.08.2026, D1/S8): der erste
+   Entwurf blendete den Block per `:not(:checked)` AUS. Ein Browser ohne
+   `:has()` verwirft die Regel — und damit stand der Betrag dann IMMER auf dem
+   Papier, ausgerechnet auf dem Blatt, das Polizeibeamten vorgezeigt wird. Die
+   sichere Voreinstellung war in die unsichere Richtung abgesichert.
+   Jetzt ist „unsichtbar" der Grundzustand und `:checked` schaltet ihn EIN:
+   faellt `:has()` aus, bleibt der Preis weg. Der Schalter wirkt dann nicht,
+   aber er verraet auch nichts. */
+.feld--entgelt { display: none; }
+body:has(#zeige-entgelt:checked) .feld--entgelt { display: grid; }
+
+/* **Keine eigene Klasse fuer den Schalter.** Der erste Entwurf gab ihm eine —
+   und `.druck-schalter { display: flex }` stand DANACH im Stylesheet, bei
+   gleicher Spezifitaet wie das `display: none` im `@media print`-Block darueber.
+   Damit gewann Flex, und das Ankreuzfeld waere mit aufs Papier gekommen. Die
+   Regeln haengen deshalb an `.druck-anleitung`, das die Druckausblendung
+   ohnehin besitzt und selbst kein `display` setzt. (Ponytail, 05.08.2026) */
+.druck-anleitung label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 2mm;
+}
+.druck-anleitung label + span { font-size: 0.85em; }
 .streichen { margin-top: 0.8mm; font-size: 7.5pt; }
 
 /* Zweispaltig und nummeriert, damit auch zehn Staende ohne Kuerzung passen.

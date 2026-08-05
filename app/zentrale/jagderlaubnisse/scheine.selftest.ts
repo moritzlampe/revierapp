@@ -10,12 +10,16 @@ import {
   alsBerlinDatum,
   alsDatum,
   alsEinloeseErgebnis,
+  alsEuro,
   alsHektar,
   alsSpalten,
   alsStatus,
+  betragAlsZahl,
+  betragFehler,
   darfGedrucktWerden,
   effektiverStatus,
   entgeltAufDemBlatt,
+  entgeltSpalten,
   jagdjahrEnde,
   landesrecht,
   pruefeEntwurf,
@@ -80,6 +84,8 @@ const gut: Entwurf = {
   standIds: [],
   auflagen: '',
   entgeltlich: false,
+  betrag: '',
+  faellig: '',
 }
 assert.equal(pruefeEntwurf(gut), null)
 assert.match(pruefeEntwurf({ ...gut, name: '   ' })!, /Name/)
@@ -96,6 +102,78 @@ assert.equal(pruefeEntwurf({ ...gut, entgeltlich: true }), null)
 // `gut.entgeltlich` ist `false`: die Zusicherung ganz oben belegt damit zugleich,
 // dass „unentgeltlich" eine ANGABE ist und nicht mit `null` zusammenfaellt —
 // genau die Falle, die ein `if (!e.entgeltlich)` gebaut haette.
+
+// --- Betrag: deutsche Schreibweise, und der teure Fall ist das Komma ---
+assert.equal(betragAlsZahl('500'), 500)
+assert.equal(betragAlsZahl('500,50'), 500.5, 'Komma ist das Dezimalzeichen')
+assert.equal(betragAlsZahl('1.500,50'), 1500.5, 'Punkt ist der Tausendertrenner')
+assert.equal(betragAlsZahl('  750  '), 750)
+// (Der Fehler, gegen den die Funktion gebaut ist: `parseFloat('500,50')` laese
+// stillschweigend 500 — die Zusicherung auf 500.5 zwei Zeilen hoeher schliesst
+// das bereits aus.)
+// Leer ist kein Fehler: ein Betrag darf fehlen, auch bei entgeltlich.
+assert.equal(betragAlsZahl(''), null)
+// Unlesbares faellt durch, statt sich zurechtbiegen zu lassen.
+// `500.5` ist der teuerste davon: ohne die Regex wuerde der Punkt als
+// Tausendertrenner entfernt und daraus **5005** — ein Zehnfaches, lautlos.
+// `-20` faellt hier durch, weil die Migration bewusst keinen CHECK traegt.
+for (const muell of ['abc', '1,2,3', '500.5', '500,555', '-20', '1e3', '5,,0']) {
+  assert.equal(betragAlsZahl(muell), null, `${muell} darf keine Zahl ergeben`)
+}
+// Dieselbe Grenze wie `numeric(10,2)`: acht Vorkommastellen gehen, neun nicht.
+// Ohne sie rundete `Number` eine lange Ziffernfolge still, und die Abweisung
+// kaeme erst als `numeric field overflow` aus der Datenbank.
+assert.equal(betragAlsZahl('99999999,99'), 99999999.99, 'das Maximum der Spalte')
+assert.equal(betragAlsZahl('999999999'), null, 'neun Stellen sprengen die Spalte')
+assert.equal(betragAlsZahl('12345678901234567890'), null)
+assert.equal(betragAlsZahl('999.999.999'), null, 'auch mit Tausenderpunkten')
+assert.equal(betragAlsZahl('999.999'), 999999, 'sechs Stellen mit Punkt gehen')
+assert.equal(betragAlsZahl('12.345.678'), 12345678, 'acht Stellen mit Punkten gehen')
+// Die Grenze zaehlt ZIFFERN, nicht Zeichen: mit und ohne Tausenderpunkte
+// dieselbe Antwort.
+assert.equal(betragAlsZahl('12345678'), 12345678)
+assert.equal(betragAlsZahl('123456789'), null)
+
+// --- Euro-Anzeige ---
+assert.match(alsEuro(500.5)!, /500,50/)
+// PostgREST liefert `numeric` als ZAHL (gemessen 05.08.2026:
+// `json_typeof(to_json(1200.50::numeric))` = number). Die String-Form steht
+// defensiv daneben, weil der Client untypisiert ist — beide muessen durch.
+assert.match(alsEuro('1500.50')!, /1\.500,50/)
+// Fehlt der Betrag, laesst das Blatt die Zeile weg statt "0,00 €" zu behaupten.
+assert.equal(alsEuro(null), null)
+// Der Client ist untypisiert: eine vergessene Spalte liefert `undefined`.
+assert.equal(alsEuro(undefined), null)
+assert.equal(alsEuro('keine Zahl'), null)
+
+// --- Der Fehlertext steht an EINEM Ort, beide Schreibwege nutzen ihn ---
+assert.equal(betragFehler(''), null, 'kein Betrag ist kein Fehler')
+assert.equal(betragFehler('1.500,50'), null)
+assert.match(betragFehler('viel')!, /nicht lesbar/)
+
+// --- Die gemeinsame Entgelt-Regel ---
+assert.deepEqual(entgeltSpalten(true, '1.200', ' jährlich '), {
+  entgelt_betrag: 1200,
+  entgelt_faellig: 'jährlich',
+})
+// Der Kern: umschalten auf unentgeltlich nimmt das Entgelt MIT, egal was in
+// den Feldern steht.
+assert.deepEqual(entgeltSpalten(false, '1.200', 'jährlich'), {
+  entgelt_betrag: null,
+  entgelt_faellig: null,
+})
+assert.deepEqual(entgeltSpalten(null, '1.200', 'jährlich'), {
+  entgelt_betrag: null,
+  entgelt_faellig: null,
+})
+
+// --- Pruefung: ein getippter Betrag muss lesbar sein ---
+assert.equal(pruefeEntwurf({ ...gut, entgeltlich: true, betrag: '500,50' }), null)
+assert.equal(pruefeEntwurf({ ...gut, entgeltlich: true, betrag: '' }), null, 'Betrag darf fehlen')
+assert.match(pruefeEntwurf({ ...gut, entgeltlich: true, betrag: 'viel' })!, /nicht lesbar/)
+// Beim UNENTGELTLICHEN Schein wird das Feld gar nicht erst geprueft — es ist
+// dort nicht sichtbar, und ein Rest im State darf nichts blockieren.
+assert.equal(pruefeEntwurf({ ...gut, entgeltlich: false, betrag: 'viel' }), null)
 
 // --- Die INSERT-Zeile ---
 const spalten = alsSpalten(
@@ -125,6 +203,19 @@ assert.deepEqual(
 
 assert.equal(spalten.entgeltlich, false, 'unentgeltlich wird als false geschrieben, nicht als null')
 assert.equal(alsSpalten({ ...gut, entgeltlich: true }, 'r', 'i').entgeltlich, true)
+
+// Entgelt haengt an `entgeltlich`, NICHT am Feldinhalt: wer einen Betrag tippt
+// und danach auf "unentgeltlich" umschaltet, darf ihn nicht mitschreiben.
+const mitGeld = alsSpalten(
+  { ...gut, entgeltlich: true, betrag: '1.200', faellig: '  jährlich zum 1. April  ' }, 'r', 'i')
+assert.equal(mitGeld.entgelt_betrag, 1200)
+assert.equal(mitGeld.entgelt_faellig, 'jährlich zum 1. April')
+const ohneGeld = alsSpalten(
+  { ...gut, entgeltlich: false, betrag: '1.200', faellig: 'jährlich' }, 'r', 'i')
+assert.equal(ohneGeld.entgelt_betrag, null, 'unentgeltlich traegt keinen Betrag')
+assert.equal(ohneGeld.entgelt_faellig, null)
+// Leere Faelligkeit wird null, nicht ''.
+assert.equal(alsSpalten({ ...gut, entgeltlich: true, faellig: '   ' }, 'r', 'i').entgelt_faellig, null)
 
 // --- Das Blatt: drei Zustaende, nicht zwei ---
 assert.equal(entgeltAufDemBlatt(true), 'Entgeltlich')
