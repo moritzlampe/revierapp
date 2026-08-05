@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useGeolocation } from '@/hooks/useGeolocation'
@@ -118,6 +118,14 @@ export default function HuntPage() {
   const [inviteContacts, setInviteContacts] = useState<{ id: string; display_name: string }[]>([])
   const [inviteSearch, setInviteSearch] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
+  /**
+   * Der Riegel gegen den Doppelklick — **ein Ref, kein State** (Standard-Focus
+   * S5). `inviteBusy` wird aus der Closure gelesen und ist erst nach dem
+   * nächsten Render neu; zwei schnelle Klicks sähen beide `false`. Seit
+   * `addInvite` erst LIEST und dann schreibt, ist das Fenster dafür breiter
+   * als vorher. Der State bleibt als Anzeige an den Knöpfen.
+   */
+  const inviteLaeuft = useRef(false)
   const [chatOpenBusy, setChatOpenBusy] = useState(false)
   const [mapOpenBusy, setMapOpenBusy] = useState(false)
   // "Jetzt"-Snapshot für die Chat-Schreibsperre (Date.now() gehört nicht in den
@@ -272,19 +280,39 @@ export default function HuntPage() {
     const { data: hunt } = await supabase.from('hunts').select('*').eq('id', params.id).single()
     if (!hunt) { router.push('/app?tab=jagden'); return }
 
-    const { data: parts } = await supabase.from('hunt_participants').select('*, profiles(display_name, anonymize_kills)').eq('hunt_id', params.id)
+    const { data: parts, error: teilnehmerFehler } = await supabase.from('hunt_participants').select('*, profiles(display_name, anonymize_kills)').eq('hunt_id', params.id)
     const { data: { user } } = await supabase.auth.getUser()
 
     setHunt(hunt)
-    setParticipants(parts || [])
     setUserId(user?.id ?? null)
+
+    // **Ein gescheiterter Nachladelauf darf die Liste nicht LEEREN**
+    // (Fremdprüfung 05.08.2026, Punkt 8). Vorher lief der Fehler in
+    // `parts || []` und setzte damit `participants` auf leer — und weil
+    // `isJagdleiter` daraus abgeleitet wird, verschwand bei einem Funkloch
+    // nach dem Einladen die ganze Führungs-UI, obwohl die Einladung
+    // geschrieben war. Beim ERSTEN Laden ist leer richtig; beim Nachladen ist
+    // der alte Stand die bessere Auskunft als ein erfundener leerer.
+    //
+    // **KEIN `return` hier**, und das ist der Punkt, an dem der erste Versuch
+    // falsch war: darunter stehen `setLoading(false)`, die Sitzplätze und die
+    // Revierdaten. Ein Ausstieg hätte den Bildschirm beim ERSTEN Laden
+    // dauerhaft im Ladezustand hängen lassen — schlimmer als der Fehler, gegen
+    // den der Riegel gebaut ist. Übersprungen werden nur die drei Zuweisungen,
+    // die aus `parts` folgen.
+    if (teilnehmerFehler) {
+      console.error('[hunt] Teilnehmer konnten nicht geladen werden:', teilnehmerFehler)
+      showToast('Die Teilnehmerliste ist nicht aktuell.', 'warning')
+    } else {
+      setParticipants(parts || [])
     // `status === 'joined'` muss mit: get_my_joined_hunt_ids_as_leader() (067)
     // verlangt es, also darf das UI-Gate es nicht weglassen. Sonst sieht ein
     // eingeladener, aber noch nicht beigetretener Jagdleiter die Führungs-UI,
     // und jeder Knopf darin scheitert an RLS — genau die UI/RLS-Divergenz, die
     // 067 beseitigt hat.
-    setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter' && p.status === 'joined') || false)
-    setIsGruppenleiter(parts?.some(p => p.user_id === user?.id && p.tags?.includes('gruppenleiter')) || false)
+      setIsJagdleiter(parts?.some(p => p.user_id === user?.id && p.role === 'jagdleiter' && p.status === 'joined') || false)
+      setIsGruppenleiter(parts?.some(p => p.user_id === user?.id && p.tags?.includes('gruppenleiter')) || false)
+    }
     setLoading(false)
 
     // Solo-Hunt: Chat-Tab nicht erlaubt → auf Karte fallbacken
@@ -445,27 +473,85 @@ export default function HuntPage() {
   }
 
   // === Sprint C: Einladungsverwaltung (nur Jagdleiter) ===
-  // Wiederverwendung des Create-Flow-Einlade-Pfads: direkter Insert in
-  // hunt_participants mit status='invited' (participants_creator_all erlaubt
-  // dem Ersteller FOR ALL). C3-Mutation: Insert/Delete + loadHunt + refresh.
+  //
+  // **Bis zum 05.08.2026 ein blanker Insert — und damit seit Migration 088
+  // kaputt** (Backlog A-G8). Seither bleibt eine Absage als Zeile mit
+  // `status='declined'` stehen, statt gelöscht zu werden; der Insert lief für
+  // sie in `23505` (`UNIQUE (hunt_id, user_id)`), und der Nutzer sah nur
+  // „Einladen fehlgeschlagen". **Wer einmal abgesagt hatte, war hier nie
+  // wieder einladbar.** 088 hat die Auflage im Kopf ausdrücklich benannt
+  // („jeder Einladepfad muss künftig ein UPDATE sein"); nachgezogen wurde
+  // damals nur die Zentrale.
+  //
+  // Zwei Zweige, nach dem Vorbild von `app/zentrale/jagden/[id]/detail.tsx`:
+  // vorhandene abgesagte Zeile zurückdrehen, sonst neu anlegen.
+  //
+  // **`.in('status', …)` am Update ist ein Compare-and-Swap, kein Zierat:**
+  // zwischen dem Lesen und dem Schreiben kann derselbe Mensch zusagen. Ohne
+  // den Riegel würde eine frische Zusage kommentarlos auf `invited`
+  // zurückgestuft und verlöre ihr `joined_at`.
+  //
+  // **`left` kommt mit, anders als in der Zentrale**, die nur `declined`
+  // kennt: wer die Jagd verlassen hat (`jagd_verlassen`, 067), ist derselbe
+  // Fall — der Weg zurück gehört dem Jagdleiter (Moritz, 31.07.2026). So hält
+  // es auch der native Pfad (`src/lib/data/participants.ts`).
+  //
+  // **`.select()` an beiden Zweigen**, damit 0 betroffene Zeilen nicht als
+  // Erfolg durchgehen (S1) — RLS filtert beim UPDATE still, sie wirft nicht.
   async function addInvite(contactId: string) {
-    if (!hunt || inviteBusy) return
+    if (!hunt || inviteLaeuft.current) return
+    inviteLaeuft.current = true
     setInviteBusy(true)
-    const { error } = await supabase.from('hunt_participants').insert({
-      hunt_id: hunt.id, user_id: contactId, role: 'schuetze', status: 'invited',
-    })
-    setInviteBusy(false)
-    if (error) {
-      window.dispatchEvent(new CustomEvent('quickhunt:toast', { detail: { message: 'Einladen fehlgeschlagen', type: 'warning' } }))
-      return
+    try {
+      const { data: vorhandene, error: leseFehler } = await supabase
+        .from('hunt_participants')
+        .select('id, status')
+        .eq('hunt_id', hunt.id)
+        .eq('user_id', contactId)
+        .maybeSingle()
+      if (leseFehler) throw leseFehler
+
+      const geschrieben = vorhandene
+        ? await supabase
+            .from('hunt_participants')
+            .update({ status: 'invited', left_at: null, joined_at: null })
+            .eq('id', vorhandene.id)
+            .in('status', ['declined', 'left'])
+            .select('id')
+        : await supabase
+            .from('hunt_participants')
+            .insert({ hunt_id: hunt.id, user_id: contactId, role: 'schuetze', status: 'invited' })
+            .select('id')
+
+      if (geschrieben.error) throw geschrieben.error
+      if ((geschrieben.data?.length ?? 0) === 0) {
+        // Kein Fehler und trotzdem nichts geschrieben: die Zeile stand schon
+        // auf `invited` oder `joined`, oder RLS hat still gefiltert. Beides
+        // ist kein Erfolg und darf nicht wie einer aussehen.
+        showToast('Niemand eingeladen — der Zustand hat sich inzwischen geändert.', 'warning')
+        return
+      }
+      setInviteSearch('')
+      await loadHunt()
+      router.refresh()
+    } catch (e) {
+      console.error('[hunt] Einladen fehlgeschlagen:', e)
+      showToast('Einladen fehlgeschlagen', 'warning')
+    } finally {
+      inviteLaeuft.current = false
+      setInviteBusy(false)
     }
-    setInviteSearch('')
-    await loadHunt()
-    router.refresh()
   }
 
   async function removeParticipant(p: Participant) {
-    if (!hunt || inviteBusy) return
+    // **Derselbe Ref wie beim Einladen, und er greift VOR dem Dialog**
+    // (Fremdprüfung 05.08.2026, Punkt 6): `inviteBusy` wurde hier erst NACH der
+    // Rückfrage gesetzt. Solange der Bestätigungsdialog offen stand, konnte
+    // nebenher eingeladen werden — beide Vorgänge liefen dann parallel auf
+    // denselben Anzeige-State, und der zuerst fertige gab ihn frei, während der
+    // andere noch schrieb. Die Knöpfe sahen bedienbar aus, obwohl es noch lief.
+    if (!hunt || inviteLaeuft.current) return
+    inviteLaeuft.current = true
     const name = p.profiles?.display_name || p.guest_name || 'Teilnehmer'
     const ok = await confirmSheet({
       title: 'Aus der Jagd entfernen?',
@@ -473,7 +559,10 @@ export default function HuntPage() {
       confirmLabel: 'Entfernen',
       confirmVariant: 'danger',
     })
-    if (!ok) return
+    if (!ok) {
+      inviteLaeuft.current = false
+      return
+    }
     setInviteBusy(true)
     const { data: entfernt, error } = await supabase
       .from('hunt_participants')
@@ -481,6 +570,7 @@ export default function HuntPage() {
       .eq('id', p.id)
       .select('id')
     if (error || !entfernt?.length) {
+      inviteLaeuft.current = false
       setInviteBusy(false)
       showToast(`${name} konnte nicht entfernt werden.`, 'warning')
       return
@@ -508,6 +598,7 @@ export default function HuntPage() {
         }
       }
     }
+    inviteLaeuft.current = false
     setInviteBusy(false)
     await loadHunt()
     router.refresh()
@@ -617,8 +708,26 @@ export default function HuntPage() {
     const scheduledTabs: Array<'plan' | 'karte' | 'chat'> = mapVisible
       ? ['plan', 'karte', 'chat']
       : ['plan', 'chat']
+    /**
+     * **Hier sass die 088-Falle wirklich** (Fremdprüfung 05.08.2026, Punkt 1).
+     *
+     * Der Filter lautete `!participants.some(p => p.user_id === c.id)` und warf
+     * damit JEDE vorhandene Zeile heraus — auch eine abgesagte. `loadHunt`
+     * lädt `hunt_participants` ohne Statusfilter, ein Abgesagter steht also in
+     * `participants` und verschwand aus der Auswahl. **Wer einmal abgesagt
+     * hatte, tauchte hier nie wieder auf**, und der Reparatur-Zweig in
+     * `addInvite` wäre unerreichbar geblieben: ein Fix, der nichts fixt.
+     * Gefunden erst, nachdem der Schreibpfad schon umgebaut war.
+     *
+     * Jetzt fallen nur `joined` und `invited` heraus — die einen sind dabei,
+     * die anderen gefragt. `declined` und `left` bleiben in der Liste und
+     * werden dort ausgewiesen (`abgesagt`), damit der Jagdleiter weiss, dass
+     * er jemanden erneut fragt. So hält es auch der native Pfad.
+     */
     const invitable = inviteContacts
-      .filter(c => !participants.some(p => p.user_id === c.id))
+      .map(c => ({ ...c, vorhanden: participants.find(p => p.user_id === c.id) }))
+      .filter(c => !c.vorhanden || c.vorhanden.status === 'declined' || c.vorhanden.status === 'left')
+      .map(c => ({ ...c, abgesagt: Boolean(c.vorhanden) }))
       .filter(c => !inviteSearch || c.display_name.toLowerCase().includes(inviteSearch.toLowerCase()))
 
     return (
@@ -827,7 +936,7 @@ export default function HuntPage() {
                   </div>
                   {invitable.length === 0 ? (
                     <p className="text-xs px-1" style={{ color: 'var(--text-3)' }}>
-                      {inviteSearch ? 'Keine Treffer.' : 'Alle bekannten Jäger sind schon eingeladen.'}
+                      {inviteSearch ? 'Keine Treffer.' : 'Niemand mehr zur Auswahl — wer schon eingeladen ist oder zugesagt hat, fällt heraus.'}
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -835,7 +944,21 @@ export default function HuntPage() {
                         <div key={c.id} className="flex items-center gap-2.5 rounded-xl p-2.5"
                           style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
                           <div className="avatar-xs" style={{ background: getAvatarColor(c.id), color: '#fff' }}>{getInitials(c.display_name)}</div>
-                          <div className="flex-1 min-w-0 text-sm font-medium truncate">{c.display_name}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{c.display_name}</div>
+                            {/* Ausgewiesen, nicht verschwiegen — der Jagdleiter
+                                soll wissen, dass er jemanden erneut fragt. */}
+                            {/* „verlassen" und „abgesagt" sind zwei Dinge, und
+                                die Zentrale unterscheidet sie auch
+                                (detail.tsx) — wer selbst gegangen ist, als
+                                Absager auszuweisen, wäre eine kleine
+                                Unwahrheit (Schlusslesung 05.08.2026). */}
+                            {c.abgesagt ? (
+                              <div className="text-xs" style={{ color: 'var(--text-3)' }}>
+                                {c.vorhanden?.status === 'left' ? 'hat die Jagd verlassen' : 'hat abgesagt'}
+                              </div>
+                            ) : null}
+                          </div>
                           <button
                             type="button"
                             onClick={() => addInvite(c.id)}
