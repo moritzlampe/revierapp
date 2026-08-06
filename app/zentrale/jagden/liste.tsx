@@ -19,9 +19,10 @@ import {
   namensvorschlag,
   pruefeJagdEntwurf,
   sortiere,
-  termin,
+  mehrtaegig,
   terminText,
   vorbereitbar,
+  zeitraumText,
   VORBEREITBARE_STATUS,
   ALLE_JAHRE,
   FILTER,
@@ -161,12 +162,23 @@ export default function Liste({
     const client = createClient()
     const name = entwurf.name.trim()
 
-    // Die vier Felder, die der Nutzer bestimmt. Nur die Drückjagd ist laut —
-    // zeichengleich zu `buildHuntInsert` der App.
+    // Die fünf Felder, die der Nutzer bestimmt. Nur die Drückjagd ist laut —
+    // zeichengleich zu `buildHuntInsert` der App. **Die liegt im ANDEREN Repo**
+    // (`quickhunt-native`, `src/lib/hunt/draft.ts`), nicht hier; der Verweis
+    // ohne Repo-Angabe schickte einen Leser in diesem Baum auf die Suche
+    // (Fremdprüfung 06.08.2026).
+    //
+    // **`scheduled_until` darf leer bleiben.** Migration 107 setzt dann das Ende
+    // des Berliner Jagdtags, damit `auto-end-stale-hunts` die Jagd nicht 12 h
+    // nach dem letzten Lebenszeichen mitten am Jagdtag einsammelt. Die Rechnung
+    // steht bewusst NICHT hier: sie stand schon einmal nur im nativen Client,
+    // und genau deshalb hatte dieselbe Jagd je nach anlegendem Client ein
+    // anderes Lebensende (Backlog A-J1).
     const felder = {
       name,
       type: entwurf.type,
       scheduled_for: alsZeitstempel(entwurf.termin),
+      scheduled_until: alsZeitstempel(entwurf.bis),
       signal_mode: entwurf.type === 'drueckjagd' ? 'loud' : 'silent',
     }
 
@@ -459,7 +471,9 @@ export default function Liste({
                   <td>{jagdart(j.type)}</td>
                   {/* Mono + tabular-nums: Datumsspalten sollen untereinander
                       fluchten (Konzept §2.2). */}
-                  <td className="jagden-zahl">{terminText(termin(j))}</td>
+                  {/* Zeitraum statt Zeitpunkt: eine mehrtägige Jagd, die nur
+                      ihren Starttag zeigt, sieht aus wie eine eintägige. */}
+                  <td className="jagden-zahl">{zeitraumText(j)}</td>
                   <td>
                     <span
                       className={`jagden-pille${laeuft(j.status) ? ' ist-live' : ''}${
@@ -623,7 +637,12 @@ function Anlegen({
   revierId: string
   reviere: { id: string; name: string }[]
 }) {
-  const [entwurf, setEntwurf] = useState<JagdEntwurf>({ name: '', termin: '', type: 'drueckjagd' })
+  const [entwurf, setEntwurf] = useState<JagdEntwurf>({
+    name: '',
+    termin: '',
+    bis: '',
+    type: 'drueckjagd',
+  })
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
   const inArbeit = useRef(false)
@@ -832,6 +851,23 @@ function Anlegen({
           />
         </div>
 
+        {/* `min` gesetzt, `max` nicht: `min` ist dieselbe Zeichenkette und
+            kostet nichts, ein `max` wäre eine stummere zweite Fassung des
+            14-Tage-Riegels aus `pruefeJagdEntwurf`. Und kein Nachziehen des
+            Endes, wenn der Termin wandert — „Das Ende liegt vor dem Termin."
+            ist ehrlicher, als den Wert des Nutzers zu verschieben. */}
+        <div>
+          <label htmlFor="neu-bis">Ende (bei mehrtägigen Jagden)</label>
+          <input
+            id="neu-bis"
+            type="datetime-local"
+            value={entwurf.bis}
+            min={entwurf.termin || undefined}
+            disabled={laeuft}
+            onChange={(e) => setEntwurf((v) => ({ ...v, bis: e.target.value }))}
+          />
+        </div>
+
         <div>
           <label htmlFor="neu-art">Jagdart</label>
           <select
@@ -851,8 +887,21 @@ function Anlegen({
         </div>
       </div>
 
+      {/* Dieselbe Zeile wie im Bearbeiten-Formular, und sie steht hier gegen
+          eine Asymmetrie, nicht gegen einen anderen Fehler (Delta-Durchgang
+          06.08.2026): auch hier macht ein nach vorn geschobener Termin aus
+          einer eintägigen Jagd eine mehrtägige, ohne dass der 14-Tage-Riegel
+          oder `min` anschlagen. Beide Formulare teilen `JagdEntwurf` und
+          `pruefeJagdEntwurf` wörtlich — sie sollen auch dasselbe zeigen. */}
+      <p className="zentrale-sub" role="status">
+        {mehrtaegig(alsZeitstempel(entwurf.termin), alsZeitstempel(entwurf.bis))
+          ? `Mehrtägig: ${terminText(alsZeitstempel(entwurf.termin))} – ${terminText(alsZeitstempel(entwurf.bis), false)}`
+          : ''}
+      </p>
+
       <p className="zentrale-sub">
-        Die Jagd wird geplant angelegt. Gestartet wird sie in der Feld-App.
+        Ohne Ende läuft die Jagd bis zum Ende ihres Jagdtags. Die Jagd wird geplant angelegt.
+        Gestartet wird sie in der Feld-App.
         {zielRevier !== revierId
           ? ' Sie entsteht in einem anderen Revier als dem gerade angezeigten — die Ansicht wechselt dorthin mit.'
           : ''}

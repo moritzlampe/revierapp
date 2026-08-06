@@ -123,7 +123,9 @@ export default async function JagdenPage({
   const jagden = geladen<Jagd[]>(
     await supabase
       .from('hunts')
-      .select('id, name, type, status, scheduled_for, started_at, ended_at, created_at')
+      .select(
+        'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at'
+      )
       .eq('district_id', revier.id)
       .limit(GRENZE),
     'Jagden'

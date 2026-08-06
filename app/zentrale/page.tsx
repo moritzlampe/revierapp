@@ -5,6 +5,10 @@ import Revierkarte from './revierkarte'
 import type { Punkt } from './revierkarte-map'
 import { istStand } from './objekte'
 import { geladen } from './laden'
+// Statt eines zweiten Intl-Formatters daneben: `terminText(…, false)` ist
+// bereits das Datum ohne Uhrzeit in Berliner Zeit. Der Endtermin einer
+// mehrtägigen Jagd ist ein Tag, keine Feierabendzeit (Migration 095).
+import { mehrtaegig, terminText } from './jagden/jagden'
 
 // Die Jagdart steckt in hunts.type, NICHT in hunts.kind (das kennt nur
 // group/solo). Alle vier Werte werden getragen, auch die heute ungenutzten
@@ -44,6 +48,7 @@ type Jagd = {
   type: string | null
   status: string | null
   scheduled_for: string | null
+  scheduled_until: string | null
 }
 type Objekt = {
   id: string
@@ -127,7 +132,7 @@ export default async function ZentraleUebersicht({
   const jagden = geladen<Jagd[]>(
     await supabase
       .from('hunts')
-      .select('id, name, type, status, scheduled_for')
+      .select('id, name, type, status, scheduled_for, scheduled_until')
       .eq('district_id', revier.id),
     'Jagden'
   )
@@ -275,7 +280,15 @@ export default async function ZentraleUebersicht({
             <tbody>
               {naechste.map((j) => (
                 <tr key={j.id}>
-                  <td className="num">{datumZeit.format(new Date(j.scheduled_for!))}</td>
+                  {/* Eine mehrtägige Jagd, die hier nur ihren Starttag zeigt,
+                      sieht aus wie ein Abendansitz — der Unterschied ist genau
+                      das, was „was ist als Nächstes vorzubereiten" beantwortet. */}
+                  <td className="num">
+                    {datumZeit.format(new Date(j.scheduled_for!))}
+                    {mehrtaegig(j.scheduled_for, j.scheduled_until)
+                      ? ` – ${terminText(j.scheduled_until, false)}`
+                      : ''}
+                  </td>
                   <td>{j.name}</td>
                   <td>{j.type ? (JAGDART[j.type] ?? j.type) : '—'}</td>
                   <td>

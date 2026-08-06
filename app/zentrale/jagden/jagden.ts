@@ -7,6 +7,25 @@
  * Feldsituation umschreiben".
  */
 
+/**
+ * **Bewusste Kopie von `MAX_JAGD_TAGE` aus `src/lib/hunt/status.ts`.**
+ *
+ * Der erste Anlauf importierte sie von dort, und das war falsch: **dieses
+ * Modul hat keine Importe, und das ist tragend, nicht Stil.** Der Selbsttest
+ * daneben läuft per Hand unter blankem `node --experimental-strip-types`, und
+ * das kann den `@/`-Alias nicht auflösen — der Import brach ihn sofort mit
+ * `ERR_MODULE_NOT_FOUND`. Eine Zahl zu entdoppeln ist die Lauffähigkeit der
+ * Zusicherungen nicht wert.
+ *
+ * **Die Zahl ist gemessen, nicht geraten** (Moritz, 04.08.2026): 95 % der
+ * Jagden sind eintägig, 4 % gehen bis zu einer Woche, 1 % bis zu zwei.
+ *
+ * Wer sie ändert, ändert VIER Stellen: hier, `src/lib/hunt/status.ts`
+ * (mobiles PWA-Formular), Migration 102 (der Cron, zwei Deckel) und
+ * `create.tsx` der nativen App.
+ */
+const MAX_JAGD_TAGE = 14
+
 /** `hunt_type` — vier Werte, in den Daten bisher nur zwei (Konzept §4.3). */
 export const JAGDARTEN = ['ansitz', 'pirsch', 'drueckjagd', 'erntejagd'] as const
 export type Jagdart = (typeof JAGDARTEN)[number]
@@ -30,6 +49,19 @@ export interface Jagd {
   type: Jagdart | null
   status: Jagdstatus | null
   scheduled_for: string | null
+  /**
+   * Geplantes Ende (Migration 095). `null` heißt „kein Ende angegeben".
+   *
+   * Seit Migration 107 füllt der Trigger `trg_hunts_endtermin` das Ende des
+   * Berliner Jagdtags nach — **aber nur, wenn die Zeile auch ein
+   * `scheduled_for` trägt.** Eine geplante Jagd OHNE Termin behält `null`;
+   * hier stand „kommt nicht mehr vor", und das war zu weit gegriffen
+   * (Fremdprüfung 06.08.2026). Folgenlos bleibt sie trotzdem: die
+   * Cron-Ausnahme aus 102 verlangt beide Spalten, und der Cron selbst rührt
+   * `scheduled` gar nicht erst an.
+   * Bei laufenden und beendeten Altzeilen steht weiterhin `null`.
+   */
+  scheduled_until: string | null
   started_at: string | null
   ended_at: string | null
   created_at: string | null
@@ -181,6 +213,64 @@ export function terminText(wert: string | null, mitUhrzeit = true): string {
     minute: '2-digit',
   })
   return zeit === '00:00' ? datum : `${datum}, ${zeit}`
+}
+
+/**
+ * Der Vertrag aus Migration 095: mehrtägig heißt **verschiedene Berliner
+ * Kalenderdaten**, nicht schlicht `bis > von`.
+ *
+ * Der naive Vergleich war der erste Entwurf von 095 und ist von der
+ * Fremdprüfung zerlegt worden: beide Spalten sind Zeitpunkte, also erfüllt ihn
+ * auch eine Jagd von 08:00 bis 16:00 am selben Tag. Berlin und nicht UTC, weil
+ * die Datenbank auf UTC läuft — eine Jagd, die um 23:00 Berliner Zeit endet,
+ * liegt in UTC schon am Folgetag.
+ *
+ * **`alsEingabewert` IST bereits das Berliner Kalenderdatum dieses Moduls**
+ * (`sv-SE` + `timeZone: 'Europe/Berlin'`), deshalb wird es hier
+ * wiederverwendet statt ein drittes `formatToParts` daneben zu stellen.
+ *
+ * **Beide Werte werden auf Leere geprüft, und die erste Fassung tat das
+ * nicht.** Sie prüfte nur auf `null` und verließ sich darauf, dass ein
+ * ungültiger Wert `''` ergibt und `'' > ''` falsch ist. Das stimmt aber nur,
+ * wenn BEIDE kaputt sind: `mehrtaegig('kein datum', '2026-11-15T15:00:00Z')`
+ * rechnete `'2026-11-15' > ''` und lieferte **`true`** — eine Zeile mit
+ * unlesbarem Start galt als mehrtägig. Der Kommentar daneben behauptete das
+ * Gegenteil. Fremdprüfung 06.08.2026, nachgemessen statt geglaubt.
+ */
+export function mehrtaegig(von: string | null, bis: string | null): boolean {
+  const tagVon = alsEingabewert(von).slice(0, 10)
+  const tagBis = alsEingabewert(bis).slice(0, 10)
+  if (!tagVon || !tagBis) return false
+  return tagBis > tagVon
+}
+
+/**
+ * Der Termin als Text — bei einer mehrtägigen Jagd als Zeitraum.
+ *
+ * „15.08.2026, 07:00 – 17.08.2026". **Die Uhrzeit des Endes fehlt bewusst:**
+ * für die ANZEIGE ist `scheduled_until` der letzte Tag eines Termins. Sie
+ * auszugeben („07:00 – 23:59") behauptete eine Tagesplanung, die es nicht gibt
+ * — die Uhr am Jagdtag wäre `hunts.end_time` (Migration 003), und die liest
+ * bis heute niemand. **Dieselbe REGEL wie `formatHuntPeriod` der App, nicht
+ * dieselbe Zeichenfolge** — dort entsteht „28. Nov., 08:00 Uhr – 29. Nov.",
+ * hier „14.11.2026, 08:00 – 16.11.2026". Hier stand „zeichengleich", und das
+ * ist in diesem Projekt das Wort für das Zweite (Schlusslesung 06.08.2026).
+ * **Der gespeicherte Wert IST trotzdem ein genauer Zeitpunkt** und steuert als
+ * solcher die Schonfrist des Crons aus 102 — hier stand „ist der letzte Tag",
+ * und das war über die Anzeige hinaus zu viel behauptet (Fremdprüfung
+ * 06.08.2026).
+ *
+ * **Die Mehrtägigkeit wird an `scheduled_for` entschieden, NICHT an
+ * `termin()`.** Dessen Rückfall auf `started_at`/`created_at` ist der
+ * tatsächliche Beginn bzw. die Anlagezeit; mit einem geplanten Ende kombiniert
+ * ergäbe das einen Zeitraum, den nie jemand geplant hat. 095 definiert
+ * mehrtägig ausschließlich aus `scheduled_for` und `scheduled_until`.
+ * Unabhängig von zwei Prüfläufen gefunden (06.08.2026).
+ */
+export function zeitraumText(jagd: Jagd): string {
+  const angezeigt = terminText(termin(jagd))
+  if (!mehrtaegig(jagd.scheduled_for, jagd.scheduled_until)) return angezeigt
+  return `${angezeigt} – ${terminText(jagd.scheduled_until, false)}`
 }
 
 /**
@@ -663,6 +753,19 @@ export interface JagdEntwurf {
   name: string
   /** Wert eines `<input type="datetime-local">`, also `2026-08-15T18:30`. */
   termin: string
+  /**
+   * Geplantes Ende, gleiches Format. **Leer ist der Normalfall und kein
+   * Mangel:** wer nichts wählt, bekommt von Migration 107 das Ende seines
+   * Berliner Jagdtags. Das Formular baut die Voreinstellung deshalb NICHT
+   * nach — sie steht einmal, in der Datenbank.
+   *
+   * Folge, die beim Bearbeiten sichtbar wird: nach dem ersten Speichern ist
+   * das Feld gefüllt (mit 23:59 des Jagdtags), denn die Spalte trägt jetzt
+   * einen Wert. „Kein Ende gewählt" und „Ende = Tagesende" sind ab da nicht
+   * mehr zu unterscheiden — dieselbe Lage wie bei nativ angelegten Jagden
+   * seit dem 04.08.2026.
+   */
+  bis: string
   type: Jagdart
 }
 
@@ -678,8 +781,45 @@ export interface JagdEntwurf {
 export function pruefeJagdEntwurf(e: JagdEntwurf): string | null {
   if (!e.name.trim()) return 'Die Jagd braucht einen Namen.'
   if (!e.termin) return 'Die Jagd braucht einen Termin.'
-  if (Number.isNaN(new Date(e.termin).getTime())) return 'Der Termin ist kein gültiges Datum.'
+  /*
+   * **Gegen `alsZeitstempel` geprüft, nicht gegen `new Date(e.termin)`** — und
+   * das ist ein Fund der Fremdprüfung vom 06.08.2026, kein Feilen.
+   *
+   * Die beiden parsen VERSCHIEDEN: `alsZeitstempel` hängt ein `Z` an, um den
+   * Wert erst als UTC zu lesen. `'2026-11-14T08:00Z'` ist für `new Date` also
+   * gültig, für `alsZeitstempel` mit dem zweiten `Z` nicht — die alte Prüfung
+   * ließ es durch, und `jagdAnlegen` schrieb daraufhin `scheduled_for: null`.
+   * Eine Jagd ohne Termin, still, obwohl das Formular „geprüft" gemeldet hat.
+   * Über den Picker unerreichbar; `pruefeJagdEntwurf` ist aber eine exportierte
+   * Zusage, kein Formulardetail.
+   */
+  const von = alsZeitstempel(e.termin)
+  if (!von) return 'Der Termin ist kein gültiges Datum.'
   if (!JAGDARTEN.includes(e.type)) return 'Unbekannte Jagdart.'
+
+  /*
+   * **Das Ende ist freiwillig, seine Reihenfolge nicht.**
+   *
+   * Migration 095 hat den Riegel `scheduled_until >= scheduled_for`
+   * ausdrücklich NICHT als CHECK gebaut, mit Begründung: „Die Reihenfolge
+   * gehört dorthin, wo sie dem Nutzer erklärt werden kann: ins Formular."
+   * Das hier ist dieses Formular. Die Datenbank nimmt beide Werte weiterhin
+   * an — wer sie per `curl` verdreht, bekommt keine Meldung, sondern eine
+   * Jagd, die aus der Cron-Ausnahme von 102 fällt.
+   *
+   * Gerechnet wird über `alsZeitstempel`, nicht über die Zeichenketten: der
+   * Abstand in Tagen ist eine echte Zeitspanne, und an der Zeitumstellung
+   * liegen zwischen zwei gleich aussehenden Kalenderdaten 23 oder 25 Stunden.
+   * Der Zeichenvergleich stimmte für „liegt davor", aber nicht für „dauert
+   * höchstens 14 Tage".
+   */
+  if (!e.bis) return null
+  const bis = alsZeitstempel(e.bis)
+  if (!bis) return 'Das Ende ist kein gültiges Datum.'
+  const spanne = new Date(bis).getTime() - new Date(von).getTime()
+  if (spanne < 0) return 'Das Ende liegt vor dem Termin.'
+  if (spanne > MAX_JAGD_TAGE * 86_400_000)
+    return `Eine Jagd dauert höchstens ${MAX_JAGD_TAGE} Tage. Für längere Zeiträume plane mehrere Jagden.`
   return null
 }
 
@@ -713,9 +853,15 @@ export function pruefeJagdEntwurf(e: JagdEntwurf): string | null {
  * Jetzt stehen die Grenztage selbst darin.
  *
  * ponytail: in der doppelten Stunde beim Rückstellen (02:00–03:00 gibt es
- * zweimal) liefert das die frühere der beiden Lesarten; die übersprungene
- * Stunde beim Vorstellen (02:30 existiert nicht) wird nach vorn normalisiert
- * auf 03:30. Beides ist dokumentiert und getestet. Eine Jagd, bei der genau
+ * zweimal) liefert das die **spätere** der beiden Lesarten — hier stand
+ * „frühere", und das war seit jeher falsch: `alsZeitstempel('2026-10-25T02:30')`
+ * ergibt `01:30Z` (CET), nicht `00:30Z` (CEST). Nachgemessen am 06.08.2026,
+ * nachdem die Fremdprüfung es an zwei Paketen unabhängig angemerkt hatte.
+ * **Der Fehler saß im Kommentar, nicht im Code** — der Rundweg bleibt stabil,
+ * nur ein bereits gespeicherter Wert aus der früheren Lesart wandert beim
+ * ersten Bearbeiten einmalig eine Stunde nach hinten und steht danach fest.
+ * Die übersprungene Stunde beim Vorstellen (02:30 existiert nicht) wird nach
+ * vorn normalisiert auf 03:30. Beides ist dokumentiert und getestet. Eine Jagd, bei der genau
  * diese Unterscheidung zählt, ist kein Fall, den dieses Produkt kennt — der
  * Ausweg wäre, mehrdeutige Zeiten vom Nutzer bestätigen zu lassen.
  */
@@ -781,14 +927,53 @@ export function jagdAenderungen(
     patch.signal_mode = e.type === 'drueckjagd' ? 'loud' : 'silent'
   }
 
-  const neu = alsZeitstempel(e.termin)
-  const alt = jagd.scheduled_for
-  // Über den Zeitpunkt vergleichen, nicht über die Zeichenkette: die DB liefert
-  // `2026-08-15T16:30:00+00:00`, `toISOString()` `2026-08-15T16:30:00.000Z`.
-  // Zeichenweise wären die beiden verschieden und jedes Speichern schriebe den
-  // Termin neu.
-  const zeit = (w: string | null) => (w ? new Date(w).getTime() : null)
-  if (zeit(neu) !== zeit(alt)) patch.scheduled_for = neu
+  /*
+   * **Verglichen wird im EINGABEFORMAT, nicht als Zeitpunkt — und das ist eine
+   * Korrektur, kein Feilen.**
+   *
+   * Bis zum 06.08.2026 stand hier ein Zeitpunktvergleich, begründet damit, dass
+   * die DB `2026-08-15T16:30:00+00:00` liefert und `toISOString()`
+   * `…16:30:00.000Z`; zeichenweise wären die verschieden und jedes Speichern
+   * schriebe neu. Die Begründung stimmt, die Lösung war zu kurz gegriffen:
+   * **`alsEingabewert` kürzt auf MINUTEN, `alsZeitstempel` kann also nie
+   * zurückgeben, was unter einer Minute stand.** Ein Wert mit Sekunden ist
+   * damit IMMER „geändert", auch wenn niemand etwas angefasst hat.
+   *
+   * Gemessen am 06.08.2026, und beide Spalten sind betroffen:
+   *   `scheduled_until` vom Trigger  `…22:59:59.999999+00:00` → −59,999 s
+   *   `scheduled_for` nativ geplant  `…08:58:11.698+00:00`    → −11,698 s
+   *
+   * Die zweite Zeile ist der ältere Fehler: die native App schreibt
+   * `scheduled_for` aus einem Date-Picker, also mit Millisekunde —
+   * `defaultPlannedAt()` ist `new Date(Date.now() + 24h)` und geht per
+   * `toISOString()` heraus (`quickhunt-native/src/app/(app)/(jagd)/create.tsx`).
+   * **Hier stand, die Übergabe vom 04.08.2026 zitiere `08:58:11.698`; das tut
+   * sie nicht** — die Zeichenfolge steht in einem Kommentar ebendieser
+   * `create.tsx`, in keiner Übergabe (Delta-Durchgang 06.08.2026, nachgesucht).
+   * Die Aussage stimmt, der Beleg war falsch adressiert. **„Formular öffnen, nichts
+   * ändern, speichern" hat den Starttermin bisher still um Sekunden gekürzt** —
+   * vorbestehend, gefunden von der Schlusslesung am Endtermin, hier an der
+   * Wurzel behoben statt nur an der neuen Spalte.
+   *
+   * `alsEingabewert` normalisiert beide Seiten auf `YYYY-MM-DDTHH:mm` und
+   * erledigt damit auch das ursprüngliche `+00:00`-gegen-`.000Z`-Problem.
+   */
+  const unveraendert = (gespeichert: string | null, imFeld: string) =>
+    alsEingabewert(gespeichert) === imFeld
+
+  if (!unveraendert(jagd.scheduled_for, e.termin)) patch.scheduled_for = alsZeitstempel(e.termin)
+
+  // Das Ende. **Ein geleertes Feld schreibt bewusst `null`** und nicht etwa das
+  // Tagesende: der Trigger aus 107 setzt es wieder, und die Rechnung gehört
+  // genau dorthin — hier eine zweite Fassung danebenzulegen wäre die dritte
+  // Kopie, gegen die diese Migration überhaupt gebaut wurde.
+  //
+  // **„setzt es sofort wieder" stand hier unbedingt und stimmt nicht:** der
+  // Trigger greift nur bei `draft`/`scheduled` MIT `scheduled_for`. Eine Zeile
+  // ohne Termin behält die Leere (Fremdprüfung 06.08.2026). Über dieses
+  // Formular ist das unerreichbar — `pruefeJagdEntwurf` verlangt einen Termin
+  // —, aber der Patch ist die Zusage der Funktion, nicht des Formulars.
+  if (!unveraendert(jagd.scheduled_until, e.bis)) patch.scheduled_until = alsZeitstempel(e.bis)
 
   return Object.keys(patch).length > 0 ? patch : null
 }

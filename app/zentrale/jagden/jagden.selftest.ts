@@ -26,6 +26,7 @@ import {
   nachJagdjahr,
   jagdstatus,
   laeuft,
+  mehrtaegig,
   namensvorschlag,
   pruefeJagdEntwurf,
   rolle,
@@ -40,6 +41,7 @@ import {
   vorbereitbar,
   VORBEREITBARE_STATUS,
   wiederEinladbar,
+  zeitraumText,
   zusagen,
   type Jagd,
   type JagdEntwurf,
@@ -71,6 +73,7 @@ function jagd(teil: Partial<Jagd>): Jagd {
     type: 'drueckjagd',
     status: 'completed',
     scheduled_for: null,
+    scheduled_until: null,
     started_at: null,
     ended_at: null,
     created_at: null,
@@ -564,7 +567,13 @@ assert.deepEqual(gruppiereTeilnehmer([], namen), [])
 // --- Entwurf pruefen --------------------------------------------------------
 
 function entwurf(teil: Partial<JagdEntwurf> = {}): JagdEntwurf {
-  return { name: 'Drückjagd Nord', termin: '2026-11-14T08:00', type: 'drueckjagd', ...teil }
+  return {
+    name: 'Drückjagd Nord',
+    termin: '2026-11-14T08:00',
+    bis: '',
+    type: 'drueckjagd',
+    ...teil,
+  }
 }
 
 assert.equal(pruefeJagdEntwurf(entwurf()), null)
@@ -577,6 +586,118 @@ assert.match(pruefeJagdEntwurf(entwurf({ termin: 'morgen frueh' })) ?? '', /Datu
 assert.match(
   pruefeJagdEntwurf(entwurf({ type: 'flugjagd' as never })) ?? '',
   /Jagdart/,
+)
+
+// --- Das Ende ---------------------------------------------------------------
+
+// **Leer ist gueltig, und das ist der Normalfall.** Migration 107 setzt dann
+// das Ende des Berliner Jagdtags. Ein Pflichtfeld waere hier falsch: 95 % der
+// Jagden sind eintaegig.
+assert.equal(pruefeJagdEntwurf(entwurf({ bis: '' })), null)
+assert.equal(pruefeJagdEntwurf(entwurf({ bis: '2026-11-16T08:00' })), null)
+assert.match(pruefeJagdEntwurf(entwurf({ bis: 'uebermorgen' })) ?? '', /Datum/)
+
+// **Ein Termin mit angehaengtem `Z` muss abprallen** — und die erste Fassung
+// liess ihn durch. `new Date('2026-11-14T08:00Z')` ist gueltig, `alsZeitstempel`
+// haengt aber ein ZWEITES `Z` an und liefert `null`; `jagdAnlegen` schrieb
+// daraufhin still `scheduled_for: null`. Eine Jagd ohne Termin, obwohl das
+// Formular „geprueft" gemeldet hat (Fremdpruefung 06.08.2026). Ueber den Picker
+// unerreichbar — `pruefeJagdEntwurf` ist aber eine exportierte Zusage.
+assert.match(pruefeJagdEntwurf(entwurf({ termin: '2026-11-14T08:00Z' })) ?? '', /Datum/)
+
+// Verdreht: das Ende vor dem Termin. Die DB nimmt das an (095 hat den CHECK
+// ausdruecklich abgelehnt), die Jagd fiele aber aus der Cron-Ausnahme von 102
+// und wuerde nachts eingesammelt — also faengt es das Formular.
+assert.match(pruefeJagdEntwurf(entwurf({ bis: '2026-11-13T08:00' })) ?? '', /vor dem Termin/)
+
+// **Die Grenze auf die Minute, in beide Richtungen.** Ein Test daneben belegt
+// nichts: am 03.08. lag eine Grenzwert-Zusicherung bei `23:30Z` neben der
+// Grenze bei `22:00Z`, am 04.08. eine bei `1990` neben `1997`. Beide Male hat
+// erst die Fremdpruefung es gefunden.
+assert.equal(pruefeJagdEntwurf(entwurf({ bis: '2026-11-28T08:00' })), null) // exakt 14 Tage
+assert.match(
+  pruefeJagdEntwurf(entwurf({ bis: '2026-11-28T08:01' })) ?? '', // eine Minute mehr
+  /14 Tage/,
+)
+
+// **Die Spanne wird als echte Zeit gerechnet, nicht als Kalendertage** — sonst
+// wuerde die Umstellungsnacht (25.10.2026, 25 Stunden) die Grenze verschieben.
+// 14 Kalendertage ueber die Rueckstellung sind 14 Tage + 1 Stunde; genau die
+// Stunde muss die Meldung ausloesen.
+assert.equal(pruefeJagdEntwurf(entwurf({ termin: '2026-10-18T08:00', bis: '2026-11-01T07:00' })), null)
+assert.match(
+  pruefeJagdEntwurf(entwurf({ termin: '2026-10-18T08:00', bis: '2026-11-01T08:00' })) ?? '',
+  /14 Tage/,
+)
+
+// --- Mehrtaegig: der Vertrag aus 095 ----------------------------------------
+
+// **Nicht `bis > von`.** Das war der erste Entwurf von 095 und ist von der
+// Fremdpruefung zerlegt worden: eine Jagd von 08:00 bis 16:00 erfuellt ihn
+// auch. Der Vertrag sind verschiedene BERLINER Kalenderdaten.
+assert.equal(mehrtaegig('2026-11-14T07:00:00Z', '2026-11-14T15:00:00Z'), false)
+assert.equal(mehrtaegig('2026-11-14T07:00:00Z', '2026-11-15T15:00:00Z'), true)
+
+// **Berlin und nicht UTC — und die Zusicherung liegt AUF der Grenze, nicht
+// daneben.** Die erste Fassung prueffte `22:30Z` und `23:30Z`; die Berliner
+// Tagesgrenze liegt im November aber exakt bei `23:00:00Z` (CET, +01:00). Eine
+// halbe Stunde Luft auf beiden Seiten — jede Verschiebung darin waere
+// durchgerutscht. **Das ist zum DRITTEN Mal dieselbe Falle** (03.08.: `23:30Z`
+// neben `22:00Z`; 04.08.: `1990` neben `1997`), und zum dritten Mal hat sie
+// der Pruefer gefunden, nicht der Test. Nachgemessen am 06.08.2026:
+// `22:59:59.999Z` -> `2026-11-14T23:59`, `23:00:00.000Z` -> `2026-11-15T00:00`.
+assert.equal(mehrtaegig('2026-11-14T07:00:00Z', '2026-11-14T22:59:59.999Z'), false)
+assert.equal(mehrtaegig('2026-11-14T07:00:00Z', '2026-11-14T23:00:00.000Z'), true)
+
+// Fehlende Werte sind „nicht mehrtaegig", kein Fehler.
+assert.equal(mehrtaegig(null, '2026-11-15T15:00:00Z'), false)
+assert.equal(mehrtaegig('2026-11-14T07:00:00Z', null), false)
+assert.equal(mehrtaegig('kein datum', 'auch nicht'), false)
+
+// **Der Fall, den die erste Fassung nicht sah: NUR EINER kaputt.** Hier stand
+// nur „beide kaputt", und das war die Luecke — `'2026-11-15' > ''` ergab
+// `true`, eine Zeile mit unlesbarem Start galt als mehrtaegig, und der
+// Kommentar der Funktion behauptete das Gegenteil. Ein Test, der die bequeme
+// Haelfte prueft, beschreibt statt zu fordern (Fremdpruefung 06.08.2026).
+assert.equal(mehrtaegig('kein datum', '2026-11-15T15:00:00Z'), false)
+assert.equal(mehrtaegig('2026-11-14T07:00:00Z', 'kein datum'), false)
+
+// --- Zeitraum als Text ------------------------------------------------------
+
+// Eintaegig: nur der Termin, kein Bindestrich. **Sollwert als Literal**, nicht
+// ueber `terminText` gebaut — sonst prueft die Erwartung mit derselben
+// Funktion, die `zeitraumText` selbst aufruft (Schlusslesung 06.08.2026).
+assert.equal(
+  zeitraumText(jagd({ scheduled_for: '2026-11-14T07:00:00Z', scheduled_until: '2026-11-14T22:59:59Z' })),
+  '14.11.2026, 08:00',
+)
+
+// **Die Zeile, die die Aenderung an `zeitraumText` ueberhaupt erst prueft.**
+// Ohne sie bliebe ein Revert auf `mehrtaegig(termin(jagd), …)` gruen, weil in
+// allen anderen Faellen `scheduled_for` gesetzt ist und `termin()` denselben
+// Wert liefert (Schlusslesung 06.08.2026, Punkt 6ii).
+//
+// Eine Zeile OHNE geplanten Termin, aber mit Endtermin: `termin()` faellt auf
+// `started_at` zurueck. Zusammen mit dem Ende ergaebe das einen Zeitraum, den
+// nie jemand geplant hat — 095 definiert mehrtaegig ausschliesslich aus
+// `scheduled_for` und `scheduled_until`.
+assert.equal(
+  zeitraumText(
+    jagd({
+      scheduled_for: null,
+      started_at: '2026-11-14T07:00:00Z',
+      scheduled_until: '2026-11-16T22:59:59Z',
+    }),
+  ),
+  '14.11.2026, 08:00',
+)
+
+// Mehrtaegig: Zeitraum, und das Ende OHNE Uhrzeit. `scheduled_until` ist der
+// letzte TAG, nicht die Feierabendzeit — „08:00 – 23:59" behauptete eine
+// Tagesplanung, die es nicht gibt (die waere `end_time` aus Migration 003).
+assert.equal(
+  zeitraumText(jagd({ scheduled_for: '2026-11-14T07:00:00Z', scheduled_until: '2026-11-16T22:59:59Z' })),
+  '14.11.2026, 08:00 – 16.11.2026',
 )
 
 // --- Termin hin und zurueck -------------------------------------------------
@@ -642,6 +763,62 @@ const bestand = (teil: Partial<Jagd> = {}): Jagd =>
 
 // Nichts geaendert heisst nichts schreiben.
 assert.equal(jagdAenderungen(entwurf({ termin: alsEingabewert('2026-11-14T07:00:00+00:00') }), bestand()), null)
+
+// --- Aenderungen am Ende ----------------------------------------------------
+
+{
+  const alsEntwurf = (bis: string) =>
+    entwurf({ termin: alsEingabewert('2026-11-14T07:00:00+00:00'), bis })
+
+  // Ein neues Ende kommt einzeln. **Der Sollwert steht als Literal da, nicht
+  // als `alsZeitstempel(...)`-Aufruf** — sonst baute die Erwartung ihren Wert
+  // mit derselben Funktion, die sie prueft, und koennte nur fehlschlagen, wenn
+  // `jagdAenderungen` das Feld gar nicht schreibt (Fremdpruefung 06.08.2026;
+  // dieselbe Krankheit wie beim Sortiertest am 04.08.). November ist CET,
+  // 23:59 Ortszeit sind also 22:59Z.
+  assert.deepEqual(jagdAenderungen(alsEntwurf('2026-11-16T23:59'), bestand()), {
+    scheduled_until: '2026-11-16T22:59:00.000Z',
+  })
+
+  // Unveraendert heisst nichts schreiben — auch hier ueber den Zeitpunkt
+  // verglichen, nicht ueber die Zeichenkette (`+00:00` gegen `.000Z`).
+  assert.equal(
+    jagdAenderungen(
+      alsEntwurf(alsEingabewert('2026-11-16T22:59:00+00:00')),
+      bestand({ scheduled_until: '2026-11-16T22:59:00.000Z' }),
+    ),
+    null,
+  )
+
+  // **Geleert schreibt `null`, nicht das Tagesende.** Der Trigger aus 107 setzt
+  // es wieder — die Rechnung hier zu wiederholen waere die dritte Kopie,
+  // gegen die die Migration gebaut wurde.
+  assert.deepEqual(
+    jagdAenderungen(alsEntwurf(''), bestand({ scheduled_until: '2026-11-16T22:59:00.000Z' })),
+    { scheduled_until: null },
+  )
+
+  // **Der Fall, der den stillen Datenverlust festhaelt** (Schlusslesung
+  // 06.08.2026). Ein vom Trigger gesetztes Ende traegt MIKROsekunden, ein
+  // nativ geplanter Start SEKUNDEN — `alsEingabewert` kuerzt beide auf
+  // Minuten. Mit dem alten Zeitpunktvergleich meldete „oeffnen, nichts
+  // aendern, speichern" deshalb eine Aenderung und schrieb den Wert gekuerzt
+  // zurueck: −59,999 s am Ende, −11,698 s am Start. Beide Zeilen muessen
+  // `null` liefern, also NICHTS schreiben.
+  assert.equal(
+    jagdAenderungen(
+      entwurf({
+        termin: alsEingabewert('2026-11-14T07:00:11.698+00:00'),
+        bis: alsEingabewert('2026-11-14T22:59:59.999999+00:00'),
+      }),
+      bestand({
+        scheduled_for: '2026-11-14T07:00:11.698+00:00',
+        scheduled_until: '2026-11-14T22:59:59.999999+00:00',
+      }),
+    ),
+    null,
+  )
+}
 
 // **Der Kern dieses Tests**: die DB liefert `+00:00`, toISOString() liefert
 // `.000Z`. Zeichenweise verglichen waeren die beiden verschieden, und jedes

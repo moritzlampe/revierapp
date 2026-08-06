@@ -9,6 +9,7 @@ import { useGeolocation } from '@/hooks/useGeolocation'
 import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
 import { parsePointHex } from '@/lib/geo-utils'
 import { createSoloHunt } from '@/lib/supabase/hunts'
+import { MAX_JAGD_TAGE } from '@/lib/hunt/status'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { WildIcon } from '@/components/icons/WildIcon'
 import type { WildGroup } from '@/lib/species-config'
@@ -63,6 +64,10 @@ export default function CreateHuntPage() {
   // Sprint C: Sofort vs. geplant. Default 'sofort' = heutiges Verhalten.
   const [startMode, setStartMode] = useState<'sofort' | 'geplant'>('sofort')
   const [scheduledFor, setScheduledFor] = useState('') // datetime-local "YYYY-MM-DDTHH:mm"
+  // Geplantes Ende, gleiches Format. Leer ist der Normalfall: Migration 107
+  // setzt dann das Ende des Berliner Jagdtags, damit auto-end-stale-hunts die
+  // Jagd nicht 12 h nach dem letzten Lebenszeichen mittendrin einsammelt.
+  const [scheduledUntil, setScheduledUntil] = useState('')
   const [wildPresets, setWildPresets] = useState<string[]>(['schwarzwild', 'rehwild', 'fuchs'])
   const [contacts, setContacts] = useState<Contact[]>([])
   const [search, setSearch] = useState('')
@@ -492,10 +497,46 @@ export default function CreateHuntPage() {
     }
 
     // Sofort vs. geplant: nur ein Zukunfts-Zeitpunkt macht die Jagd 'scheduled'.
-    // Leer/Vergangenheit -> sofort aktiv (byte-identisch zum bisherigen Pfad).
-    // started_at bleibt bei scheduled NULL (Go-Live-Anker setzt erst der Cron).
+    // Leer/Vergangenheit -> sofort aktiv. **Hier stand „byte-identisch zum
+    // bisherigen Pfad", und das stimmt seit dem 06.08.2026 nicht mehr**
+    // (Fremdprüfung): der INSERT trägt jetzt zusätzlich `scheduled_until`, im
+    // Sofort-Fall als `null`. Verhaltensgleich, nicht zeichengleich.
+    // started_at bleibt bei scheduled NULL — den Go-Live-Anker setzt der Cron
+    // aus Migration 051 ODER ein Jagdleiter, der von Hand live schaltet.
     const plannedTs = startMode === 'geplant' && scheduledFor ? new Date(scheduledFor) : null
     const isScheduled = plannedTs !== null && plannedTs.getTime() > Date.now()
+
+    // Das Ende zählt nur zu einer geplanten Jagd — eine spontane hat keinen
+    // geplanten Tag, nur ein Jetzt. Bleibt es leer, füllt Migration 107.
+    //
+    // **Die Reihenfolge wird hier geprüft und nicht in der DB**, weil 095 sie
+    // ausdrücklich dorthin gelegt hat, wo sie sich erklären lässt. Ein
+    // verdrehter oder zu langer Zeitraum fällt sonst aus der Cron-Ausnahme von
+    // Migration 102 — und wird dann eingesammelt, sobald ZUSÄTZLICH 12 Stunden
+    // ohne Lebenszeichen vergangen sind. Nicht „nachts automatisch", wie hier
+    // zuerst stand (Fremdprüfung 06.08.2026); nachts ist nur der Zeitpunkt, zu
+    // dem diese Bedingung typischerweise eintritt, weil kein Trigger mehr
+    // `last_activity_at` hebt.
+    //
+    // Die Zeitspanne wird in der GERÄTEZONE gerechnet, wie `scheduled_for`
+    // darüber — bewusst dieselbe Konvention statt einer zweiten. Preis,
+    // benannt: liegt zwischen Start und Ende eine Zeitumstellung, die das
+    // Gerät anders sieht als Berlin, weicht die Spanne um eine Stunde ab. Auf
+    // einem 14-Tage-Deckel ist das folgenlos.
+    const untilTs = isScheduled && scheduledUntil ? new Date(scheduledUntil) : null
+    if (untilTs !== null && plannedTs !== null) {
+      const spanne = untilTs.getTime() - plannedTs.getTime()
+      if (Number.isNaN(spanne) || spanne < 0) {
+        setError('Das Ende liegt vor dem Termin.')
+        setLoading(false)
+        return
+      }
+      if (spanne > MAX_JAGD_TAGE * 86_400_000) {
+        setError(`Eine Jagd dauert höchstens ${MAX_JAGD_TAGE} Tage.`)
+        setLoading(false)
+        return
+      }
+    }
 
     const { data: hunt, error: insertError } = await supabase
       .from('hunts')
@@ -514,6 +555,7 @@ export default function CreateHuntPage() {
         signal_mode: type === 'drueckjagd' ? 'loud' : 'silent',
         started_at: isScheduled ? null : new Date().toISOString(),
         scheduled_for: isScheduled && plannedTs ? plannedTs.toISOString() : null,
+        scheduled_until: untilTs ? untilTs.toISOString() : null,
       })
       .select('id')
       .single()
@@ -1004,7 +1046,12 @@ export default function CreateHuntPage() {
             }}>
               <button
                 type="button"
-                onClick={() => setStartMode('sofort')}
+                // Das Ende gehört zum geplanten Zweig — es hier stehen zu
+                // lassen hieße, dass es beim erneuten Planen unbemerkt wieder
+                // auftaucht und für einen ANDEREN Start gilt (Fremdprüfung
+                // 06.08.2026). Der INSERT wäre davon zwar geschützt
+                // (`isScheduled`), der Bildschirm nicht.
+                onClick={() => { setStartMode('sofort'); setScheduledUntil('') }}
                 style={{
                   height: '2.75rem', borderRadius: 'calc(var(--radius) - 4px)',
                   fontSize: '0.9375rem', fontWeight: 600,
@@ -1034,7 +1081,12 @@ export default function CreateHuntPage() {
                 <input
                   type="datetime-local"
                   value={scheduledFor}
-                  onChange={(e) => setScheduledFor(e.target.value)}
+                  // Start geleert heißt Ende geleert: sonst bleibt ein Ende
+                  // ohne Anfang im Zustand stehen, während sein Feld weg ist.
+                  onChange={(e) => {
+                    setScheduledFor(e.target.value)
+                    if (!e.target.value) setScheduledUntil('')
+                  }}
                   style={{
                     width: '100%', height: '3rem', padding: '0 0.875rem',
                     borderRadius: 'var(--radius)',
@@ -1045,6 +1097,34 @@ export default function CreateHuntPage() {
                 <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
                   Die Jagd geht erst zum gewählten Zeitpunkt live. Bis dahin: Einladungen sammeln, Chat optional freigeben.
                 </p>
+                {/* Mehrtägig: nur sichtbar, wenn ein Termin steht — ein Ende
+                    ohne Anfang wäre eine Jagd, die von nichts bis Sonntag geht. */}
+                {scheduledFor && (
+                  <div style={{ marginTop: '0.75rem' }}>
+                    {/* `htmlFor` + `id`: ohne sie tippt das Label ins Leere und
+                        VoiceOver liest das Feld unbeschriftet vor
+                        (Fremdprüfung 06.08.2026). */}
+                    <label htmlFor="jagd-ende" className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>
+                      Ende <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>bei mehrtägigen Jagden</span>
+                    </label>
+                    <input
+                      id="jagd-ende"
+                      type="datetime-local"
+                      value={scheduledUntil}
+                      min={scheduledFor}
+                      onChange={(e) => setScheduledUntil(e.target.value)}
+                      style={{
+                        width: '100%', height: '3rem', padding: '0 0.875rem',
+                        borderRadius: 'var(--radius)',
+                        border: `1.5px solid ${scheduledUntil ? 'var(--green)' : 'var(--border)'}`,
+                        background: 'var(--surface)', color: 'var(--text)', fontSize: '0.9375rem',
+                      }}
+                    />
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
+                      Ohne Ende läuft die Jagd bis zum Ende ihres Jagdtags.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

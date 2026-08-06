@@ -67,7 +67,9 @@ export default async function JagdDetailPage({
   // hier kein Serverfehler, sondern die Auskunft „gibt es für dich nicht".
   const { data: jagd, error: jagdFehler } = await supabase
     .from('hunts')
-    .select('id, name, type, status, scheduled_for, started_at, ended_at, created_at, creator_id, district_id')
+    .select(
+      'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id'
+    )
     .eq('id', id)
     .maybeSingle()
 

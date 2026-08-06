@@ -7,6 +7,9 @@ import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../../schreiben'
 import {
   alsEingabewert,
+  alsZeitstempel,
+  mehrtaegig,
+  terminText,
   filterZaehler,
   jagdAenderungen,
   jagdart,
@@ -25,9 +28,8 @@ import {
   tag,
   teilnahme,
   teilnehmerName,
-  termin,
-  terminText,
   vorbereitbar,
+  zeitraumText,
   VORBEREITBARE_STATUS,
   EINLADE_FILTER,
   GAST_ZUSTAENDE,
@@ -438,7 +440,7 @@ export default function Detail({
           </div>
           <h1>{jagd.name || 'Ohne Namen'}</h1>
           <p className="zentrale-sub">
-            {jagdart(jagd.type)} · {terminText(termin(jagd))}
+            {jagdart(jagd.type)} · {zeitraumText(jagd)}
           </p>
 
           <div className="jagden-kopfzeile">
@@ -558,7 +560,7 @@ export default function Detail({
 }
 
 /**
- * Name, Termin und Jagdart ändern.
+ * Name, Termin, Ende und Jagdart ändern.
  *
  * Der Riegel gegen doppeltes Absenden ist ein **Ref**, kein State: zwischen
  * `setLaeuft(true)` und dem sperrenden Render sehen Return-Taste und Knopfdruck
@@ -578,6 +580,10 @@ function JagdFormular({
   const [entwurf, setEntwurf] = useState<JagdEntwurf>({
     name: jagd.name ?? '',
     termin: alsEingabewert(jagd.scheduled_for ?? jagd.started_at),
+    // Kein Rückgriff auf `started_at` wie beim Termin: das Ende ist eine
+    // Planungsangabe, `started_at` der tatsächliche Beginn. Aus einem echten
+    // Beginn ein geplantes Ende zu machen wäre eine erfundene Auskunft.
+    bis: alsEingabewert(jagd.scheduled_until),
     type: jagd.type ?? 'ansitz',
   })
   const [fehler, setFehler] = useState<string | null>(null)
@@ -636,6 +642,24 @@ function JagdFormular({
           />
         </div>
 
+        {/* Leeren ist erlaubt: Migration 107 setzt daraufhin das Ende des
+            Jagdtags. **„Direkt ins Feld zurück" stand hier und war zu viel
+            behauptet** (Fremdprüfung 06.08.2026): `nachladen()` ist ein
+            `router.refresh()`, der Kopf zeigt bis dahin den alten Stand, und
+            das Formular ist da schon geschlossen. Der Wert steht beim nächsten
+            Öffnen da, nicht im selben Atemzug. */}
+        <div>
+          <label htmlFor="jagd-bis">Ende (bei mehrtägigen Jagden)</label>
+          <input
+            id="jagd-bis"
+            type="datetime-local"
+            value={entwurf.bis}
+            min={entwurf.termin || undefined}
+            disabled={laeuft}
+            onChange={(e) => setEntwurf((v) => ({ ...v, bis: e.target.value }))}
+          />
+        </div>
+
         <div>
           <label htmlFor="jagd-art">Jagdart</label>
           <select
@@ -654,6 +678,31 @@ function JagdFormular({
           </select>
         </div>
       </div>
+
+      {/*
+        * **Der Zeitraum steht hier, damit er nicht lautlos entsteht**
+        * (Schlusslesung 06.08.2026).
+        *
+        * Den Starttermin nach VORN zu schieben macht aus einer eintägigen Jagd
+        * eine mehrtägige: das Ende bleibt stehen, und die Meldung „Das Ende
+        * liegt vor dem Termin." feuert nur in die andere Richtung. Nach dem
+        * ersten Speichern ist ein vom Trigger gesetztes Tagesende außerdem
+        * nicht mehr von einer bewussten Wahl zu unterscheiden — der Nutzer
+        * sähe zwei Felder und nirgends, was daraus folgt.
+        *
+        * **Kein Nachziehen des Endes, sondern eine Anzeige.** Den Wert des
+        * Nutzers zu verschieben löste dasselbe Problem, indem es ein zweites
+        * schafft: eine stille Änderung statt einer stillen Folge.
+        */}
+      {/* `role="status"`: die Zeile kündigt eine FOLGE an, die aus einer
+          Eingabe entsteht — wer den Starttermin per Screenreader verschiebt,
+          hörte sie sonst nicht. Der Fehler-Absatz daneben trägt aus demselben
+          Grund `role="alert"` (Delta-Durchgang 06.08.2026). */}
+      <p className="zentrale-sub" role="status">
+        {mehrtaegig(alsZeitstempel(entwurf.termin), alsZeitstempel(entwurf.bis))
+          ? `Mehrtägig: ${terminText(alsZeitstempel(entwurf.termin))} – ${terminText(alsZeitstempel(entwurf.bis), false)}`
+          : ''}
+      </p>
 
       {fehler ? (
         <p className="zentrale-inspektor-fehler" role="alert">
