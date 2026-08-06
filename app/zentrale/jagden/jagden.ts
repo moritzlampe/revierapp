@@ -770,6 +770,109 @@ export interface JagdEntwurf {
 }
 
 /**
+ * Wann eine Jagd beginnt und endet, wenn niemand die Uhrzeit anfasst.
+ *
+ * **Moritz, 06.08.2026:** *„eine jagd geht immer morgens um 7 los und endet den
+ * ausgewählten tag um 20 uhr. zeit dann änderbar, aber das wäre der
+ * voreingestellte standart"*.
+ *
+ * **Das Ende um 20:00 verkürzt die Schonfrist des Crons aus 102 gegenüber dem
+ * Trigger-Standard**, und das gehört benannt: wer KEIN Ende wählt, bekommt von
+ * Migration 107 den ganzen Jagdtag (`23:59:59.999999`); wer den Endtag
+ * ausdrücklich wählt, bekommt 20:00, danach greift wieder der
+ * 12-Stunden-Riegel ab dem letzten Lebenszeichen. Für eine Drückjagd trägt
+ * das — das Schüsseltreiben erzeugt Aktivität —, und als Nebenwirkung wird die
+ * ausdrückliche Wahl wieder von der Voreinstellung unterscheidbar, was der
+ * Kopf von `JagdEntwurf.bis` bisher als Verlust ausweisen musste.
+ */
+export const STANDARD_BEGINN = '07:00'
+export const STANDARD_ENDE = '20:00'
+
+/** Datumsteil eines `datetime-local`-Werts (`2026-08-15T18:30` → `2026-08-15`). */
+export function datumTeil(wert: string): string {
+  return wert.slice(0, 10)
+}
+
+/** Uhrzeitteil, oder `''` wenn keiner da ist. */
+export function zeitTeil(wert: string): string {
+  return wert.slice(11, 16)
+}
+
+/**
+ * Setzt Datum und Uhrzeit zu einem `datetime-local`-Wert zusammen.
+ *
+ * **Die Zerlegung bleibt in der Oberfläche, `JagdEntwurf` behält seinen einen
+ * String** — das ist die eigentliche Entscheidung hier. Zwei getrennte Felder
+ * im Entwurf hätten `pruefeJagdEntwurf`, `jagdAenderungen`, `alsZeitstempel`,
+ * `namensvorschlag` und den halben Selbsttest mitgezogen, für eine reine
+ * Anzeigefrage. Zwei `<input>` schreiben stattdessen in denselben Wert.
+ *
+ * **Ohne Datum ist der ganze Wert leer** — eine Uhrzeit ohne Tag ist kein
+ * Termin, und `pruefeJagdEntwurf` soll sie als fehlend sehen, nicht als kaputt.
+ * Ohne Uhrzeit greift die Voreinstellung, damit ein geleertes Zeitfeld nicht
+ * stillschweigend Mitternacht bedeutet.
+ */
+export function alsTerminwert(datum: string, zeit: string, standardZeit: string): string {
+  if (!datum) return ''
+  return `${datum}T${zeit || standardZeit}`
+}
+
+/**
+ * `tag` (`YYYY-MM-DD`) plus `n` Kalendertage. Mittags in UTC gerechnet, damit
+ * keine Zeitumstellung den Tagessprung verschluckt oder verdoppelt.
+ */
+export function tagPlus(tag: string, n: number): string {
+  const d = tag ? new Date(`${tag}T12:00:00Z`) : null
+  if (!d || Number.isNaN(d.getTime())) return ''
+  // **Normalisierung ist kein gueltiges Datum.** `new Date('2026-02-30T12:00:00Z')`
+  // wirft nicht, es rutscht auf den 2. Maerz — der Deckel laege dann still einen
+  // Tag daneben. Wer nicht zu sich selbst zurueckkommt, war nie ein Kalendertag
+  // (Fremdpruefung 06.08.2026).
+  if (d.toISOString().slice(0, 10) !== tag) return ''
+  return new Date(d.getTime() + n * 86_400_000).toISOString().slice(0, 10)
+}
+
+/**
+ * Der späteste zulässige End**tag** zu einem Starttermin, als Wert für `max`
+ * eines Datumsfelds — oder `''` ohne brauchbaren Start (dann bleibt das Feld
+ * ungedeckelt, statt auf einem Fantasiewert zu klemmen).
+ *
+ * **Der Deckel stand zuerst NUR in `pruefeJagdEntwurf`, und die Begründung
+ * dafür war zu schwach** — sinngemäß „ein Satz erklärt die Grenze besser als
+ * eine Browser-Blase". Das stimmt für die MELDUNG, nicht für den PICKER:
+ * nativ deckelt der „Bis"-Wähler bei `MAX_JAGD_TAGE` (Moritz, 06.08.2026),
+ * und zwei Clients, die dieselbe Grenze verschieden anfassen, sind für den
+ * Nutzer eine Unregelmäßigkeit, keine Feinheit.
+ *
+ * **Gezählt werden BERLINER KALENDERTAGE, nicht 24-Stunden-Blöcke — und das
+ * war zuerst falsch herum.** Die erste Fassung rechnete die Zeitspanne
+ * (`start + 14 × 86 400 000 ms`), weil Migration 102 das so tat. Mit den
+ * Voreinstellungen 07:00/20:00 sind „Starttag + 14 Tage" aber 14 Tage und
+ * 13 Stunden, also mehr als die Spanne — der Picker klemmte deshalb einen Tag
+ * zu früh, und die gewählte Endzeit musste in die Rechnung eingehen.
+ * Moritz, 06.08.2026: *„jetzt ist es nur mit ende 13 tage nach start möglich.
+ * 14 tage + die 13 stunden sind korrekt geplant."*
+ *
+ * **Der Nutzer wählt Tage, also zählt die Grenze Tage.** Der Cron trägt das
+ * seit Migration 108 (Deckel von 14 auf 16 Tage). **16 und nicht 15:** 14
+ * Kalendertage belegen im schlechtesten Fall 15 Tage 00:59 Stunden, weil die
+ * Herbstumstellung einem Tag 25 Stunden gibt — an der Datenbank gemessen,
+ * gefunden von der Fremdprüfung, bevor 108 appliziert wurde. Die
+ * Endzeit spielt hier damit keine Rolle mehr, eine Eingabe weniger, die etwas
+ * verschieben kann.
+ *
+ * **Kein Umweg über `alsZeitstempel`/`alsEingabewert`, obwohl er hier stand.**
+ * Ein `datetime-local`-Wert trägt keine Zone; sein Datumsteil IST bereits das
+ * Kalenderdatum, das der Nutzer sieht und tippt. Der Rundweg lieferte es
+ * unverändert zurück — das sichern die Zusicherungen zu `alsZeitstempel`
+ * ausdrücklich zu — und verschleierte, dass hier gar keine Zonenfrage offen
+ * ist. Ungültige Eingaben fallen weiterhin auf `''`, jetzt in `tagPlus`.
+ */
+export function spaetestesEndeDatum(termin: string): string {
+  return tagPlus(datumTeil(termin), MAX_JAGD_TAGE)
+}
+
+/**
  * Prüft einen Entwurf, bevor geschrieben wird. Gibt die Meldung zurück oder
  * `null`, wenn nichts zu beanstanden ist.
  *
@@ -807,18 +910,24 @@ export function pruefeJagdEntwurf(e: JagdEntwurf): string | null {
    * an — wer sie per `curl` verdreht, bekommt keine Meldung, sondern eine
    * Jagd, die aus der Cron-Ausnahme von 102 fällt.
    *
-   * Gerechnet wird über `alsZeitstempel`, nicht über die Zeichenketten: der
-   * Abstand in Tagen ist eine echte Zeitspanne, und an der Zeitumstellung
-   * liegen zwischen zwei gleich aussehenden Kalenderdaten 23 oder 25 Stunden.
-   * Der Zeichenvergleich stimmte für „liegt davor", aber nicht für „dauert
-   * höchstens 14 Tage".
+   * **Die Reihenfolge prüft ZEITPUNKTE, die Dauer prüft KALENDERTAGE**, und
+   * das ist kein Versehen, sondern die Korrektur vom 06.08.2026. „Liegt davor"
+   * ist eine Frage an die Uhr — ein Ende um 06:00 am Starttag liegt davor,
+   * obwohl der Kalendertag derselbe ist. „Dauert höchstens 14 Tage" ist
+   * dagegen eine Frage an den Kalender, weil der Nutzer Tage wählt: mit den
+   * Voreinstellungen 07:00/20:00 sind Starttag + 14 Tage in Wahrheit 14 Tage
+   * und 13 Stunden, und eine Spannenrechnung hätte sie abgewiesen.
+   * Migration 108 hebt den Cron-Deckel entsprechend auf 16 Tage — 15 hätten
+   * nicht gereicht, weil die Herbstumstellung dem schlechtesten Fall eine
+   * Stunde zulegt (15 Tage 00:59, gemessen).
    */
   if (!e.bis) return null
   const bis = alsZeitstempel(e.bis)
   if (!bis) return 'Das Ende ist kein gültiges Datum.'
-  const spanne = new Date(bis).getTime() - new Date(von).getTime()
-  if (spanne < 0) return 'Das Ende liegt vor dem Termin.'
-  if (spanne > MAX_JAGD_TAGE * 86_400_000)
+  if (new Date(bis).getTime() < new Date(von).getTime()) return 'Das Ende liegt vor dem Termin.'
+  // Zeichenvergleich auf `YYYY-MM-DD` ist chronologisch korrekt, und beide
+  // Seiten kommen über `alsEingabewert` aus derselben Berliner Rechnung.
+  if (datumTeil(alsEingabewert(bis)) > tagPlus(datumTeil(alsEingabewert(von)), MAX_JAGD_TAGE))
     return `Eine Jagd dauert höchstens ${MAX_JAGD_TAGE} Tage. Für längere Zeiträume plane mehrere Jagden.`
   return null
 }

@@ -26,8 +26,15 @@ import {
   nachJagdjahr,
   jagdstatus,
   laeuft,
+  alsTerminwert,
+  datumTeil,
+  zeitTeil,
   mehrtaegig,
   namensvorschlag,
+  spaetestesEndeDatum,
+  tagPlus,
+  STANDARD_BEGINN,
+  STANDARD_ENDE,
   pruefeJagdEntwurf,
   rolle,
   gruppiereTeilnehmer,
@@ -605,30 +612,175 @@ assert.match(pruefeJagdEntwurf(entwurf({ bis: 'uebermorgen' })) ?? '', /Datum/)
 // unerreichbar — `pruefeJagdEntwurf` ist aber eine exportierte Zusage.
 assert.match(pruefeJagdEntwurf(entwurf({ termin: '2026-11-14T08:00Z' })) ?? '', /Datum/)
 
+// **Verdreht am SELBEN Kalendertag**, nur ueber die Uhr. Die Zeile belegt, dass
+// die Reihenfolge weiter ZEITPUNKTE prueft und nicht Tage — mit einem reinen
+// Tagesvergleich ginge 07:00 -> 06:00 durch (Fremdpruefung 06.08.2026).
+assert.match(
+  pruefeJagdEntwurf(entwurf({ termin: '2026-11-14T07:00', bis: '2026-11-14T06:00' })) ?? '',
+  /vor dem Termin/,
+)
+
+// **Die Fruehlingsluecke laesst eine sichtbar verdrehte Eingabe durch, und das
+// ist BEKANNT statt behoben** (Fremdpruefung 06.08.2026). Am 29.03.2026 gibt es
+// 02:30 nicht; `alsZeitstempel` normalisiert nach vorn auf 03:30. „03:00 bis
+// 02:30" sieht verdreht aus und ist es nach der Normalisierung nicht mehr.
+// Die Zusicherung haelt das Verhalten fest, damit es nicht unbemerkt kippt —
+// den Ausweg (mehrdeutige Zeiten bestaetigen lassen) nennt der `ponytail:`-
+// Absatz bei `alsZeitstempel` und lehnt ihn fuer dieses Produkt ab.
+assert.equal(pruefeJagdEntwurf(entwurf({ termin: '2026-03-29T03:00', bis: '2026-03-29T02:30' })), null)
+
 // Verdreht: das Ende vor dem Termin. Die DB nimmt das an (095 hat den CHECK
 // ausdruecklich abgelehnt), die Jagd fiele aber aus der Cron-Ausnahme von 102
 // und wuerde nachts eingesammelt — also faengt es das Formular.
 assert.match(pruefeJagdEntwurf(entwurf({ bis: '2026-11-13T08:00' })) ?? '', /vor dem Termin/)
 
-// **Die Grenze auf die Minute, in beide Richtungen.** Ein Test daneben belegt
+// **Die Grenze auf den TAG, in beide Richtungen.** Ein Test daneben belegt
 // nichts: am 03.08. lag eine Grenzwert-Zusicherung bei `23:30Z` neben der
 // Grenze bei `22:00Z`, am 04.08. eine bei `1990` neben `1997`. Beide Male hat
 // erst die Fremdpruefung es gefunden.
-assert.equal(pruefeJagdEntwurf(entwurf({ bis: '2026-11-28T08:00' })), null) // exakt 14 Tage
+//
+// **Gezaehlt werden KALENDERTAGE, nicht 24-Stunden-Bloecke** — die Korrektur
+// vom 06.08.2026. Termin 14.11. 07:00, Ende 28.11. 20:00 sind 14 Tage und
+// 13 Stunden; als Zeitspanne waeren sie zu lang gewesen, als Kalendertage sind
+// sie genau die Grenze. Moritz: „14 tage + die 13 stunden sind korrekt
+// geplant." Migration 108 hebt den Cron-Deckel dafuer auf 16 Tage.
+assert.equal(
+  pruefeJagdEntwurf(entwurf({ termin: '2026-11-14T07:00', bis: '2026-11-28T20:00' })),
+  null, // Tag 14, 13 Stunden ueber der reinen Spanne — muss durchgehen
+)
 assert.match(
-  pruefeJagdEntwurf(entwurf({ bis: '2026-11-28T08:01' })) ?? '', // eine Minute mehr
+  pruefeJagdEntwurf(entwurf({ termin: '2026-11-14T07:00', bis: '2026-11-29T07:00' })) ?? '',
+  /14 Tage/, // Tag 15, obwohl die SPANNE kleiner ist als bei der Zeile darueber
+)
+
+// **Der schlechteste Fall OHNE Zeitumstellung dazwischen**: Start 00:00, Ende
+// 23:59 am 14. Tag = 14 Tage 23:59 Stunden.
+//
+// **Hier stand „gegen den 108 mit 15 Tagen gedeckelt ist", und das war genau
+// die Rechnung, die die Fremdpruefung als `[high]` kassiert hat** — sie stand
+// nach der Korrektur noch unveraendert neben den Zeilen, die sie widerlegen
+// (Schlusslesung 06.08.2026). Liegt die HERBSTumstellung dazwischen, hat ein
+// Tag 25 Stunden und derselbe Fall belegt 15 Tage 00:59; deshalb deckelt 108
+// bei 16. Die Zeile darunter fuehrt genau diesen Fall mit.
+assert.equal(
+  pruefeJagdEntwurf(entwurf({ termin: '2026-11-14T00:00', bis: '2026-11-28T23:59' })),
+  null,
+)
+
+// **Der schlechteste BERLINER Fall muss unter dem Cron-Deckel aus 108 bleiben.**
+// Diese Zusicherung fehlte hier, obwohl das Portal der Schreiber ist, an dem
+// der Fall ueberhaupt gemessen wurde — sie lag nur im PWA-Modul
+// (Schlusslesung 06.08.2026). Faellt sie, plant das Portal eine Jagd, die der
+// Cron nicht mehr verschont und die nach 12 h Funkstille eingesammelt wird.
+//
+// Gerechnet mit festen Offsets, damit sie in jeder Rechnerzone dasselbe prueft:
+// 18.10. 00:00 ist CEST (+02), 01.11. 23:59 ist CET (+01) — dazwischen liegt
+// die Rueckstellung, ein Tag hat 25 Stunden.
+{
+  const CRON_DECKEL_TAGE = 16
+  const start = '2026-10-18T00:00'
+  const endtag = spaetestesEndeDatum(start)
+  assert.equal(endtag, '2026-11-01')
+  // Das spaeteste Ende an diesem Tag geht durch die Pruefung...
+  assert.equal(pruefeJagdEntwurf(entwurf({ termin: start, bis: `${endtag}T23:59` })), null)
+  // ...und belegt dann diese Spanne:
+  const spanne =
+    new Date('2026-11-01T22:59:00Z').getTime() - new Date('2026-10-17T22:00:00Z').getTime()
+  assert.ok(spanne > 15 * 86_400_000, 'Herbstfall muss 15 Tage reissen — sonst ist die Probe stumpf')
+  assert.ok(spanne < CRON_DECKEL_TAGE * 86_400_000, 'Herbstfall reisst auch den 16-Tage-Deckel')
+}
+
+// Ueber die Zeitumstellung bleibt die Grenze ein Kalendertag — der 25.10. hat
+// 25 Stunden, das verschiebt hier nichts mehr (bei der Spannenrechnung schon).
+assert.equal(pruefeJagdEntwurf(entwurf({ termin: '2026-10-18T08:00', bis: '2026-11-01T20:00' })), null)
+assert.match(
+  pruefeJagdEntwurf(entwurf({ termin: '2026-10-18T08:00', bis: '2026-11-02T08:00' })) ?? '',
   /14 Tage/,
 )
 
-// **Die Spanne wird als echte Zeit gerechnet, nicht als Kalendertage** — sonst
-// wuerde die Umstellungsnacht (25.10.2026, 25 Stunden) die Grenze verschieben.
-// 14 Kalendertage ueber die Rueckstellung sind 14 Tage + 1 Stunde; genau die
-// Stunde muss die Meldung ausloesen.
-assert.equal(pruefeJagdEntwurf(entwurf({ termin: '2026-10-18T08:00', bis: '2026-11-01T07:00' })), null)
+// --- Datum und Uhrzeit als zwei Felder --------------------------------------
+
+assert.equal(datumTeil('2026-11-14T08:00'), '2026-11-14')
+assert.equal(zeitTeil('2026-11-14T08:00'), '08:00')
+assert.equal(datumTeil(''), '')
+assert.equal(zeitTeil('2026-11-14'), '') // nur Datum, keine Uhrzeit
+
+// Die Voreinstellungen (Moritz, 06.08.2026: 7 Uhr los, 20 Uhr Schluss).
+assert.equal(alsTerminwert('2026-11-14', '', STANDARD_BEGINN), '2026-11-14T07:00')
+assert.equal(alsTerminwert('2026-11-16', '', STANDARD_ENDE), '2026-11-16T20:00')
+// Eine gewaehlte Uhrzeit sticht die Voreinstellung.
+assert.equal(alsTerminwert('2026-11-14', '05:30', STANDARD_BEGINN), '2026-11-14T05:30')
+// **Ohne Datum ist der GANZE Wert leer** — eine Uhrzeit ohne Tag ist kein
+// Termin, und `pruefeJagdEntwurf` soll sie als fehlend sehen, nicht als kaputt.
+assert.equal(alsTerminwert('', '07:00', STANDARD_BEGINN), '')
 assert.match(
-  pruefeJagdEntwurf(entwurf({ termin: '2026-10-18T08:00', bis: '2026-11-01T08:00' })) ?? '',
+  pruefeJagdEntwurf(entwurf({ termin: alsTerminwert('', '07:00', STANDARD_BEGINN) })) ?? '',
+  /Termin/,
+)
+
+// --- Der Deckel als Picker-Grenze -------------------------------------------
+
+// `max` muss GENAU dort liegen, wo `pruefeJagdEntwurf` noch durchlaesst — ein
+// Picker, der frueher klemmt als der Riegel, macht gueltige Eingaben
+// unerreichbar; einer, der spaeter klemmt, laesst eine Blase erscheinen, wo
+// eine Meldung stehen sollte.
+//
+// **Der Deckel zaehlt KALENDERTAGE, und die Endzeit geht nicht mehr ein.**
+// Die erste Fassung rechnete die Zeitspanne und klemmte deshalb beim 27.11.,
+// obwohl der 28. gemeint war (Moritz, 06.08.2026).
+assert.equal(spaetestesEndeDatum('2026-11-14T07:00'), '2026-11-28')
+
+// **Der letzte waehlbare Tag muss mit der VOREINSTELLUNG durchgehen** — sonst
+// bietet der Kalender einen Tag an, den die Meldung danach ablehnt. Das ist
+// die Zeile, die Picker und Riegel aneinander bindet.
+assert.equal(
+  pruefeJagdEntwurf(
+    entwurf({
+      termin: '2026-11-14T07:00',
+      bis: alsTerminwert(spaetestesEndeDatum('2026-11-14T07:00'), '', STANDARD_ENDE),
+    }),
+  ),
+  null,
+)
+// Und auch mit der spaetestmoeglichen Uhrzeit an diesem Tag.
+assert.equal(
+  pruefeJagdEntwurf(
+    entwurf({ termin: '2026-11-14T07:00', bis: alsTerminwert('2026-11-28', '23:59', STANDARD_ENDE) }),
+  ),
+  null,
+)
+// Ein Tag mehr muss die Meldung ausloesen — sonst deckelt der Picker zu spaet.
+assert.match(
+  pruefeJagdEntwurf(entwurf({ termin: '2026-11-14T07:00', bis: '2026-11-29T07:00' })) ?? '',
   /14 Tage/,
 )
+
+// Ueber die Zeitumstellung bleibt es ein Kalendertag: vom 18.10. aus der 01.11.
+assert.equal(spaetestesEndeDatum('2026-10-18T08:00'), '2026-11-01')
+assert.equal(
+  pruefeJagdEntwurf(entwurf({ termin: '2026-10-18T08:00', bis: '2026-11-01T20:00' })),
+  null,
+)
+
+// `tagPlus` selbst, ueber Monats- und Jahresgrenze und ueber beide
+// Umstellungen — mittags gerechnet, damit kein Tag verschluckt wird.
+assert.equal(tagPlus('2026-11-14', 14), '2026-11-28')
+assert.equal(tagPlus('2026-12-28', 14), '2027-01-11')
+assert.equal(tagPlus('2026-03-22', 14), '2026-04-05') // Vorstellung dazwischen
+assert.equal(tagPlus('2026-10-18', 14), '2026-11-01') // Rueckstellung dazwischen
+assert.equal(tagPlus('', 14), '')
+assert.equal(tagPlus('kein datum', 14), '')
+// **Ein Datum, das es nicht gibt, wird abgelehnt statt normalisiert.**
+// `new Date('2026-02-30T12:00:00Z')` wirft nicht, es rutscht auf den 2. Maerz —
+// der Deckel laege dann still einen Tag daneben (Fremdpruefung 06.08.2026).
+assert.equal(tagPlus('2026-02-30', 14), '')
+assert.equal(tagPlus('2026-13-01', 14), '')
+assert.equal(spaetestesEndeDatum('2026-02-30T07:00'), '')
+
+// Ohne brauchbaren Start kein Deckel — das Feld bleibt offen, statt auf einem
+// Fantasiewert zu klemmen.
+assert.equal(spaetestesEndeDatum(''), '')
+assert.equal(spaetestesEndeDatum('morgen frueh'), '')
 
 // --- Mehrtaegig: der Vertrag aus 095 ----------------------------------------
 

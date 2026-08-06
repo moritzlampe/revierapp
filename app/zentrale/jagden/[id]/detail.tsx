@@ -7,9 +7,15 @@ import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../../schreiben'
 import {
   alsEingabewert,
+  alsTerminwert,
   alsZeitstempel,
+  datumTeil,
   mehrtaegig,
+  spaetestesEndeDatum,
   terminText,
+  zeitTeil,
+  STANDARD_BEGINN,
+  STANDARD_ENDE,
   filterZaehler,
   jagdAenderungen,
   jagdart,
@@ -614,8 +620,12 @@ function JagdFormular({
     }
   }
 
+  /* `noValidate` aus demselben Grund wie im Anlege-Formular: `min`/`max`
+      sollen den Kalender führen, nicht das Absenden mit einer nativen Blase
+      abfangen, bevor `pruefeJagdEntwurf` seinen Satz sagen kann. Kein
+      `required`/`pattern` in diesem Formular. */
   return (
-    <form className="jagden-formular" onSubmit={absenden}>
+    <form className="jagden-formular" onSubmit={absenden} noValidate>
       <h1>Jagd bearbeiten</h1>
 
       <div className="zentrale-inspektor-feld">
@@ -631,15 +641,36 @@ function JagdFormular({
           />
         </div>
 
+        {/* Datum und Uhrzeit getrennt — Begründung im Anlege-Formular
+            (`liste.tsx`), dort steht sie einmal ausführlich. */}
         <div>
           <label htmlFor="jagd-termin">Termin</label>
-          <input
-            id="jagd-termin"
-            type="datetime-local"
-            value={entwurf.termin}
-            disabled={laeuft}
-            onChange={(e) => setEntwurf((v) => ({ ...v, termin: e.target.value }))}
-          />
+          <div className="jagden-datumszeile">
+            <input
+              id="jagd-termin"
+              type="date"
+              value={datumTeil(entwurf.termin)}
+              disabled={laeuft}
+              onChange={(e) =>
+                setEntwurf((v) => ({
+                  ...v,
+                  termin: alsTerminwert(e.target.value, zeitTeil(v.termin), STANDARD_BEGINN),
+                }))
+              }
+            />
+            <input
+              aria-label="Beginn, Uhrzeit"
+              type="time"
+              value={zeitTeil(entwurf.termin)}
+              disabled={laeuft || !datumTeil(entwurf.termin)}
+              onChange={(e) =>
+                setEntwurf((v) => ({
+                  ...v,
+                  termin: alsTerminwert(datumTeil(v.termin), e.target.value, STANDARD_BEGINN),
+                }))
+              }
+            />
+          </div>
         </div>
 
         {/* Leeren ist erlaubt: Migration 107 setzt daraufhin das Ende des
@@ -650,14 +681,34 @@ function JagdFormular({
             Öffnen da, nicht im selben Atemzug. */}
         <div>
           <label htmlFor="jagd-bis">Ende (bei mehrtägigen Jagden)</label>
-          <input
-            id="jagd-bis"
-            type="datetime-local"
-            value={entwurf.bis}
-            min={entwurf.termin || undefined}
-            disabled={laeuft}
-            onChange={(e) => setEntwurf((v) => ({ ...v, bis: e.target.value }))}
-          />
+          <div className="jagden-datumszeile">
+            <input
+              id="jagd-bis"
+              type="date"
+              value={datumTeil(entwurf.bis)}
+              min={datumTeil(entwurf.termin) || undefined}
+              max={spaetestesEndeDatum(entwurf.termin) || undefined}
+              disabled={laeuft || !datumTeil(entwurf.termin)}
+              onChange={(e) =>
+                setEntwurf((v) => ({
+                  ...v,
+                  bis: alsTerminwert(e.target.value, zeitTeil(v.bis), STANDARD_ENDE),
+                }))
+              }
+            />
+            <input
+              aria-label="Ende, Uhrzeit"
+              type="time"
+              value={zeitTeil(entwurf.bis)}
+              disabled={laeuft || !datumTeil(entwurf.bis)}
+              onChange={(e) =>
+                setEntwurf((v) => ({
+                  ...v,
+                  bis: alsTerminwert(datumTeil(v.bis), e.target.value, STANDARD_ENDE),
+                }))
+              }
+            />
+          </div>
         </div>
 
         <div>

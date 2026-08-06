@@ -461,3 +461,37 @@
   font-size: 0.8125rem;
   color: var(--z-text-secondary);
 }
+
+/* Datum und Uhrzeit als EIN Feld gelesen, aber als zwei Steuerelemente
+   bedient (Moritz, 06.08.2026: im zusammengesetzten `datetime-local` öffnet
+   ein Klick auf die Uhrzeit den Kalender). Das Datum bekommt den Platz, den
+   es braucht, die Uhrzeit nur ihre eigene Breite.
+
+   Der `margin-bottom` der Eingabefelder aus `.zentrale-inspektor-feld` wandert
+   von den Feldern an die ZEILE. Er trennt dabei nichts zwischen ihnen — sie
+   stehen nebeneinander, der Rand liegt darunter —, aber zwei Ränder ergäben
+   doppelten Abstand zum nächsten Feld. (Hier stand zuerst „sonst stünde
+   zwischen Datum und Uhrzeit ein Abstand"; den erzeugt der `gap`, nicht der
+   Rand. Fremdprüfung 06.08.2026.)
+
+   `min-width` statt `0`, und die Zeile darf umbrechen: bei schmalem Fenster
+   drückte das nicht schrumpfende Zeitfeld das Datumsfeld sonst bis zur
+   Unbenutzbarkeit zusammen (derselbe Lauf). Reicht der Platz nicht für beide,
+   ist ein Umbruch die bessere Antwort als ein zwei Zeichen breites Datum. */
+.zentrale .jagden-datumszeile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.zentrale .jagden-datumszeile input {
+  margin-bottom: 0;
+}
+.zentrale .jagden-datumszeile input[type='date'] {
+  flex: 1 1 11ch;
+  min-width: 11ch;
+}
+.zentrale .jagden-datumszeile input[type='time'] {
+  flex: 0 0 auto;
+  width: auto;
+}

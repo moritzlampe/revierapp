@@ -19,8 +19,14 @@ import {
   namensvorschlag,
   pruefeJagdEntwurf,
   sortiere,
+  alsTerminwert,
+  datumTeil,
   mehrtaegig,
+  spaetestesEndeDatum,
   terminText,
+  zeitTeil,
+  STANDARD_BEGINN,
+  STANDARD_ENDE,
   vorbereitbar,
   zeitraumText,
   VORBEREITBARE_STATUS,
@@ -794,8 +800,22 @@ function Anlegen({
     }
   }
 
+  /*
+    * **`noValidate`, und das ist eine Korrektur, keine Abkürzung**
+    * (Fremdprüfung 06.08.2026).
+    *
+    * `min`/`max` an den Datumsfeldern sollen den KALENDER führen. Ohne
+    * `noValidate` blockiert der Browser damit aber auch das Absenden, und
+    * zwar VOR `pruefeJagdEntwurf` — dann erscheint eine native Blase statt
+    * des Satzes, der erklärt, warum 14 Tage die Grenze sind. Genau das
+    * Gegenteil dessen, was der Kommentar am Feld behauptete.
+    *
+    * Gefahrlos, weil in diesem Formular kein einziges `required` oder
+    * `pattern` steht: es gibt keine native Prüfung, auf die etwas baut.
+    * Die Riegel sind `pruefeJagdEntwurf` und die Datenbank.
+    */
   return (
-    <form className="jagden-formular" onSubmit={absenden}>
+    <form className="jagden-formular" onSubmit={absenden} noValidate>
       <h2 className="jagden-abschnitt">Neue Jagd</h2>
 
       <div className="zentrale-inspektor-feld">
@@ -840,32 +860,91 @@ function Anlegen({
           />
         </div>
 
+        {/*
+          * **Datum und Uhrzeit getrennt, statt `datetime-local`.** Moritz am
+          * 06.08.2026: „wenn ich auf die Uhrzeit klicke öffnet sich auch der
+          * kalender" — das ist eingebautes Verhalten des zusammengesetzten
+          * Feldes, nicht abstellbar. Zwei native Steuerelemente lösen es: der
+          * Kalender öffnet nur über dem Datum, das Zeitfeld ist ein Zeitfeld.
+          *
+          * Der ENTWURF behält seinen einen String; beide Felder schreiben über
+          * `alsTerminwert` hinein. **Die Zeitzonenrechnung darunter bleibt
+          * unangetastet** — `alsZeitstempel`/`alsEingabewert` sehen weiter
+          * denselben Wert wie vorher. Hier stand „Prüfung, Patch und
+          * Zeitzonenrechnung bleiben unangetastet", und die ersten beiden
+          * stimmen nicht: derselbe Nachtrag hat `pruefeJagdEntwurf` auf
+          * Kalendertage und `jagdAenderungen` auf den Eingabeformat-Vergleich
+          * umgestellt (Fremdprüfung 06.08.2026).
+          */}
         <div>
           <label htmlFor="neu-termin">Termin</label>
-          <input
-            id="neu-termin"
-            type="datetime-local"
-            value={entwurf.termin}
-            disabled={laeuft}
-            onChange={(e) => setEntwurf((v) => ({ ...v, termin: e.target.value }))}
-          />
+          <div className="jagden-datumszeile">
+            <input
+              id="neu-termin"
+              type="date"
+              value={datumTeil(entwurf.termin)}
+              disabled={laeuft}
+              onChange={(e) =>
+                setEntwurf((v) => ({
+                  ...v,
+                  termin: alsTerminwert(e.target.value, zeitTeil(v.termin), STANDARD_BEGINN),
+                }))
+              }
+            />
+            <input
+              aria-label="Beginn, Uhrzeit"
+              type="time"
+              value={zeitTeil(entwurf.termin)}
+              disabled={laeuft || !datumTeil(entwurf.termin)}
+              onChange={(e) =>
+                setEntwurf((v) => ({
+                  ...v,
+                  termin: alsTerminwert(datumTeil(v.termin), e.target.value, STANDARD_BEGINN),
+                }))
+              }
+            />
+          </div>
         </div>
 
-        {/* `min` gesetzt, `max` nicht: `min` ist dieselbe Zeichenkette und
-            kostet nichts, ein `max` wäre eine stummere zweite Fassung des
-            14-Tage-Riegels aus `pruefeJagdEntwurf`. Und kein Nachziehen des
-            Endes, wenn der Termin wandert — „Das Ende liegt vor dem Termin."
-            ist ehrlicher, als den Wert des Nutzers zu verschieben. */}
+        {/* `min` UND `max` — der Picker führt genauso wie der native
+            (Moritz, 06.08.2026). Die Meldung aus `pruefeJagdEntwurf` bleibt der
+            Riegel, und sie kommt auch wirklich zum Zug: das `noValidate` am
+            Formular verhindert, dass der Browser vorher mit einer eigenen Blase
+            abbricht (Fremdprüfung 06.08.2026 — ohne das griff sie beim
+            verschobenen Starttermin gerade NICHT).
+            Kein Nachziehen des Endes, wenn der Termin wandert — „Das Ende liegt
+            vor dem Termin." ist ehrlicher, als den Wert des Nutzers zu
+            verschieben. */}
         <div>
           <label htmlFor="neu-bis">Ende (bei mehrtägigen Jagden)</label>
-          <input
-            id="neu-bis"
-            type="datetime-local"
-            value={entwurf.bis}
-            min={entwurf.termin || undefined}
-            disabled={laeuft}
-            onChange={(e) => setEntwurf((v) => ({ ...v, bis: e.target.value }))}
-          />
+          <div className="jagden-datumszeile">
+            <input
+              id="neu-bis"
+              type="date"
+              value={datumTeil(entwurf.bis)}
+              min={datumTeil(entwurf.termin) || undefined}
+              max={spaetestesEndeDatum(entwurf.termin) || undefined}
+              disabled={laeuft || !datumTeil(entwurf.termin)}
+              onChange={(e) =>
+                setEntwurf((v) => ({
+                  ...v,
+                  bis: alsTerminwert(e.target.value, zeitTeil(v.bis), STANDARD_ENDE),
+                }))
+              }
+            />
+            <input
+              aria-label="Ende, Uhrzeit"
+              type="time"
+              value={zeitTeil(entwurf.bis)}
+              disabled={laeuft || !datumTeil(entwurf.bis)}
+              onChange={(e) =>
+                setEntwurf((v) => ({
+                  ...v,
+                  bis: alsTerminwert(datumTeil(v.bis), e.target.value, STANDARD_ENDE),
+                }))
+              }
+            />
+          </div>
         </div>
 
         <div>

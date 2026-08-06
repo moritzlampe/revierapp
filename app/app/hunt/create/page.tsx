@@ -9,7 +9,16 @@ import { useGeolocation } from '@/hooks/useGeolocation'
 import GpsStatusBadge from '@/components/hunt/GpsStatusBadge'
 import { parsePointHex } from '@/lib/geo-utils'
 import { createSoloHunt } from '@/lib/supabase/hunts'
-import { MAX_JAGD_TAGE } from '@/lib/hunt/status'
+import {
+  MAX_JAGD_TAGE,
+  STANDARD_BEGINN,
+  STANDARD_ENDE,
+  alsTerminwert,
+  datumTeil,
+  zeitTeil,
+  spaetesterEndtag,
+  tagPlus,
+} from '@/lib/hunt/status'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { WildIcon } from '@/components/icons/WildIcon'
 import type { WildGroup } from '@/lib/species-config'
@@ -506,6 +515,23 @@ export default function CreateHuntPage() {
     const plannedTs = startMode === 'geplant' && scheduledFor ? new Date(scheduledFor) : null
     const isScheduled = plannedTs !== null && plannedTs.getTime() > Date.now()
 
+    // **Ein geplanter Termin in der Vergangenheit ist ab jetzt ein Fehler, kein
+    // stiller Rückfall auf „sofort" — und der Nachtrag hat das nötig gemacht.**
+    //
+    // Bisher war der Rückfall folgenlos selten: man musste eine
+    // Vergangenheitszeit bewusst eintippen. Mit der Voreinstellung 07:00 genügt
+    // es, HEUTE als Datum zu wählen, sobald es nach 7 Uhr ist — dann ist
+    // `isScheduled` falsch, die Jagd geht sofort live, und **ein gewähltes Ende
+    // wird lautlos verworfen**, während direkt darüber steht „Die Jagd geht
+    // erst zum gewählten Zeitpunkt live." (Schlusslesung 06.08.2026.)
+    //
+    // Wer sofort starten will, hat dafür den Knopf daneben.
+    if (startMode === 'geplant' && scheduledFor && !isScheduled) {
+      setError('Der Termin liegt in der Vergangenheit. Wähle einen späteren Zeitpunkt oder „Sofort starten".')
+      setLoading(false)
+      return
+    }
+
     // Das Ende zählt nur zu einer geplanten Jagd — eine spontane hat keinen
     // geplanten Tag, nur ein Jetzt. Bleibt es leer, füllt Migration 107.
     //
@@ -518,20 +544,26 @@ export default function CreateHuntPage() {
     // dem diese Bedingung typischerweise eintritt, weil kein Trigger mehr
     // `last_activity_at` hebt.
     //
-    // Die Zeitspanne wird in der GERÄTEZONE gerechnet, wie `scheduled_for`
-    // darüber — bewusst dieselbe Konvention statt einer zweiten. Preis,
-    // benannt: liegt zwischen Start und Ende eine Zeitumstellung, die das
-    // Gerät anders sieht als Berlin, weicht die Spanne um eine Stunde ab. Auf
-    // einem 14-Tage-Deckel ist das folgenlos.
+    // **Die Reihenfolge prüft ZEITPUNKTE, die Dauer prüft KALENDERTAGE**, und
+    // das ist die Korrektur vom 06.08.2026. „Liegt davor" ist eine Frage an die
+    // Uhr; „dauert höchstens 14 Tage" eine an den Kalender, weil der Nutzer Tage
+    // wählt. Mit den Voreinstellungen 07:00/20:00 sind Starttag + 14 Tage in
+    // Wahrheit 14 Tage und 13 Stunden — eine Spannenrechnung hätte sie
+    // abgewiesen, obwohl sie richtig geplant sind (Moritz). Migration 108 hebt
+    // den Cron-Deckel entsprechend auf 16 Tage (15 haetten nicht gereicht —
+    // die Herbstumstellung legt dem schlechtesten Fall eine Stunde zu).
+    //
+    // Die Zeitpunktprüfung läuft in der GERÄTEZONE, wie `scheduled_for`
+    // darüber — bewusst dieselbe Konvention statt einer zweiten. Die
+    // Tagesprüfung ist zonenfrei: sie liest nur die Datumsteile der Eingabe.
     const untilTs = isScheduled && scheduledUntil ? new Date(scheduledUntil) : null
     if (untilTs !== null && plannedTs !== null) {
-      const spanne = untilTs.getTime() - plannedTs.getTime()
-      if (Number.isNaN(spanne) || spanne < 0) {
+      if (Number.isNaN(untilTs.getTime()) || untilTs.getTime() < plannedTs.getTime()) {
         setError('Das Ende liegt vor dem Termin.')
         setLoading(false)
         return
       }
-      if (spanne > MAX_JAGD_TAGE * 86_400_000) {
+      if (datumTeil(scheduledUntil) > tagPlus(datumTeil(scheduledFor), MAX_JAGD_TAGE)) {
         setError(`Eine Jagd dauert höchstens ${MAX_JAGD_TAGE} Tage.`)
         setLoading(false)
         return
@@ -958,7 +990,13 @@ export default function CreateHuntPage() {
         </div>
       </div>
 
-      <form onSubmit={handleContinue} className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+      {/* `noValidate`: die Datumsfelder tragen `min`/`max`, damit der Kalender
+          führt. Ohne das Attribut bräche der Browser das Absenden mit einer
+          eigenen Blase ab, bevor `handleCreate` seinen Satz sagen kann —
+          dieselbe Klasse Fehler wie im Portal, dort war eine Datei zu kurz
+          korrigiert (Schlusslesung 06.08.2026). Kein `required`/`pattern` in
+          diesem Formular. */}
+      <form onSubmit={handleContinue} noValidate className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
         {/* Jagd-Typ Toggle */}
         <div>
           <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Typ</label>
@@ -1078,22 +1116,56 @@ export default function CreateHuntPage() {
             </div>
             {startMode === 'geplant' && (
               <div style={{ marginTop: '0.75rem' }}>
-                <input
-                  type="datetime-local"
-                  value={scheduledFor}
-                  // Start geleert heißt Ende geleert: sonst bleibt ein Ende
-                  // ohne Anfang im Zustand stehen, während sein Feld weg ist.
-                  onChange={(e) => {
-                    setScheduledFor(e.target.value)
-                    if (!e.target.value) setScheduledUntil('')
-                  }}
-                  style={{
-                    width: '100%', height: '3rem', padding: '0 0.875rem',
-                    borderRadius: 'var(--radius)',
-                    border: `1.5px solid ${scheduledFor ? 'var(--green)' : 'var(--border)'}`,
-                    background: 'var(--surface)', color: 'var(--text)', fontSize: '0.9375rem',
-                  }}
-                />
+                {/*
+                  * **Datum und Uhrzeit getrennt, statt `datetime-local`.**
+                  * Moritz am 06.08.2026: „wenn ich auf die Uhrzeit klicke
+                  * öffnet sich auch der kalender" — eingebautes Verhalten des
+                  * zusammengesetzten Feldes, nicht abstellbar. Zwei native
+                  * Steuerelemente lösen es. Der ZUSTAND bleibt ein einziger
+                  * `datetime-local`-String, damit `handleCreate` die Felder gar
+                  * nicht kennen muss; beide schreiben über `alsTerminwert`
+                  * hinein. **Hier stand „damit `handleCreate` unverändert
+                  * bleibt", und das stimmt nicht** — derselbe Nachtrag hat
+                  * dessen Dauer-Riegel von einer Zeitspanne auf Kalendertage
+                  * umgestellt (Fremdprüfung 06.08.2026). Unverändert bleibt die
+                  * SCHNITTSTELLE, nicht die Funktion.
+                  * Gleiche Bauform wie im Portal.
+                  */}
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    aria-label="Termin, Datum"
+                    type="date"
+                    value={datumTeil(scheduledFor)}
+                    // Start geleert heißt Ende geleert: sonst bleibt ein Ende
+                    // ohne Anfang im Zustand stehen, während sein Feld weg ist.
+                    onChange={(e) => {
+                      const naechster = alsTerminwert(e.target.value, zeitTeil(scheduledFor), STANDARD_BEGINN)
+                      setScheduledFor(naechster)
+                      if (!naechster) setScheduledUntil('')
+                    }}
+                    style={{
+                      flex: '1 1 auto', minWidth: 0, height: '3rem', padding: '0 0.875rem',
+                      borderRadius: 'var(--radius)',
+                      border: `1.5px solid ${scheduledFor ? 'var(--green)' : 'var(--border)'}`,
+                      background: 'var(--surface)', color: 'var(--text)', fontSize: '0.9375rem',
+                    }}
+                  />
+                  <input
+                    aria-label="Beginn, Uhrzeit"
+                    type="time"
+                    value={zeitTeil(scheduledFor)}
+                    disabled={!datumTeil(scheduledFor)}
+                    onChange={(e) =>
+                      setScheduledFor(alsTerminwert(datumTeil(scheduledFor), e.target.value, STANDARD_BEGINN))
+                    }
+                    style={{
+                      flex: '0 0 auto', height: '3rem', padding: '0 0.875rem',
+                      borderRadius: 'var(--radius)',
+                      border: `1.5px solid ${scheduledFor ? 'var(--green)' : 'var(--border)'}`,
+                      background: 'var(--surface)', color: 'var(--text)', fontSize: '0.9375rem',
+                    }}
+                  />
+                </div>
                 <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
                   Die Jagd geht erst zum gewählten Zeitpunkt live. Bis dahin: Einladungen sammeln, Chat optional freigeben.
                 </p>
@@ -1107,19 +1179,39 @@ export default function CreateHuntPage() {
                     <label htmlFor="jagd-ende" className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>
                       Ende <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>bei mehrtägigen Jagden</span>
                     </label>
-                    <input
-                      id="jagd-ende"
-                      type="datetime-local"
-                      value={scheduledUntil}
-                      min={scheduledFor}
-                      onChange={(e) => setScheduledUntil(e.target.value)}
-                      style={{
-                        width: '100%', height: '3rem', padding: '0 0.875rem',
-                        borderRadius: 'var(--radius)',
-                        border: `1.5px solid ${scheduledUntil ? 'var(--green)' : 'var(--border)'}`,
-                        background: 'var(--surface)', color: 'var(--text)', fontSize: '0.9375rem',
-                      }}
-                    />
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        id="jagd-ende"
+                        type="date"
+                        value={datumTeil(scheduledUntil)}
+                        min={datumTeil(scheduledFor) || undefined}
+                        max={spaetesterEndtag(scheduledFor) || undefined}
+                        onChange={(e) =>
+                          setScheduledUntil(alsTerminwert(e.target.value, zeitTeil(scheduledUntil), STANDARD_ENDE))
+                        }
+                        style={{
+                          flex: '1 1 auto', minWidth: 0, height: '3rem', padding: '0 0.875rem',
+                          borderRadius: 'var(--radius)',
+                          border: `1.5px solid ${scheduledUntil ? 'var(--green)' : 'var(--border)'}`,
+                          background: 'var(--surface)', color: 'var(--text)', fontSize: '0.9375rem',
+                        }}
+                      />
+                      <input
+                        aria-label="Ende, Uhrzeit"
+                        type="time"
+                        value={zeitTeil(scheduledUntil)}
+                        disabled={!datumTeil(scheduledUntil)}
+                        onChange={(e) =>
+                          setScheduledUntil(alsTerminwert(datumTeil(scheduledUntil), e.target.value, STANDARD_ENDE))
+                        }
+                        style={{
+                          flex: '0 0 auto', height: '3rem', padding: '0 0.875rem',
+                          borderRadius: 'var(--radius)',
+                          border: `1.5px solid ${scheduledUntil ? 'var(--green)' : 'var(--border)'}`,
+                          background: 'var(--surface)', color: 'var(--text)', fontSize: '0.9375rem',
+                        }}
+                      />
+                    </div>
                     <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
                       Ohne Ende läuft die Jagd bis zum Ende ihres Jagdtags.
                     </p>
