@@ -21,7 +21,9 @@ import {
   INTERVALLE,
   STATUS_LABEL,
   type Entwurf,
+  type Zahlung,
 } from './scheine'
+import Zahlungen from './zahlungen'
 
 export type StandWahl = { id: string; name: string; typ: string }
 
@@ -61,6 +63,7 @@ export default function Ausstellen({
   ausstellerId,
   staende,
   scheine,
+  zahlungen,
   heute,
 }: {
   revierId: string
@@ -69,6 +72,11 @@ export default function Ausstellen({
   ausstellerId: string
   staende: StandWahl[]
   scheine: ScheinZeile[]
+  /** Das Zahlungsjournal ALLER Scheine dieses Reviers (Migration 109),
+   *  server-seitig geladen. Wird je Zeile gefiltert statt vorgruppiert: bei
+   *  einer Handvoll Scheinen kostet das nichts, und eine Map waere ein
+   *  zweiter Zustand, der mit `scheine` auseinanderlaufen kann. */
+  zahlungen: Zahlung[]
   /**
    * Der heutige Tag, **vom Server** (`heuteUtc()` in page.tsx).
    *
@@ -456,6 +464,11 @@ export default function Ausstellen({
               <Schein
                 key={`${s.id}:${s.status}:${s.valid_until}:${s.entgeltlich}:${s.entgelt_betrag}:${s.entgelt_intervall}:${s.entgelt_erste_zahlung}`}
                 schein={s}
+                /* Bewusst NICHT im `key` oben: der Compare-and-Swap betrifft nur
+                   `hunting_licenses`. Stuenden die Zahlungen im Schluessel, remountete
+                   jede eingetragene Zahlung die ganze Zeile und wuerfe einen halb
+                   getippten Betrag im Schein-Formular weg. */
+                zahlungen={zahlungen.filter((z) => z.hunting_license_id === s.id)}
                 heute={heute}
                 staende={staende}
                 meldeKonflikt={setKonflikt}
@@ -482,11 +495,13 @@ export default function Ausstellen({
  */
 function Schein({
   schein,
+  zahlungen,
   heute,
   staende,
   meldeKonflikt,
 }: {
   schein: ScheinZeile
+  zahlungen: Zahlung[]
   heute: string
   staende: StandWahl[]
   /** Meldet einen Compare-and-Swap-Konflikt an die Elternkomponente, die den
@@ -760,6 +775,40 @@ function Schein({
             'Unentgeltlich'
           )}
         </dd>
+        {/* Das Zahlungsjournal (Migration 109).
+
+            **Die Bedingung ist ein ODER, und der zweite Zweig ist der
+            wichtige.** Bei „entgeltlich" gehört das Journal offensichtlich
+            hierher. Der zweite Zweig fängt den Fall ab, dass jemand einen
+            Schein NACHTRÄGLICH auf unentgeltlich umstellt: die bereits
+            erfassten Zahlungen wären sonst unsichtbar — und weil Löschen nur
+            über diese Ansicht geht, auch nicht mehr wegzuräumen. Dieselbe
+            Überlegung wie bei `inaktiv_seit` (Migration 100): versteckte Zeilen
+            sind nicht wieder aufnehmbar.
+
+            **Anzeigen und Erfassen folgen bewusst DERSELBEN Bedingung:** wo
+            das Journal steht, lässt es sich auch pflegen. Ein Journal, das man
+            sehen, aber nicht korrigieren kann, wäre halb — und der zweite
+            Zweig entsteht ja gerade dort, wo schon Zahlungen liegen, die
+            jemand nachtragen oder wegräumen können muss.
+
+            **Hier stand zwei Fassungen lang das Gegenteil**, und beide Male
+            falsch. Erst zitierte der Kommentar die DB-Begründung von 109
+            (Wildbret, Nachsuche), als wäre sie auch die UI-Begründung — sie
+            ist es nicht. Dann behauptete er, Erfassen gehe „nur bei
+            entgeltlich", **was der Code nie tat**: `<Zahlungen>` kennt
+            `entgeltlich` gar nicht und rendert den Knopf immer, wenn die
+            Komponente steht (Schlusslesung 06.08.2026). Ein Kommentar, der
+            eine Sperre behauptet, die es nicht gibt, ist schlimmer als keiner
+            — der nächste Leser verlässt sich darauf. */}
+        {schein.entgeltlich || zahlungen.length > 0 ? (
+          <>
+            <dt>Zahlungen</dt>
+            <dd>
+              <Zahlungen scheinId={schein.id} zahlungen={zahlungen} heute={heute} />
+            </dd>
+          </>
+        ) : null}
         {schein.auflagen ? (
           <>
             <dt>Auflagen</dt>

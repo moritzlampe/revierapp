@@ -26,6 +26,8 @@ import {
   jagdjahrEnde,
   landesrecht,
   pruefeEntwurf,
+  zahlungenSumme,
+  letzteZahlung,
   zuteilungsArt,
   type Entwurf,
 } from './scheine.ts'
@@ -449,3 +451,28 @@ assert.equal(alsEinloeseErgebnis('ok'), 'ok')
 assert.equal(alsEinloeseErgebnis('gesperrt'), 'gesperrt')
 assert.equal(alsEinloeseErgebnis(undefined), 'fehler')
 assert.equal(alsEinloeseErgebnis('kontingent_erschoepft'), 'fehler')
+
+// --- Zahlungsjournal (Migration 109) ---
+// PostgREST liefert `numeric` je nach Weg als Zeichenkette. Ein `+` darauf
+// verkettet, statt zu addieren — die Probe, die diese Falle festhaelt.
+assert.equal(zahlungenSumme([{ betrag: '1500.00' }, { betrag: '500.00' }]), 2000)
+assert.equal(zahlungenSumme([{ betrag: 1500 }, { betrag: 500 }]), 2000)
+assert.equal(zahlungenSumme([{ betrag: '1500.00' }, { betrag: 500 }]), 2000, 'gemischt')
+
+// Cent-Rundung: ohne sie stuende hier 0.30000000000000004.
+assert.equal(zahlungenSumme([{ betrag: '0.10' }, { betrag: '0.20' }]), 0.3)
+
+// Keine Zahlung ist keine Null, sondern keine Angabe.
+assert.equal(zahlungenSumme([]), null)
+
+// Lieber nichts als eine Teilsumme: eine unlesbare Zeile macht die GANZE
+// Summe unbrauchbar, nicht bloss sich selbst.
+assert.equal(zahlungenSumme([{ betrag: '1500.00' }, { betrag: 'NaN' }]), null)
+assert.equal(zahlungenSumme([{ betrag: '1500.00' }, { betrag: 'kaputt' }]), null)
+assert.equal(zahlungenSumme([{ betrag: 1500 }, { betrag: Number.POSITIVE_INFINITY }]), null)
+
+// Die juengste Zahlung, lexikalisch verglichen (ISO-Datum, kein Zeitzonen-Fall).
+assert.equal(letzteZahlung([{ erhalten_am: '2026-08-01' }, { erhalten_am: '2026-09-01' }]), '2026-09-01')
+assert.equal(letzteZahlung([{ erhalten_am: '2026-09-01' }, { erhalten_am: '2026-08-01' }]), '2026-09-01')
+assert.equal(letzteZahlung([{ erhalten_am: '2026-12-31' }, { erhalten_am: '2027-01-01' }]), '2027-01-01', 'ueber den Jahreswechsel')
+assert.equal(letzteZahlung([]), null)

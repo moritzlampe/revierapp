@@ -667,3 +667,70 @@ export function einloeseText(ergebnis: EinloeseErgebnis, revierName: string | nu
       return 'Das hat nicht geklappt. Prüf die Verbindung und versuch es erneut.'
   }
 }
+
+/**
+ * Eine Zeile des Zahlungsjournals (Migration 109).
+ *
+ * `betrag` steht als `string | number` da, aus demselben Grund wie
+ * `entgelt_betrag` in `ScheinZeile`: PostgREST liefert `numeric` je nach Weg
+ * als Zeichenkette, und ein `+` auf zwei Zeichenketten ergäbe eine
+ * Verkettung statt einer Summe — bei Geld die teuerste aller stillen Fallen.
+ */
+export type Zahlung = {
+  id: string
+  hunting_license_id: string
+  betrag: string | number
+  erhalten_am: string
+  notiz: string | null
+}
+
+/**
+ * Die Summe der Zahlungseingänge in Euro, oder `null`.
+ *
+ * **`null` bei einer unlesbaren Zeile, nicht die Teilsumme.** Gleiche Haltung
+ * wie `geladen()` und `schreibe()`: lieber nichts anzeigen als eine falsche
+ * Zahl. Eine Summe, der ein Posten fehlt, ist von einer richtigen nicht zu
+ * unterscheiden — und hier ginge es um Geld, das jemand bezahlt hat.
+ *
+ * **Auf Cent gerundet, und das ist kein Schönheitsfehler.** `0.1 + 0.2` ergibt
+ * in JavaScript `0.30000000000000004`; ohne die Rundung stünde die Abweichung
+ * in jeder weiteren Rechnung, die jemand später auf diesen Wert setzt. Für die
+ * Anzeige allein wäre sie folgenlos (`alsEuro` rundet ohnehin) — der Wert soll
+ * aber auch dann stimmen, wenn ihn jemand weiterverwendet.
+ *
+ * **Kein Soll-Ist.** Diese Funktion beantwortet „was ist eingegangen", nicht
+ * „was fehlt noch". Das ist die Grenze aus dem Kopf von 109, und sie ist
+ * bewusst: „was fehlt" bräuchte einen Fälligkeitsplan aus `entgelt_intervall`
+ * und `entgelt_erste_zahlung`, und der gehört in eine Ansicht, die ihn erklären
+ * kann — nicht in eine Summe, die sich nicht widersprechen darf.
+ */
+export function zahlungenSumme(zahlungen: readonly { betrag: string | number }[]): number | null {
+  if (zahlungen.length === 0) return null
+  const zahlen = zahlungen.map((z) => Number(z.betrag))
+  if (!zahlen.every(Number.isFinite)) return null
+  return Math.round(zahlen.reduce((a, b) => a + b, 0) * 100) / 100
+}
+
+/**
+ * Das Datum der jüngsten Zahlung, oder `null`.
+ *
+ * **Sucht selbst, statt `zahlungen[0]` zu nehmen** — obwohl `page.tsx` bereits
+ * `.order('erhalten_am', { ascending: false })` setzt und die Ponytail-Lesung
+ * vom 06.08.2026 die Funktion deshalb streichen wollte. Der Grund für das
+ * Gegenteil: Sortierung und Anzeige stehen in ZWEI Dateien. Dreht jemand die
+ * Reihenfolge um, zeigte `zahlungen[0]` die ÄLTESTE Zahlung als „zuletzt am"
+ * an — still, plausibel und falsch. Sechs Zeilen sind der Preis dafür, dass
+ * diese Anzeige von keiner Zeile in einer anderen Datei abhängt.
+ *
+ * Vergleicht die ISO-Zeichenketten direkt: bei `YYYY-MM-DD` ist die
+ * lexikalische Ordnung die chronologische, und ein `new Date()` je Zeile
+ * brächte eine Zeitzone ins Spiel, die hier keine Rolle spielt (`date`, kein
+ * `timestamptz`).
+ */
+export function letzteZahlung(zahlungen: readonly { erhalten_am: string }[]): string | null {
+  let jüngste: string | null = null
+  for (const z of zahlungen) {
+    if (jüngste === null || z.erhalten_am > jüngste) jüngste = z.erhalten_am
+  }
+  return jüngste
+}

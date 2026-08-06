@@ -134,7 +134,8 @@
 .jes-einloesen button,
 .jes-eingriff button,
 .jes-eingriff a,
-.jes-code button {
+.jes-code button,
+.jes-zahlungen button {
   font: inherit;
   font-size: 0.875rem;
   color: var(--z-text-primary);
@@ -149,12 +150,14 @@
 .jes-einloesen button:hover:not(:disabled),
 .jes-eingriff button:hover:not(:disabled),
 .jes-eingriff a:hover,
-.jes-code button:hover {
+.jes-code button:hover,
+.jes-zahlungen button:hover:not(:disabled) {
   border-color: var(--z-accent);
 }
 
 .jes-form button.haupt,
-.jes-einloesen button.haupt {
+.jes-einloesen button.haupt,
+.jes-zahlungen button.haupt {
   background: var(--z-accent);
   border-color: var(--z-accent);
   color: var(--z-on-accent);
@@ -162,13 +165,15 @@
 }
 
 .jes-form button.haupt:hover:not(:disabled),
-.jes-einloesen button.haupt:hover:not(:disabled) {
+.jes-einloesen button.haupt:hover:not(:disabled),
+.jes-zahlungen button.haupt:hover:not(:disabled) {
   background: var(--z-accent-hover);
 }
 
 .jes-form button:disabled,
 .jes-einloesen button:disabled,
-.jes-eingriff button:disabled {
+.jes-eingriff button:disabled,
+.jes-zahlungen button:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -387,3 +392,56 @@
   text-decoration: none;
   white-space: nowrap;
 }
+
+
+/* --- Zahlungsjournal (Migration 109) ------------------------------------
+   Knopfaussehen, Fokusring und Feldtypografie stehen NICHT hier: `.jes-zahlungen`
+   ist oben in die bestehenden Selektorlisten aufgenommen, und die Eingaben nutzen
+   das Hausmuster `.jes-feld`. Gleiche Bauform wie `.jes-drucken`. Ein eigener
+   Knopfblock hatte hier schon einmal gestanden — mit `--bronze` statt
+   `--z-accent`, was den Eintragen-Knopf bronzefarben zwischen lauter gruene
+   gestellt haette (Ponytail-Lesung, 06.08.2026). */
+
+.jes-zahlungen { display: grid; gap: 8px; }
+
+.jes-zahlungen-summe { margin: 0; }
+
+.jes-zahlungen-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.jes-zahlungen-liste li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.jes-zahlungen-liste .bet { font-variant-numeric: tabular-nums; font-weight: 600; }
+.jes-zahlungen-liste .dat { color: var(--z-text-secondary); }
+
+/* Die Notiz ist Freitext und darf die Zeile nicht sprengen. */
+.jes-zahlungen-liste .not {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--z-text-secondary);
+}
+
+.jes-zahlungen-liste button { margin-left: auto; flex: none; }
+
+.jes-zahlungen-formular {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--z-border);
+  border-radius: 6px;
+}
+
+.jes-zahlungen-knoepfe { display: flex; gap: 8px; }

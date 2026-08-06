@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { istStand, typLabel } from '../objekte'
 import Ausstellen, { Einloesen } from './formular'
 import type { StandWahl, ScheinZeile } from './formular'
-import { heuteUtc } from './scheine'
+import { heuteUtc, type Zahlung } from './scheine'
 import './jagderlaubnisse.css'
 import { geladen } from '../laden'
 
@@ -102,6 +102,61 @@ export default async function JagderlaubnissePage({
     'Begehungsscheine'
   )
 
+  // Das Zahlungsjournal zu allen Scheinen dieses Reviers (Migration 109).
+  //
+  // **Server-seitig geladen, nicht in der Komponente**, damit die Summenzeile
+  // sofort dasteht — sie ist die Antwort auf „hat der schon gezahlt", und die
+  // will man sehen, ohne etwas aufzuklappen.
+  //
+  // **`.in(...)` auf die Schein-IDs, und das ist dieselbe Bauform, vor der
+  // A-B3 warnt** (ungechunkte `in`-Liste, GET-URL kann zu lang werden). Hier
+  // vertretbar und nicht dasselbe Risiko: es sind die Scheine EINES Reviers —
+  // heute vier, realistisch ein paar Dutzend —, während A-B3 die Stände eines
+  // Reviers meint, die in die Hunderte gehen. **Wird es je eng, ist der Ausweg
+  // ein eingebetteter Filter** (`hunting_licenses!inner(district_id)`), nicht
+  // ein Chunking.
+  //
+  // Der Leerlauf-Fall muss abgefangen werden: `.in('…', [])` schickt PostgREST
+  // ein leeres Tupel und ergibt einen Syntaxfehler, keine leere Liste.
+  //
+  // **`count: 'exact'` ist kein Luxus, sondern der Riegel gegen eine falsche
+  // Geldzahl** (Fremdprüfung 06.08.2026): PostgREST liefert höchstens 1000
+  // Zeilen und sagt es nicht. Weil hier absteigend sortiert wird, fielen bei
+  // Überschreitung ausgerechnet die ÄLTESTEN Zahlungen weg — die Summenzeile
+  // zeigte zu wenig, ohne dass irgendwo ein Fehler stünde. Genau der Fall, den
+  // `geladen()` und `zahlungenSumme()` laut ihren eigenen Kommentaren
+  // verhindern sollen: lieber nichts anzeigen als eine falsche Zahl.
+  // Realistisch Jahre entfernt (30 Scheine × monatlich × 3 Jahre ≈ 1080) — aber
+  // eine stille falsche Zahl über Geld ist der teuerste Fehler, den diese Seite
+  // machen kann, und der Riegel kostet drei Zeilen.
+  const antwort =
+    scheine.length === 0
+      ? null
+      : await supabase
+          .from('schein_zahlungen')
+          .select('id, hunting_license_id, betrag, erhalten_am, notiz', { count: 'exact' })
+          .in(
+            'hunting_license_id',
+            scheine.map((s) => s.id)
+          )
+          // Jüngste zuerst — dieselbe Richtung wie die Scheinliste selbst.
+          // **`id` als zweiter Schlüssel**, weil zwei Zahlungen am selben Tag
+          // ausdrücklich legitim sind (Anzahlung und Rest) und ohne ihn
+          // zwischen zwei Aufrufen die Plätze tauschen könnten.
+          .order('erhalten_am', { ascending: false })
+          .order('id')
+  const zahlungen = antwort === null ? [] : geladen<Zahlung[]>(antwort, 'Zahlungen')
+  // `?? 0` schaltet den Riegel bei fehlendem Count still ab. Folgenlos und
+  // geprüft: mit `{ count: 'exact' }` liefert PostgREST ihn auf jedem
+  // Erfolgsweg, und jeder Fehlerweg wirft schon eine Zeile vorher in
+  // `geladen()` (Schlusslesung 06.08.2026).
+  if (antwort !== null && (antwort.count ?? 0) > zahlungen.length) {
+    throw new Error(
+      `Zahlungen konnten nicht vollständig geladen werden: ${antwort.count} vorhanden, ` +
+        `${zahlungen.length} geliefert. Die Summe wäre zu niedrig.`
+    )
+  }
+
   // Alle Objekte des Reviers holen und hier filtern, statt die Typenliste aus
   // objekte.ts zu exportieren: drei schmale Spalten über wenige hundert Zeilen
   // kosten nichts, und die Datei bleibt unangetastet (R1).
@@ -124,6 +179,7 @@ export default async function JagderlaubnissePage({
         ausstellerId={user.id}
         staende={staende}
         scheine={scheine}
+        zahlungen={zahlungen}
         // Der Tag kommt vom Server: der Container läuft auf UTC wie die DB,
         // das Endgerät des Betrachters muss das nicht. Sonst beschriftete eine
         // falsch gestellte Uhr die Scheine anders, als 077 sie behandelt.
