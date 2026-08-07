@@ -24,9 +24,18 @@ import './dokumentation.css'
  * **Die Grenze zwischen beiden ist gemessen und scharf:** die Chronik endet mit
  * Saison 2025/26 (31.01.2026), die erste Live-Erlegung der Datenbank ist der
  * 19.05.2026, und **0 von 22** liegen in Söder. Es gibt keine Saison, in der
- * beide Quellen etwas beitragen — heute. Wer das ändert, darf sie trotzdem nie
- * in einer Summe zusammenführen (Konzept §3): es sind vier Projektionen
- * desselben Bestands, quer summiert ergibt die Tabelle 11136 statt 4646.
+ * beide etwas beitragen.
+ *
+ * **Chronik und `kills` dürfen deshalb sehr wohl nebeneinander in eine Reihe —
+ * das Doppelzähl-Verbot gilt zwischen den vier Chronik-Quellen, nicht hier.**
+ * Konzept §6 nennt für „Strecke je Jagdjahr" ausdrücklich `jagden_soeder` +
+ * `kills` je Saison. Was die beiden trennt, ist nicht Überlappung, sondern
+ * Auflösung: die Chronik summiert je Termin und kennt weder Wildart noch Tag
+ * noch Erleger, eine gemeldete Erlegung kennt alle drei und dafür keinen
+ * Termin. Eine Zeile „2026/27" in dieser Kreuztabelle bräuchte die Spalte
+ * „Dez. früh", die keine App-Meldung füllen kann. Der Anschluss wird deshalb
+ * ein eigener Abschnitt unter derselben Überschrift, mit sichtbarer Naht —
+ * fällig mit der ersten Erlegung in Söder (Moritz, 07.08.2026).
  */
 
 type Revier = { id: string; name: string }
@@ -294,10 +303,12 @@ export default async function DokumentationPage({
               </p>
               <p style={{ margin: 0 }}>
                 <strong>Die Chronik endet mit {alsSaison(buch.bisJahr)}.</strong> Sie
-                stammt aus den Streckenbüchern; Erlegungen, die in der App
-                gemeldet werden, stehen in der Strecke und werden hier bewusst
-                nicht dazugezählt — die beiden Quellen zählen unterschiedlich und
-                dürfen nie in einer Summe zusammenkommen.
+                stammt aus den Streckenbüchern. Was ab dann in der App gemeldet
+                wird, gehört genauso zum Revier und bekommt hier seinen eigenen
+                Abschnitt, sobald die erste Erlegung vorliegt — nicht eine weitere
+                Zeile in dieser Tabelle: eine gemeldete Erlegung kennt ihre
+                Wildart und ihren Tag, aber keinen Jagdtermin, und die Chronik
+                kennt es umgekehrt.
               </p>
             </div>
           </>
