@@ -914,3 +914,118 @@ export function zuordnungLabel(
     ? `${was} zu ${wen} hinzufügen`
     : `${was} von ${wen} entfernen`
 }
+
+// ===========================================================================
+// Chronik Söder (A-C3) — Migration 110, `historische_strecken`
+// ===========================================================================
+/**
+ * **Die Regel, ohne die jede Auswertung hier falsch wird** (Konzept
+ * `QuickHunt_Konzept_Historische_Strecken_V1.md` §3, Tabellenkommentar von
+ * 110): die vier Werte von `quelle` sind vier **Projektionen desselben
+ * Bestands**, keine addierbaren Töpfe. `jagden_soeder` (3221) steckt in
+ * `rangliste_soeder` (4646); `journal_msl` enthält dessen Söder-Anteil;
+ * `familie_jahr` zählt **alle Reviere** (JHL 1368) gegen denselben Mann in
+ * Söder (312). An der Produktion gemessen: quer summiert ergäbe die Tabelle
+ * **11136** statt 4646.
+ *
+ * Deshalb liest diese Datei die Chronik **nie über die Tabelle**, sondern über
+ * die vier Views von 110, und deshalb bleiben die beiden Projektionen unten
+ * bis in die Anzeige getrennt. `soeder` und `jahre` dürfen an keiner Stelle
+ * addiert werden — auch nicht „nur zur Anzeige".
+ */
+export type Chronikzeile = {
+  kontakt_id: string | null
+  art_text: string | null
+  jagdjahr: number | null
+  anzahl: number
+}
+
+/** Eine Art mit ihrer Summe — die Einheit beider Projektionen. */
+export type ChronikArt = { art: string; anzahl: number }
+
+export type ChronikEintrag = {
+  /** `rangliste_soeder`: Lebenssumme in Söder seit 1946. **Ohne Jahresachse.** */
+  soeder: ChronikArt[]
+  soederGesamt: number
+  /** `familie_jahr`: Person × Jagdjahr × Art über **alle Reviere**. Nur für
+   *  die vier Familienblätter (JHL/MSL/DL/NNL) belegt, sonst leer. */
+  jahre: { jahr: number; arten: ChronikArt[]; summe: number }[]
+  jahreGesamt: number
+}
+
+/** Sortiert Arten nach Menge, bei Gleichstand alphabetisch — damit die
+ *  Reihenfolge bei gleichen Zahlen nicht zwischen zwei Ladevorgängen springt. */
+function nachMenge(a: ChronikArt, b: ChronikArt): number {
+  return b.anzahl - a.anzahl || a.art.localeCompare(b.art, 'de')
+}
+
+function summiereArten(zeilen: readonly Chronikzeile[]): ChronikArt[] {
+  const je = new Map<string, number>()
+  for (const z of zeilen) {
+    // `art_text` ist bei `jagden_soeder` NULL, dort aber lesen wir gar nicht.
+    // Eine NULL-Art hier wäre eine Zeile, die nicht in diese View gehört.
+    if (!z.art_text) continue
+    je.set(z.art_text, (je.get(z.art_text) ?? 0) + z.anzahl)
+  }
+  return [...je].map(([art, anzahl]) => ({ art, anzahl })).sort(nachMenge)
+}
+
+/**
+ * Gruppiert beide Projektionen **je Kontakt**. Läuft auf dem Server, damit der
+ * Client nur noch nachschlägt.
+ *
+ * Zeilen ohne `kontakt_id` fallen heraus — das sind die neun Kollektivzeilen
+ * des Papiers (Hunde 54, Fallwild 3, Treiber 1, Hundeführer 5, „verschiedene
+ * Schützen (vor 1968)" 14, „sonstige Engländer (1945-48)" 4). Sie gehören in
+ * die Söder-Gesamtsumme, aber zu keinem Menschen; im Kontakt-Inspektor hätten
+ * sie keinen Ort. Folge, die man kennen muss: **die Summe über alle Einträge
+ * dieser Abbildung ist kleiner als die Söder-Gesamtsumme** und darf nicht als
+ * solche ausgegeben werden.
+ */
+export function chronikNachKontakt(
+  rangliste: readonly Chronikzeile[],
+  familie: readonly Chronikzeile[],
+): Record<string, ChronikEintrag> {
+  const raus: Record<string, ChronikEintrag> = {}
+  const hol = (id: string): ChronikEintrag =>
+    (raus[id] ??= { soeder: [], soederGesamt: 0, jahre: [], jahreGesamt: 0 })
+
+  const jeKontakt = new Map<string, Chronikzeile[]>()
+  for (const z of rangliste) {
+    if (!z.kontakt_id) continue
+    jeKontakt.set(z.kontakt_id, [...(jeKontakt.get(z.kontakt_id) ?? []), z])
+  }
+  for (const [id, zeilen] of jeKontakt) {
+    const e = hol(id)
+    e.soeder = summiereArten(zeilen)
+    e.soederGesamt = e.soeder.reduce((s, a) => s + a.anzahl, 0)
+  }
+
+  const jeKontaktJahr = new Map<string, Map<number, Chronikzeile[]>>()
+  for (const z of familie) {
+    // `jagdjahr` ist in `familie_jahr` per CHECK NOT NULL. Die Bedingung ist
+    // der Typ-Riegel, nicht eine vermutete Lücke.
+    if (!z.kontakt_id || z.jagdjahr == null) continue
+    const jahre = jeKontaktJahr.get(z.kontakt_id) ?? new Map<number, Chronikzeile[]>()
+    jahre.set(z.jagdjahr, [...(jahre.get(z.jagdjahr) ?? []), z])
+    jeKontaktJahr.set(z.kontakt_id, jahre)
+  }
+  for (const [id, jahre] of jeKontaktJahr) {
+    const e = hol(id)
+    e.jahre = [...jahre]
+      .map(([jahr, zeilen]) => {
+        const arten = summiereArten(zeilen)
+        return { jahr, arten, summe: arten.reduce((s, a) => s + a.anzahl, 0) }
+      })
+      // Neueste Saison zuerst: die Chronik reicht 52 Jahre zurück, und die
+      // Frage „was war zuletzt" ist die häufigere.
+      .sort((a, b) => b.jahr - a.jahr)
+    e.jahreGesamt = e.jahre.reduce((s, j) => s + j.summe, 0)
+  }
+  return raus
+}
+
+/** `1993` → `1993/94`. Die Saison heißt im Papier nach ihrem Anfangsjahr. */
+export function alsSaison(jahr: number): string {
+  return `${jahr}/${String((jahr + 1) % 100).padStart(2, '0')}`
+}

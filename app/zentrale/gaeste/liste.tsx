@@ -34,6 +34,8 @@ import {
   type Zuordnung,
   type Filter,
   type Kontakt,
+  alsSaison,
+  type ChronikEintrag,
 } from './kontakte'
 
 /**
@@ -58,11 +60,16 @@ import {
  */
 export default function Liste({
   kontakte,
+  chronik,
   besitzerId,
   startSuche,
   startFilter,
 }: {
   kontakte: Kontakt[]
+  /** Chronik Söder je Kontakt (110, A-C3). Auf dem Server gruppiert; hier nur
+   *  nachgeschlagen. Kontakte ohne Chronikzeile fehlen darin — der Block wird
+   *  dann gar nicht gezeigt, statt eine Null zu behaupten. */
+  chronik: Record<string, ChronikEintrag>
   /** Für den INSERT. `besitzer_id` ist NOT NULL und danach fest (Trigger, 085). */
   besitzerId: string
   startSuche: string
@@ -871,6 +878,7 @@ export default function Liste({
               // dieselbe Falle wie beim Objekt-Inspektor.
               key={kontakt.id}
               kontakt={kontakt}
+              chronik={chronik[kontakt.id]}
               aufModus={setImEingriff}
               aufSpeichern={speichern}
               aufLoeschen={loeschen}
@@ -895,12 +903,29 @@ export default function Liste({
  */
 function Details({
   kontakt,
+  chronik,
   aufModus,
   aufSpeichern,
   aufLoeschen,
   aufZustand,
 }: {
   kontakt: Kontakt
+  /** Undefined, wenn dieser Mensch in der Chronik nicht vorkommt — 204 der
+   *  256 Kontakte. Dann erscheint kein Block.
+   *
+   *  **Zweiter Weg in denselben Zustand, heute unerreichbar, später nicht**
+   *  (Fremdprüfung + Schlusslesung 07.08.2026, unabhängig gefunden): die
+   *  Kontaktliste zeigt über `get_my_kontaktbuecher()` auch geteilte
+   *  Adressbücher, die vier Chronik-Views filtern dagegen hart auf
+   *  `besitzer_id = auth.uid()`. Ein Mitführender bekommt für fremde
+   *  Chronikzeilen **erfolgreich 0 Zeilen** statt eines Fehlers — vorhandene
+   *  Historie läse sich dann wie „steht nicht im Streckenbuch".
+   *  **Gemessen 07.08.2026: `kontakt_mitfuehrende` hat 0 Zeilen und es gibt
+   *  genau einen Chronik-Besitzer** — der Fall kann heute nicht eintreten. Er
+   *  entsteht mit der ERSTEN Zeile in `kontakt_mitfuehrende`. Migration 110
+   *  verschiebt das Teilen der Chronik ausdrücklich auf später (JHL hat kein
+   *  Konto); wer es baut, muss diese Stelle mitnehmen. */
+  chronik: ChronikEintrag | undefined
   /** Meldet nach oben, dass die Liste gesperrt gehört. */
   aufModus: (imEingriff: boolean) => void
   /** Schreibt und wirft bei Misserfolg — die Fehlermeldung landet im Formular. */
@@ -1069,6 +1094,8 @@ function Details({
           />
         ))}
       </dl>
+
+      <Chronik chronik={chronik} />
 
       {/* **Der Zustand steht als eigene Zeile, nicht als Feld in der Liste
           darüber.** Er ist kein Stammdatum des Menschen, sondern eine
@@ -1423,5 +1450,98 @@ function Feld({
         )}
       </dd>
     </>
+  )
+}
+
+/**
+ * Die Chronik Söder eines Kontakts (A-C3, Migration 110).
+ *
+ * **Zwei Blöcke, die nie addiert werden dürfen — das ist der ganze Entwurf.**
+ * `rangliste_soeder` ist die Lebenssumme in EINEM Revier, `familie_jahr` zählt
+ * über ALLE Reviere. Für Jobst-Heinrich Lampe stehen dort 312 und 1368; eine
+ * gemeinsame Summe wäre keine Zahl, sondern ein Fehler. Deshalb zwei
+ * Überschriften, zwei Summen, und keine dritte, die beide zusammenzieht
+ * (Konzept §3, Tabellenkommentar von 110).
+ *
+ * **Ohne Chronikzeile erscheint gar nichts** — kein leerer Kasten, kein
+ * „0 Stück". Das betrifft 204 der 256 Kontakte, und eine Null wäre dort eine
+ * Falschaussage: sie hieße „hat nichts erlegt", gemeint ist „steht nicht im
+ * Streckenbuch".
+ *
+ * **Warum bei den meisten keine Jahre stehen:** `rangliste_soeder` trägt keine
+ * Jahresachse, es sind Lebenssummen von 1946 bis heute. Moritz' Vorgabe „in den
+ * Jahren" ist für 205 der 209 Erleger schlicht nicht beantwortbar. Statt einer
+ * erfundenen Kurve steht dort die Herkunftszeile — die Auskunft, WARUM die
+ * Jahre fehlen, ist mehr wert als eine Zahl, die es nicht gibt.
+ */
+function Chronik({ chronik }: { chronik: ChronikEintrag | undefined }) {
+  if (!chronik) return null
+  const { soeder, soederGesamt, jahre, jahreGesamt } = chronik
+
+  return (
+    <section className="gaeste-chronik" aria-label="Chronik">
+      {soeder.length > 0 && (
+        <>
+          <h3 className="gaeste-chronik-titel">Chronik Söder</h3>
+          <ul className="gaeste-chronik-arten">
+            {soeder.map((a) => (
+              <li key={a.art}>
+                <span>{a.art}</span>
+                <b>{a.anzahl}</b>
+              </li>
+            ))}
+            <li className="gaeste-chronik-summe">
+              <span>gesamt</span>
+              <b>{soederGesamt}</b>
+            </li>
+          </ul>
+          {/* Die Herkunft steht DA, wo sonst die Jahresachse stünde. Sie sagt
+              zugleich, warum es keine gibt, und nennt den Zuschnitt: „ohne
+              Maisjagden" ist die Eigenschaft, die diese Zahl von Moritz'
+              Tagebuch unterscheidet (50 gegen 77 Söder-Sauen). */}
+          <p className="gaeste-chronik-herkunft">
+            Streckenbuch Söder seit 1946, ohne Maisjagden · Lebenssumme, keine
+            Jahresangabe
+          </p>
+        </>
+      )}
+
+      {jahre.length > 0 && (
+        <>
+          <h3 className="gaeste-chronik-titel">Nach Jagdjahren, alle Reviere</h3>
+          <ul className="gaeste-chronik-jahre">
+            {jahre.map((j) => (
+              <li key={j.jahr}>
+                <span className="gaeste-chronik-jahr">{alsSaison(j.jahr)}</span>
+                <span className="gaeste-chronik-arten-inline">
+                  {j.arten.map((a) => `${a.art} ${a.anzahl}`).join(' · ')}
+                </span>
+                <b>{j.summe}</b>
+              </li>
+            ))}
+            <li className="gaeste-chronik-summe">
+              <span>gesamt, alle Reviere</span>
+              <b>{jahreGesamt}</b>
+            </li>
+          </ul>
+          {/* **Der Satz ist der Riegel gegen die Doppelzählung.** Er steht hier
+              und nicht in einem Tooltip, weil genau hier zwei Zahlen
+              nebeneinanderstehen, die man addieren möchte.
+
+              „Überschneidet sich", NICHT „enthält" — und das ist kein
+              Weichspülen, sondern das, was belegbar ist (Schlusslesung
+              07.08.2026). `familie_jahr` beginnt 1974, `rangliste_soeder` 1946,
+              und letztere hat **0 von 357 Zeilen mit Jahresangabe** (gemessen):
+              ob die Söder-Lebenssumme vollständig in den Jahreswerten steckt,
+              lässt sich aus den Daten grundsätzlich nicht entscheiden. Gegen
+              das Addieren genügt die Überschneidung. */}
+          <p className="gaeste-chronik-herkunft">
+            Drückjagdstrecken der Familie · zählt über alle Reviere und
+            <strong> überschneidet sich mit der Söder-Zahl oben</strong> — beide
+            nie addieren
+          </p>
+        </>
+      )}
+    </section>
   )
 }

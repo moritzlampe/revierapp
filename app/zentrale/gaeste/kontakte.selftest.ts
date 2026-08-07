@@ -38,6 +38,9 @@ import {
   MEHRFACH,
   TAGS,
   type Kontakt,
+  chronikNachKontakt,
+  alsSaison,
+  type Chronikzeile,
 } from './kontakte.ts'
 
 const normiert2K = (w: readonly string[] | null | undefined) => normiert(w, KATEGORIEN)
@@ -742,3 +745,81 @@ assert.equal(
 // gruen wird — genau der Fehler, den sein erster Anlauf hatte.
 const einPatch = aenderungen({ ...entwurfVon(stillgelegt), kuerzel: 'WvB2' }, stillgelegt)
 assert.deepEqual(einPatch, { kuerzel: 'WvB2' }, 'Positivkontrolle: der Patch traegt genau das Feld')
+
+// ===========================================================================
+// Chronik Söder (A-C3)
+// ===========================================================================
+// Die Zahlen sind die echten aus der Produktion (Stand 07.08.2026, nach
+// Migration 110 und den Import-Stufen 1-4), damit der Test nicht gegen
+// erfundene Daten gruen wird.
+const CHRISTIAN = 'c-christian'
+const JHL = 'c-jhl'
+
+const rangliste: Chronikzeile[] = [
+  { kontakt_id: CHRISTIAN, art_text: 'Sauen', jagdjahr: null, anzahl: 210 },
+  { kontakt_id: CHRISTIAN, art_text: 'D&R&F', jagdjahr: null, anzahl: 134 },
+  { kontakt_id: JHL, art_text: 'Sauen', jagdjahr: null, anzahl: 168 },
+  { kontakt_id: JHL, art_text: 'D&R&F', jagdjahr: null, anzahl: 144 },
+  // Kollektivzeile des Papiers: gehoert in die Soeder-Summe, aber zu keinem
+  // Menschen. Muss herausfallen.
+  { kontakt_id: null, art_text: 'Sauen', jagdjahr: null, anzahl: 54 },
+]
+const familie: Chronikzeile[] = [
+  { kontakt_id: JHL, art_text: 'Sauen', jagdjahr: 2024, anzahl: 3 },
+  { kontakt_id: JHL, art_text: 'Sauen', jagdjahr: 2025, anzahl: 8 },
+  { kontakt_id: JHL, art_text: 'Rehwild', jagdjahr: 2025, anzahl: 2 },
+]
+
+const chronik = chronikNachKontakt(rangliste, familie)
+
+assert.deepEqual(
+  chronik[CHRISTIAN].soeder,
+  [{ art: 'Sauen', anzahl: 210 }, { art: 'D&R&F', anzahl: 134 }],
+  'Christian: beide Arten, nach Menge sortiert',
+)
+assert.equal(chronik[CHRISTIAN].soederGesamt, 344, 'Christian: 210 + 134')
+assert.deepEqual(chronik[CHRISTIAN].jahre, [], 'Christian hat KEINE Jahresachse — rangliste_soeder sind Lebenssummen')
+assert.equal(chronik[CHRISTIAN].jahreGesamt, 0, 'und damit auch keine Jahressumme')
+
+// **Die Probe, auf die es ankommt: die beiden Projektionen bleiben getrennt.**
+// Wuerde irgendwo addiert, stuende hier 312 + 13 = 325 statt zweier Zahlen.
+assert.equal(chronik[JHL].soederGesamt, 312, 'JHL in Soeder: 168 + 144')
+assert.equal(chronik[JHL].jahreGesamt, 13, 'JHL ueber alle Reviere (Ausschnitt): 3 + 8 + 2')
+// **Die vorige Fassung war eine Tautologie** (Schlusslesung 07.08.2026):
+// `a !== a + b` kann nur fallen, wenn b gleich 0 ist — sie prueft nichts, was
+// die beiden Zusicherungen darueber nicht schon haerter pruefen. Eine
+// Zusicherung, die nie rot werden kann, ist ein Kommentar mit Zeremonie.
+// Was stattdessen wirklich faellt: jemand ergaenzt ein Feld, das beide
+// Projektionen zusammenzieht. Genau das ist der Fehler, gegen den §3 steht.
+assert.deepEqual(
+  Object.keys(chronik[JHL]).sort(),
+  ['jahre', 'jahreGesamt', 'soeder', 'soederGesamt'],
+  'ChronikEintrag traegt KEIN Feld, das ueber die Projektionen hinweg summiert',
+)
+
+assert.deepEqual(
+  chronik[JHL].jahre.map((j) => j.jahr),
+  [2025, 2024],
+  'Jahre: neueste Saison zuerst',
+)
+assert.deepEqual(
+  chronik[JHL].jahre[0].arten,
+  [{ art: 'Sauen', anzahl: 8 }, { art: 'Rehwild', anzahl: 2 }],
+  '2025/26: beide Arten, nach Menge',
+)
+assert.equal(chronik[JHL].jahre[0].summe, 10, '2025/26 gesamt')
+
+// Die Kollektivzeile hat keinen eigenen Eintrag erzeugt.
+assert.deepEqual(Object.keys(chronik).sort(), [CHRISTIAN, JHL].sort(),
+  'Zeilen ohne kontakt_id erzeugen keinen Eintrag')
+// Positivkontrolle, damit der Test nicht durch eine leere Abbildung gruen wird.
+assert.equal(Object.keys(chronik).length, 2, 'zwei Kontakte, nicht null')
+
+// Ein Kontakt ohne jede Chronikzeile hat keinen Eintrag — der Block wird dann
+// gar nicht gezeigt (204 von 256 Kontakten).
+assert.equal(chronik['c-gibtesnicht'], undefined, 'ohne Chronik kein Eintrag')
+
+assert.equal(alsSaison(1993), '1993/94', 'Saison: Anfangsjahr benennt sie')
+assert.equal(alsSaison(1999), '1999/00', 'Saison ueber den Jahrhundertwechsel')
+assert.equal(alsSaison(2009), '2009/10', 'Saison mit fuehrender Null')
+assert.equal(alsSaison(2025), '2025/26', 'letzte Saison der Chronik')

@@ -527,3 +527,78 @@
   outline-offset: 3px;
   border-radius: 3px;
 }
+
+/* --- Chronik Söder (A-C3, Migration 110) ------------------------------- */
+/* Ruhig und tabellarisch: das ist ein Streckenbuch, kein Dashboard. Keine
+   Balken, keine Farbskala — „Würden Linear oder Strava das machen, oder ist es
+   Jägermagazin?" (Design-Locks, Anti-Kitsch-Guard). */
+.gaeste-chronik {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--linie, #e3ded4);
+}
+.gaeste-chronik-titel {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--slate, #8b8775);
+}
+.gaeste-chronik-titel:not(:first-child) {
+  margin-top: 1.5rem;
+}
+.gaeste-chronik-arten,
+.gaeste-chronik-jahre {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gaeste-chronik-arten li,
+.gaeste-chronik-jahre li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--linie-leicht, #f0ece4);
+}
+.gaeste-chronik-arten li > span:first-child,
+.gaeste-chronik-jahr {
+  flex: 0 0 auto;
+}
+.gaeste-chronik-arten-inline {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--slate, #8b8775);
+}
+.gaeste-chronik-arten li > b,
+.gaeste-chronik-jahre li > b {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+/* Die Jahresspalte in Mono, damit 52 Saisons untereinander eine Kante bilden. */
+.gaeste-chronik-jahr {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 0.8125rem;
+}
+.gaeste-chronik-summe {
+  border-bottom: none !important;
+  font-weight: 600;
+}
+.gaeste-chronik-summe > span {
+  color: var(--slate, #8b8775);
+}
+/* Die Herkunftszeile trägt bei den meisten Kontakten die Auskunft, WARUM keine
+   Jahre dastehen. Sie ist deshalb Text und keine Fußnote in Grau-auf-Grau. */
+.gaeste-chronik-herkunft {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--slate, #8b8775);
+}
+.gaeste-chronik-herkunft strong {
+  font-weight: 600;
+  color: inherit;
+}

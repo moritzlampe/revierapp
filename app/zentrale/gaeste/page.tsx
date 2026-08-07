@@ -1,6 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import Liste from './liste'
-import { alsFilter, ersterWert, type Kontakt } from './kontakte'
+import {
+  alsFilter,
+  chronikNachKontakt,
+  ersterWert,
+  type Chronikzeile,
+  type Kontakt,
+} from './kontakte'
 import './gaeste.css'
 import { geladen } from '../laden'
 
@@ -84,6 +90,49 @@ export default async function GaestePage({
     'Kontakte',
   )
 
+  // Die Chronik Söder (Migration 110, A-C3). **Gelesen wird über die VIEWS,
+  // nie über `historische_strecken` selbst** — der `quelle`-Filter ist dort
+  // fest verdrahtet. Die vier Werte von `quelle` sind Projektionen desselben
+  // Bestands, keine addierbaren Töpfe: quer summiert ergäbe die Tabelle 11136
+  // statt 4646 (an der Produktion gemessen, 07.08.2026). Begründung ausführlich
+  // an `chronikNachKontakt`.
+  //
+  // Zwei getrennte Abfragen, nicht eine über die Tabelle mit `in (…)`:
+  // 357 + 293 = 650 Zeilen einzeln, aber **1064 zusammen mit `journal_msl`** —
+  // und der PostgREST-Default schneidet bei 1000 Zeilen ab, ohne es zu sagen.
+  // ponytail: Grenze bekannt und heute weit weg; wer hier eine dritte Quelle
+  // dazunimmt, braucht Paginierung oder eine Aggregat-View.
+  //
+  // `journal_msl` (Moritz' Tagebuch, 414 Zeilen) bleibt bewusst draußen: das
+  // ist eine andere Frage als „was hat dieser Gast in Söder geschossen", und
+  // sie bekommt einen eigenen Screen (Moritz, 07.08.2026).
+  //
+  // **`count: 'exact'` und der Abgleich darunter sind der Riegel gegen eine
+  // stille Abschneidung** (Fremdprüfung 07.08.2026, [medium]). PostgREST
+  // liefert bei Überschreitung des Server-Limits eine ERFOLGREICHE Antwort mit
+  // 1000 Zeilen — `geladen()` sieht keinen Fehler, und die Chronik zeigte dann
+  // zu kleine Summen oder ganze Kontakte ohne Block, abhängig von einer
+  // Reihenfolge, die niemand festgelegt hat. Eine zu kleine Zahl in einem
+  // Streckenbuch ist schlimmer als ein Fehler: sie liest sich wie eine Auskunft.
+  const chronikGeladen = async (view: string, was: string): Promise<Chronikzeile[]> => {
+    const antwort = await supabase
+      .from(view)
+      .select('kontakt_id, art_text, jagdjahr, anzahl', { count: 'exact' })
+    const zeilen = geladen<Chronikzeile[]>(antwort, was)
+    if (antwort.count != null && zeilen.length < antwort.count) {
+      throw new Error(
+        `${was}: ${zeilen.length} von ${antwort.count} Zeilen geladen — PostgREST hat ` +
+          `abgeschnitten. Die Chronik braucht ab hier Paginierung oder eine Aggregat-View.`,
+      )
+    }
+    return zeilen
+  }
+  const [rangliste, familie] = [
+    await chronikGeladen('historische_rangliste_soeder', 'Chronik Söder'),
+    await chronikGeladen('historische_familie_jahr', 'Chronik Jahresstrecken'),
+  ]
+  const chronik = chronikNachKontakt(rangliste, familie)
+
   return (
     <div className="zentrale-wrap">
       <h1>Gäste</h1>
@@ -102,6 +151,7 @@ export default async function GaestePage({
           `ausstellerId` in ../jagderlaubnisse. */}
       <Liste
         kontakte={kontakte}
+        chronik={chronik}
         besitzerId={user.id}
         startSuche={ersterWert(q)}
         startFilter={alsFilter(ersterWert(filter))}
