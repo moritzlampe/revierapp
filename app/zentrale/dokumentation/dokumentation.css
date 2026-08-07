@@ -1,0 +1,190 @@
+/* --- Dokumentation → Strecke je Jagdjahr (A-C4, Migration 110) ------------
+ *
+ * Ruhig und tabellarisch wie die Chronik im Gäste-Inspektor: das ist ein
+ * Streckenbuch, kein Dashboard. Keine Balken, keine Flächen, keine Farbskala,
+ * keine Trendbewertung — „Würden Linear oder Strava das machen, oder ist es
+ * Jägermagazin?" (Design-Locks, Anti-Kitsch-Guard).
+ *
+ * **Die eine Ausnahme ist die Jahreslinie**, und sie ist eine bewusste
+ * Entscheidung (Moritz, 07.08.2026): 33 lückenlose Saisons sind eine echte
+ * Zeitreihe, und das Konzept nennt diesen Screen ausdrücklich „Strecke je
+ * Jagdjahr (Kurve)". Sie bleibt eine einzige Akzentlinie ohne Füllung,
+ * Gitternetz oder Punktbeschriftung. Das Kurvenwerk mit mehreren Reihen kommt
+ * auf die geplante Statistikseite, nicht hierher.
+ *
+ * **Farben ausschliesslich über die `--z-*`-Token.** Auf `--z-bg-elevated`
+ * (#FAF7F0) erreichen die Design-Lock-Farben `--bronze` nur 2,72:1 und
+ * `--slate` 3,37:1 — beide unter den 4,5:1 der WCAG AA. Gemessen am 07.08.2026
+ * an der Chronik im Gäste-Inspektor, gleiche Fläche, gleiches Ergebnis.
+ */
+
+.dok-meta {
+  margin: 0 0 16px;
+  font-size: 0.875rem;
+  color: var(--z-text-secondary);
+}
+.dok-meta strong {
+  color: var(--z-text-primary);
+  font-weight: 600;
+}
+
+/* --- Die Jahreslinie ---------------------------------------------------- */
+
+.dok-kurve {
+  margin: 0 0 20px;
+  padding: 14px 16px 10px;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+}
+.dok-kurve svg {
+  display: block;
+  width: 100%;
+  height: 180px;
+}
+/* `preserveAspectRatio="none"` streckt den viewBox horizontal auf die volle
+   Breite — ohne `non-scaling-stroke` würden dabei die steilen Abschnitte
+   deutlich dicker als die flachen, weil die Strichstärke mitskaliert. Der
+   viewBox trägt zusätzlich zwei Einheiten Rand, sonst schnitte die Oberkante
+   die stärkste Saison halb ab. */
+.dok-kurve polyline {
+  fill: none;
+  stroke: var(--z-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.dok-achse {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.dok-achse-mitte {
+  text-align: center;
+  flex: 1;
+}
+
+/* --- Das Streckenbuch --------------------------------------------------- */
+
+/* Neun Spalten passen in die 1200px des Portals, aber nicht in jedes Fenster.
+   Statt Spalten zu verstecken bekommt die Tabelle einen eigenen Scroller —
+   eine verborgene Spalte wäre in einer Kreuztabelle eine fehlende Zahl.
+   **Der Scroller sitzt am Wrapper, nicht an der Tabelle**: `display: block` auf
+   einem `<table>` nähme ihm seine Tabellen-Formatierungsbox, `width: 100%` und
+   `border-collapse` gälten dann für den äußeren Block statt für das Raster. */
+.dok-scroller {
+  overflow-x: auto;
+}
+.dok-buch {
+  white-space: nowrap;
+}
+.dok-buch thead th,
+.dok-buch tbody th {
+  background: var(--z-bg-elevated);
+}
+/* Die Saisonspalte bleibt beim seitlichen Scrollen stehen: ohne sie ist eine
+   Zahlenzeile nicht zuzuordnen.
+
+   **Die beiden KOPFzellen der Spalte gehören dazu** (Schlusslesung 07.08.2026,
+   F6): sie tragen `scope="col"` und fielen aus dem Selektor. In einem schmalen
+   Fenster wären dann die Saisonlabels stehengeblieben, während über ihnen
+   „Nov. früh" durchscrollt — in einer Kreuztabelle eine falsche Zuordnung im
+   Kopf. Die Hintergründe bleiben bewusst bei den Regeln darüber und der
+   `tfoot`-Regel darunter: die Gesamtzeile ist gesenkt, nicht gehoben. */
+.dok-buch th[scope='row'],
+.dok-buch thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  border-right: 1px solid var(--z-border);
+}
+.dok-buch th[scope='row'] {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--z-text-primary);
+}
+
+/* Zahlen rechtsbündig in Mono mit `tabular-nums` (§2.2) — Kassenbuch, nicht
+   Website. Eigene Klasse statt des vorhandenen `.zentrale-tabelle td.num`:
+   jenes gilt nur für `td`, hier müssen auch die beiden Kopfzeilen und die
+   Fusszeile auf derselben Achse stehen.
+
+   **Die Kopfzeilen brauchen dafür `.dok-buch th.dok-zahl`, nicht `.dok-zahl`
+   allein** (Fremdprüfung 07.08.2026, Q5): `.zentrale-tabelle th` setzt
+   `text-align: left` und ist mit (0,2,0) spezifischer als (0,1,0) — die
+   Spaltenüberschriften blieben sonst linksbündig über rechtsbündigen Zahlen.
+   Die Schrift der Kopfzeilen bleibt bewusst proportional: sie tragen Namen
+   („Nov. früh"), keine Zahlen, und sollen wie die übrigen Tabellenköpfe des
+   Portals aussehen. Auf der Zahlenachse stehen sie trotzdem, weil die
+   Ausrichtung sie dorthin bringt. */
+.dok-zahl {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+}
+.dok-buch th.dok-zahl {
+  text-align: right;
+}
+.dok-buch thead th.dok-zahl {
+  font-family: inherit;
+  font-size: 0.6875rem;
+}
+.dok-summe {
+  border-left: 1px solid var(--z-border);
+  font-weight: 600;
+  color: var(--z-text-primary);
+}
+
+/* Zweite Kopfzeile: wie oft der Termin überhaupt vorkommt. Leiser als die
+   Namen darüber, damit sie die Spaltenüberschrift ergänzt statt mit ihr zu
+   konkurrieren. */
+.dok-belegung th {
+  height: 26px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.6875rem;
+  border-bottom: 1px solid var(--z-border-strong);
+}
+/* Nicht gemeldete Termine: sichtbar als Strich, nicht als Lücke — und niemals
+   als 0. `anzahl > 0` ist Constraint in 110, eine 0 behauptete eine Jagd ohne
+   Strecke.
+
+   **`--z-text-secondary` und nicht `--z-border-strong`, obwohl der Strich
+   optisch gern leiser wäre** (Fremdprüfung 07.08.2026, Q1): #B4AB93 erreicht
+   auf `--z-bg-elevated` #FAF7F0 nur **2,14:1**. Für einen Rahmen wäre das
+   gleichgültig — dieser Strich ist aber bedeutungstragend, die Legende weist
+   ihm ausdrücklich „kein Termin gemeldet" zu. Damit gilt 4,5:1, und
+   #575E48 liefert 6,33:1. Zweiter Tag in Folge, an dem eine Farbe auf genau
+   dieser Fläche zu schwach war. */
+.dok-leer {
+  color: var(--z-text-secondary);
+}
+
+.dok-buch tfoot td,
+.dok-buch tfoot th {
+  border-top: 1px solid var(--z-border-strong);
+  border-bottom: 0;
+  font-weight: 600;
+  color: var(--z-text-primary);
+  background: var(--z-bg-sunken);
+}
+
+/* Die Legende sitzt UNTER der Tabelle: sie erklärt ein Zeichen, das man erst
+   sieht, wenn man liest. */
+.dok-legende {
+  caption-side: bottom;
+  text-align: left;
+  padding: 10px 14px 0;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+  white-space: normal;
+}

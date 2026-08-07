@@ -13,7 +13,11 @@ const BEREICHE = [
   { href: '/zentrale', label: 'Übersicht', fertig: true },
   { href: '/zentrale/revier', label: 'Revier', fertig: false },
   { href: '/zentrale/jagden', label: 'Jagden', fertig: true },
-  { href: '/zentrale/dokumentation', label: 'Dokumentation', fertig: false },
+  // Seit 07.08.2026 gebaut, aber nur die Unterebene „Strecke" (A-C4): die
+  // historische Chronik des Reviers. Abschussplan und Beobachtungen fehlen
+  // sichtbar, statt deaktiviert dazustehen — dieselbe Haltung wie beim
+  // fehlenden Bereich "Drückjagd".
+  { href: '/zentrale/dokumentation', label: 'Dokumentation', fertig: true },
   { href: '/zentrale/jagderlaubnisse', label: 'Jagderlaubnisse', fertig: true },
   { href: '/zentrale/gaeste', label: 'Gäste', fertig: true },
 ]
