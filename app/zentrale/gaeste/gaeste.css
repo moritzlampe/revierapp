@@ -531,7 +531,18 @@
 /* --- Chronik Söder (A-C3, Migration 110) ------------------------------- */
 /* Ruhig und tabellarisch: das ist ein Streckenbuch, kein Dashboard. Keine
    Balken, keine Farbskala — „Würden Linear oder Strava das machen, oder ist es
-   Jägermagazin?" (Design-Locks, Anti-Kitsch-Guard). */
+   Jägermagazin?" (Design-Locks, Anti-Kitsch-Guard).
+
+   **Die Farben sind die des PORTALS (`--z-*`), nicht die Design-Lock-Akzente
+   `--bronze`/`--slate`** — und das ist eine Korrektur, keine Vorliebe
+   (Fremdprüfung 07.08.2026, [medium], selbst nachgerechnet). Auf dem
+   Inspektor-Hintergrund #FAF7F0 erreicht `--bronze` nur **2,72:1** und
+   `--slate` **3,37:1**; WCAG AA verlangt 4,5:1 für normalen Text. Betroffen
+   war ausgerechnet der Aufklapper, der einzige Schalter zu 42 älteren
+   Saisons. Die Portal-Token liegen bei **6,33:1** und **7,04:1**.
+   Die Design-Locks nennen Bronze als Akzent — auf DIESEM Untergrund trägt es
+   nicht, und der umgebende Zentrale-Code benutzt aus demselben Grund
+   durchgehend `--z-text-secondary`. */
 .gaeste-chronik {
   margin-top: 1.5rem;
   padding-top: 1.25rem;
@@ -543,7 +554,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--slate, #8b8775);
+  color: var(--z-text-secondary);
 }
 .gaeste-chronik-titel:not(:first-child) {
   margin-top: 1.5rem;
@@ -570,7 +581,7 @@
   flex: 1 1 auto;
   min-width: 0;
   font-size: 0.8125rem;
-  color: var(--slate, #8b8775);
+  color: var(--z-text-secondary);
 }
 .gaeste-chronik-arten li > b,
 .gaeste-chronik-jahre li > b {
@@ -588,7 +599,7 @@
   font-weight: 600;
 }
 .gaeste-chronik-summe > span {
-  color: var(--slate, #8b8775);
+  color: var(--z-text-secondary);
 }
 /* Die Herkunftszeile trägt bei den meisten Kontakten die Auskunft, WARUM keine
    Jahre dastehen. Sie ist deshalb Text und keine Fußnote in Grau-auf-Grau. */
@@ -596,9 +607,25 @@
   margin: 0.5rem 0 0;
   font-size: 0.75rem;
   line-height: 1.45;
-  color: var(--slate, #8b8775);
+  color: var(--z-text-secondary);
 }
 .gaeste-chronik-herkunft strong {
   font-weight: 600;
   color: inherit;
 }
+
+/* Der zugeklappte Rest der Saisons. `<details>` bringt das Verhalten mit —
+   kein State, keine Animation, tastaturbedienbar, und Strg-F findet den Inhalt. */
+.gaeste-chronik-mehr > summary {
+  cursor: pointer;
+  padding: 0.4rem 0;
+  font-size: 0.8125rem;
+  color: var(--z-accent);
+}
+.gaeste-chronik-mehr > summary:hover {
+  text-decoration: underline;
+}
+.gaeste-chronik-mehr[open] > summary {
+  margin-bottom: 0.25rem;
+}
+

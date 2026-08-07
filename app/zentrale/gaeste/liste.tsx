@@ -35,6 +35,8 @@ import {
   type Filter,
   type Kontakt,
   alsSaison,
+  artAusgeschrieben,
+  CHRONIK_JAHRE_SOFORT,
   type ChronikEintrag,
 } from './kontakte'
 
@@ -1474,6 +1476,21 @@ function Feld({
  * erfundenen Kurve steht dort die Herkunftszeile — die Auskunft, WARUM die
  * Jahre fehlen, ist mehr wert als eine Zahl, die es nicht gibt.
  */
+/** Eine Saisonzeile. Ausgelagert, weil sie zweimal gerendert wird — sichtbar
+ *  und im zugeklappten Rest. Zwei Kopien liefen bei der ersten Änderung
+ *  auseinander. */
+function jahresZeile(j: ChronikEintrag['jahre'][number]) {
+  return (
+    <li key={j.jahr}>
+      <span className="gaeste-chronik-jahr">{alsSaison(j.jahr)}</span>
+      <span className="gaeste-chronik-arten-inline">
+        {j.arten.map((a) => `${artAusgeschrieben(a.art)} ${a.anzahl}`).join(' · ')}
+      </span>
+      <b>{j.summe}</b>
+    </li>
+  )
+}
+
 function Chronik({ chronik }: { chronik: ChronikEintrag | undefined }) {
   if (!chronik) return null
   const { soeder, soederGesamt, jahre, jahreGesamt } = chronik
@@ -1486,7 +1503,7 @@ function Chronik({ chronik }: { chronik: ChronikEintrag | undefined }) {
           <ul className="gaeste-chronik-arten">
             {soeder.map((a) => (
               <li key={a.art}>
-                <span>{a.art}</span>
+                <span>{artAusgeschrieben(a.art)}</span>
                 <b>{a.anzahl}</b>
               </li>
             ))}
@@ -1510,15 +1527,38 @@ function Chronik({ chronik }: { chronik: ChronikEintrag | undefined }) {
         <>
           <h3 className="gaeste-chronik-titel">Nach Jagdjahren, alle Reviere</h3>
           <ul className="gaeste-chronik-jahre">
-            {jahre.map((j) => (
-              <li key={j.jahr}>
-                <span className="gaeste-chronik-jahr">{alsSaison(j.jahr)}</span>
-                <span className="gaeste-chronik-arten-inline">
-                  {j.arten.map((a) => `${a.art} ${a.anzahl}`).join(' · ')}
-                </span>
-                <b>{j.summe}</b>
-              </li>
-            ))}
+            {jahre.slice(0, CHRONIK_JAHRE_SOFORT).map(jahresZeile)}
+          </ul>
+          {/* **`<details>`, kein State und kein eigener Screen.** Das Element
+              kann genau das von sich aus: zugeklappt, per Tastatur bedienbar,
+              und der Browser findet den Inhalt auch bei Strg-F. Ein eigener
+              Screen (die andere Überlegung) hieße eine Route, ein zweiter
+              Ladepfad und ein Rückweg — für eine Liste, die schon geladen ist.
+              Die Summe steht darunter, nicht hier — Begründung dort. */}
+          {jahre.length > CHRONIK_JAHRE_SOFORT && (
+            <details className="gaeste-chronik-mehr">
+              <summary>
+                Jahre {alsSaison(jahre[jahre.length - 1].jahr)}–
+                {alsSaison(jahre[CHRONIK_JAHRE_SOFORT].jahr)} anzeigen (
+                {jahre.length - CHRONIK_JAHRE_SOFORT})
+              </summary>
+              <ul className="gaeste-chronik-jahre">
+                {jahre.slice(CHRONIK_JAHRE_SOFORT).map(jahresZeile)}
+              </ul>
+            </details>
+          )}
+          {/* **Die Summe steht UNTER dem Aufklapper, nicht darüber** (Moritz,
+              07.08.2026: „mit dem aufklappen der anderen jahre muss die
+              summenzeile nach unten rutschen"). Sie gilt für alle Saisons, auch
+              die zugeklappten — stünde sie über dem Aufklapper, läse sie sich
+              als Summe der zehn sichtbaren. So ist sie in beiden Zuständen der
+              Abschluss der Liste. */}
+          {/* Eine Liste mit genau einer Zeile, statt einer eigenen Klasse:
+              `gaeste-chronik-summe` trägt die Zeilenform schon, und eine
+              zweite Regel mit demselben Flex-Layout wäre die Sorte CSS, die
+              beim nächsten Anfassen auseinanderläuft (Ponytail-Lesung
+              07.08.2026, −15 Zeilen). */}
+          <ul className="gaeste-chronik-jahre">
             <li className="gaeste-chronik-summe">
               <span>gesamt, alle Reviere</span>
               <b>{jahreGesamt}</b>
@@ -1536,9 +1576,16 @@ function Chronik({ chronik }: { chronik: ChronikEintrag | undefined }) {
               lässt sich aus den Daten grundsätzlich nicht entscheiden. Gegen
               das Addieren genügt die Überschneidung. */}
           <p className="gaeste-chronik-herkunft">
-            Drückjagdstrecken der Familie · zählt über alle Reviere und
-            <strong> überschneidet sich mit der Söder-Zahl oben</strong> — beide
-            nie addieren
+            Drückjagdstrecken der Familie · zählt über alle Reviere
+            {soeder.length > 0 ? (
+              <>
+                {' '}und
+                <strong> überschneidet sich mit der Söder-Zahl oben</strong> —
+                beide nie addieren
+              </>
+            ) : (
+              <> · nicht mit einer Söder-Zahl vergleichbar</>
+            )}
           </p>
         </>
       )}

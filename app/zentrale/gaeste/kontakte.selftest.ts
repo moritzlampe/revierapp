@@ -823,3 +823,39 @@ assert.equal(alsSaison(1993), '1993/94', 'Saison: Anfangsjahr benennt sie')
 assert.equal(alsSaison(1999), '1999/00', 'Saison ueber den Jahrhundertwechsel')
 assert.equal(alsSaison(2009), '2009/10', 'Saison mit fuehrender Null')
 assert.equal(alsSaison(2025), '2025/26', 'letzte Saison der Chronik')
+
+// **Sauen stehen oben, AUCH wenn sie die kleinere Zahl sind.** Die Proben
+// weiter oben belegen die Regel NICHT — dort sind Sauen zufaellig ohnehin
+// groesser, der Test waere mit und ohne Rangfolge gruen. Genau diese Sorte
+// Zusicherung bestaetigt die Daten und nicht die Logik.
+const wenigSauen = chronikNachKontakt(
+  [
+    { kontakt_id: 'c-x', art_text: 'D&R&F', jagdjahr: null, anzahl: 99 },
+    { kontakt_id: 'c-x', art_text: 'Sauen', jagdjahr: null, anzahl: 1 },
+  ],
+  [
+    { kontakt_id: 'c-x', art_text: 'Rehwild', jagdjahr: 2020, anzahl: 40 },
+    { kontakt_id: 'c-x', art_text: 'Sauen', jagdjahr: 2020, anzahl: 2 },
+  ],
+)
+assert.deepEqual(
+  wenigSauen['c-x'].soeder.map((a) => a.art),
+  ['Sauen', 'D&R&F'],
+  'Sauen stehen oben, obwohl 1 < 99',
+)
+assert.deepEqual(
+  wenigSauen['c-x'].jahre[0].arten.map((a) => a.art),
+  ['Sauen', 'Rehwild'],
+  'auch im Jahresblock: Sauen oben, obwohl 2 < 40',
+)
+// Positivkontrolle: unterhalb der Sonderstellung gilt weiter die Menge.
+const dreiArten = chronikNachKontakt([], [
+  { kontakt_id: 'c-y', art_text: 'Fuechse', jagdjahr: 2020, anzahl: 3 },
+  { kontakt_id: 'c-y', art_text: 'Damwild', jagdjahr: 2020, anzahl: 7 },
+  { kontakt_id: 'c-y', art_text: 'Sauen', jagdjahr: 2020, anzahl: 1 },
+])
+assert.deepEqual(
+  dreiArten['c-y'].jahre[0].arten.map((a) => a.art),
+  ['Sauen', 'Damwild', 'Fuechse'],
+  'Sauen zuerst, der Rest nach Menge',
+)

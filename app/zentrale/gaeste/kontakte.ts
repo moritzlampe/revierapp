@@ -953,10 +953,29 @@ export type ChronikEintrag = {
   jahreGesamt: number
 }
 
-/** Sortiert Arten nach Menge, bei Gleichstand alphabetisch — damit die
- *  Reihenfolge bei gleichen Zahlen nicht zwischen zwei Ladevorgängen springt. */
+/**
+ * Arten die immer oben stehen, unabhängig von der Menge.
+ *
+ * Moritz, 07.08.2026: „Sauen gerne über Damwild, Rehwild, Fuchs." Sauen sind
+ * das, wonach in diesem Revier gefragt wird — eine Rangliste nach Menge
+ * schöbe sie bei jedem nach unten, der mehr Rehe als Sauen erlegt hat, und
+ * dann stünde dieselbe Art bei zwei Kontakten an verschiedener Stelle.
+ */
+const ART_ZUERST = ['Sauen']
+
+/** Sortiert nach fester Rangfolge, dann nach Menge, bei Gleichstand
+ *  alphabetisch — damit die Reihenfolge bei gleichen Zahlen nicht zwischen
+ *  zwei Ladevorgängen springt. */
 function nachMenge(a: ChronikArt, b: ChronikArt): number {
-  return b.anzahl - a.anzahl || a.art.localeCompare(b.art, 'de')
+  const rang = (art: string) => {
+    const i = ART_ZUERST.indexOf(art)
+    return i < 0 ? ART_ZUERST.length : i
+  }
+  return (
+    rang(a.art) - rang(b.art) ||
+    b.anzahl - a.anzahl ||
+    a.art.localeCompare(b.art, 'de')
+  )
 }
 
 function summiereArten(zeilen: readonly Chronikzeile[]): ChronikArt[] {
@@ -1029,3 +1048,33 @@ export function chronikNachKontakt(
 export function alsSaison(jahr: number): string {
   return `${jahr}/${String((jahr + 1) % 100).padStart(2, '0')}`
 }
+
+/**
+ * Die Papierbezeichnung ausgeschrieben — **nur für die Anzeige.**
+ *
+ * `art_text` bleibt in der Datenbank wortgetreu, wie der Spaltenkommentar von
+ * 110 es verlangt („die Wildbezeichnung des Papiers, wortgetreu und absichtlich
+ * nicht normalisiert"). Was auf dem Blatt „D&R&F" heisst, muss dort auch so
+ * stehen — sonst wäre die Chronikzeile nicht mehr gegen das Papier prüfbar.
+ * Lesbar machen ist Sache der Oberfläche, nicht der Spalte.
+ *
+ * Moritz, 07.08.2026: „da steht jetzt D&R&F -> man könnte auch Damwild,
+ * Rehwild, Fuchs schreiben."
+ */
+const ART_AUSGESCHRIEBEN: Record<string, string> = {
+  'D&R&F': 'Damwild, Rehwild, Fuchs',
+}
+
+export function artAusgeschrieben(art: string): string {
+  return ART_AUSGESCHRIEBEN[art] ?? art
+}
+
+/**
+ * Wie viele Saisons der zweite Block zeigt, bevor der Rest zuklappt.
+ *
+ * **Zehn, weil 52 Zeilen den Inspektor sprengen** (Moritz am Gerät, 07.08.2026:
+ * „bei meinem vater sieht man schon das der block darunter sehr lang ist").
+ * Die häufige Frage ist „was war zuletzt"; die vollständige Reihe bleibt einen
+ * Klick entfernt statt eine Seite entfernt.
+ */
+export const CHRONIK_JAHRE_SOFORT = 10
