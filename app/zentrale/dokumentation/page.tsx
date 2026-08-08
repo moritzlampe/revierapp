@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { geladen } from '../laden'
+import { geladen, vollstaendig } from '../laden'
 import { alsSaison, kurve, streckenbuch, TERMINE, type Jagdzeile } from './strecke'
 import './dokumentation.css'
 
@@ -102,33 +102,16 @@ export default async function DokumentationPage({
   // dieselbe Söder-Chronik. Dieselbe Rolle wie `.eq('district_id', revierId)`
   // in den Objekt-Writes seit R3 aufgehoben wurde.
   //
-  // **`count: 'exact'` ist der Riegel gegen eine stille Abschneidung.**
-  // PostgREST liefert bei Überschreitung des Server-Limits eine ERFOLGREICHE
-  // Antwort mit 1000 Zeilen; `geladen()` sähe keinen Fehler und die Strecke
-  // wäre lautlos zu klein. Heute sind es 124 Zeilen — der Riegel kostet drei
-  // Zeilen und eine zu kleine Zahl in einem Streckenbuch liest sich wie eine
-  // Auskunft.
-  const antwort = await supabase
-    .from('historische_jagden_soeder')
-    .select('jagdjahr, termin, anzahl', { count: 'exact' })
-    .eq('district_id', revier.id)
-  const zeilen = geladen<Jagdzeile[]>(antwort, 'Historische Strecke')
-  // **Zwei Riegel, weil der erste fail-OPEN ist** (Fremdprüfung 07.08.2026, P1):
-  // fehlt der `Content-Range`-Header, ist `antwort.count` null und der Vergleich
-  // greift lautlos nicht mehr. Der zweite hängt an nichts als der Zeilenzahl
-  // selbst und schlägt deshalb auch dann zu.
-  if (antwort.count != null && zeilen.length < antwort.count) {
-    throw new Error(
-      `Historische Strecke: ${zeilen.length} von ${antwort.count} Zeilen geladen — ` +
-        `PostgREST hat abgeschnitten. Ab hier braucht der Screen Paginierung oder eine Aggregat-View.`,
-    )
-  }
-  if (zeilen.length >= 1000) {
-    throw new Error(
-      `Historische Strecke: ${zeilen.length} Zeilen — das ist der PostgREST-Default und damit ` +
-        `vermutlich abgeschnitten. Ab hier braucht der Screen Paginierung oder eine Aggregat-View.`,
-    )
-  }
+  // **`count: 'exact'` und `vollstaendig()` sind der Riegel gegen eine stille
+  // Abschneidung.** Heute sind es 124 Zeilen — eine zu kleine Zahl in einem
+  // Streckenbuch liest sich wie eine Auskunft.
+  const zeilen = vollstaendig<Jagdzeile>(
+    await supabase
+      .from('historische_jagden_soeder')
+      .select('jagdjahr, termin, anzahl', { count: 'exact' })
+      .eq('district_id', revier.id),
+    'Historische Strecke',
+  )
 
   const buch = streckenbuch(zeilen)
   const linie = buch && kurve(buch.saisons, 720, 180)

@@ -8,7 +8,7 @@ import {
   type Kontakt,
 } from './kontakte'
 import './gaeste.css'
-import { geladen } from '../laden'
+import { geladen, vollstaendig } from '../laden'
 
 /**
  * Gäste — die persönliche Kontaktliste (Gästestamm).
@@ -107,26 +107,17 @@ export default async function GaestePage({
   // ist eine andere Frage als „was hat dieser Gast in Söder geschossen", und
   // sie bekommt einen eigenen Screen (Moritz, 07.08.2026).
   //
-  // **`count: 'exact'` und der Abgleich darunter sind der Riegel gegen eine
-  // stille Abschneidung** (Fremdprüfung 07.08.2026, [medium]). PostgREST
-  // liefert bei Überschreitung des Server-Limits eine ERFOLGREICHE Antwort mit
-  // 1000 Zeilen — `geladen()` sieht keinen Fehler, und die Chronik zeigte dann
-  // zu kleine Summen oder ganze Kontakte ohne Block, abhängig von einer
-  // Reihenfolge, die niemand festgelegt hat. Eine zu kleine Zahl in einem
-  // Streckenbuch ist schlimmer als ein Fehler: sie liest sich wie eine Auskunft.
-  const chronikGeladen = async (view: string, was: string): Promise<Chronikzeile[]> => {
-    const antwort = await supabase
-      .from(view)
-      .select('kontakt_id, art_text, jagdjahr, anzahl', { count: 'exact' })
-    const zeilen = geladen<Chronikzeile[]>(antwort, was)
-    if (antwort.count != null && zeilen.length < antwort.count) {
-      throw new Error(
-        `${was}: ${zeilen.length} von ${antwort.count} Zeilen geladen — PostgREST hat ` +
-          `abgeschnitten. Die Chronik braucht ab hier Paginierung oder eine Aggregat-View.`,
-      )
-    }
-    return zeilen
-  }
+  // **`count: 'exact'` und `vollstaendig()` sind der Riegel gegen eine stille
+  // Abschneidung** (Fremdprüfung 07.08.2026, [medium]). Ohne ihn zeigte die
+  // Chronik zu kleine Summen oder ganze Kontakte ohne Block, abhängig von einer
+  // Reihenfolge, die niemand festgelegt hat.
+  const chronikGeladen = async (view: string, was: string): Promise<Chronikzeile[]> =>
+    vollstaendig<Chronikzeile>(
+      await supabase
+        .from(view)
+        .select('kontakt_id, art_text, jagdjahr, anzahl', { count: 'exact' }),
+      was,
+    )
   const [rangliste, familie] = [
     await chronikGeladen('historische_rangliste_soeder', 'Chronik Söder'),
     await chronikGeladen('historische_familie_jahr', 'Chronik Jahresstrecken'),

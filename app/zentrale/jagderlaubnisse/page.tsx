@@ -5,7 +5,7 @@ import Ausstellen, { Einloesen } from './formular'
 import type { StandWahl, ScheinZeile } from './formular'
 import { heuteUtc, type Zahlung } from './scheine'
 import './jagderlaubnisse.css'
-import { geladen } from '../laden'
+import { geladen, vollstaendig } from '../laden'
 
 /**
  * Jagderlaubnisse — Begehungsscheine ausstellen und einlösen.
@@ -119,16 +119,19 @@ export default async function JagderlaubnissePage({
   // Der Leerlauf-Fall muss abgefangen werden: `.in('…', [])` schickt PostgREST
   // ein leeres Tupel und ergibt einen Syntaxfehler, keine leere Liste.
   //
-  // **`count: 'exact'` ist kein Luxus, sondern der Riegel gegen eine falsche
-  // Geldzahl** (Fremdprüfung 06.08.2026): PostgREST liefert höchstens 1000
-  // Zeilen und sagt es nicht. Weil hier absteigend sortiert wird, fielen bei
-  // Überschreitung ausgerechnet die ÄLTESTEN Zahlungen weg — die Summenzeile
-  // zeigte zu wenig, ohne dass irgendwo ein Fehler stünde. Genau der Fall, den
-  // `geladen()` und `zahlungenSumme()` laut ihren eigenen Kommentaren
-  // verhindern sollen: lieber nichts anzeigen als eine falsche Zahl.
-  // Realistisch Jahre entfernt (30 Scheine × monatlich × 3 Jahre ≈ 1080) — aber
-  // eine stille falsche Zahl über Geld ist der teuerste Fehler, den diese Seite
-  // machen kann, und der Riegel kostet drei Zeilen.
+  // **`count: 'exact'` und `vollstaendig()` sind der Riegel gegen eine falsche
+  // Geldzahl** (Fremdprüfung 06.08.2026). Weil hier absteigend sortiert wird,
+  // fielen bei einer Abschneidung ausgerechnet die ÄLTESTEN Zahlungen weg — die
+  // Summenzeile zeigte zu wenig, ohne dass irgendwo ein Fehler stünde. Genau
+  // der Fall, den `geladen()` und `zahlungenSumme()` laut ihren eigenen
+  // Kommentaren verhindern sollen: lieber nichts anzeigen als eine falsche
+  // Zahl. Realistisch Jahre entfernt (30 Scheine × monatlich × 3 Jahre ≈ 1080).
+  //
+  // **Der Riegel, der hier vorher stand, war der schwächste der drei**
+  // (Schlusslesung 08.08.2026): `(count ?? 0) > zahlungen.length` konnte bei
+  // fehlendem Zähler nie feuern — `0 > length` ist nie wahr. Ausgerechnet der
+  // Geldpfad hatte damit gar keinen zweiten Riegel; er ist jetzt der am
+  // stärksten geschützte der drei.
   const antwort =
     scheine.length === 0
       ? null
@@ -145,17 +148,7 @@ export default async function JagderlaubnissePage({
           // zwischen zwei Aufrufen die Plätze tauschen könnten.
           .order('erhalten_am', { ascending: false })
           .order('id')
-  const zahlungen = antwort === null ? [] : geladen<Zahlung[]>(antwort, 'Zahlungen')
-  // `?? 0` schaltet den Riegel bei fehlendem Count still ab. Folgenlos und
-  // geprüft: mit `{ count: 'exact' }` liefert PostgREST ihn auf jedem
-  // Erfolgsweg, und jeder Fehlerweg wirft schon eine Zeile vorher in
-  // `geladen()` (Schlusslesung 06.08.2026).
-  if (antwort !== null && (antwort.count ?? 0) > zahlungen.length) {
-    throw new Error(
-      `Zahlungen konnten nicht vollständig geladen werden: ${antwort.count} vorhanden, ` +
-        `${zahlungen.length} geliefert. Die Summe wäre zu niedrig.`
-    )
-  }
+  const zahlungen = antwort === null ? [] : vollstaendig<Zahlung>(antwort, 'Zahlungen')
 
   // Alle Objekte des Reviers holen und hier filtern, statt die Typenliste aus
   // objekte.ts zu exportieren: drei schmale Spalten über wenige hundert Zeilen
