@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "selftest": "for f in $(find app src -name '*.selftest.ts' | sort); do printf '%s ' \"$f\"; node --experimental-strip-types \"$f\" 2>/dev/null || { echo; echo \"FEHLGESCHLAGEN: $f\"; node --experimental-strip-types \"$f\"; exit 1; }; echo ok; done && echo 'alle Selbsttests gruen'",
     "gen:types": "npx supabase gen types typescript --project-id bzfevyqfkizmovoclysy --schema public > src/lib/supabase/database.types.ts"
   },
   "dependencies": {
