@@ -6,6 +6,7 @@ import type { Punkt } from '../revierkarte-map'
 import { geladen, vollstaendig } from '../laden'
 import { istStand } from '../objekte'
 import { Kennzahl } from '../kennzahl'
+import RevierName from '../revier-name'
 
 const zahl = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
 
@@ -200,6 +201,13 @@ export default async function RevierPage({
           <Revierkarte key={revier.id} grenze={grenze} punkte={punkte} revierId={revier.id} />
         </div>
       </div>
+
+      {/* Der `key` ist hier aus demselben Grund tragend wie an der Karte: beim
+          Revierwechsel ändert sich nur `?revier=`, Next behält dieselbe
+          Client-Instanz — ohne ihn stünde der Entwurf des einen Reviernamens im
+          Feld des nächsten, und ein Klick auf Speichern benennte das falsche
+          Revier um. */}
+      <RevierName key={revier.id} revierId={revier.id} name={revier.name} />
     </div>
   )
 }

@@ -109,8 +109,13 @@
   border-radius: 8px;
   cursor: pointer;
 }
-.zentrale-knopf:hover { background: var(--z-accent-hover); }
+.zentrale-knopf:hover:not(:disabled) { background: var(--z-accent-hover); }
 .zentrale-knopf:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 2px; }
+/* Nachgetragen 08.08.2026 mit dem ersten Aufrufer, der einen inaktiven Knopf
+   hat (Stammdaten: „Speichern" ist tot, solange nichts geändert ist). Der
+   Hover-Wechsel darüber ist im selben Zug ausgenommen worden — ohne das
+   leuchtete ein toter Knopf beim Überfahren auf. */
+.zentrale-knopf:disabled { opacity: 0.5; cursor: default; }
 
 .zentrale-nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
 .zentrale-nav a {
@@ -339,6 +344,68 @@
   font-size: 0.8125rem;
   color: var(--z-accent);
 }
+
+/* Stammdaten des Reviers (Konzept §1.1: „Revier … Stammdaten").
+   Feld- und Knopfmaße vom Inspektor übernommen, damit ein Eingabefeld im
+   Portal überall gleich aussieht — bewusst kopierte Werte statt einer
+   geteilten Klasse: der Inspektor sitzt in einer schmalen Spalte mit
+   `width: 100%`, hier steht das Feld neben einem Knopf. */
+.zentrale-stammdaten {
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  max-width: 560px;
+}
+.zentrale-stammdaten label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--z-text-secondary);
+}
+.zentrale-stammdaten .zeile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.zentrale-stammdaten input {
+  font: inherit;
+  font-size: 0.875rem;
+  flex: 1 1 220px;
+  padding: 6px 8px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+.zentrale-stammdaten input:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 1px;
+}
+/* **Kein eigener Knopf-Stil.** Der Speichern-Knopf trägt `.zentrale-knopf`, die
+   Klasse gab es seit Phase 1 und wurde genau einmal benutzt (`error.tsx`).
+   Sechzehn eigene Zeilen unterschieden sich vom Bestand um 4 px Padding —
+   Ponytail-Lesung 08.08.2026. Akzentgrün ist richtig: Speichern ist die
+   Hauptaktion dieses Blocks, nicht eine von mehreren gleichrangigen. */
+
+/* Kein Alarmrot, dieselbe Entscheidung wie beim Inspektor und beim
+   Grenzen-Fehler: „Ein Revier braucht einen Namen" ist ein Datenhinweis, kein
+   Feldalarm (Konzept §2.6).
+   ⚠ Das ist die VIERTE Fassung derselben Sache im Portal
+   (`.zentrale-inspektor-fehler`, `.zentrale-karte-fehler`,
+   `.zentrale-papierkorb .fehler`). Diese hier ist bewusst **unscoped**, damit
+   die nächste Stelle sie erbt statt eine fünfte anzulegen; das Zusammenführen
+   der drei alten ist ein eigener Vorgang (sie sitzen in live genutzten
+   Dateien, s. Backlog). */
+.zentrale-fehler,
+.zentrale-hinweis {
+  margin: 10px 0 0;
+  font-size: 0.8125rem;
+  color: var(--z-text-primary);
+}
+.zentrale-fehler { border-left: 2px solid var(--z-accent); padding-left: 8px; }
+.zentrale-hinweis { color: var(--z-text-secondary); }
 
 /* Die Höhe sitzt bewusst am Kasten, nicht hier: der Kinomodus schaltet sie um,
    und der Kasten ist die Komponente, die den Knopf dafür trägt. */
