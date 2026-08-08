@@ -34,13 +34,27 @@ Ziel: Kommerzielle SaaS-Lösung für Jagdpächter, Jagdleiter, Berufsjäger.
 
 ## Projektübergreifendes Wissen (AgenticOS-Vault)
 
-Obsidian-Vault `~/Desktop/AgenticOS` = Second Brain über alle Projekte und den
-Söder-Verbund (Firmen-Kontext, Strategie, Schwesterprojekt Belegverwaltung, Betriebs-Ablage).
-Bei Kontextfragen außerhalb dieses Repos: dort zuerst index.md lesen.
-Richtung der Wahrheit: dieses Repo → Vault (täglicher Delta-Ingest, Mo–Sa 09:33).
-Projektfakten NIE aus dem Vault beziehen — maßgeblich sind Migrationen/Doku in
-diesem Repo und die neuesten Übergaben in quickhunt-native/docs/; der Vault kann
-bis zu einem Tag hinterherhinken.
+`~/AgenticOS` ist das Gedächtnis über alle Projekte und den Söder-Verbund. **Lies dort
+`index.md`, sobald eine Frage über dieses Repo hinausreicht** — typisch:
+
+- Wettbewerb und Markt: wer sonst im DACH-Raum Jagd-Apps baut, wo die Namenskollision
+  mit quickhunt.app steht.
+- Produktvision, Geschäftsmodell und Launch-Pfad von QuickHunt — die Entscheidungen, die
+  in den Konzeptdokumenten begründet sind, nicht im Code.
+- Wie das Schwesterprojekt Belegverwaltung etwas gelöst hat: Prüfkette vor Deploy,
+  Frontend-Migration, Datenbank-Guards, Deploy-Disziplin.
+- Firmen-Kontext des Söder-Verbunds, falls eine Frage dorthin reicht.
+
+⚠ Die Grenze läuft **nicht** zwischen „lesen" und „nicht lesen", sondern zwischen zwei Arten
+von Wissen: **Markt-, Produkt- und Firmenwissen kommt aus dem Vault. Der Projektstand nie** —
+dafür gelten Migrationen und Doku in diesem Repo sowie die neuesten Übergaben in
+`quickhunt-native/docs/`. Der Vault verdichtet sie und kann einen Tag hinterherhinken; wer
+ihn nach dem Stand einer Sache fragt, bekommt eine plausible veraltete Antwort.
+
+Schreibrichtung: dieses Repo → Vault, Mo–Sa 09:33 automatisch per launchd, sofort mit
+`zsh ~/AgenticOS/ingest-delta.sh`. `~/Desktop/AgenticOS` ist nur ein Symlink — ⚠ nicht durch
+ein Original ersetzen, sonst steht der Automatismus wieder still, und zwar lautlos (TCC,
+Nachweis in `~/AgenticOS/raw/2026-08-08-vault-ingest-ausfall.md`).
 
 ---
 
