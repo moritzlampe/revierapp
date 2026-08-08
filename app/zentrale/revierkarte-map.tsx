@@ -318,7 +318,11 @@ function Objekte({
 }
 
 /**
- * Revierkarte der Übersicht. Objekte sind CircleMarker statt SVG-Pins: bei 196
+ * Revierkarte des Bereichs „Revier" — bis zum 08.08.2026 stand sie auf der
+ * ÜBERSICHT, und dieser Satz sagte das auch; sie ist umgezogen, als der Bereich
+ * seine eigene Route bekam.
+ *
+ * Objekte sind CircleMarker statt SVG-Pins: bei 196
  * Objekten (Revier Söder) ist das spürbar billiger, und der Pin trägt hier keine
  * Information, die der Name nicht auch trägt. Objekte bearbeiten kommt später;
  * hier ist bisher nur die Grenze editierbar.

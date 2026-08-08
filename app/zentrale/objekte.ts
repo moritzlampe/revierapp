@@ -70,8 +70,14 @@ export const OBJEKT_KATEGORIEN = [
 ] as const
 
 /** Alles, worauf ein Schütze sitzt. Kirrung, Salzlecke, Wildkamera, Parkplatz
- *  und Sonstiges zählen bewusst nicht als Sitz. */
-const STAND_TYPEN: readonly string[] = ['hochsitz', 'kanzel', 'drueckjagdstand']
+ *  und Sonstiges zählen bewusst nicht als Sitz.
+ *
+ *  **Exportiert seit dem 08.08.2026**, als die Übersicht die Stände zu ZÄHLEN
+ *  begann, statt sie zu laden: `istStand()` braucht eine Zeile in der Hand,
+ *  ein `head`-Count braucht die Liste für `.in('type', …)`. Beide Leser gehen
+ *  damit von derselben Definition aus — eine zweite Aufzählung im
+ *  Übersichts-Query wäre die Stelle, an der „Sitz" zweierlei bedeutet. */
+export const STAND_TYPEN: readonly string[] = ['hochsitz', 'kanzel', 'drueckjagdstand']
 
 export function istStand(typ: string): boolean {
   return STAND_TYPEN.includes(typ)

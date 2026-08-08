@@ -11,7 +11,11 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 // `fertig` steuert, ob verlinkt wird — nicht gebaute Ziele wären sonst 404.
 const BEREICHE = [
   { href: '/zentrale', label: 'Übersicht', fertig: true },
-  { href: '/zentrale/revier', label: 'Revier', fertig: false },
+  // Seit 08.08.2026 gebaut, und der Karteneditor darin ist NICHT neu: er stand
+  // bis dahin auf der ÜBERSICHT, weil der Bereich nie eine eigene Route bekam.
+  // Damit war „Revier" der einzige der sechs, dessen Inhalt es längst gab und
+  // den die Seitenleiste trotzdem nicht verlinken konnte.
+  { href: '/zentrale/revier', label: 'Revier', fertig: true },
   { href: '/zentrale/jagden', label: 'Jagden', fertig: true },
   // Seit 07.08.2026 gebaut, aber nur die Unterebene „Strecke" (A-C4): die
   // historische Chronik des Reviers. Abschussplan und Beobachtungen fehlen

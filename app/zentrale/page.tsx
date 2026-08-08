@@ -1,9 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { parsePointHex, parsePolygonHex } from '@/lib/geo-utils'
-import Revierkarte from './revierkarte'
-import type { Punkt } from './revierkarte-map'
-import { istStand } from './objekte'
+import { STAND_TYPEN } from './objekte'
 import { geladen } from './laden'
 // Statt eines zweiten Intl-Formatters daneben: `terminText(…, false)` ist
 // bereits das Datum ohne Uhrzeit in Berliner Zeit. Der Endtermin einer
@@ -41,7 +38,7 @@ const datumZeit = new Intl.DateTimeFormat('de-DE', {
 })
 const zahl = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
 
-type Revier = { id: string; name: string; area_ha: number | null; boundary: unknown }
+type Revier = { id: string; name: string; area_ha: number | null }
 type Jagd = {
   id: string
   name: string
@@ -50,32 +47,44 @@ type Jagd = {
   scheduled_for: string | null
   scheduled_until: string | null
 }
-type Objekt = {
-  id: string
-  name: string
-  type: string
-  position: unknown
-  description: string | null
-  photo_url: string | null
-}
 
 /**
  * Fehler nicht verschlucken. Auf einer Kennzahlenseite ist die stille Null die
  * schlimmste Ausgabe: ein RLS-Bruch oder Netzausfall sähe aus wie „keine Jagd,
  * keine Strecke" und wäre von einem echten leeren Revier nicht zu unterscheiden.
  * Lieber werfen und error.tsx sagen lassen, dass die Zahl gerade nicht bekannt ist.
+ *
+ * **Der Zähler ist bei `head: true` die EINZIGE Auskunft, und deshalb wirft ein
+ * fehlender** (Fremdprüfung 08.08.2026, F3/F6). Die erste Fassung schrieb
+ * `count ?? 0` — bei fehlendem `Content-Range` wurde daraus eine glaubwürdige
+ * „0 Sitze", obwohl die Abfrage gar keine Zeilen überträgt, an denen man den
+ * Irrtum bemerken könnte. Das ist zeichengleich der Fehler, der am selben
+ * Vormittag in `laden.ts` geschlossen wurde: `(count ?? 0)` in
+ * `jagderlaubnisse` konnte ohne Zähler nie feuern. Zweimal am selben Tag
+ * dieselbe Klasse — `?? 0` auf einem Zähler ist in diesem Projekt ein
+ * Codegeruch.
+ *
+ * **`Number.isFinite`, nicht `!= null`** — aus demselben Grund wie dort:
+ * supabase-js rechnet `parseInt(contentRange[1])` ungeprüft, bei
+ * `Content-Range: 0-999/*` ist das NaN. `NaN ?? 0` ist NaN, und die Kennzahl
+ * stünde als „NaN" auf der Seite.
  */
-/** PostgREST liefert geometry als GeoJSON; der Hex-Pfad ist der Fallback für
- *  andere Aufrufer (dieselbe Asymmetrie wie in parsePolygonHex). */
-function punktAus(input: unknown): { lat: number; lng: number } | null {
-  if (input && typeof input === 'object' && 'type' in input && 'coordinates' in input) {
-    const geo = input as { type: string; coordinates: number[] }
-    if (geo.type === 'Point' && Array.isArray(geo.coordinates) && geo.coordinates.length >= 2) {
-      return { lat: geo.coordinates[1], lng: geo.coordinates[0] }
-    }
-    return null
+async function zaehle(
+  bauen: () => PromiseLike<{ count: number | null; error: { message: string } | null }>,
+  was: string
+): Promise<number> {
+  const { count, error } = await bauen()
+  if (error) throw new Error(`${was} konnte nicht gezählt werden: ${error.message}`)
+  // `== null` zuerst, damit TypeScript danach `number` weiß — `Number.isFinite`
+  // ist kein Type Guard, und ein `as number` wäre genau die Behauptung, gegen
+  // die diese Zeilen gebaut sind.
+  if (count == null || !Number.isFinite(count)) {
+    throw new Error(
+      `${was}: PostgREST hat keinen brauchbaren Zähler geliefert (${count}). Die Abfrage ` +
+        `überträgt keine Zeilen, aus denen sich die Zahl sonst ergäbe.`
+    )
   }
-  return typeof input === 'string' ? parsePointHex(input) : null
+  return count
 }
 
 export default async function ZentraleUebersicht({
@@ -100,10 +109,14 @@ export default async function ZentraleUebersicht({
     )
   }
 
+  // `boundary` wird hier nicht mehr geladen: seit die Karte im Bereich „Revier"
+  // sitzt (08.08.2026), braucht die Übersicht von der Grenze nur noch das
+  // fertig gerechnete `area_ha`. Das ist bei Söder ein Polygon mit einigen
+  // hundert Stützpunkten je Seitenaufruf, das niemand mehr ansieht.
   const reviere = geladen<Revier[]>(
     await supabase
       .from('districts')
-      .select('id, name, area_ha, boundary')
+      .select('id, name, area_ha')
       .eq('owner_id', user.id)
       .eq('hidden', false)
       .order('name'),
@@ -137,20 +150,37 @@ export default async function ZentraleUebersicht({
     'Jagden'
   )
 
-  // `photo_url` statt der Tabelle `map_object_photos`: nachgemessen am 27.07.2026
-  // trägt jedes Objekt mit Foto auch ein `photo_url` (181 von 181, keine Lücke).
-  // Die 185 Fotozeilen verteilen sich auf dieselben 181 Objekte — vier haben ein
-  // zweites Bild. Eine Galerie einzubetten kostete bei Söder 185 zusätzliche
-  // Zeilen pro Seitenaufruf und brächte vier Objekten ein zweites Foto.
-  // ponytail: Deckenbild statt Galerie. Nachziehen, wenn jemand mehrere Fotos am
-  // Desktop sehen will — Fotos aufnehmen bleibt ohnehin mobil.
-  const objekte = geladen<Objekt[]>(
-    await supabase
-      .from('map_objects')
-      .select('id, name, type, position, description, photo_url')
-      .eq('district_id', revier.id),
-    'Kartenobjekte'
-  )
+  // **Gezählt, nicht geladen** — seit dem 08.08.2026, als die Karte in den
+  // Bereich „Revier" gezogen ist. Vorher holte diese Seite jedes Objekt mit
+  // Position, Beschreibung und Foto-URL (Söder: 196 Zeilen), um daraus zwei
+  // Zahlen zu bilden und den Rest an die Karte zu reichen. Die Karte ist weg,
+  // die Zahlen bleiben.
+  //
+  // Das erledigt zugleich den heißesten Teil von C-25: die Objektabfrage war
+  // der Lesepfad der Zentrale mit dem kleinsten Abstand zur PostgREST-Grenze.
+  // Ein `head`-Count kann gar nicht abgeschnitten werden — er überträgt keine
+  // Zeilen, nur den Zähler.
+  const [objekteGesamt, sitze] = await Promise.all([
+    zaehle(
+      () =>
+        supabase
+          .from('map_objects')
+          .select('id', { count: 'exact', head: true })
+          .eq('district_id', revier.id),
+      'Kartenobjekte'
+    ),
+    // `STAND_TYPEN` statt einer zweiten Aufzählung: dieselbe Definition, aus
+    // der auch `istStand()` liest.
+    zaehle(
+      () =>
+        supabase
+          .from('map_objects')
+          .select('id', { count: 'exact', head: true })
+          .eq('district_id', revier.id)
+          .in('type', STAND_TYPEN),
+      'Sitze'
+    ),
+  ])
 
   // Umweg über die Jagd-IDs, weil kills.district_id von keinem Client
   // geschrieben wird (Konzept §4.1). Genau deshalb steht unter der Kennzahl
@@ -159,15 +189,17 @@ export default async function ZentraleUebersicht({
   // Bibliothek zu `in.()`, was PostgREST nicht annimmt.
   let strecke = 0
   if (jagden.length > 0) {
-    const { count, error } = await supabase
-      .from('kills')
-      .select('id', { count: 'exact', head: true })
-      .in(
-        'hunt_id',
-        jagden.map((j) => j.id)
-      )
-    if (error) throw new Error(`Strecke konnte nicht geladen werden: ${error.message}`)
-    strecke = count ?? 0
+    strecke = await zaehle(
+      () =>
+        supabase
+          .from('kills')
+          .select('id', { count: 'exact', head: true })
+          .in(
+            'hunt_id',
+            jagden.map((j) => j.id)
+          ),
+      'Strecke'
+    )
   }
 
   const jetzt = new Date()
@@ -184,23 +216,6 @@ export default async function ZentraleUebersicht({
 
   // Laufende Jagd: nur ein Hinweis, keine Live-Steuerung (§1.3, §3).
   const laufend = jagden.find((j) => j.status === 'active' || j.status === 'paused')
-
-  const sitze = objekte.filter((o) => istStand(o.type)).length
-  const grenze = parsePolygonHex(revier.boundary)
-  const punkte = objekte.reduce<Punkt[]>((acc, o) => {
-    const p = punktAus(o.position)
-    if (p)
-      acc.push({
-        id: o.id,
-        name: o.name,
-        typ: o.type,
-        lat: p.lat,
-        lng: p.lng,
-        beschreibung: o.description,
-        fotoUrl: o.photo_url,
-      })
-    return acc
-  }, [])
 
   return (
     <div className="zentrale-wrap">
@@ -236,32 +251,9 @@ export default async function ZentraleUebersicht({
         <Kennzahl
           label="Sitze"
           wert={String(sitze)}
-          fuss={`von ${objekte.length} ${objekte.length === 1 ? 'Kartenobjekt' : 'Kartenobjekten'}`}
+          fuss={`von ${objekteGesamt} ${objekteGesamt === 1 ? 'Kartenobjekt' : 'Kartenobjekten'}`}
         />
       </div>
-
-      <section className="zentrale-block">
-        <h2>Revierkarte</h2>
-        <div className="zentrale-karte">
-          {/* Immer die Karte, auch bei völlig leerem Revier — sonst gäbe es
-              keinen Ort, an dem die erste Grenze entstehen könnte. Bis zum
-              29.07.2026 hing das an der R3-Allowlist; seit die weg ist, darf in
-              jedes angezeigte Revier geschrieben werden, und die Bedingung wäre
-              immer wahr. Der Leerzustand daneben ist damit unerreichbar geworden
-              und deshalb entfernt statt totes Gerüst zu bleiben.
-
-              `key` ist tragend, nicht Kosmetik: beim Revierwechsel ändert sich
-              nur `?revier=`, Next behält dieselbe Client-Instanz und damit den
-              Editierzustand. Ohne den key lag die halbfertige Zeichnung des
-              einen Reviers über der Karte des nächsten. */}
-          <Revierkarte
-            key={revier.id}
-            grenze={grenze}
-            punkte={punkte}
-            revierId={revier.id}
-          />
-        </div>
-      </section>
 
       <section className="zentrale-block">
         <h2>Nächste Jagden</h2>

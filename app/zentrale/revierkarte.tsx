@@ -464,8 +464,13 @@ export default function Revierkarte({
       setGespeichert([ring])
       zeichner.stopEditing()
       zeichner.reset()
-      // Die Kennzahlen kommen aus der Server-Komponente — die muss nachrechnen,
-      // insbesondere `area_ha`, das die DB selbst erzeugt.
+      // Die Server-Komponente muss nachziehen: `area_ha` erzeugt die DB selbst.
+      //
+      // **Seit dem Umzug in den Bereich „Revier" (08.08.2026) steht die
+      // Flächen-Kennzahl NICHT mehr auf derselben Seite wie diese Karte.**
+      // `refresh()` erneuert hier also `grenze` als Prop; die Zahl auf der
+      // Übersicht zieht beim nächsten Aufruf von dort nach. Der Aufruf bleibt
+      // deshalb richtig, seine Begründung ist nur eine andere geworden.
       router.refresh()
     } catch (e) {
       setFehler(e instanceof Error ? e.message : 'Unbekannter Fehler beim Speichern.')
