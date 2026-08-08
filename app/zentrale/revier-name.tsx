@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { schreibe } from './schreiben'
@@ -21,11 +21,27 @@ import { schreibe } from './schreiben'
  * Beim Namen ist der Tippfehler dagegen der Normalfall.
  * Hintergrund zur Länderfrage: `QuickHunt_Recherche_Begehungsschein_Recht_V1.md`.
  *
- * **Warum hier und nicht im Kopf der Seite:** die Kontextzeile oben nennt das
- * Revier, sie ist Orientierung. Ein Eingabefeld an dieser Stelle machte aus
- * jeder Orientierung eine Bearbeitung. Stammdaten gehören nach Konzept §1.1
- * unter *Revier* — dort, wo man ohnehin pflegt, aber unterhalb der
- * Arbeitsfläche.
+ * **Ein Stift in der Kopfzeile, kein Block darunter — und die erste Fassung
+ * machte es andersherum** (Moritz, 08.08.2026: *„unter Revier oben neben dem
+ * Namen Söder ein Stift zum Anklicken hätte es auch getan. Bin ja ein Freund
+ * vom Übersichtlichen und nicht zu Vollgeladenen."*).
+ *
+ * Sie stand als eigener Abschnitt „Stammdaten" unter der Karte, mit Überschrift,
+ * Beschriftung, Dauer-Eingabefeld und Knopf — **vier sichtbare Elemente für
+ * etwas, das man einmal im Leben eines Reviers tut.** Der Kopfkommentar
+ * begründete das sogar ausdrücklich („ein Eingabefeld an dieser Stelle machte
+ * aus jeder Orientierung eine Bearbeitung"). Das Argument stimmt für ein
+ * *dauerhaft offenes* Feld und fällt beim Stift weg: im Ruhezustand steht dort
+ * genau das, was vorher dort stand, plus ein Symbol.
+ *
+ * **Kleiner auf dem Bildschirm, teurer in der Datei — und der zweite Teil
+ * gehört dazu** (Ponytail-Lesung 08.08.2026): der Block brauchte eine eigene
+ * Sektion samt Überschrift, der Stift nutzt die Kopfzeile, die es ohnehin gibt.
+ * Die Oberfläche schrumpft damit von vier Dauer-Elementen auf ein Symbol —
+ * die Datei wächst um gut die Hälfte, weil ein Zustand dazukommt, den ein
+ * Dauerfeld nicht braucht. Das ist der Tausch, und er ist bewusst zugunsten
+ * der Oberfläche entschieden. Eine erste Fassung dieses Absatzes behauptete
+ * schlicht „die kleinere Lösung"; das stimmt nur für den Bildschirm.
  *
  * **Die Änderung wirkt RÜCKWIRKEND auf bereits ausgestellte Begehungsscheine,
  * und das ist eine Entscheidung** (Fremdprüfung 08.08.2026, R9): die Druckseite
@@ -50,6 +66,7 @@ import { schreibe } from './schreiben'
  */
 export default function RevierName({ revierId, name }: { revierId: string; name: string }) {
   const router = useRouter()
+  const [bearbeiten, setBearbeiten] = useState(false)
   const [entwurf, setEntwurf] = useState(name)
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
@@ -65,6 +82,38 @@ export default function RevierName({ revierId, name }: { revierId: string; name:
   // Lücke. Plattformmittel statt eines zweiten Zustands daneben.
   const [pending, startTransition] = useTransition()
   const busy = laeuft || pending
+
+  // **Der Fokus muss zurück auf den Stift** (Fremdprüfung, S5). Beim Schließen
+  // verschwindet das fokussierte Element — Eingabefeld oder Abbrechen-Knopf —
+  // aus dem Baum, und der Browser fällt auf den Dokumentkörper zurück: der
+  // nächste Tabulator beginnt wieder am Seitenanfang. Für Tastaturbedienung ist
+  // das der Unterschied zwischen „Dialog geschlossen" und „Position verloren".
+  //
+  // Ein Ref statt eines `autoFocus`, weil der Stift im Ruhezustand IMMER da ist
+  // — ein `autoFocus` an ihm zöge den Fokus beim ersten Laden der Seite an sich.
+  // `nachBearbeiten` unterscheidet den Erstaufbau vom echten Schließen.
+  //
+  // Die Abhängigkeit auf `busy` ist tragend, nicht Vollständigkeit: nach einem
+  // geglückten Save läuft der Refresh noch, der Stift ist so lange `disabled` —
+  // und ein `focus()` auf ein deaktiviertes Element tut nichts. Also erst
+  // fokussieren, wenn er wieder bedienbar ist.
+  const stiftRef = useRef<HTMLButtonElement>(null)
+  const nachBearbeiten = useRef(false)
+  useEffect(() => {
+    if (bearbeiten) {
+      nachBearbeiten.current = true
+      return
+    }
+    if (nachBearbeiten.current && !busy) {
+      nachBearbeiten.current = false
+      // **Nur, wenn der Fokus wirklich verlorengegangen ist** (Delta-Durchgang
+      // 08.08.2026): klickt der Nutzer während eines langsamen Refreshs in ein
+      // anderes Feld, risse der Effect ihn beim Kippen von `pending` sonst
+      // hierher zurück. Der Browser parkt einen verwaisten Fokus auf `body` —
+      // genau dieser Fall, und nur er, soll geheilt werden.
+      if (document.activeElement === document.body) stiftRef.current?.focus()
+    }
+  }, [bearbeiten, busy])
 
   const sauber = entwurf.trim()
 
@@ -92,6 +141,37 @@ export default function RevierName({ revierId, name }: { revierId: string; name:
   // Vorgang im Backlog.
   const sichtbar = sauber.replace(/[\u200B-\u200D\uFEFF]/gu, '').trim()
   const geaendert = sichtbar.length > 0 && sauber !== name
+
+  // Öffnen und Abbrechen tun dasselbe, nur mit anderem Ziel: der Entwurf geht
+  // auf den gespeicherten Namen, ein stehender Fehler verschwindet mit ihm.
+  // Sonst begrüßte der nächste Klick auf den Stift den Nutzer mit der
+  // Fehlermeldung von vorhin.
+  //
+  // **`if (busy) return` — und die Geschichte dieser Zeile gehört in die Akte,
+  // weil zwei Prüfer sie an einem Nachmittag gegensätzlich beurteilt haben.**
+  //
+  // Die Ponytail-Lesung strich sie als unerreichbar: die beiden Aufrufer im
+  // Bearbeiten-Zweig sind gesperrt (Abbrechen-Knopf per `disabled={busy}`,
+  // Escape über das ebenfalls `disabled` Eingabefeld, das kein `keydown`
+  // feuert). Das stimmte — **für die beiden, die sie gezählt hat.**
+  //
+  // **Es gibt einen dritten, und er ist der gefährlichste** (Fremdprüfung,
+  // S1/S2): der **Stift** im Ruhezustand. Nach einem geglückten Save schließt
+  // `setBearbeiten(false)` sofort, während `router.refresh()` noch läuft — der
+  // Stift ist dann schon da und `name` trägt noch den ALTEN Wert. Ein Klick
+  // setzte `entwurf` auf den alten Namen; kommt danach die neue Prop, wird
+  // `geaendert` wieder wahr, und der nächste Save **rollt die Umbenennung
+  // zurück**. Aus einem toten Riegel war ein Datenverlust-Pfad geworden.
+  //
+  // Der Riegel steht deshalb wieder hier, in der Funktion statt in drei
+  // Aufrufern, und der Stift trägt zusätzlich `disabled={busy}` — das eine ist
+  // die Sicherung, das andere macht sie sichtbar.
+  function umschalten(an: boolean) {
+    if (busy) return
+    setEntwurf(name)
+    setFehler(null)
+    setBearbeiten(an)
+  }
 
   async function speichern() {
     // **`busy`, nicht `laeuft`** — und der Kommentar, der hier stand, war nach
@@ -132,6 +212,11 @@ export default function RevierName({ revierId, name }: { revierId: string; name:
           .select('id'),
       )
       startTransition(() => router.refresh())
+      // Zurück in den Ruhezustand — aber NUR im Erfolgsfall. Nach einem
+      // Fehlschlag bleibt das Feld offen, mit dem getippten Namen darin: den
+      // Nutzer zuzuklappen und ihn seine Eingabe neu tippen zu lassen, wäre die
+      // Bestrafung für einen Fehler, den er nicht gemacht hat.
+      setBearbeiten(false)
     } catch (e) {
       // Der Fehler wird ANGEZEIGT, nicht verschluckt: eine Eingabe, die
       // scheinbar geglückt ist und beim nächsten Laden wieder alt dasteht, ist
@@ -160,14 +245,67 @@ export default function RevierName({ revierId, name }: { revierId: string; name:
     }
   }
 
+  // Ruhezustand: der Name wie vorher, dahinter der Stift. Die Kopfzeile sieht
+  // damit aus wie bis gestern, plus ein Symbol.
+  //
+  // **`<div>` und nicht `<p>`, und das war ein echter Fehler** (Ponytail-Lesung
+  // 08.08.2026): ein `<p>` darf nur Phrasing-Content enthalten, weshalb die
+  // erste Fassung Fehler- und Hinweiszeile im anderen Zweig von `<p>` auf
+  // `<span>` umbaute — und `margin` wirkt an einem inline `<span>` vertikal
+  // **nicht**. Der Abstand über der Fehlerzeile war damit weg. `.zentrale-revier`
+  // hängt an einer Klasse, nicht am Element, der Tausch kostet also nichts.
+  if (!bearbeiten) {
+    return (
+      <div className="zentrale-revier">
+        <span className="zentrale-revier-label">Revier</span>
+        <span className="zentrale-revier-name">
+          {name}
+          {/* Der Name gehört IN das aria-label, nicht nur „Ändern": in einer
+              Liste vorgelesener Bedienelemente ist „Ändern" ohne Bezug
+              wertlos. */}
+          <button
+            type="button"
+            className="zentrale-stift"
+            ref={stiftRef}
+            onClick={() => umschalten(true)}
+            // Solange der Refresh läuft, trägt `name` noch den alten Wert —
+            // ein Klick hier hätte den gerade gespeicherten Namen verworfen
+            // (Fremdprüfung, S1). `umschalten` riegelt zusätzlich ab; dieses
+            // `disabled` macht den Zustand sichtbar, statt Klicks ins Leere
+            // laufen zu lassen.
+            disabled={busy}
+            aria-label={`Reviernamen „${name}" ändern`}
+          >
+            {/* Inline-SVG wie in `dokumentation/page.tsx` — das Portal hat
+                bewusst keine Icon-Bibliothek. Ein `✎` wäre eine Zeile statt
+                neun, hinge aber an der Fontkaskade: die Kopfzeile läuft auf
+                `var(--font-display)` (Fraunces), das Zeichen fiele auf eine
+                Fallback-Font mit eigener Grundlinie und eigenem Strichgewicht.
+                `aria-hidden`, weil der Knopf sein Label schon trägt. */}
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path
+                d="M11.5 1.5l3 3L5 14H2v-3l9.5-9.5z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+            </svg>
+          </button>
+        </span>
+      </div>
+    )
+  }
+
   return (
-    <section className="zentrale-block">
-      <h2>Stammdaten</h2>
-      <div className="zentrale-stammdaten">
-        <label htmlFor="revier-name">Name des Reviers</label>
+    <div className="zentrale-revier">
+      <label className="zentrale-revier-label" htmlFor="revier-name">
+        Revier umbenennen
+      </label>
+      <div className="zentrale-umbenennen">
         <div className="zeile">
           <input
             id="revier-name"
+            autoFocus
             value={entwurf}
             onChange={(e) => {
               setEntwurf(e.target.value)
@@ -179,9 +317,10 @@ export default function RevierName({ revierId, name }: { revierId: string; name:
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') speichern()
-              // Escape stellt den gespeicherten Stand wieder her — dieselbe
-              // Erwartung wie überall sonst, und billiger als ein Abbrechen-Knopf.
-              if (e.key === 'Escape') setEntwurf(name)
+              // Escape schließt jetzt zurück in den Ruhezustand, statt nur den
+              // Entwurf zurückzusetzen — mit dem Stift ist „abbrechen" ein
+              // eigener Zustandswechsel und nicht mehr bloß ein Textreset.
+              if (e.key === 'Escape') umschalten(false)
             }}
             disabled={busy}
             autoComplete="off"
@@ -210,6 +349,19 @@ export default function RevierName({ revierId, name }: { revierId: string; name:
           >
             {busy ? 'Speichert …' : 'Speichern'}
           </button>
+          {/* Der Abbrechen-Knopf ist mit dem Stift dazugekommen: Escape allein
+              genügte, solange das Feld dauerhaft dastand und „abbrechen" nur
+              „zurücktippen" hieß. Jetzt gibt es einen Zustand, aus dem man
+              wieder herausmuss — und eine Geste, die man nicht sieht, ist dafür
+              kein Ausweg. */}
+          <button
+            type="button"
+            className="zentrale-abbrechen"
+            onClick={() => umschalten(false)}
+            disabled={busy}
+          >
+            Abbrechen
+          </button>
         </div>
         {/* `role="alert"` nur am Fehler: er ist ein Ergebnis und soll
             unterbrechen. Der Hinweis darunter beschreibt einen Zustand, den der
@@ -232,6 +384,6 @@ export default function RevierName({ revierId, name }: { revierId: string; name:
           </p>
         )}
       </div>
-    </section>
+    </div>
   )
 }

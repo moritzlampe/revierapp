@@ -164,10 +164,12 @@ export default async function RevierPage({
 
   return (
     <div className="zentrale-wrap">
-      <p className="zentrale-revier">
-        <span className="zentrale-revier-label">Revier</span>
-        <span className="zentrale-revier-name">{revier.name}</span>
-      </p>
+      {/* Die Kopfzeile gehört seit dem 08.08.2026 der Client-Komponente: sie
+          zeigt im Ruhezustand genau das, was hier vorher stand, plus einen
+          Stift. Der `key` ist tragend wie an der Karte — beim Revierwechsel
+          ändert sich nur `?revier=`, Next behält dieselbe Client-Instanz, und
+          ohne ihn stünde ein halb getippter Name über dem nächsten Revier. */}
+      <RevierName key={revier.id} revierId={revier.id} name={revier.name} />
       <h1>Revier</h1>
       <p className="zentrale-sub">Grenze, Stände und Kartenobjekte</p>
 
@@ -202,12 +204,6 @@ export default async function RevierPage({
         </div>
       </div>
 
-      {/* Der `key` ist hier aus demselben Grund tragend wie an der Karte: beim
-          Revierwechsel ändert sich nur `?revier=`, Next behält dieselbe
-          Client-Instanz — ohne ihn stünde der Entwurf des einen Reviernamens im
-          Feld des nächsten, und ein Klick auf Speichern benennte das falsche
-          Revier um. */}
-      <RevierName key={revier.id} revierId={revier.id} name={revier.name} />
     </div>
   )
 }

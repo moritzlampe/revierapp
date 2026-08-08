@@ -345,31 +345,40 @@
   color: var(--z-accent);
 }
 
-/* Stammdaten des Reviers (Konzept §1.1: „Revier … Stammdaten").
-   Feld- und Knopfmaße vom Inspektor übernommen, damit ein Eingabefeld im
+/* Reviername umbenennen — ein Stift in der Kopfzeile, kein Block darunter
+   (Moritz, 08.08.2026: „bin ja ein Freund vom Übersichtlichen und nicht zu
+   Vollgeladenen"). Die erste Fassung war ein eigener Abschnitt „Stammdaten"
+   unter der Karte; im Ruhezustand ist jetzt nur ein Symbol mehr zu sehen.
+
+   Der Stift sitzt IM `.zentrale-revier-name`, deshalb `inline-flex` und
+   `vertical-align` statt eines eigenen Layouts. */
+.zentrale-stift {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+  margin-left: 8px;
+  padding: 4px;
+  color: var(--z-text-secondary);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zentrale-stift:hover { color: var(--z-accent); background: var(--z-bg-sunken); }
+.zentrale-stift:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 1px; }
+
+/* Feld- und Knopfmaße vom Inspektor übernommen, damit ein Eingabefeld im
    Portal überall gleich aussieht — bewusst kopierte Werte statt einer
    geteilten Klasse: der Inspektor sitzt in einer schmalen Spalte mit
-   `width: 100%`, hier steht das Feld neben einem Knopf. */
-.zentrale-stammdaten {
-  background: var(--z-bg-elevated);
-  border: 1px solid var(--z-border);
-  border-radius: 10px;
-  padding: 14px 16px;
-  max-width: 560px;
-}
-.zentrale-stammdaten label {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--z-text-secondary);
-}
-.zentrale-stammdaten .zeile {
+   `width: 100%`, hier steht das Feld neben zwei Knöpfen. */
+.zentrale-umbenennen { display: block; max-width: 560px; }
+.zentrale-umbenennen .zeile {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
-.zentrale-stammdaten input {
+.zentrale-umbenennen input {
   font: inherit;
   font-size: 0.875rem;
   flex: 1 1 220px;
@@ -379,10 +388,37 @@
   border: 1px solid var(--z-border-strong);
   border-radius: 6px;
 }
-.zentrale-stammdaten input:focus-visible {
+.zentrale-umbenennen input:focus-visible {
   outline: 2px solid var(--z-accent);
   outline-offset: 1px;
 }
+/* **Hier stand `.zentrale-umbenennen :disabled { opacity: 0.6 }` und musste
+   weg** (Ponytail-Lesung 08.08.2026): gleiche Spezifität wie
+   `.zentrale-knopf:disabled { opacity: 0.5 }` weiter oben, aber später notiert
+   — der Speichern-Knopf hatte damit ungefragt einen anderen Deaktiviert-Zustand
+   als jeder andere im Portal. Das Eingabefeld braucht die Regel nicht: es ist
+   nur für die Dauer eines UPDATE gesperrt. */
+
+/* Sekundär neben dem akzentgrünen Speichern. Vorbild ist
+   `.zentrale-inspektor-kopf .zurueck`, nicht `.zentrale-inspektor-fuss button`
+   — letztere tragen Rahmen und `bg-base` (Referenz korrigiert, Ponytail-Lesung).
+   ⚠ Dritte Fassung desselben stillen Knopfes im Portal (`.zurueck`,
+   `.zentrale-karte-knoepfe button`). Wiederverwenden ginge nur durch Entscopen
+   von `.zurueck`, also durch einen Eingriff außerhalb dieses Diffs; das
+   Zusammenführen ist ein eigener Vorgang — dieselbe Notiz trägt
+   `.zentrale-fehler` weiter oben aus demselben Grund. */
+.zentrale-abbrechen {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 6px 10px;
+  color: var(--z-text-secondary);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zentrale-abbrechen:hover:not(:disabled) { color: var(--z-text-primary); background: var(--z-bg-sunken); }
+.zentrale-abbrechen:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 1px; }
 /* **Kein eigener Knopf-Stil.** Der Speichern-Knopf trägt `.zentrale-knopf`, die
    Klasse gab es seit Phase 1 und wurde genau einmal benutzt (`error.tsx`).
    Sechzehn eigene Zeilen unterschieden sich vom Bestand um 4 px Padding —
