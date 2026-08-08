@@ -100,8 +100,14 @@ export const STATUS_LABEL: Record<JesStatus, string> = {
  *
  * Nicht die lokale Zeitzone: die DB läuft auf UTC, und 077 zieht die Grenze mit
  * `current_date`. Im Berliner Sommer (UTC+2) läge das lokale Datum zwischen
- * Mitternacht und 02:00 einen Tag vor dem der DB — die Liste meldete
+ * Mitternacht und 02:00 einen Tag **nach** dem der DB — die Liste meldete
  * „Abgelaufen" über einem Schein, der noch zwei Stunden gilt.
+ *
+ * **Hier stand „einen Tag vor", und das war verdreht** (Fremdprüfung
+ * 08.08.2026, P2): am 09.08. um 00:30 Berliner Zeit ist es in UTC erst 22:30
+ * am 08.08.; lokal ist man also weiter, nicht zurück. Die beschriebene FOLGE
+ * stimmte, nur die Richtung nicht — deshalb ist es nie aufgefallen. Der Satz
+ * war inzwischen nach `handlungsbedarf.ts` kopiert worden, mitsamt dem Fehler.
  */
 export function heuteUtc(): string {
   return new Date().toISOString().slice(0, 10)

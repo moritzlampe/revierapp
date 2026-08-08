@@ -4,6 +4,10 @@ import { parsePointHex, parsePolygonHex } from '@/lib/geo-utils'
 import Revierkarte from '../revierkarte'
 import type { Punkt } from '../revierkarte-map'
 import { geladen, vollstaendig } from '../laden'
+import { istStand } from '../objekte'
+import { Kennzahl } from '../kennzahl'
+
+const zahl = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
 
 /**
  * Revier — zweiter Bereich der Zentrale (Konzept §1.1), und der letzte der
@@ -25,9 +29,20 @@ import { geladen, vollstaendig } from '../laden'
  * beantworten „wie steht mein Revier da" und gehören damit zur Übersicht
  * (§1.3). Nur der Editor gehört hierher — die Zerlegung der Kennzahlenreihe
  * hat niemand bestellt, und zwei halbe Reihen wären schlechter als eine ganze.
+ *
+ * **Der Absatz darüber galt einen Tag und ist am 08.08.2026 abgelöst worden**
+ * (Konzept §1.3a, von Moritz entschieden): *Fläche* und *Sitze* stehen jetzt
+ * hier. Er war als **Umzugsentscheidung** richtig — die Reihe zu zerlegen war
+ * beim Herausoperieren der Karte nicht bestellt —, hat die eigentliche Frage
+ * aber nur vertagt. Der Test, der sie beantwortet: ändert sich die Zahl, weil
+ * **ich etwas getan habe**, oder weil **Zeit vergangen ist**? Fläche und Sitze
+ * ändern sich ausschließlich durch die Pflegearbeit auf genau dieser Seite;
+ * Jagden und Strecke wachsen von selbst und bleiben deshalb drüben.
+ *
+ * Er steht als Beleg dafür, dass die Reihe nicht versehentlich zerfallen ist.
  */
 
-type Revier = { id: string; name: string; boundary: unknown }
+type Revier = { id: string; name: string; boundary: unknown; area_ha: number | null }
 type Objekt = {
   id: string
   name: string
@@ -80,7 +95,7 @@ export default async function RevierPage({
   const reviere = geladen<Revier[]>(
     await supabase
       .from('districts')
-      .select('id, name, boundary')
+      .select('id, name, boundary, area_ha')
       .eq('owner_id', user.id)
       .eq('hidden', false)
       .order('name'),
@@ -154,6 +169,24 @@ export default async function RevierPage({
       </p>
       <h1>Revier</h1>
       <p className="zentrale-sub">Grenze, Stände und Kartenobjekte</p>
+
+      {/* **Gezählt statt gefragt.** Die Objekte liegen für die Karte ohnehin
+          schon hier — ein `head`-Count daneben wäre eine zweite Wahrheit, die
+          von der gezeichneten abweichen kann. `istStand()` statt einer eigenen
+          Aufzählung, aus demselben Grund. */}
+      <div className="zentrale-kennzahlen">
+        <Kennzahl
+          label="Fläche"
+          wert={revier.area_ha === null ? '—' : zahl.format(revier.area_ha)}
+          einheit={revier.area_ha === null ? undefined : 'ha'}
+          fuss={revier.area_ha === null ? 'keine Grenze gezeichnet' : 'aus der Reviergrenze'}
+        />
+        <Kennzahl
+          label="Sitze"
+          wert={String(objekte.filter((o) => istStand(o.type)).length)}
+          fuss={`von ${objekte.length} ${objekte.length === 1 ? 'Kartenobjekt' : 'Kartenobjekten'}`}
+        />
+      </div>
 
       <div className="zentrale-block">
         <div className="zentrale-karte">

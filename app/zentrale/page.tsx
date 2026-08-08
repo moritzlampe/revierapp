@@ -1,7 +1,13 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { STAND_TYPEN } from './objekte'
-import { geladen } from './laden'
+import { geladen, vollstaendig } from './laden'
+import { Kennzahl } from './kennzahl'
+import { FRIST_TAGE, laeuftBaldAb } from './handlungsbedarf'
+// `alsDatum` und nicht `terminText`: `valid_until` ist ein `date`, kein
+// `timestamptz`. Der Unterschied ist im Repo schon einmal danebengegangen
+// (Fremdprüfung 04.08.2026 an `kontakte.inaktiv_seit`) und in `scheine.ts` bei
+// `alsBerlinDatum` ausführlich begründet.
+import { alsDatum, alsStatus, effektiverStatus } from './jagderlaubnisse/scheine'
 // Statt eines zweiten Intl-Formatters daneben: `terminText(…, false)` ist
 // bereits das Datum ohne Uhrzeit in Berliner Zeit. Der Endtermin einer
 // mehrtägigen Jagd ist ein Tag, keine Feierabendzeit (Migration 095).
@@ -36,9 +42,7 @@ const datumZeit = new Intl.DateTimeFormat('de-DE', {
   minute: '2-digit',
   timeZone: 'Europe/Berlin',
 })
-const zahl = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
-
-type Revier = { id: string; name: string; area_ha: number | null }
+type Revier = { id: string; name: string }
 type Jagd = {
   id: string
   name: string
@@ -46,6 +50,30 @@ type Jagd = {
   status: string | null
   scheduled_for: string | null
   scheduled_until: string | null
+}
+type Teilnehmer = {
+  id: string
+  hunt_id: string
+  user_id: string | null
+  guest_name: string | null
+  status: string | null
+}
+type Profil = { id: string; display_name: string | null }
+type Schein = {
+  id: string
+  holder_name: string | null
+  holder_id: string | null
+  status: string | null
+  valid_from: string
+  valid_until: string
+}
+
+/** Eine Zeile der Agenda: Kopf mit Zahl, aufklappbar die Einzelfälle. */
+type Bedarf = {
+  schluessel: string
+  kopf: string
+  ziel: string
+  posten: { schluessel: string; text: string; zusatz: string }[]
 }
 
 /**
@@ -109,14 +137,14 @@ export default async function ZentraleUebersicht({
     )
   }
 
-  // `boundary` wird hier nicht mehr geladen: seit die Karte im Bereich „Revier"
-  // sitzt (08.08.2026), braucht die Übersicht von der Grenze nur noch das
-  // fertig gerechnete `area_ha`. Das ist bei Söder ein Polygon mit einigen
-  // hundert Stützpunkten je Seitenaufruf, das niemand mehr ansieht.
+  // Weder `boundary` noch `area_ha`: die Grenze fiel mit dem Kartenumzug weg
+  // (08.08.2026), die Fläche mit dem Trennsatz aus Konzept §1.3a am selben Tag.
+  // Sie ändert sich nur, wenn jemand die Grenze zieht — das ist Bestand und
+  // gehört damit zum Revier, nicht auf die Agenda.
   const reviere = geladen<Revier[]>(
     await supabase
       .from('districts')
-      .select('id, name, area_ha')
+      .select('id, name')
       .eq('owner_id', user.id)
       .eq('hidden', false)
       .order('name'),
@@ -142,45 +170,24 @@ export default async function ZentraleUebersicht({
   // Revierbesitzer als solcher hat keine eigene hunts-Policy — fremd angelegte
   // Jagden im eigenen Revier fehlen der Zählung also. Für den Piloten deckungs-
   // gleich (Moritz hat alle 17 selbst angelegt), aber keine Ewigkeitsgarantie.
-  const jagden = geladen<Jagd[]>(
+  //
+  // **Das wiegt seit dem 08.08.2026 schwerer, weil die Agenda daran hängt**
+  // (Fremdprüfung, P6): eine fremd angelegte Jagd fehlt jetzt nicht nur einer
+  // Zahl, sondern nimmt ihre offenen Einladungen mit aus „Zu erledigen". Der
+  // saubere Weg wäre ein owner-scoped Lesepfad — das ist eine Migration und
+  // liegt als eigener Vorgang im Backlog. Bis dahin sagt die Fußnote der
+  // Kennzahl, worauf sich die Zahl stützt, statt Vollständigkeit zu behaupten.
+  //
+  // **`vollstaendig` statt `geladen`** (Fremdprüfung, P3): ohne Zähler wäre eine
+  // Abschneidung bei 1000 Jagden unsichtbar, und die Agenda zeigte glaubwürdig
+  // „Nichts offen" — die schlimmste Ausgabe, die diese Sektion haben kann.
+  const jagden = vollstaendig<Jagd>(
     await supabase
       .from('hunts')
-      .select('id, name, type, status, scheduled_for, scheduled_until')
+      .select('id, name, type, status, scheduled_for, scheduled_until', { count: 'exact' })
       .eq('district_id', revier.id),
     'Jagden'
   )
-
-  // **Gezählt, nicht geladen** — seit dem 08.08.2026, als die Karte in den
-  // Bereich „Revier" gezogen ist. Vorher holte diese Seite jedes Objekt mit
-  // Position, Beschreibung und Foto-URL (Söder: 196 Zeilen), um daraus zwei
-  // Zahlen zu bilden und den Rest an die Karte zu reichen. Die Karte ist weg,
-  // die Zahlen bleiben.
-  //
-  // Das erledigt zugleich den heißesten Teil von C-25: die Objektabfrage war
-  // der Lesepfad der Zentrale mit dem kleinsten Abstand zur PostgREST-Grenze.
-  // Ein `head`-Count kann gar nicht abgeschnitten werden — er überträgt keine
-  // Zeilen, nur den Zähler.
-  const [objekteGesamt, sitze] = await Promise.all([
-    zaehle(
-      () =>
-        supabase
-          .from('map_objects')
-          .select('id', { count: 'exact', head: true })
-          .eq('district_id', revier.id),
-      'Kartenobjekte'
-    ),
-    // `STAND_TYPEN` statt einer zweiten Aufzählung: dieselbe Definition, aus
-    // der auch `istStand()` liest.
-    zaehle(
-      () =>
-        supabase
-          .from('map_objects')
-          .select('id', { count: 'exact', head: true })
-          .eq('district_id', revier.id)
-          .in('type', STAND_TYPEN),
-      'Sitze'
-    ),
-  ])
 
   // Umweg über die Jagd-IDs, weil kills.district_id von keinem Client
   // geschrieben wird (Konzept §4.1). Genau deshalb steht unter der Kennzahl
@@ -203,7 +210,7 @@ export default async function ZentraleUebersicht({
   }
 
   const jetzt = new Date()
-  const naechste = jagden
+  const kuenftige = jagden
     .filter(
       (j) =>
         j.scheduled_for !== null &&
@@ -212,10 +219,193 @@ export default async function ZentraleUebersicht({
         j.status !== 'auto_completed'
     )
     .sort((a, b) => a.scheduled_for!.localeCompare(b.scheduled_for!))
-    .slice(0, 5)
+
+  // Die Tabelle zeigt fünf, die Agenda darunter rechnet über alle. Vorher war
+  // das `.slice(0, 5)` Teil der Filterkette — wer die Einladungen daran hinge,
+  // verlöre die der sechsten Jagd, ohne dass es auffiele.
+  const naechste = kuenftige.slice(0, 5)
+
+  // **Bewusst der ZEITPUNKT und nicht der Kalendertag** (Schlusslesung
+  // 08.08.2026, offener Punkt): eine für heute 06:00 geplante Jagd fällt ab
+  // 06:01 aus `kuenftige`, ihre offenen Einladungen verschwinden also am Morgen
+  // des Jagdtags aus der Agenda — obwohl das die letzte Rückfrage-Gelegenheit
+  // wäre. In Kauf genommen, weil der Vergleich derselbe ist, den die Tabelle
+  // „Nächste Jagden" seit Phase 2 benutzt: zwei verschiedene Begriffe von
+  // „künftig" auf einer Seite wären schlimmer als der frühe Wegfall. Wer das
+  // ändert, ändert beides zusammen — und dann auf den BERLINER Kalendertag,
+  // nicht auf den UTC-Tag.
 
   // Laufende Jagd: nur ein Hinweis, keine Live-Steuerung (§1.3, §3).
   const laufend = jagden.find((j) => j.status === 'active' || j.status === 'paused')
+
+  // ---------------------------------------------------------------------------
+  // Handlungsbedarf (Konzept §1.1 und §1.3a) — was eine Frist hat.
+  //
+  // §1.1 nennt ihn seit dem 25.07.2026, gebaut wurde er nie; an seiner Stelle
+  // standen vier Kennzahlen. Zwei davon sind mit §1.3a zum Revier gezogen, die
+  // zwei verbliebenen (Jagden, Strecke) wachsen von selbst und bleiben deshalb.
+  //
+  // **Die Auswahl ist an der Produktion gemessen (08.08.2026), nicht
+  // ausgedacht:** 3 offene Einladungen an künftigen Jagden, 3 ausgestellte
+  // Scheine ohne Inhaber, 1 bald ablaufender. Ebenso gemessen, was NICHT
+  // aufgenommen wurde — 11 Einladungen an vergangenen Jagden (Karteileichen,
+  // s. `brauchtAntwort`) und 22 Erlegungen ohne Revierzuordnung (revier-
+  // unabhängig, der Fix liegt im nativen Track, Backlog A-S7b).
+  // ---------------------------------------------------------------------------
+
+  // Ohne künftige Jagd gar nicht erst fragen: `.in('hunt_id', [])` serialisiert
+  // die Bibliothek zu `in.()`, was PostgREST nicht annimmt — dieselbe Falle wie
+  // bei der Strecke oben.
+  const einladungen =
+    kuenftige.length > 0
+      ? vollstaendig<Teilnehmer>(
+          await supabase
+            .from('hunt_participants')
+            .select('id, hunt_id, user_id, guest_name, status', { count: 'exact' })
+            .in(
+              'hunt_id',
+              kuenftige.map((j) => j.id)
+            )
+            .eq('status', 'invited'),
+          'Offene Einladungen'
+        )
+      : []
+
+  // `holder_id is null` wird NICHT in der Abfrage gefiltert: dieselben Zeilen
+  // tragen beide Agenda-Punkte (offen UND bald ablaufend), und bei vier Scheinen
+  // je Revier ist eine Abfrage billiger als zwei.
+  const scheine = vollstaendig<Schein>(
+    await supabase
+      .from('hunting_licenses')
+      .select('id, holder_name, holder_id, status, valid_from, valid_until', { count: 'exact' })
+      .eq('district_id', revier.id),
+    'Jagderlaubnisse'
+  )
+
+  // Nur die gebrauchten Profile, nicht alle. `profiles_select_authenticated`
+  // lässt jeden Angemeldeten jedes Profil lesen — ein ungefiltertes SELECT wäre
+  // damit ein Lesepfad, der mit der Nutzerzahl wächst und irgendwann an der
+  // PostgREST-Grenze abgeschnitten wird (C-25).
+  const profilIds = [...new Set(einladungen.map((t) => t.user_id).filter((id) => id !== null))]
+  const profile =
+    profilIds.length > 0
+      ? vollstaendig<Profil>(
+          await supabase
+            .from('profiles')
+            .select('id, display_name', { count: 'exact' })
+            .in('id', profilIds),
+          'Profile'
+        )
+      : []
+  const namen = new Map(profile.map((p) => [p.id, p.display_name]))
+
+  // **EIN Uhrablesen für die ganze Seite** (Fremdprüfung, P8). Vorher kam
+  // `heute` aus `heuteUtc()`, also aus einer zweiten Ablesung nach mehreren
+  // Abfragen — ein Request über UTC-Mitternacht hätte Einladungen gegen den
+  // alten und Scheine gegen den neuen Kalendertag bewertet.
+  const heute = jetzt.toISOString().slice(0, 10)
+  const jagdName = new Map(jagden.map((j) => [j.id, j]))
+
+  const bedarf: Bedarf[] = []
+
+  // Kein Client-Filter mehr: die Abfrage oben garantiert `status = 'invited'`
+  // UND eine künftige Jagd (über `kuenftige`). Ein Prädikat daneben, das nie
+  // `false` liefern kann, ist die Bauform, die die Ponytail-Lesung am
+  // 08.08.2026 gestrichen hat — s. den Kommentarblock in `handlungsbedarf.ts`.
+  const offeneAntworten = einladungen
+  if (offeneAntworten.length > 0) {
+    bedarf.push({
+      schluessel: 'einladungen',
+      kopf: `${offeneAntworten.length} ${
+        offeneAntworten.length === 1 ? 'Gast hat' : 'Gäste haben'
+      } noch nicht geantwortet`,
+      ziel: `/zentrale/jagden?revier=${revier.id}`,
+      posten: offeneAntworten.map((t) => {
+        const jagd = jagdName.get(t.hunt_id)
+        return {
+          schluessel: t.id,
+          // Reihenfolge der Quellen wie im Jagd-Detail: Profilname, sonst der
+          // beim Einladen getippte Gastname. Beides kann fehlen — dann steht
+          // hier „Ohne Namen" statt einer leeren Zeile, die wie ein Ladefehler
+          // aussähe.
+          text: namen.get(t.user_id ?? '') || t.guest_name || 'Ohne Namen',
+          zusatz: jagd ? `${jagd.name} · ${terminText(jagd.scheduled_for, false)}` : '—',
+        }
+      }),
+    })
+  }
+
+  // Einmal je Schein, weil beide Zeilen darunter ihn brauchen. `status` kippt
+  // nicht von selbst — ein abgelaufener Schein steht in der Spalte weiter auf
+  // `aktiv` (s. `scheine.ts`).
+  const mitStatus = scheine.map((s) => ({
+    schein: s,
+    status: effektiverStatus(alsStatus(s.status), s.valid_from, s.valid_until, heute),
+  }))
+
+  // **`holder_id === null` allein genügt NICHT** (Fremdprüfung, P9): ein
+  // entzogener, pausierter oder abgelaufener Schein hat auch keinen Inhaber —
+  // und kann keinen mehr bekommen. Ohne die Statusbedingung stünde er für immer
+  // als „wartet auf Annahme" da. Das ist zeichengleich die Karteileichen-Falle,
+  // die bei den Einladungen benannt ist — hier wäre sie mir selbst passiert.
+  //
+  // **`nochnicht` gehört aber DAZU, und der erste Fix hatte es ausgesperrt**
+  // (Schlusslesung 08.08.2026, B1). Die Begründung, die hier stand —
+  // `schein_einloesen()` nehme „nur `aktiv` und ein gültiges Datum" — ist an
+  // der Produktion nachgeprüft **falsch**: weder `schein_einloesen()` (068)
+  // noch `meine_einladungen()` (080) werten `valid_from` überhaupt aus, beide
+  // prüfen `status = 'aktiv'` (die ROHE Spalte) und `valid_until >=
+  // current_date`. Ein heute für die kommende Saison ausgestellter Schein wird
+  // dem Empfänger also angezeigt, ist einlösbar und wartet wirklich — die
+  // Agenda hätte „Nichts offen" gesagt.
+  //
+  // **Dritte Wiederholung derselben Falle, und die zweite steht in der Datei
+  // nebenan:** `darfGedrucktWerden` in `scheine.ts` prüfte im ersten Entwurf
+  // ebenfalls `=== 'aktiv'` und sperrte damit den Saison-Vorab-Schein aus —
+  // dort ausdrücklich „der häufigste Fall überhaupt" (Schlusslesung
+  // 05.08.2026, Befund 1). Wer in diesem Projekt auf `aktiv` filtert, prüft,
+  // ob `nochnicht` dazugehört.
+  //
+  // In `laeuftBaldAb` bleibt es bei `aktiv` allein, und das ist kein
+  // Widerspruch: ein Schein, der noch gar nicht begonnen hat, läuft nicht bald
+  // ab.
+  const nichtEingeloest = mitStatus
+    .filter(
+      (m) => m.schein.holder_id === null && (m.status === 'aktiv' || m.status === 'nochnicht')
+    )
+    .map((m) => m.schein)
+  if (nichtEingeloest.length > 0) {
+    bedarf.push({
+      schluessel: 'scheine-offen',
+      kopf: `${nichtEingeloest.length} ${
+        nichtEingeloest.length === 1 ? 'Jagderlaubnis wartet' : 'Jagderlaubnisse warten'
+      } auf Annahme`,
+      ziel: `/zentrale/jagderlaubnisse?revier=${revier.id}`,
+      posten: nichtEingeloest.map((s) => ({
+        schluessel: s.id,
+        text: s.holder_name || 'Ohne Namen',
+        zusatz: `ausgestellt bis ${alsDatum(s.valid_until)}`,
+      })),
+    })
+  }
+
+  const laufenAb = mitStatus
+    .filter((m) => laeuftBaldAb(m.status, m.schein.valid_until, heute))
+    .map((m) => m.schein)
+  if (laufenAb.length > 0) {
+    bedarf.push({
+      schluessel: 'scheine-ablauf',
+      kopf: `${laufenAb.length} ${
+        laufenAb.length === 1 ? 'Jagderlaubnis läuft' : 'Jagderlaubnisse laufen'
+      } binnen ${FRIST_TAGE} Tagen ab`,
+      ziel: `/zentrale/jagderlaubnisse?revier=${revier.id}`,
+      posten: laufenAb.map((s) => ({
+        schluessel: s.id,
+        text: s.holder_name || 'Ohne Namen',
+        zusatz: `bis ${alsDatum(s.valid_until)}`,
+      })),
+    })
+  }
 
   return (
     <div className="zentrale-wrap">
@@ -235,25 +425,61 @@ export default async function ZentraleUebersicht({
         </div>
       )}
 
+      {/* Zwei statt vier: Fläche und Sitze sind mit Konzept §1.3a zum Revier
+          gezogen. Was hier steht, wächst von selbst — eine Jagd wird angelegt,
+          jemand meldet eine Erlegung. Genau das ist der Test des Trennsatzes. */}
       <div className="zentrale-kennzahlen">
-        <Kennzahl label="Jagden" wert={String(jagden.length)} fuss="im Revier insgesamt" />
+        {/* „soweit dir sichtbar" statt „insgesamt": der Revierbesitzer hat
+            keine eigene hunts-Policy, fremd angelegte Jagden fehlen der Zahl.
+            Der Vorbehalt stand bisher nur als Kommentar im Code — seit die
+            Agenda daran hängt, gehört er auf die Seite (Fremdprüfung, P6). */}
+        <Kennzahl label="Jagden" wert={String(jagden.length)} fuss="in diesem Revier, soweit dir sichtbar" />
         <Kennzahl
           label="Strecke"
           wert={String(strecke)}
           fuss="nur über Jagden zuordenbar — kills.district_id wird noch nicht geschrieben"
         />
-        <Kennzahl
-          label="Fläche"
-          wert={revier.area_ha === null ? '—' : zahl.format(revier.area_ha)}
-          einheit={revier.area_ha === null ? undefined : 'ha'}
-          fuss={revier.area_ha === null ? 'keine Grenze gezeichnet' : 'aus der Reviergrenze'}
-        />
-        <Kennzahl
-          label="Sitze"
-          wert={String(sitze)}
-          fuss={`von ${objekteGesamt} ${objekteGesamt === 1 ? 'Kartenobjekt' : 'Kartenobjekten'}`}
-        />
       </div>
+
+      <section className="zentrale-block">
+        <h2>Zu erledigen</h2>
+        {bedarf.length === 0 ? (
+          /* Der leere Zustand muss nach „nichts zu tun" aussehen und nicht nach
+             „kaputt" — im Bestand gibt es heute genau eine künftige Jagd, die
+             Agenda ist also oft leer (Konzept §1.3a, letzter Absatz). */
+          <p className="zentrale-leer">Nichts offen.</p>
+        ) : (
+          /* `role="list"` ist hier NICHT redundant (Fremdprüfung Paket B, Q8):
+             WebKit nimmt einer `<ul>` mit `list-style: none` bewusst die
+             Listensemantik, VoiceOver sagt dann weder Gruppierung noch Anzahl
+             an. Beide Listen tragen es, beide sind markerlos. */
+          <ul className="zentrale-bedarf" role="list">
+            {bedarf.map((z) => (
+              <li key={z.schluessel}>
+                {/* `<details>` statt eines Client-States: das Aufklappen kann
+                    der Browser selbst, samt Tastaturbedienung und
+                    Screenreader-Ansage. Diese Seite bleibt dadurch eine reine
+                    Server-Komponente — ein `'use client'` nur fürs Auf- und
+                    Zuklappen wäre der teuerste Weg zu einem Dreieck. */}
+                <details>
+                  <summary>{z.kopf}</summary>
+                  <ul className="zentrale-bedarf-posten" role="list">
+                    {z.posten.map((p) => (
+                      <li key={p.schluessel}>
+                        <span className="name">{p.text}</span>
+                        <span className="zusatz">{p.zusatz}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <a className="zentrale-bedarf-ziel" href={z.ziel}>
+                    Dort bearbeiten →
+                  </a>
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="zentrale-block">
         <h2>Nächste Jagden</h2>
@@ -318,25 +544,3 @@ function Hinweis({
   )
 }
 
-function Kennzahl({
-  label,
-  wert,
-  einheit,
-  fuss,
-}: {
-  label: string
-  wert: string
-  einheit?: string
-  fuss: string
-}) {
-  return (
-    <div className="zentrale-kennzahl">
-      <div className="lbl">{label}</div>
-      <div className="wert">
-        {wert}
-        {einheit && <span className="einheit"> {einheit}</span>}
-      </div>
-      <div className="fuss">{fuss}</div>
-    </div>
-  )
-}

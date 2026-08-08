@@ -292,6 +292,54 @@
 }
 .zentrale-leer { color: var(--z-text-secondary); font-size: 0.875rem; margin: 0; }
 
+/* Handlungsbedarf (Konzept §1.3a): aufklappbare Zeilen mit Frist.
+   Jeder Selektor beginnt bei einer eigenen Klasse — ein späteres `<details>`
+   anderswo im Portal bleibt unberührt. Dieselbe Disziplin, die den
+   Kartenumzug am 08.08.2026 folgenlos gemacht hat.
+   (Der Satz hieß hier zuerst „kein Element-Selektor auf `summary` oder
+   `details`" und stand drei Zeilen über genau so einem. Gemeint war Scoping,
+   nicht Vermeidung — Ponytail-Lesung 08.08.2026.)
+   ⚠ `list-style: none` nimmt einer Liste in WebKit die Semantik; beide `<ul>`
+   im Markup tragen deshalb ein ausdrückliches `role="list"`. */
+.zentrale-bedarf { list-style: none; margin: 0; padding: 0; }
+.zentrale-bedarf > li + li { margin-top: 8px; }
+.zentrale-bedarf > li > details {
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.zentrale-bedarf > li > details > summary {
+  cursor: pointer;
+  font-size: 0.9375rem;
+  /* Der eingebaute Marker bleibt: er ist das Zeichen, dass hier etwas
+     aufgeht, und er dreht sich beim Öffnen ohne eine Zeile JavaScript. */
+}
+.zentrale-bedarf-posten {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--z-border);
+}
+.zentrale-bedarf-posten li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 8px 0 0;
+  font-size: 0.875rem;
+}
+.zentrale-bedarf-posten .zusatz {
+  color: var(--z-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.zentrale-bedarf-ziel {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  color: var(--z-accent);
+}
+
 /* Die Höhe sitzt bewusst am Kasten, nicht hier: der Kinomodus schaltet sie um,
    und der Kasten ist die Komponente, die den Knopf dafür trägt. */
 .zentrale-karte {
