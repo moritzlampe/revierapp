@@ -6,7 +6,7 @@
 //
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 import assert from 'node:assert/strict'
-import { ausWriteErgebnis, schreibe, type WriteErgebnis } from './schreiben.ts'
+import { ausWriteErgebnis, schreibe, schreibeViele, type WriteErgebnis } from './schreiben.ts'
 
 // Die R3-Allowlist ist am 29.07.2026 weggefallen (Phase 3 abgenommen, alle
 // Reviere bearbeitbar). Ihre drei Testfaelle sind mit ihr verschwunden — ein
@@ -70,5 +70,58 @@ await schreibe('Reviergrenze', () => {
   return Promise.resolve({ data: [{ id: 'a' }], error: null })
 })
 assert.equal(laeufe, 1)
+
+// --- schreibeViele(): Positivkontrolle ---
+const zeilen = await schreibeViele<{ id: string }>('Die Staende', 2, () =>
+  Promise.resolve({ data: [{ id: 'a' }, { id: 'b' }], error: null }),
+)
+assert.deepEqual(zeilen, [{ id: 'a' }, { id: 'b' }])
+
+// **Der Fall, fuer den es die Funktion gibt: eine TEILweise durchgekommene
+// Menge.** Ein Buendel-Insert ueber RLS ist kein Alles-oder-nichts; wer nur auf
+// „mehr als null" prueft, meldet vier von zwanzig Staenden als Erfolg.
+await assert.rejects(
+  () =>
+    schreibeViele<{ id: string }>('Die Staende', 3, () =>
+      Promise.resolve({ data: [{ id: 'a' }], error: null }),
+    ),
+  /1 von 3 Datens/,
+)
+
+// 0 Zeilen ist derselbe Fehler, nicht ein eigener.
+await assert.rejects(
+  () =>
+    schreibeViele<{ id: string }>('Die Staende', 1, () =>
+      Promise.resolve({ data: null, error: null }),
+    ),
+  /0 von 1 Datens/,
+)
+
+// MEHR als erwartet ist ebenfalls ein Fehler — dann fehlt eine Einschraenkung.
+await assert.rejects(
+  () =>
+    schreibeViele<{ id: string }>('Die Staende', 1, () =>
+      Promise.resolve({ data: [{ id: 'a' }, { id: 'b' }], error: null }),
+    ),
+  /2 von 1 Datens/,
+)
+
+// Ein echter Fehler schlaegt die Zeilenpruefung.
+await assert.rejects(
+  () =>
+    schreibeViele<{ id: string }>('Die Staende', 1, () =>
+      Promise.resolve({ data: null, error: { message: '23505' } }),
+    ),
+  /konnte nicht geschrieben werden: 23505/,
+)
+
+// Nichts zu schreiben ist kein Fehler: `erwartet = 0` mit leerer Antwort geht
+// durch. Der Aufrufer darf damit bedingungslos aufrufen, statt vorher zu zaehlen.
+assert.deepEqual(
+  await schreibeViele<{ id: string }>('Die Staende', 0, () =>
+    Promise.resolve({ data: [], error: null }),
+  ),
+  [],
+)
 
 console.log('zentrale/schreiben: alle Faelle ok')

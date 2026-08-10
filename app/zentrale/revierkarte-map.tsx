@@ -236,10 +236,21 @@ function ZuAuswahl({ id, lat, lng }: { id: string | null; lat?: number; lng?: nu
 function Objekte({
   punkte,
   auswahlId,
+  markiert,
   aufAuswahl,
 }: {
   punkte: Punkt[]
   auswahlId: string | null
+  /**
+   * Mehrfachauswahl (Phase 4b): die Stände, die zu einem Treiben gehören.
+   *
+   * Additiv neben `auswahlId`, nicht an dessen Stelle. Die Revierkarte wählt
+   * genau EIN Objekt für ihren Inspektor; die Treiben-Karte wählt eine MENGE
+   * und hat keinen Inspektor. Beides in `auswahlId` zu pressen hieße, den
+   * Einzelfall im Sonderfall auszudrücken — und den live genutzten Lesepfad der
+   * Revierkarte für eine Seite anzufassen, die es gestern noch nicht gab.
+   */
+  markiert?: ReadonlySet<string>
   /** `undefined`, solange die Grenze gezeichnet wird — dann sind Klicks Punkte. */
   aufAuswahl?: (id: string) => void
 }) {
@@ -252,7 +263,7 @@ function Objekte({
   return (
     <>
       {punkte.map((p) => {
-        const gewaehlt = p.id === auswahlId
+        const gewaehlt = p.id === auswahlId || !!markiert?.has(p.id)
         // Der Name des ausgewählten Objekts steht immer, auch weit herausgezoomt:
         // sonst wäre die Auswahl unter Zoom 16 nur ein Ring ohne Auskunft.
         const nameSteht = namenFest || gewaehlt
@@ -303,7 +314,7 @@ function Objekte({
           der Marker selbst behält seine Sitz-/Kein-Sitz-Färbung, die Auswahl
           würde sie sonst überschreiben und eine Information verdecken. */}
       {punkte
-        .filter((p) => p.id === auswahlId)
+        .filter((p) => p.id === auswahlId || markiert?.has(p.id))
         .map((p) => (
           <CircleMarker
             key={`auswahl-${p.id}`}
@@ -336,6 +347,7 @@ export default function RevierkarteMap({
   zeichnen,
   setzen,
   auswahlId = null,
+  markiert,
   aufAuswahl,
   randRechts = 0,
 }: KarteProps & {
@@ -343,6 +355,8 @@ export default function RevierkarteMap({
   /** Setzmodus (Schritt 3b) — schließt `zeichnen` aus, beide wollen den Klick. */
   setzen?: SetzProps
   auswahlId?: string | null
+  /** Mehrfachauswahl der Treiben-Karte (4b) — s. `Objekte`. */
+  markiert?: ReadonlySet<string>
   aufAuswahl?: (id: string) => void
   /** Breite, die die Objektspalte rechts überdeckt — Zuschlag für `fitBounds`. */
   randRechts?: number
@@ -432,6 +446,7 @@ export default function RevierkarteMap({
       <Objekte
         punkte={punkte}
         auswahlId={zeichnen ? null : auswahlId}
+        markiert={markiert}
         aufAuswahl={waehlbar}
       />
       <ZuAuswahl

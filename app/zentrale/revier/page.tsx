@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { parsePointHex, parsePolygonHex } from '@/lib/geo-utils'
+import { parsePolygonHex } from '@/lib/geo-utils'
+import { punktAus } from '../karte-geo'
 import Revierkarte from '../revierkarte'
 import type { Punkt } from '../revierkarte-map'
 import { geladen, vollstaendig } from '../laden'
@@ -51,24 +52,6 @@ type Objekt = {
   position: unknown
   description: string | null
   photo_url: string | null
-}
-
-/**
- * PostgREST liefert geometry als GeoJSON; der Hex-Pfad ist der Fallback für
- * andere Aufrufer (dieselbe Asymmetrie wie in `parsePolygonHex`).
- *
- * Mit der Karte aus `../page.tsx` hierher gezogen — dort ist er nach dem Umzug
- * ohne Aufrufer, weil die Übersicht die Objekte nur noch ZÄHLT.
- */
-function punktAus(input: unknown): { lat: number; lng: number } | null {
-  if (input && typeof input === 'object' && 'type' in input && 'coordinates' in input) {
-    const geo = input as { type: string; coordinates: number[] }
-    if (geo.type === 'Point' && Array.isArray(geo.coordinates) && geo.coordinates.length >= 2) {
-      return { lat: geo.coordinates[1], lng: geo.coordinates[0] }
-    }
-    return null
-  }
-  return typeof input === 'string' ? parsePointHex(input) : null
 }
 
 export default async function RevierPage({

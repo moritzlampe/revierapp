@@ -465,7 +465,40 @@
   /* Nur im Vollbild sichtbar, sonst deckt die Karte alles. */
   background: var(--z-bg-base);
 }
-.zentrale-karte-kasten.kino { height: 78vh; }
+/* **Kinomodus = Overlay im BROWSERFENSTER, nicht Vollbild** (Moritz,
+   10.08.2026: „das soll quasi viel groesser werden in dem fenster was der
+   browser hat aber nicht das vollbild nutzen — dann ueberdeckt es bei grossen
+   monitoren auch das browserfenster daneben oder die excel").
+
+   Vorher stand hier nur `height: 78vh`. Das aenderte die Hoehe und liess die
+   Breite bei den 1200px von `.zentrale-wrap` — auf einem grossen Monitor blieb
+   links und rechts alles leer. `position: fixed` bricht aus dem Wrap aus und
+   fuellt das Fenster; der Monitor daneben bleibt frei, anders als bei
+   `:fullscreen` eine Regel weiter unten.
+
+   Der z-index liegt UNTER den Leaflet-Controls (1000), aber ueber dem
+   Seiteninhalt: die Karte samt ihrer Knopfleiste bringt ihren eigenen Stapel
+   mit, sobald der Kasten positioniert ist.
+
+   **Gilt fuer BEIDE Karten** (Revier-Editor und Treiben) — sie teilen sich die
+   Klasse, und dieselbe Schaltflaeche soll nicht an zwei Stellen Verschiedenes
+   tun. Voraussetzung dafuer ist, dass die Knopfleiste IM Kasten haengt; sonst
+   liegt der Ausstieg hinter dem Overlay (Fremdpruefung 10.08.2026, K1). */
+.zentrale-karte-kasten.kino {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  height: auto;
+}
+
+/* Die Seite darunter still halten — **ohne JavaScript und damit ohne
+   Cleanup-Risiko.** Ein `useEffect`, der `document.body` sperrt, muesste in
+   beiden Kartenkomponenten stehen und in beiden richtig aufraeumen; vergisst
+   eine das, bleibt die ganze Seite unscrollbar. `:has()` kann nicht vergessen
+   werden: die Regel gilt genau solange, wie ein Kasten die Klasse traegt. */
+body:has(.zentrale-karte-kasten.kino) {
+  overflow: hidden;
+}
 /* Der Grund steht schon in der Grundregel — hier nur die Maße. */
 .zentrale-karte-kasten:fullscreen { height: 100vh; width: 100vw; }
 

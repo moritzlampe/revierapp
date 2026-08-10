@@ -388,6 +388,25 @@ export default function Revierkarte({
     return () => document.removeEventListener('fullscreenchange', wechsel)
   }, [])
 
+  /**
+   * **ESC verlässt den Kinomodus** (Fremdprüfung 10.08.2026, O6). Seit er ein
+   * Fenster-Overlay ist, verdeckt er die ganze Seite — und eine Fläche, die
+   * alles verdeckt, muss auf die Taste hören, mit der man Überlagerungen
+   * schließt. Das Vollbild bekommt seine ESC-Behandlung vom Browser; der
+   * Kinomodus ist unser eigener Zustand und hätte sonst nur den Mausweg.
+   *
+   * `capture: false` und die Prüfung auf `kino` sind Absicht: solange kein
+   * Kinomodus läuft, fängt hier nichts ab, was ein Formular sonst bekäme.
+   */
+  useEffect(() => {
+    if (!kino) return
+    const taste = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setKino(false)
+    }
+    document.addEventListener('keydown', taste)
+    return () => document.removeEventListener('keydown', taste)
+  }, [kino])
+
   const umschalten = () => {
     if (voll) {
       document.exitFullscreen().catch(() => {})

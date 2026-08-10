@@ -4,7 +4,10 @@ import { useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import type { Punkt } from '../../revierkarte-map'
 import { schreibe } from '../../schreiben'
+import TreibenBereich from './treiben-bereich'
+import type { Treiben } from './treiben'
 import {
   alsEingabewert,
   alsTerminwert,
@@ -75,6 +78,9 @@ export default function Detail({
   eigeneId,
   erstellerId,
   istLeiter,
+  treiben,
+  punkte,
+  grenze,
 }: {
   jagd: Jagd
   revierName: string | null
@@ -87,6 +93,11 @@ export default function Detail({
   erstellerId: string
   /** Ersteller ODER zugesagter Rollen-Jagdleiter. Serverseitig entschieden. */
   istLeiter: boolean
+  /** Treiben der Jagd (4b) — leer, wenn die Seite sie nicht geladen hat. */
+  treiben: Treiben[]
+  /** Die Stände des Reviers als Kartenpunkte. Leer ohne Revier. */
+  punkte: Punkt[]
+  grenze: [number, number][][] | null
 }) {
   const router = useRouter()
   const [bearbeiten, setBearbeiten] = useState(false)
@@ -560,6 +571,14 @@ export default function Detail({
 
       {schreibbar ? (
         <Einladen kandidaten={alleKandidaten} gesperrt={laedtNach} aufEinladen={einladen} />
+      ) : null}
+
+      {/* Treiben & Stände (Phase 4b). Die Seite lädt sie unter derselben
+          Bedingung, unter der sie hier erscheinen — `treiben` ist sonst leer
+          und `grenze` null. Ohne Revier gibt es keine Karte und damit keine
+          Standauswahl; ohne Jagdleiterrecht wiese RLS jeden Write ab. */}
+      {schreibbar && revierId ? (
+        <TreibenBereich jagdId={jagd.id} treiben={treiben} punkte={punkte} grenze={grenze} />
       ) : null}
     </>
   )

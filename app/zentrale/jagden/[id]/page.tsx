@@ -1,14 +1,20 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { geladen } from '../../laden'
+import { parsePolygonHex } from '@/lib/geo-utils'
+import { punktAus } from '../../karte-geo'
+import { STAND_TYPEN } from '../../objekte'
+import { geladen, vollstaendig } from '../../laden'
+import type { Punkt } from '../../revierkarte-map'
 import Detail from './detail'
+import { ausZeilen, type TreibenZeile } from './treiben'
 import {
   ersterWert,
   type EinladbarerKontakt,
   type Jagd,
   type Profil,
   type Teilnehmer,
+  vorbereitbar,
 } from '../jagden'
 import '../jagden.css'
 
@@ -24,6 +30,16 @@ import '../jagden.css'
 interface Revier {
   id: string
   name: string
+  /** Für die Treiben-Karte (4b). PostGIS-Geometry, als EWKB-Hex oder GeoJSON. */
+  boundary: unknown
+}
+
+/** `map_objects`-Zeile, so weit die Treiben-Karte sie braucht. */
+interface Objekt {
+  id: string
+  name: string
+  type: string
+  position: unknown
 }
 
 export default async function JagdDetailPage({
@@ -92,7 +108,11 @@ export default async function JagdDetailPage({
 
   // Das Revier der Jagd — und zugleich die Prüfung, ob es ein eigenes ist.
   const reviere = geladen<Revier[]>(
-    await supabase.from('districts').select('id, name').eq('owner_id', user.id).eq('hidden', false),
+    await supabase
+      .from('districts')
+      .select('id, name, boundary')
+      .eq('owner_id', user.id)
+      .eq('hidden', false),
     'Reviere'
   )
   const revier = reviere.find((r) => r.id === jagd.district_id)
@@ -160,6 +180,116 @@ export default async function JagdDetailPage({
   const istLeiter =
     jagd.creator_id === user.id || (eigene?.status === 'joined' && eigene?.role === 'jagdleiter')
 
+  /**
+   * **Treiben und Stände (Phase 4b) — nur mit Revier.** Ein Treiben ist eine
+   * Auswahl auf der Revierkarte; eine Jagd ohne `district_id` (jede Solojagd,
+   * 17 von 25 im Bestand) hat keine, und die Sektion entfällt dann ganz statt
+   * eine leere Karte zu zeigen.
+   *
+   * **Der Ersteller liest die Treiben über seine eigene Teilnehmerzeile**, nicht
+   * über `creator_id`: die einzige SELECT-Policy auf `hunt_drives` ist
+   * `hunt_drives_participant_select` über `get_my_joined_hunt_ids()`, und die
+   * verlangt eine Zeile mit `status = 'joined'`. Ein Ersteller ohne diese Zeile
+   * dürfte schreiben (`hunt_drives_creator_insert`) und bekäme seine eigene
+   * Zeile nicht zurück — `schreibe()` meldete dann einen Fehlschlag für einen
+   * geglückten Write. **Heute unerreichbar und gemessen: 0 von 25 Jagden haben
+   * einen Ersteller ohne beigetretene Jagdleiter-Zeile** (08.08.2026), und beide
+   * Anlegepfade schreiben sie mit (Portal `../liste.tsx`, App
+   * `hunt/create/page.tsx`). Wer das ändert, bricht diese Seite.
+   */
+  // Dieselbe Bedingung wie `schreibbar` in `detail.tsx`: das Portal BEREITET
+  // VOR, der Jagdtag gehört der App (Konzept §3). Eine laufende oder beendete
+  // Jagd lädt ihre Treiben hier gar nicht erst.
+  //
+  // **`jagd.type` wird bewusst NICHT geprüft** (Moritz, 10.08.2026, auf einen
+  // `[medium]`-Befund der Fremdprüfung hin entschieden). Ein Treiben an einer
+  // Ansitzjagd ist fachlich sinnlos — aber `type` ist auf DIESER Seite änderbar,
+  // und ein Filter versteckte beim Umstellen der Jagdart lautlos die bereits
+  // angelegten Treiben. Ein Zustand, der Daten unsichtbar macht, ohne dass
+  // jemand etwas gelöscht hat, ist teurer als eine sinnlose Möglichkeit.
+  // Fällig erst, wenn jemand versehentlich Treiben an einem Ansitz anlegt —
+  // dann zusammen mit einem Hinweis für genau diesen Fall.
+  const treibenSichtbar = !!revier && istLeiter && vorbereitbar(jagd.status)
+
+  const treibenZeilen = treibenSichtbar
+      ? vollstaendig<TreibenZeile>(
+          await supabase
+            .from('hunt_drives')
+            // Ein Literal, kein zusammengesetzter String: PostgREST typt den
+            // Embed über die Select-Zeichenkette. Dieselbe Auflage wie nativ.
+            .select(
+              'id, name, sequence, status, hunt_drive_stands ( id, map_object_id, seat_assignment_id )',
+              { count: 'exact' }
+            )
+            .eq('hunt_id', id)
+            .order('sequence', { ascending: true })
+            .order('created_at', { ascending: true }),
+          'Treiben'
+        )
+      : []
+
+  /**
+   * Die Kartenobjekte des Reviers. **Gelöschte kommen hier nicht an, und zwar
+   * durch RLS, nicht durch eine `.is()`-Bedingung:** alle fünf SELECT-Policies
+   * auf `map_objects` tragen `deleted_at IS NULL` (gemessen 08.08.2026). Das ist
+   * der Grund, warum `standDiff()` seine `sichtbar`-Menge braucht — eine
+   * Standzeile auf einem gelöschten Objekt erreicht den Client nie und darf
+   * deshalb auch nie aus einem Kartenklick verschwinden. Im Bestand gibt es
+   * genau eine solche Zeile.
+   *
+   * `vollstaendig()` mit demselben Argument wie auf der Revierseite: eine Karte
+   * mit fehlenden Ständen sieht nicht wie ein Fehler aus, sondern wie ein Revier
+   * ohne Stände. Söder hat 228 Objekte, der Abstand zur PostgREST-Grenze ist
+   * hier am kleinsten.
+   */
+  const objekte =
+    treibenSichtbar && revier
+      ? vollstaendig<Objekt>(
+          await supabase
+            .from('map_objects')
+            .select('id, name, type, position', { count: 'exact' })
+            .eq('district_id', revier.id)
+            // **Nur Standtypen, und die erste Fassung filterte NICHT** — sie lud
+            // alle Objekte, während der Kommentar in `treiben-bereich.tsx` „nur
+            // Stände" behauptete (Fremdprüfung 10.08.2026, A9 und B9). Auf der
+            // Karte war damit jeder Marker wählbar, und der Fremdschlüssel von
+            // `hunt_drive_stands.map_object_id` nimmt jeden `map_objects`-Typ:
+            // Parkplatz, Wildkamera oder Kirrung ließen sich als Stand
+            // speichern und später mit einem Schützen belegen.
+            //
+            // Der Filter sitzt in der ABFRAGE, nicht im Client: dann kann kein
+            // Codeweg im Browser versehentlich ein Nicht-Stand-Objekt anbieten —
+            // dieselbe Haltung wie beim `inaktiv_seit`-Filter der Kontakte
+            // weiter oben.
+            //
+            // `STAND_TYPEN` ist die vorhandene Hausregel aus `../../objekte`
+            // (`istStand`), keine zweite Liste. Im Bestand zeigen alle 204
+            // Standzeilen auf genau diese drei Typen (gemessen 10.08.2026) — der
+            // Filter nimmt also keiner bestehenden Zeile ihre Sichtbarkeit.
+            .in('type', STAND_TYPEN),
+          'Kartenobjekte'
+        )
+      : []
+
+  // `beschreibung` und `fotoUrl` bleiben `null`, statt geladen zu werden: die
+  // Treiben-Karte hat keinen Objekt-Inspektor, sie zeigt Namen und wählt aus.
+  // Der Typ ist trotzdem `Punkt` — ein zweiter Punkttyp wäre eine Pflegestelle
+  // für zwei ungenutzte Felder.
+  const punkte = objekte.reduce<Punkt[]>((acc, o) => {
+    const p = punktAus(o.position)
+    if (p)
+      acc.push({
+        id: o.id,
+        name: o.name,
+        typ: o.type,
+        lat: p.lat,
+        lng: p.lng,
+        beschreibung: null,
+        fotoUrl: null,
+      })
+    return acc
+  }, [])
+
   return (
     <div className="zentrale-wrap">
       {chatFehlt ? (
@@ -183,6 +313,9 @@ export default async function JagdDetailPage({
         eigeneId={user.id}
         erstellerId={jagd.creator_id}
         istLeiter={istLeiter}
+        treiben={ausZeilen(treibenZeilen)}
+        punkte={punkte}
+        grenze={revier ? parsePolygonHex(revier.boundary) : null}
       />
     </div>
   )

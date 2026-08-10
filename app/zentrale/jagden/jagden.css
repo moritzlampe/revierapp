@@ -495,3 +495,109 @@
   flex: 0 0 auto;
   width: auto;
 }
+
+/* --- Treiben & Stände (Phase 4b) ------------------------------------------
+   Die Karte braucht eine feste Höhe: Leaflet vermisst seinen Container, und
+   ein `height: 100%` ohne bemessenen Elternteil ergibt 0 Pixel — die Karte
+   wäre da und unsichtbar. Dieselbe Falle wie in `zentrale.css` an der
+   Revierkarte. */
+.jagd-treiben {
+  margin-top: 2rem;
+}
+
+.jagd-treiben-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.jagd-treiben-zeile {
+  border: 1px solid var(--line, #d9d4c7);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.jagd-treiben-kopf {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.jagd-treiben-nummer {
+  font-family: var(--font-mono, ui-monospace), monospace;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  min-width: 1.5rem;
+}
+
+.jagd-treiben-name {
+  font-weight: 600;
+}
+
+.jagd-treiben-knoepfe {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.jagd-treiben-frage {
+  font-size: 0.9rem;
+}
+
+.jagd-treiben-editor {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line, #d9d4c7);
+}
+
+.jagd-treiben-feld {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 24rem;
+}
+
+.jagd-treiben-feld span {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+/* Die Karte selbst sitzt in `.zentrale-karte-kasten` aus `zentrale.css` — die
+   Klasse bringt 420px, `.kino` (78vh) und `:fullscreen` (100vh) schon mit, und
+   damit ist die Treiben-Karte in allen drei Zustaenden exakt so gross wie die
+   Revierkarte. Hier steht nur, was dort fehlt. */
+/* Der Zaehler sitzt in der Knopfleiste IM Kasten (Fremdpruefung K1) — im
+   Vollbild ist er die einzige Rueckmeldung darauf, was ein Klick bewirkt hat.
+   Die Leiste selbst kommt aus `zentrale.css` und ist dort schon gestylt. */
+.jagd-treiben-zaehler {
+  font-size: 0.8125rem;
+  padding: 5px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-line);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* Fuellt die Buehne, solange der Leaflet-Chunk laedt — ohne Hoehe waere der
+   Kasten fuer einen Moment leer und die Seite spraenge beim Ankommen. */
+.jagd-treiben-karte-platzhalter {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.jagd-treiben-neu {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}

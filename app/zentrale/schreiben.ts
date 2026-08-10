@@ -95,3 +95,55 @@ export async function schreibe<T>(
 ): Promise<T> {
   return ausWriteErgebnis(await ausfuehren(), was)
 }
+
+/**
+ * Dasselbe für einen Write, der mehrere Zeilen auf einmal trifft.
+ *
+ * **Eine eigene Funktion, keine Lockerung von `ausWriteErgebnis`** — der
+ * `ponytail:`-Marker dort sagt genau das voraus, und der erste Aufrufer ist
+ * Phase 4b: die Standmenge eines Treibens wird als Bündel geschrieben
+ * (`hunt_drive_stands`), ein Stand je Zeile. Die Einzeiler-Prüfung
+ * beizubehalten heißt, dass ein zweiter betroffener Datensatz weiterhin ein
+ * Fehler ist, wo er einer ist.
+ *
+ * **`erwartet` ist der eigentliche Riegel und der Grund, warum es nicht
+ * `data.length > 0` heißt.** Wer nur auf „mehr als null" prüft, meldet vier von
+ * zwanzig betroffenen Ständen als Erfolg — und der Jagdleiter sieht am Abend
+ * vor der Jagd eine Standmenge, die er so nie gesetzt hat. Genau die Klasse
+ * Fehler, gegen die diese Datei existiert.
+ *
+ * **Wogegen der Riegel WIRKLICH wirkt, und die erste Fassung schrieb hier etwas
+ * Falsches** (Schlusslesung 10.08.2026, 10a): sie behauptete, ein Bündel-Insert
+ * über RLS sei „kein Alles-oder-nichts, PostgREST liefert zurück, was durchkam".
+ * Das stimmt nicht — ein mehrzeiliges INSERT ist EIN Statement und damit atomar;
+ * eine WITH-CHECK-Verletzung bricht die ganze Anweisung mit `42501` ab. Zwei
+ * andere Fälle bleiben, und für die steht der Riegel:
+ *
+ * 1. **DELETE mit `.in(...)`** trifft, was noch da ist. Wurde eine Zeile parallel
+ *    entfernt, kommen weniger zurück — der einzige Weg, das zu bemerken.
+ * 2. **Das `RETURNING` läuft durch die SELECT-Policy.** Wer schreiben, aber nicht
+ *    lesen darf, bekommt eine kleinere Zahl zurück, als er geschrieben hat. Das
+ *    meldet dann fälschlich einen Fehlschlag — laut und ohne Datenverlust, und
+ *    besser als ein stiller Teilerfolg.
+ *
+ * `.select()` bleibt Pflicht, aus demselben Grund wie oben.
+ */
+export async function schreibeViele<T>(
+  was: string,
+  erwartet: number,
+  ausfuehren: () => PromiseLike<WriteErgebnis<T>>,
+): Promise<T[]> {
+  const { data, error } = await ausfuehren()
+  if (error) {
+    throw new Error(`${was} konnte nicht geschrieben werden: ${error.message}`)
+  }
+  const zeilen = data ?? []
+  if (zeilen.length !== erwartet) {
+    throw new Error(
+      `${was}: ${zeilen.length} von ${erwartet} Datensätzen betroffen. Entweder gibt es ` +
+        'eine der Zeilen nicht (mehr), es greift eine RLS-Policy, oder dem Aufruf fehlt ' +
+        '.select().',
+    )
+  }
+  return zeilen
+}
