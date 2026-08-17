@@ -1,0 +1,166 @@
+// Gegenprobe fuer die Mitgliedschaftsrechnung der Standgruppen (Portal-Phase 4b).
+// Kein Test-Runner im Repo, deshalb ein eigenstaendiges Skript
+// (Muster: treiben.selftest.ts):
+//
+//   node --experimental-strip-types app/zentrale/revier/standgruppen.selftest.ts
+//
+// Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
+// Wird vom Sammel-Script `npm run selftest` per Glob mitgenommen.
+import assert from 'node:assert/strict'
+import { ausZeilen, gruppenDiff, markierungAus } from './standgruppen.ts'
+
+// --- markierungAus(): der Zustand, mit dem die Komponente gruppenDiff fuettert ---
+//
+// **Diese Reihe gab es zuerst NICHT, und genau in der Luecke sass der schwerste
+// Befund des Tages** (Schlusslesung 17.08.2026, F1). Das Seeding stand als
+// `new Set(g.staende)` inline in `oeffnen()`; die Umtyp-Zusicherung weiter unten
+// fuetterte `gruppenDiff` von Hand mit `markiert = {A}` — einem Zustand, den die
+// Komponente nie herstellt. Der Test war gruen und belegte die Funktion, nicht
+// das Feature.
+//
+// **Was diese Reihe NICHT deckt, ausdruecklich** (Delta-Durchgang 17.08.2026,
+// D5): die AUFRUFSTELLE. Wer `oeffnen()` auf `new Set(g.staende)` zurueckbaut
+// oder dort `sichtbar` statt `waehlbar` uebergibt, bekommt weiterhin einen
+// gruenen Lauf — die Mutationsprobe M5 traf den Funktionsrumpf, nicht den
+// Aufruf. Ohne Komponententest-Runner bleibt das offen; der Gewinn ist, dass
+// die Restluecke jetzt auf zwei kommentierten Zeilen sitzt statt auf einem
+// unbenannten Inline-Seeding.
+assert.deepEqual(
+  [...markierungAus(['A', 'UMGETYPT'], new Set(['A', 'B']))],
+  ['A'],
+  'ein nicht waehlbares Mitglied startet NICHT als angetippt',
+)
+assert.deepEqual(
+  [...markierungAus(['A', 'IM_PAPIERKORB'], new Set(['A', 'B']))],
+  ['A'],
+  'ein Mitglied im Papierkorb ebenso wenig',
+)
+assert.deepEqual(
+  [...markierungAus(['A', 'B'], new Set(['A', 'B', 'C']))],
+  ['A', 'B'],
+  'Positivkontrolle: waehlbare Mitglieder starten angetippt',
+)
+assert.deepEqual([...markierungAus([], new Set(['A']))], [], 'leere Gruppe')
+
+// --- gruppenDiff(): der Kern ---
+
+// Positivkontrolle zuerst: ohne sie belegt die Reihe darunter nur, dass die
+// Funktion gern nichts tut.
+const basis = ['A', 'B']
+const diffPositiv = gruppenDiff(basis, new Set(['B', 'C']), new Set(['A', 'B', 'C']))
+assert.deepEqual(diffPositiv.entfernen, ['A'], 'A wurde abgewaehlt')
+assert.deepEqual(diffPositiv.legen, ['C'], 'C ist neu')
+assert.equal(
+  diffPositiv.entfernen.length + diffPositiv.legen.length,
+  2,
+  'eine Aenderung je Richtung',
+)
+
+// Nichts geaendert heisst nichts schreiben.
+const diffGleich = gruppenDiff(basis, new Set(['A', 'B']), new Set(['A', 'B', 'C']))
+assert.deepEqual(diffGleich, { entfernen: [], legen: [] })
+
+// **Ein Stand im Papierkorb behaelt seine Mitgliedschaft.** Der Fremdschluessel
+// ist `on delete cascade`, aber ein Soft-Delete loescht keine Zeile — die
+// Mitgliedschaft bleibt, waehrend die SELECT-Policies auf `map_objects` den
+// Stand ausblenden (an der Produktion gemessen 17.08.2026). Ohne den
+// `sichtbar`-Riegel raeumte der erste Speichervorgang sie still weg, und wer den
+// Stand spaeter zurueckholte, bekaeme ihn ohne seine Gruppen zurueck.
+const mitPapierkorb = ['A', 'IM_PAPIERKORB']
+const diffPapierkorb = gruppenDiff(mitPapierkorb, new Set(['A']), new Set(['A', 'B']))
+assert.deepEqual(diffPapierkorb.entfernen, [], 'unsichtbar heisst nicht abgewaehlt')
+assert.deepEqual(diffPapierkorb.legen, [])
+// ... auch dann, wenn sonst alles abgewaehlt wird.
+const diffPapierkorbLeer = gruppenDiff(mitPapierkorb, new Set(), new Set(['A', 'B']))
+assert.deepEqual(diffPapierkorbLeer.entfernen, ['A'], 'nur der sichtbare Stand geht')
+
+// **Ein UMGETYPTER Stand wird abgewaehlt, ein geloeschter nicht — und genau
+// dafuer traegt `sichtbar` alle Objekttypen und nicht nur die waehlbaren**
+// (Fremdpruefung Codex 17.08.2026, Nr. 5). Wer im Objekt-Inspektor einen
+// Hochsitz zum Parkplatz macht, nimmt ihn von der Karte, aber nicht aus dem
+// Revier. Waeren beide Mengen dieselbe, fiele er unter den Papierkorb-Schutz
+// und die Mitgliedschaft waere GEFANGEN: mitgezaehlt, nicht sichtbar, nicht
+// entfernbar ausser durch Loeschen der ganzen Gruppe.
+//
+// Hier ist 'UMGETYPT' sichtbar (es ist ein Objekt des Reviers), aber nicht
+// markiert (es steht nicht auf der Karte) -> es geht raus, sichtbar als `-1`
+// am Zaehler, bevor gespeichert wird.
+// **Geprueft wird die KETTE, die die Komponente faehrt** — `markierungAus()`
+// beim Oeffnen, dann `gruppenDiff()` beim Speichern. Die erste Fassung setzte
+// `markiert` hier von Hand auf `{A}` und belegte damit nichts ueber das
+// Feature: die Komponente seedete in Wahrheit ALLE Mitglieder, das umgetypte
+// war angetippt, fiel aus `entfernen` heraus und blieb gefangen.
+const gruppeStaende = ['A', 'UMGETYPT']
+const aufDerKarte = new Set(['A', 'B']) // nur Standtypen
+const imRevier = new Set(['A', 'B', 'UMGETYPT']) // alle Objekte
+
+const diffUmgetypt = gruppenDiff(
+  gruppeStaende,
+  markierungAus(gruppeStaende, aufDerKarte),
+  imRevier,
+)
+assert.deepEqual(diffUmgetypt.entfernen, ['UMGETYPT'], 'kein Stand mehr, also raus aus der Gruppe')
+assert.deepEqual(diffUmgetypt.legen, [], 'und nichts wird dabei neu angelegt')
+
+// Gegenprobe auf derselben Kette: ein Mitglied im PAPIERKORB ist ebenfalls
+// nicht angetippt — es darf trotzdem NICHT hinausfliegen, weil `sichtbar` es
+// nicht enthaelt. Die beiden Faelle unterscheiden sich allein darin.
+const mitBeiden = ['A', 'UMGETYPT', 'IM_PAPIERKORB']
+const diffBeide = gruppenDiff(mitBeiden, markierungAus(mitBeiden, aufDerKarte), imRevier)
+assert.deepEqual(
+  diffBeide.entfernen,
+  ['UMGETYPT'],
+  'nur der umgetypte geht, der geloeschte bleibt',
+)
+
+// **`markiert` ist NICHT immer eine Teilmenge von `sichtbar`** — die Auswahl
+// steht im Browser, waehrend jemand den Stand in den Papierkorb legt. Beim
+// naechsten Rendern ist der Stand markiert, aber nicht mehr sichtbar; angelegt
+// werden darf er trotzdem nicht, denn die Zeile gibt es schon.
+//
+// **Was diese Zusicherung NICHT belegt, und der erste Kommentar behauptete es**
+// (Mutationsprobe M2, 17.08.2026): dass `vorhanden` gegen ALLE Mitglieder
+// pruefen muss statt nur gegen die sichtbaren. Die Mutation blieb gruen —
+// `legen` verlangt selbst `sichtbar.has(id)`, ein sichtbares Mitglied liegt
+// also in beiden Fassungen von `vorhanden`. Gehalten wird der Fall hier vom
+// `sichtbar`-Riegel (M3), nicht von `vorhanden`.
+const nurWeg = ['IM_PAPIERKORB']
+const diffWegMarkiert = gruppenDiff(nurWeg, new Set(['IM_PAPIERKORB']), new Set(['A']))
+assert.deepEqual(diffWegMarkiert.legen, [], 'die Zeile gibt es schon, auch wenn sie unsichtbar ist')
+assert.deepEqual(diffWegMarkiert.entfernen, [], 'und abgewaehlt wurde sie auch nicht')
+
+// **Ein markierter, aber unsichtbarer Stand wird NICHT angelegt.** Der
+// Fremdschluessel griffe nicht — die `map_objects`-Zeile existiert noch, sie
+// traegt nur `deleted_at`. Die Gruppe bekaeme lautlos ein Mitglied, das keine
+// Karte je wieder zeigt und das niemand mehr abwaehlen kann.
+const diffTot = gruppenDiff([], new Set(['WEG']), new Set(['A']))
+assert.deepEqual(diffTot.legen, [], 'was nicht auf der Karte steht, wird nicht verknuepft')
+assert.deepEqual(diffTot.entfernen, [])
+// Positivkontrolle daneben: sichtbar UND markiert wird sehr wohl angelegt.
+assert.deepEqual(gruppenDiff([], new Set(['A']), new Set(['A'])).legen, ['A'])
+
+// Eine leere Gruppe laesst sich befuellen, eine volle komplett raeumen.
+assert.deepEqual(gruppenDiff([], new Set(['A', 'B']), new Set(['A', 'B'])).legen, ['A', 'B'])
+assert.deepEqual(gruppenDiff(basis, new Set(), new Set(['A', 'B'])).entfernen, ['A', 'B'])
+
+// Ein doppelt gelieferter Stand wird nicht zweimal gelegt. Der
+// Primaerschluessel macht das in der DB unmoeglich; hier faellt es auf, falls
+// `vorhanden` je von einem Set auf ein Array zurueckgebaut wird.
+assert.deepEqual(gruppenDiff(['A', 'A'], new Set(['A']), new Set(['A'])).legen, [])
+
+// --- ausZeilen(): PostgREST-Form -> Domaenenform ---
+const ausZwei = ausZeilen([
+  {
+    id: 'g1',
+    name: 'Sauberg',
+    standgruppen_staende: [{ map_object_id: 'M1' }, { map_object_id: 'M2' }],
+  },
+  { id: 'g2', name: 'Buchberg', standgruppen_staende: [] },
+])
+assert.deepEqual(ausZwei, [
+  { id: 'g1', name: 'Sauberg', staende: ['M1', 'M2'] },
+  { id: 'g2', name: 'Buchberg', staende: [] },
+])
+assert.deepEqual(ausZeilen([]), [], 'ein Revier ohne Gruppen')
+
+console.log('standgruppen.selftest.ts: alle Zusicherungen gehalten')

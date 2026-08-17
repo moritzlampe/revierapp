@@ -1,0 +1,117 @@
+/* Revier — nur, was über `zentrale.css` hinausgeht.
+
+   **Eine eigene Datei, obwohl die Muster denen von `jagden.css` gleichen.**
+   Next lädt Route-CSS nur, wo es importiert wird: `.jagd-treiben-*` steht in
+   `jagden/jagden.css` und ist im Revierbereich schlicht nicht da. `jagden.css`
+   hier mitzuimportieren brächte 600 Zeilen Tabellen, Filter und Jagdlisten mit,
+   und Klassen, die `jagd-` heißen, in einen Bereich, der keine Jagd ist.
+
+   **Das ist im Repo GEMESSEN, nicht angenommen** — und der Beleg nennt zugleich
+   die Falle: `app/zentrale/gaeste/liste.tsx:565-572`. Dort stand `jagden-chip`
+   auf der Gästeseite, die Klasse hatte keine einzige Regel, und der aktive
+   Zustand war unsichtbar. Aufgefallen ist es erst Moritz beim Durchklicken
+   (04.08.2026) — weil es **nur beim direkten Laden** falsch aussah: kam man per
+   Klick von der Jagdliste, hing deren Stylesheet noch im Dokument und alles
+   wirkte richtig. Wer hier eine fremde Bereichsklasse benutzt, baut denselben
+   Fehler nach, und er zeigt sich nicht beim Testen.
+
+   **Was NICHT hierher gehört: die Sektion und ihre Überschrift.** Die tragen
+   `zentrale-block` aus `zentrale.css` — `.zentrale-block h2` ist die einzige
+   h2-Regel des Portals. Eine eigene Sektionsklasse hätte die Überschrift auf den
+   Browser-Default fallen lassen (Selbstlesung 17.08.2026).
+
+   ponytail: zweite Fassung derselben Listen-und-Editor-Muster. Nach `zentrale.css`
+   ziehen und generisch benennen, sobald eine DRITTE dazukommt — dieselbe
+   Schwelle, an der `namen.ts` entstanden ist. Bei zweien ist das Zusammenlegen
+   ein Umbau an zwei live genutzten Bereichen für nichts. */
+
+.revier-gruppen-liste {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.revier-gruppen-zeile {
+  border: 1px solid var(--z-border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.revier-gruppen-kopf {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.revier-gruppen-name {
+  font-weight: 600;
+}
+
+.revier-gruppen-knoepfe {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.revier-gruppen-frage {
+  font-size: 0.9rem;
+}
+
+.revier-gruppen-editor {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--z-border);
+}
+
+.revier-gruppen-feld {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 24rem;
+}
+
+.revier-gruppen-feld span {
+  font-size: 0.85rem;
+  color: var(--z-text-secondary);
+}
+
+/* Die Karte selbst sitzt in `.zentrale-karte-kasten` aus `zentrale.css` — die
+   Klasse bringt 420px, `.kino` (78vh) und `:fullscreen` (100vh) schon mit.
+   Hier steht nur, was dort fehlt.
+
+   Der Zaehler sitzt in der Knopfleiste IM Kasten: im Vollbild ist er die
+   einzige Rueckmeldung darauf, was ein Klick bewirkt hat. `elevated` statt des
+   `sunken` von `.zentrale-pill`, weil er ueber der Karte liegt und sich davon
+   abheben muss. */
+.revier-gruppen-zaehler {
+  font-size: 0.8125rem;
+  padding: 5px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* Fuellt die Buehne, solange der Leaflet-Chunk laedt — ohne Hoehe waere der
+   Kasten fuer einen Moment leer und die Seite spraenge beim Ankommen. */
+.revier-gruppen-karte-platzhalter {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.revier-gruppen-neu {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}

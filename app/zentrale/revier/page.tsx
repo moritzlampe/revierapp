@@ -8,6 +8,9 @@ import { geladen, vollstaendig } from '../laden'
 import { istStand } from '../objekte'
 import { Kennzahl } from '../kennzahl'
 import RevierName from '../revier-name'
+import StandgruppenBereich from './standgruppen-bereich'
+import { ausZeilen, type StandgruppeZeile } from './standgruppen'
+import './revier.css'
 
 const zahl = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
 
@@ -129,6 +132,42 @@ export default async function RevierPage({
     'Kartenobjekte'
   )
 
+  /**
+   * Standgruppen samt Mitgliedern (Migration 112).
+   *
+   * Ein Literal als Select-Zeichenkette, kein zusammengesetzter String:
+   * PostgREST typt den Embed darüber. Dieselbe Auflage wie bei den Treiben.
+   *
+   * `vollstaendig()` aus demselben Grund wie oben — eine Gruppe, die still
+   * fehlt, sieht aus wie eine, die es nie gab.
+   *
+   * **Der Zähler deckt nur die ÄUSSERE Menge, und die erste Fassung dieses
+   * Absatzes behauptete, die eingebetteten Mitglieder träfe der
+   * PostgREST-Default gar nicht** (Fremdprüfung Codex 17.08.2026, Nr. 4,
+   * `[low]`). Das stimmt nicht: die Grenze gilt auf allen Ebenen. Eine Gruppe
+   * mit mehr Mitgliedern als dem Limit lieferte ein gekürztes Array, und
+   * `vollstaendig()` bliebe stumm, weil der äußere Zähler passt.
+   *
+   * **Was die Sache heute hält, ist strukturell und nicht Bestandszufall:** der
+   * Primärschlüssel ist `(gruppe_id, map_object_id)`, eine Gruppe kann also
+   * nicht mehr Mitglieder haben, als das Revier Kartenobjekte hat — Söder 196.
+   * Fällig wird die Paginierung mit dem ersten Revier jenseits von 1000
+   * Objekten, nicht mit der ersten großen Gruppe.
+   *
+   * `.order('name')`: die Tabelle hat kein `sequence` und die Gruppe ist eine
+   * Menge — es gibt keine fachliche Reihenfolge, also die vorhersagbare.
+   */
+  const gruppen = ausZeilen(
+    vollstaendig<StandgruppeZeile>(
+      await supabase
+        .from('standgruppen')
+        .select('id, name, standgruppen_staende ( map_object_id )', { count: 'exact' })
+        .eq('district_id', revier.id)
+        .order('name'),
+      'Standgruppen'
+    )
+  )
+
   const grenze = parsePolygonHex(revier.boundary)
   const punkte = objekte.reduce<Punkt[]>((acc, o) => {
     const p = punktAus(o.position)
@@ -187,6 +226,46 @@ export default async function RevierPage({
         </div>
       </div>
 
+      {/**
+       * **Zwei Mengen, und sie dürfen nicht dieselbe sein** (Fremdprüfung Codex
+       * 17.08.2026, Nr. 5, `[medium]`):
+       *
+       * - `punkte` ist, was der Nutzer WÄHLEN kann: nur Standtypen.
+       *   `standgruppen_staende.map_object_id` nimmt jeden `map_objects`-Typ —
+       *   ein Parkplatz oder eine Wildkamera ließe sich sonst als Stand
+       *   speichern und später in ein Treiben kopieren. Dieselbe Lehre wie bei
+       *   den Treiben (Fremdprüfung 10.08.2026, A9/B9, dort `[high]`).
+       * - `sichtbareIds` ist, was der Nutzer SEHEN kann: alle Kartenobjekte des
+       *   Reviers, jeden Typs. Daraus rechnet `gruppenDiff()` seinen Schutz für
+       *   weich gelöschte Mitglieder.
+       *
+       * **Wären beide dieselbe Menge, wäre ein umgetypter Stand GEFANGEN:** wer
+       * im Objekt-Inspektor der Karte darüber einen Hochsitz zum Parkplatz
+       * macht, nähme sein Gruppenmitglied aus `sichtbar` — und der
+       * Papierkorb-Schutz hielte eine Zeile fest, die niemand mehr abwählen
+       * kann. Der Weg dorthin liegt auf DIESER Seite, keine zwei Klicks weit.
+       *
+       * **Der Filter läuft auf den geladenen Punkten statt in einer zweiten
+       * Abfrage**, und die Lehre „der Filter sitzt in der ABFRAGE, nicht im
+       * Client" hält trotzdem: `page.tsx` ist eine SERVER-Komponente, im
+       * Browser kommt die ungefilterte Liste nie an. Eine zweite Abfrage wäre
+       * eine zweite Ladung derselben Zeilen und eine zweite Wahrheit über „was
+       * ist ein Stand"; die Revierkarte darüber braucht ohnehin alle 196.
+       * `istStand()` statt einer eigenen Aufzählung, wie an der Kennzahl oben.
+       *
+       * **Weich gelöschte Objekte sind in BEIDEN Mengen schon draußen**, ohne
+       * dass die Abfrage sie ausschließt: alle SELECT-Policies auf
+       * `map_objects` tragen `deleted_at IS NULL` (an der Produktion als
+       * Besitzer gemessen, 17.08.2026 — 0 von 1 sichtbar).
+       */}
+      <StandgruppenBereich
+        key={revier.id}
+        revierId={revier.id}
+        gruppen={gruppen}
+        punkte={punkte.filter((p) => istStand(p.typ))}
+        sichtbareIds={punkte.map((p) => p.id)}
+        grenze={grenze}
+      />
     </div>
   )
 }
