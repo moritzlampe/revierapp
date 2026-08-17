@@ -57,8 +57,18 @@ assert.equal(sichtbarerName('\u200B Sauberg \u2060'), 'Sauberg')
 // gibt es keinen UNIQUE. **Fuer `standgruppen` gibt es einen**
 // (`UNIQUE (district_id, name)`, Migration 112): dort stuenden zwei optisch
 // identische Gruppennamen nebeneinander, wenn der Bereich es genauso macht.
-// Wer Paket B baut, entscheidet das bewusst — speichern, was geprueft wurde,
-// ODER die Doppelung in Kauf nehmen. Beides geht, stillschweigend geht nicht.
+// **ENTSCHIEDEN (Moritz, 17.08.2026): Standgruppen speichern, was geprueft
+// wurde** — `sichtbarerName()` liefert dort den SPEICHERWERT, nicht nur den
+// Pruefwert. Der Grund ist der Weg, auf dem so ein Zeichen ueberhaupt
+// hereinkommt: kopiert aus Mail, WhatsApp oder Excel, nie getippt. Zwei Gruppen,
+// die gleich aussehen und verschieden heissen, faellt niemand beim Anlegen auf,
+// sondern erst am Jagdmorgen beim Antippen der falschen. Mit dem Strippen greift
+// stattdessen `UNIQUE (district_id, name)` sofort und sichtbar.
+// **Der Preis ist benannt und angenommen:** ein zusammengesetztes Emoji im
+// Gruppennamen zerfaellt (die Zusicherung dazu steht unten). Ein einzelnes Emoji
+// bleibt unberuehrt.
+// **`districts.name` bleibt, wie es ist** — dort gibt es keinen UNIQUE, also
+// auch keinen Fall, den das Strippen verhindern koennte.
 assert.equal(sichtbarerName('Sau\u200Bberg'), 'Sauberg')
 
 // SICHTBAR LEER, ABER NICHT `Cf` — der Befund der Fremdpruefung vom 17.08.2026
