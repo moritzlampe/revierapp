@@ -12,7 +12,6 @@ import {
   bearbeitbar,
   markierungAus,
   naechsteSequenz,
-  sichtbarerName,
   standDiff,
   type Treiben,
   type TreibenStand,
@@ -36,27 +35,6 @@ const mitNummern = (nummern: number[]): Treiben[] =>
 assert.equal(naechsteSequenz(mitNummern([1, 2, 3])), 4)
 assert.equal(naechsteSequenz(mitNummern([3, 1])), 4, 'max, nicht Anzahl')
 assert.equal(naechsteSequenz(mitNummern([2, 2])), 3, 'doppelte Nummern werden nicht repariert')
-
-// --- sichtbarerName(): was `trim()` allein NICHT deckt ---
-assert.equal(sichtbarerName('  Buchenkamp  '), 'Buchenkamp', 'Positivkontrolle')
-assert.equal(sichtbarerName(''), '')
-assert.equal(sichtbarerName('   '), '', 'gewoehnliche Leerzeichen')
-// NBSP ist Kategorie `Zs` — `trim()` nimmt ihn mit. Genau daran ist Migration
-// 111 haengengeblieben, dort ging er durch einen `btrim` ohne Zeichenmenge.
-assert.equal(sichtbarerName('\u00A0'), '', 'NBSP U+00A0')
-// **Der eigentliche Grund fuer diese Funktion**: `Cf` ist kein Leerzeichen, ein
-// blosses `trim()` liefert hier `length === 1` und damit ein sichtbar leeres
-// Treiben mit gueltigem Namen.
-assert.equal('\u200B'.trim().length, 1, 'Beleg: trim() laesst ZWSP stehen')
-assert.equal(sichtbarerName('\u200B'), '', 'ZERO WIDTH SPACE U+200B')
-assert.equal(sichtbarerName('\u200C\u200D\uFEFF'), '', 'ZWNJ, ZWJ und BOM')
-// **Die drei, die eine Zeichenliste durchliess** (Fremdpruefung 10.08.2026, A6).
-// Sie sind der Grund fuer \\p{Cf} statt einer Aufzaehlung.
-assert.equal(sichtbarerName('\u2060'), '', 'WORD JOINER U+2060')
-assert.equal(sichtbarerName('\u200E'), '', 'LEFT-TO-RIGHT MARK U+200E')
-assert.equal(sichtbarerName('\u00AD'), '', 'SOFT HYPHEN U+00AD')
-assert.equal(sichtbarerName('Buchen\u00ADkamp'), 'Buchenkamp', 'auch mitten im Wort')
-assert.equal(sichtbarerName('\u200BKessel\u200B'), 'Kessel', 'unsichtbares am Rand faellt weg')
 
 // --- standDiff(): der Kern ---
 const stand = (id: string, standId: string, fest = true): TreibenStand => ({

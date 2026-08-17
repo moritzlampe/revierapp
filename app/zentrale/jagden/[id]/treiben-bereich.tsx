@@ -6,11 +6,11 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Punkt } from '../../revierkarte-map'
 import { schreibe, schreibeViele } from '../../schreiben'
+import { sichtbarerName } from '../../namen'
 import {
   bearbeitbar,
   markierungAus,
   naechsteSequenz,
-  sichtbarerName,
   standDiff,
   type Treiben,
 } from './treiben'

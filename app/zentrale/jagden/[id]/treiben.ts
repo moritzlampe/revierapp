@@ -59,33 +59,14 @@ export function naechsteSequenz(treiben: readonly Treiben[]): number {
   return treiben.reduce((max, t) => Math.max(max, t.sequence), 0) + 1
 }
 
-/**
- * Der eingegebene Name, auf das reduziert, was man sieht.
- *
- * `trim()` allein genügt nicht: es entfernt die Unicode-Kategorie `Zs` (darunter
- * NBSP U+00A0, an dem Migration 111 hängen blieb), **nicht** aber `Cf` — ein
- * eingefügtes ZERO WIDTH SPACE (U+200B) ergäbe `length === 1` und damit ein
- * sichtbar leeres Treiben.
- *
- * **\p{Cf} statt einer Zeichenliste, und die Liste war nachweislich zu kurz**
- * (Fremdprüfung 10.08.2026, A6): sie deckte U+200B–U+200D und U+FEFF, ließ aber
- * U+2060 WORD JOINER und U+200E LEFT-TO-RIGHT MARK durch — beide unsichtbar,
- * beide ergäben einen optisch leeren Namen. Die Kategorie deckt alle
- * Formatzeichen auf einmal, auch das SOFT HYPHEN U+00AD, und ist dabei KÜRZER
- * als die Aufzählung.
- *
- * Das ist zugleich die Antwort auf den Punkt, den Migration 111 offenließ: dort
- * steht der Preis als „eine wachsende Zeichenliste im CHECK". In JavaScript
- * kostet die vollständige Fassung nichts; SQL kennt kein \p{Cf}, der dortige
- * Verzicht bleibt also richtig.
- *
- * ponytail: zweite Fassung dieser Regel im Verzeichnis, die erste steht inline
- * in `../../revier-name.tsx:142` und deckt nur die kurze Liste. Zusammenlegen,
- * sobald eine dritte dazukommt — dieselbe Schwelle, an der `laden.ts` entstand.
- */
-export function sichtbarerName(entwurf: string): string {
-  return entwurf.replace(/\p{Cf}/gu, '').trim()
-}
+// `sichtbarerName()` wohnt seit dem 10.08.2026 in `../../namen.ts` — dort
+// geschrieben, mit Paket A am 17.08.2026 gepusht. Das Warum steht dort; hier
+// bleibt nur die Sackgasse, damit sie niemand neu ausprobiert:
+// KEIN Re-Export. Ein Import mit `.ts`-Endung lässt `tsc` mit TS5097 abbrechen
+// (erlaubt ist er nur in den Selbsttests, die `tsconfig.json:37` von der
+// Typprüfung ausnimmt), ein Import OHNE Endung kann
+// `node --experimental-strip-types` nicht auflösen. Diese Datei bleibt deshalb
+// importfrei, und die zwei Aufrufer holen sich die Funktion direkt.
 
 /** Eine Zeile aus `hunt_drives` samt eingebetteten Ständen, wie PostgREST sie liefert. */
 export interface TreibenZeile {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { schreibe } from './schreiben'
+import { sichtbarerName } from './namen'
 
 /**
  * Den Reviernamen korrigieren — die erste Stammdatenpflege der Zentrale.
@@ -136,10 +137,28 @@ export default function RevierName({ revierId, name }: { revierId: string; name:
   //
   // Geprüft wird auf `sichtbar`, GESPEICHERT wird `sauber`: ein ZWJ (U+200D)
   // mitten in einer Emoji-Sequenz darf bleiben, es ist dort kein Leerraum.
+  //
+  // **Diese Begründung trägt ZWJ, aber nicht die übrigen Formatzeichen**
+  // (Fremdprüfung 17.08.2026, P3): ein Name, der sich NUR um ein angehängtes
+  // ZWSP unterscheidet, gilt hier als Änderung und wird gespeichert, obwohl er
+  // unverändert aussieht. Für `districts.name` folgenlos — die Spalte hat
+  // keinen UNIQUE, und der Nutzer sieht, was er getippt hat. **Bewusst nicht
+  // in diesem Paket geheilt**, weil das Speicherverhalten vorbesteht und ein
+  // Umbau von `sauber` eine zweite Baustelle wäre; die Entscheidung fällt am
+  // ersten Feld MIT UNIQUE, den Standgruppen (Migration 112).
   // ponytail: Client-Riegel wie beim Anlegen. Ein DB-CHECK deckte auch den
   // Anlegepfad und `curl` — er ist eine Migration und liegt als eigener
   // Vorgang im Backlog.
-  const sichtbar = sauber.replace(/[\u200B-\u200D\uFEFF]/gu, '').trim()
+  //
+  // **Seit dem 10.08.2026 die gemeinsame Regel aus `namen.ts`** — dort
+  // geschrieben, mit Paket A am 17.08.2026 gepusht. **Hier ist sie eine
+  // VERSCHÄRFUNG:** die Zeichenliste, die vorher an dieser Stelle
+  // stand (`[\u200B-\u200D\uFEFF]`), ließ U+2060 WORD JOINER, U+200E
+  // LEFT-TO-RIGHT MARK und U+00AD SOFT HYPHEN durch — drei unsichtbare
+  // Zeichen, mit denen ein optisch leerer Reviername durchgekommen wäre.
+  // Am GESPEICHERTEN Wert ändert sich nichts: `sauber` geht in die DB,
+  // `sichtbar` entscheidet nur, ob der Name als leer gilt.
+  const sichtbar = sichtbarerName(sauber)
   const geaendert = sichtbar.length > 0 && sauber !== name
 
   // Öffnen und Abbrechen tun dasselbe, nur mit anderem Ziel: der Entwurf geht
