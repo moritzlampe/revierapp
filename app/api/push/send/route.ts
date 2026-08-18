@@ -80,6 +80,17 @@ export async function POST(request: Request) {
     let recipientUserIds: string[] = []
     // Nur für den schein-Zweig belegt: der Reviername für den Text.
     let scheinRevier = ''
+    // Nur für den Gruppen-/Direktchat belegt, und ZWINGEND erst NACH der
+    // Mitgliedschaftsprüfung (Codex, 18.08.2026, [medium]). Der erste Entwurf
+    // las im Expo-Payload unten stattdessen die rohe Body-Eigenschaft
+    // `groupId` — die steht dem Aufrufer aber frei, auch wenn ihn ein ganz
+    // anderer Zweig autorisiert hat. Ein RSVP-Aufruf mit zusätzlich
+    // mitgeschicktem `groupId` hätte damit eine Meldung „Hans hat zugesagt"
+    // erzeugt, die den Empfänger beim Antippen in eine fremde Gruppe schickt —
+    // dieselbe Wurzel wie 076/079/083 in AGENTS.md: **eine Entscheidung aus
+    // einem Feld ableiten, das der Aufrufer schreibt, statt aus dem Zweig, der
+    // die Berechtigung geprüft hat.**
+    let chatGruppeId: string | null = null
 
     if (type === 'schein') {
       // Einladung zu einem Begehungsschein (31.07.2026).
@@ -173,6 +184,8 @@ export async function POST(request: Request) {
       if (!recipientUserIds.includes(senderId)) {
         return NextResponse.json({ sent: 0 })
       }
+      // Ab hier ist belegt, dass der Absender Mitglied dieser Gruppe ist.
+      chatGruppeId = groupId
     } else if (huntId) {
       // Jagd-Chat: nur ZUGESAGTE Teilnehmer (status='joined') mit user_id.
       // invited-User sind nicht im Hunt-Chat und dürfen keine Push-Vorschau
@@ -342,12 +355,24 @@ export async function POST(request: Request) {
         // ordnet `type` selbst einem Bildschirm zu (`src/lib/push/tap.ts`).
         // `url` ist der PWA-Pfad und taugt dafür nicht — Route-Namen der
         // iOS-App gehören nicht in eine Next.js-Datei.
+        //
+        // Für den Gruppen-/Direktchat dasselbe (nativ Paket 3, 18.08.2026):
+        // `type: 'chat'` plus die `groupId` als Parameter. Die native App
+        // springt damit in genau den Chat, aus dem die Nachricht kam, statt
+        // dort aufzugehen, wo sie zuletzt stand. Die `groupId` dient ihr
+        // ausserdem dazu, die Meldung stumm zu halten, während dieser Chat
+        // offen auf dem Bildschirm steht.
+        //
+        // **Der Web-Zweig oben bleibt unberührt** — dieses `data` gilt nur für
+        // Expo-Empfänger; Web-Push navigiert weiterhin über `url`.
         data:
           type === 'drive'
             ? { huntId, event }
             : type === 'schein'
               ? { type: 'schein', url: safeUrl }
-              : { url: safeUrl },
+              : chatGruppeId
+                ? { type: 'chat', groupId: chatGruppeId, url: safeUrl }
+                : { url: safeUrl },
       }))
 
       const chunks = expo.chunkPushNotifications(messages)
