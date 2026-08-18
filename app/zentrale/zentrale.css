@@ -1097,3 +1097,99 @@ body:has(.zentrale-karte-kasten.kino) {
   padding-left: 8px;
   border-left: 2px solid var(--z-accent);
 }
+
+/* --- Das Standgruppen-Band ueber der Revierkarte (18.08.2026) ---
+
+   **Es steht HIER und nicht in `revier/revier.css`, obwohl es heute nur dort
+   erscheint.** Die Klassen gehoeren zu `revierkarte.tsx`, und deren uebrige
+   Stile stehen ebenfalls hier. Laegen sie in `revier.css`, haenge die Karte an
+   einem Stylesheet, das eine ANDERE Datei importiert — dieselbe versteckte
+   Kopplung, die den `jagden-chip`-Fehler ausgemacht hat (04.08.2026): sichtbar
+   richtig, solange zufaellig das passende CSS im Dokument haengt.
+
+   Das Band sitzt LINKS oben, `.zentrale-karte-knoepfe` (Kinomodus, Vollbild)
+   rechts — dieselbe Hoehe, ohne einander zu ueberlappen. Der Zoom-Control von
+   Leaflet liegt ebenfalls links, daher der Einzug: das Band steht daneben,
+   nicht darauf. `z-index: 1000` wie die Knopfleiste, weil Leaflet-Controls dort
+   liegen. */
+.zentrale-karte-band {
+  position: absolute;
+  top: 10px;
+  left: 50px;
+  /* **Platz fuer die Knopfleiste rechts** (Fremdpruefung Codex 18.08.2026,
+     Paket 2 Nr. 8). Vorher stand hier `right: 10px` — Band und Knopfleiste
+     begannen beide bei `top: 10px`, trugen denselben `z-index` und ueberlappten
+     bei schmaler Breite oder langem Gruppennamen. `flex-wrap` half nicht: es
+     bricht das Band um, reserviert der Leiste aber keinen Platz.
+     240px deckt den breitesten Zustand ab („Vollbild beenden" neben
+     „Kleiner"). Reicht der Rest nicht, waechst das Band per `flex-wrap` nach
+     UNTEN — die Leiste bleibt oben rechts frei. */
+  right: 240px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Eigene Knopfregel statt `.zentrale-karte-knoepfe` mitzubenutzen: deren
+   Selektor traegt die Position rechts, und die gilt hier nicht. Das Aussehen
+   ist bewusst dasselbe — es ist dieselbe Ebene ueber der Karte. */
+.zentrale-karte-band button {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 5px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zentrale-karte-band button:hover:not(:disabled) {
+  background: var(--z-bg-sunken);
+}
+.zentrale-karte-band button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Der Gruppenname im Bearbeiten-Modus. Schmal gehalten: er steht ueber der
+   Karte und darf ihr nicht die halbe Breite nehmen. */
+.zentrale-karte-band-name {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 5px 10px;
+  max-width: 14rem;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+
+/* Im Ansehen-Modus ist der Name Text, kein Feld — umbenannt wird ueber
+   „Bearbeiten". Gleiche Hoehe wie das Feld, damit das Band beim Umschalten
+   nicht springt. */
+.zentrale-karte-band-name-fest {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* Der Zaehler ist im Vollbild die einzige Rueckmeldung darauf, was ein Klick
+   bewirkt hat — deshalb liegt er IM Band und nicht darunter. `elevated` statt
+   des `sunken` von `.zentrale-pill`, weil er ueber der Karte liegt und sich
+   davon abheben muss. */
+.zentrale-karte-band-zaehler {
+  font-size: 0.8125rem;
+  padding: 5px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  white-space: nowrap;
+}

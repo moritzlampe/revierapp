@@ -96,6 +96,39 @@ export function markierungAus(
   return new Set(staende.filter((id) => waehlbar.has(id)))
 }
 
+/**
+ * Ist der Name im Revier schon vergeben?
+ *
+ * **Ein UI-Gate vor einem echten Riegel, keine zweite Wahrheit.**
+ * `UNIQUE (district_id, name)` aus Migration 112 hält ihn; das hier erspart dem
+ * Nutzer nur die Rohmeldung `23505`.
+ *
+ * Verglichen wird **zeichengenau, nicht case-insensitiv** — genau wie der
+ * Constraint. Ein `toLowerCase()` sperrte „sauberg" neben „Sauberg", obwohl die
+ * DB beide nebeneinander erlaubt: ein Gate, das mehr verbietet als die Regel
+ * dahinter, ist ein Fehler, kein Extra.
+ *
+ * Verglichen wird gegen den GESPEICHERTEN Wert, weil beim Anlegen auch der
+ * gespeicherte Wert entsteht (Entscheidung Moritz 17.08.2026).
+ *
+ * **Kein `kandidat.length > 0`-Frühausstieg**, obwohl er im ersten Entwurf
+ * stand: `standgruppen_name_nicht_leer` verbietet den leeren Namen in der DB,
+ * kein `g.name` kann also leer sein — die Bedingung hätte nie ein anderes
+ * Ergebnis erzeugt. Ein Prädikat, das nichts entscheidet, sieht beim nächsten
+ * Lesen wie eine Prüfung aus.
+ *
+ * **Steht seit dem 18.08.2026 hier statt in der Komponente**, weil zwei Seiten
+ * sie brauchen: das Anlegen in der Liste und das Umbenennen am Band der Karte.
+ * Dieselbe Lehre wie bei `markierungAus` — was inline lebt, sieht kein Test.
+ */
+export function vergeben(
+  gruppen: readonly Standgruppe[],
+  kandidat: string,
+  ausserId?: string,
+): boolean {
+  return gruppen.some((g) => g.id !== ausserId && g.name === kandidat)
+}
+
 /** Was an `standgruppen_staende` geschrieben werden muss, um `markiert` zu erreichen. */
 export interface GruppenAenderung {
   /** `map_object_id` je zu entfernender Mitgliedschaft. */

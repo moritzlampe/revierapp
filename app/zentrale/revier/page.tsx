@@ -2,13 +2,12 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { parsePolygonHex } from '@/lib/geo-utils'
 import { punktAus } from '../karte-geo'
-import Revierkarte from '../revierkarte'
 import type { Punkt } from '../revierkarte-map'
 import { geladen, vollstaendig } from '../laden'
 import { istStand } from '../objekte'
 import { Kennzahl } from '../kennzahl'
 import RevierName from '../revier-name'
-import StandgruppenBereich from './standgruppen-bereich'
+import RevierArbeitsbereich from './arbeitsbereich'
 import { ausZeilen, type StandgruppeZeile } from './standgruppen'
 import './revier.css'
 
@@ -213,19 +212,6 @@ export default async function RevierPage({
         />
       </div>
 
-      <div className="zentrale-block">
-        <div className="zentrale-karte">
-          {/* Immer die Karte, auch bei völlig leerem Revier — sonst gäbe es
-              keinen Ort, an dem die erste Grenze entstehen könnte.
-
-              `key` ist tragend, nicht Kosmetik: beim Revierwechsel ändert sich
-              nur `?revier=`, Next behält dieselbe Client-Instanz und damit den
-              Editierzustand. Ohne den key lag die halbfertige Zeichnung des
-              einen Reviers über der Karte des nächsten. */}
-          <Revierkarte key={revier.id} grenze={grenze} punkte={punkte} revierId={revier.id} />
-        </div>
-      </div>
-
       {/**
        * **Zwei Mengen, und sie dürfen nicht dieselbe sein** (Fremdprüfung Codex
        * 17.08.2026, Nr. 5, `[medium]`):
@@ -258,14 +244,41 @@ export default async function RevierPage({
        * `map_objects` tragen `deleted_at IS NULL` (an der Produktion als
        * Besitzer gemessen, 17.08.2026 — 0 von 1 sichtbar).
        */}
-      <StandgruppenBereich
-        key={revier.id}
-        revierId={revier.id}
-        gruppen={gruppen}
-        punkte={punkte.filter((p) => istStand(p.typ))}
-        sichtbareIds={punkte.map((p) => p.id)}
-        grenze={grenze}
-      />
+      {/**
+       * **Karte und Gruppen liegen in EINER Client-Klammer**, seit der
+       * Standgruppen-Editor seine eigene zweite Karte verloren hat (18.08.2026).
+       * Die Begründung steht in `arbeitsbereich.tsx`; hier zählt nur die Folge
+       * für diese Datei: `page.tsx` rendert nicht mehr zwei Geschwister, sondern
+       * einen Koordinator, und der `key` wandert mit nach innen an die Karte.
+       *
+       * **`page.tsx` bleibt SERVER-Komponente**, und das ist der Punkt, an dem
+       * so ein Umbau kippt: die Klammer ist ein dünner Client-Rahmen, der die
+       * hier geladenen Daten nur durchreicht. Sie noch einmal im Client zu laden
+       * wäre eine zweite Wahrheit über denselben Bestand.
+       */}
+      <div className="zentrale-block">
+        {/**
+         * **`key={revier.id}` gehört an DIESE Komponente, nicht nur an die
+         * Karte darin** (Fremdprüfung Codex 18.08.2026, Nr. 10, `[hoch]` — ein
+         * Regress dieses Umbaus). Vorher trug `StandgruppenBereich` den key
+         * selbst; beim Verschieben in die Klammer blieb er an der Karte hängen.
+         *
+         * Ohne ihn überlebt der Client-Zustand einen Revierwechsel — es ändert
+         * sich ja nur `?revier=`, Next behält dieselbe Instanz. Wer in Revier A
+         * einen Gruppennamen tippt, zu Revier B wechselt und dort „Anlegen"
+         * drückt, **schreibt ihn nach B**: das Feld überlebt, `revierId` ist
+         * inzwischen ein anderes. Aktive Gruppe und Entwurf ebenso.
+         */}
+        <RevierArbeitsbereich
+          key={revier.id}
+          revierId={revier.id}
+          grenze={grenze}
+          punkte={punkte}
+          waehlbareIds={punkte.filter((p) => istStand(p.typ)).map((p) => p.id)}
+          sichtbareIds={punkte.map((p) => p.id)}
+          gruppen={gruppen}
+        />
+      </div>
     </div>
   )
 }

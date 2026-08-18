@@ -7,7 +7,7 @@
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 // Wird vom Sammel-Script `npm run selftest` per Glob mitgenommen.
 import assert from 'node:assert/strict'
-import { ausZeilen, gruppenDiff, markierungAus } from './standgruppen.ts'
+import { ausZeilen, gruppenDiff, markierungAus, vergeben } from './standgruppen.ts'
 
 // --- markierungAus(): der Zustand, mit dem die Komponente gruppenDiff fuettert ---
 //
@@ -162,5 +162,36 @@ assert.deepEqual(ausZwei, [
   { id: 'g2', name: 'Buchberg', staende: [] },
 ])
 assert.deepEqual(ausZeilen([]), [], 'ein Revier ohne Gruppen')
+
+// --- vergeben(): das UI-Gate vor dem UNIQUE ---
+//
+// **Die Funktion lebte bis zum 18.08.2026 inline in der Komponente** und war
+// damit fuer keinen Test erreichbar. Sie ist herausgezogen worden, weil zwei
+// Seiten sie brauchen (Anlegen in der Liste, Umbenennen am Band der Karte) —
+// und die Gelegenheit ist genau die, bei der sie Zusicherungen bekommt.
+const drei = [
+  { id: 'g1', name: 'Sauberg', staende: [] },
+  { id: 'g2', name: 'Buchberg', staende: [] },
+  { id: 'g3', name: 'sauberg', staende: [] },
+]
+
+assert.equal(vergeben(drei, 'Sauberg'), true, 'derselbe Name ist vergeben')
+assert.equal(vergeben(drei, 'Dornenbuesche'), false, 'ein freier Name ist frei')
+assert.equal(vergeben([], 'Sauberg'), false, 'im leeren Revier ist jeder Name frei')
+
+// Beim UMBENENNEN zaehlt die eigene Zeile nicht mit — sonst koennte eine Gruppe
+// ihren eigenen Namen nicht behalten, waehrend man nur Staende aendert.
+assert.equal(vergeben(drei, 'Sauberg', 'g1'), false, 'die eigene Zeile zaehlt nicht')
+assert.equal(vergeben(drei, 'Sauberg', 'g2'), true, 'eine FREMDE Zeile sehr wohl')
+
+// **Zeichengenau, nicht case-insensitiv** — wie `UNIQUE (district_id, name)`.
+// Ein Gate, das mehr verbietet als die Regel dahinter, ist ein Fehler: „sauberg"
+// und „Sauberg" duerfen in der DB nebeneinanderstehen, also auch hier.
+assert.equal(vergeben(drei, 'SAUBERG'), false, 'Grossschreibung ist ein anderer Name')
+assert.equal(
+  vergeben([{ id: 'g1', name: 'Sauberg', staende: [] }], 'sauberg'),
+  false,
+  'Kleinschreibung ebenso — der Constraint erlaubt beide nebeneinander',
+)
 
 console.log('standgruppen.selftest.ts: alle Zusicherungen gehalten')

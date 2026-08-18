@@ -1,306 +1,138 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Punkt } from '../revierkarte-map'
-import { schreibe, schreibeViele } from '../schreiben'
+import { schreibe } from '../schreiben'
 import { sichtbarerName } from '../namen'
-import { gruppenDiff, markierungAus, type Standgruppe } from './standgruppen'
+import { vergeben, type Standgruppe } from './standgruppen'
 
 /**
- * Standgruppen — Portal-Phase 4b, Schnitt 2 (Migration 112).
+ * Standgruppen — die LISTE, Portal-Phase 4b (Migration 112).
  *
- * Was hier geht: Gruppen anlegen, umbenennen, löschen und ihre **Standmenge**
- * auf der Karte festlegen. Was NICHT geht: eine Gruppe in ein Treiben kopieren
- * (das ist Paket C und wohnt im Treiben-Bereich, weil es dort geklickt wird),
- * und eine Anstell-Reihenfolge innerhalb der Gruppe (`Treiben_V1` §9, vertagt —
- * eine Gruppe ist eine MENGE, und die Tabelle hat kein `sequence`).
+ * Was hier geht: Gruppen anlegen, auf die Karte holen und löschen. Was NICHT
+ * mehr hier geht: die Standmenge festlegen und umbenennen — beides sitzt seit
+ * dem 18.08.2026 am Band bei der Revierkarte, weil man dort die Stände antippt.
+ * Was nie hier ging: eine Gruppe in ein Treiben kopieren (Paket C, wohnt im
+ * Treiben-Bereich, weil es dort geklickt wird).
  *
- * **Modelliert auf `jagden/[id]/treiben-bereich.tsx`, nicht daraus abgeleitet.**
- * Die beiden teilen die Bedienung (Liste, Editor, Karte mit Mehrfachauswahl),
- * aber nicht die Daten: ein Treiben hat Status, Reihenfolge und Ad-hoc-Sitze,
- * eine Gruppe hat nichts davon. Eine gemeinsame Komponente müsste all das
- * optional führen und wäre an jeder Stelle eine Fallunterscheidung.
+ * **Dieser Bereich hatte bis zum 18.08.2026 eine EIGENE Karte, und das war der
+ * Fehler.** Auf der Revier-Seite steht bereits eine; der Revierinhaber tippte
+ * beim ersten Kontakt in die obere und bekam keine Rückmeldung — kein Fehler im
+ * Code, ein Fehler im Aufbau. Die Karte lebt jetzt oben, samt Kinomodus und
+ * Vollbild, die es hier ein zweites Mal gab. Der geteilte Zustand und der
+ * Schreibvorgang liegen in `arbeitsbereich.tsx`, dort steht die Begründung.
  *
- * ponytail: zweite Fassung derselben Bedienfläche. Zusammenlegen, sobald eine
- * dritte dazukommt — dieselbe Schwelle, an der `namen.ts` entstanden ist.
+ * **Der Bereich hält damit nur noch, was zur Liste gehört**: das Feld für eine
+ * neue Gruppe und die Löschrückfrage. `busy`, `fehler` und `fuehreAus` kommen
+ * von oben — EIN Doppelklick-Riegel und EINE Fehlerzeile für Karte und Liste
+ * zusammen, statt zweier, die man widerspruchsfrei halten müsste.
+ *
+ * ponytail: die Bedienfläche ist damit kein Zwilling von `treiben-bereich.tsx`
+ * mehr — dort steht die Karte weiterhin im Editor, und das ist dort auch
+ * richtig, weil die Jagdseite keine zweite hat. Zusammenlegen bleibt verworfen.
  */
-
-// react-leaflet fasst beim Import `window` an — `ssr:false` ist Pflicht, und
-// `next/dynamic` mit `ssr:false` geht nur aus einer Client-Komponente heraus.
-const Karte = dynamic(() => import('../revierkarte-map'), {
-  ssr: false,
-  loading: () => <div className="revier-gruppen-karte-platzhalter">Karte wird geladen …</div>,
-})
 
 export default function StandgruppenBereich({
   revierId,
   gruppen,
-  punkte,
   sichtbareIds,
-  grenze,
+  aktiveId,
+  aktiveMenge,
+  bearbeitet,
+  busy,
+  fehler,
+  fuehreAus,
+  aufAnsehen,
+  aufSchliessen,
 }: {
   revierId: string
   gruppen: Standgruppe[]
-  /** Was WÄHLBAR ist: nur Standtypen. Gefiltert in `page.tsx`. */
-  punkte: Punkt[]
   /**
    * Was der Nutzer SEHEN kann: alle Kartenobjekte des Reviers, jeden Typs.
    *
+   * Hier nur noch für das Papierkorb-Abzeichen — die Rechnung, für die es
+   * ursprünglich kam (`gruppenDiff`), ist mit dem Entwurf nach oben gewandert.
+   *
    * **Zwei Mengen statt einer, und das ist ein Befund der Fremdprüfung**
-   * (Codex 17.08.2026, Nr. 5, `[medium]`). Vorher war `sichtbar` aus `punkte`
-   * abgeleitet, also aus der wählbaren Menge — dann ist ein Mitglied, dessen
-   * Objekt jemand vom Hochsitz zum Parkplatz umtypt, plötzlich „unsichtbar"
-   * und damit **gefangen**: es zählt in der Gruppe mit, steht nicht auf der
-   * Karte, und `gruppenDiff` schützt es wie einen Papierkorb-Stand. Nur die
-   * ganze Gruppe zu löschen hätte geholfen.
-   *
-   * **Der Umtyp-Weg liegt auf DERSELBEN Seite** — der Objekt-Inspektor der
-   * Revierkarte darüber. Meine erste Fassung hielt das für folgenlos; das war
-   * die schwächere von zwei Begründungen und sie trug nicht.
-   *
-   * Getrennt heißt: umgetypt → sichtbar, aber nicht wählbar → beim nächsten
-   * Speichern abgewählt (der Zähler weist es als `−N` aus, bevor gespeichert
-   * wird). Weich gelöscht → gar nicht sichtbar → bleibt geschützt.
-   *
-   * **Diese Trennung allein genügte NICHT, und das hat erst die Schlusslesung
-   * gefunden** (17.08.2026, F1): `oeffnen()` seedete `markiert` weiterhin mit
-   * ALLEN Mitgliedern, das umgetypte war damit angetippt und fiel aus
-   * `entfernen` heraus — der Satz oben beschrieb ein Verhalten, das es nicht
-   * gab. Zweite Hälfte des Fixes ist `markierungAus()`.
+   * (Codex 17.08.2026, Nr. 5, `[medium]`): war `sichtbar` aus der WÄHLBAREN
+   * Menge abgeleitet, dann ist ein Mitglied, dessen Objekt jemand vom Hochsitz
+   * zum Parkplatz umtypt, plötzlich „unsichtbar" und damit **gefangen** — es
+   * zählt in der Gruppe mit, steht nicht auf der Karte, und der
+   * Papierkorb-Schutz hält es fest. Nur die ganze Gruppe zu löschen hätte
+   * geholfen.
    */
   sichtbareIds: string[]
-  grenze: [number, number][][] | null
+  /** Welche Gruppe steht gerade auf der Karte? `null` = keine. */
+  aktiveId: string | null
+  /**
+   * Die Menge, die die KARTE für die aktive Gruppe zeigt.
+   *
+   * **Damit Pille und Karte nie verschiedene Zahlen behaupten** (Fremdprüfung
+   * Codex 18.08.2026, Nr. 6, `[mittel]`): nach dem Speichern zeigt die Karte
+   * schon den Entwurf, während `g.staende` bis zum Ende des Refreshs noch die
+   * alten Props trägt. Für ein bis zwei Sekunden sagte die Karte „5 Stände" und
+   * die Pille daneben „4" — kurz, aber falsch, und genau die Sorte Auskunft, die
+   * sich wie eine gültige liest.
+   */
+  aktiveMenge: ReadonlySet<string> | null
+  /**
+   * Wird am Band gerade eine Gruppe bearbeitet?
+   *
+   * **Die Liste muss das wissen, sonst ist sie ein Seiteneingang**
+   * (Delta-Durchgang 18.08.2026): sie bekam nur `busy` (`laeuft || pending`),
+   * und das ist während einer offenen Bearbeitung false. „Auf Karte" bei einer
+   * ANDEREN Gruppe rief dann `zeige()` und **verwarf den offenen Entwurf
+   * ungefragt** — dieselbe Klasse (S5), gegen die einen Absatz weiter unten die
+   * Löschrückfrage geräumt wird.
+   *
+   * Der Zustand wanderte beim Umbau nach oben; `busy` wuchs nicht mit. Genau
+   * die Stelle, an der ein Riegel eine Lücke lässt, weil er an der alten
+   * Grenze steht.
+   */
+  bearbeitet: boolean
+  busy: boolean
+  fehler: string | null
+  /**
+   * Der gemeinsame Schreibvorgang aus `arbeitsbereich.tsx` — EIN
+   * Doppelklick-Riegel, EIN Sperrzustand, EINE Fehlerzeile für Karte und Liste.
+   *
+   * `danach` ist Pflicht, nicht optional (Ponytail 18.08.2026): alle drei
+   * Aufrufer übergeben es, die Optionalität war Flexibilität für einen
+   * Aufrufer, den es nicht gibt.
+   */
+  fuehreAus: (was: string, arbeit: () => Promise<void>, danach: () => void) => Promise<void>
+  aufAnsehen: (g: Standgruppe) => void
+  aufSchliessen: () => void
 }) {
-  const router = useRouter()
-  const [pending, startTransition] = useTransition()
-  const [offenId, setOffenId] = useState<string | null>(null)
-  const [markiert, setMarkiert] = useState<ReadonlySet<string>>(() => new Set())
-  const [name, setName] = useState('')
   const [neu, setNeu] = useState('')
   const [loeschFrage, setLoeschFrage] = useState<string | null>(null)
-  const [fehler, setFehler] = useState<string | null>(null)
-  const [laeuft, setLaeuft] = useState(false)
+
+  // Solange am Band bearbeitet wird, ist die Liste gesperrt — s. `bearbeitet`.
+  const gesperrt = busy || bearbeitet
 
   /**
-   * Der Doppelklick-Riegel ist ein **Ref**, kein State (S5). Zwei schnelle Tipps
-   * kommen beide durch, bevor React neu gerendert hat — `laeuft` allein sperrt
-   * nur die Anzeige, nicht den zweiten Aufruf.
-   */
-  const laeuftRef = useRef(false)
-
-  /**
-   * Kinomodus und Vollbild, dieselbe Bedienung wie an der Revierkarte darüber
-   * und am Treiben-Bereich. Bei 196 Objekten in Söder ist die Karte in 420 px
-   * die falsche Größe, um zwanzig Stände auseinanderzuhalten.
+   * **Bewusst NICHT geräumt: eine Löschfrage, die den Einstieg in die
+   * Bearbeitung überlebt** (Delta-Durchgang 18.08.2026, `[niedrig]`).
    *
-   * Der `fullscreenchange`-Listener ist der Teil, den man vergisst: der Browser
-   * verlässt das Vollbild auch per ESC oder Geste, ohne unseren Knopf zu fragen.
-   * Die Wahrheit ist `document.fullscreenElement`, nicht unser State.
-   */
-  const kasten = useRef<HTMLDivElement>(null)
-  const [voll, setVoll] = useState(false)
-  const [kino, setKino] = useState(false)
-
-  useEffect(() => {
-    const wechsel = () =>
-      // `kasten.current !== null` ist der Riegel: der Editor wird per `offenId`
-      // bedingt gerendert, nach dem Speichern räumt `schliessen()` ihn weg. Dann
-      // ist `kasten.current` null — und ohne aktives Vollbild ist
-      // `document.fullscreenElement` es auch. `null === null` wäre wahr, `voll`
-      // stünde auf `true` ohne Vollbild, und der Kino-Knopf verschwände.
-      // (Fremdprüfung 10.08.2026, K2, am Treiben-Bereich gefunden.)
-      setVoll(kasten.current !== null && document.fullscreenElement === kasten.current)
-    document.addEventListener('fullscreenchange', wechsel)
-    return () => document.removeEventListener('fullscreenchange', wechsel)
-  }, [])
-
-  // ESC verlässt den Kinomodus — seit er ein Fenster-Overlay ist, verdeckt er
-  // die ganze Seite, und eine Fläche, die alles verdeckt, muss auf die Taste
-  // hören, mit der man Überlagerungen schließt. Das Vollbild bekommt seine
-  // ESC-Behandlung vom Browser.
-  useEffect(() => {
-    if (!kino) return
-    const taste = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setKino(false)
-    }
-    document.addEventListener('keydown', taste)
-    return () => document.removeEventListener('keydown', taste)
-  }, [kino])
-
-  const vollUmschalten = () => {
-    if (voll) {
-      document.exitFullscreen().catch(() => {})
-    } else {
-      // Kann vom Browser abgelehnt werden (Berechtigung, iframe) — dann bleibt
-      // es beim eingebetteten Kasten, ohne unbehandelte Rejection.
-      kasten.current?.requestFullscreen().catch(() => {})
-    }
-  }
-
-  const offen = gruppen.find((g) => g.id === offenId) ?? null
-
-  /**
-   * Die Menge, deren Fehlen der Nutzer BEMERKEN würde. Geht so in `gruppenDiff`
-   * und ist dort der Riegel, der die Mitgliedschaft eines weich gelöschten
-   * Stands überleben lässt: die kann niemand sehen, also darf sie kein
-   * Kartenklick entfernen.
+   * Wer „Löschen" bei einer Gruppe antippt und dann am Band „Bearbeiten"
+   * klickt, lässt die Rückfrage ausgegraut stehen; nach Speichern oder
+   * Abbrechen ist sie **wieder scharf**. Derselbe Fehlertyp, den
+   * `revierkarte.tsx` für die Grenzen-Rückfrage an zwei Stellen räumt — der Weg
+   * über das Band ist der dritte, und er ist offen.
+   *
+   * **Der naheliegende Fix war schlechter als der Fehler:** ein `useEffect`,
+   * der bei `bearbeitet` räumt, ist ein `setState` im Effekt — die ESLint-Regel
+   * `react-hooks/set-state-in-effect` verbietet das, und sie hat recht. Der
+   * saubere Weg wäre, den Räum-Aufruf vom Band durch zwei Komponenten
+   * durchzureichen; das kostet mehr, als der Fall wert ist.
+   *
+   * Es geht dabei um dieselbe Gruppe, und der Zähler im Fragetext zieht mit —
+   * die stehengebliebene Frage ist also nie falsch, nur überflüssig. Fällig,
+   * wenn die Liste ohnehin einen Rückkanal bekommt.
    */
   const sichtbar = new Set(sichtbareIds)
-
-  /** Was auf der Karte steht und damit angetippt werden kann. */
-  const waehlbar = new Set(punkte.map((p) => p.id))
-
-  const diff = offen
-    ? gruppenDiff(offen.staende, markiert, sichtbar)
-    : { entfernen: [], legen: [] }
-  const nameNeu = sichtbarerName(name)
-  const nameGeaendert = offen !== null && nameNeu.length > 0 && nameNeu !== offen.name
-
-  /**
-   * **Ein leeres Namensfeld sperrt das Speichern — und der erste Entwurf ließ
-   * es durch** (Fremdprüfung Codex 17.08.2026, Nr. 6, `[medium]`).
-   *
-   * `nameGeaendert` wird bei leerem Namen absichtlich `false`, damit niemand
-   * eine Gruppe namenlos macht. Das allein genügt aber nicht: hat der Nutzer
-   * gleichzeitig einen Stand angetippt, ist `nichtsZuTun` trotzdem `false` —
-   * `speichern()` lief, überging das Namens-UPDATE stillschweigend, schrieb die
-   * Standmenge und schloss den Editor. Der Nutzer bekam **Erfolg gemeldet für
-   * ein Formular, dessen geleertes Feld niemand übernommen hat.** Genau der
-   * S4-Fall: ein Fehler, der sich als gültige Auskunft liest.
-   *
-   * Jetzt ist es ein sichtbarer Zustand mit eigener Meldung, kein
-   * Übergehen. `nichtsZuTun` bleibt davon unberührt — „nichts zu tun" und
-   * „ungültig" sind zwei verschiedene Gründe, den Knopf zu sperren.
-   */
-  const nameLeer = offen !== null && nameNeu.length === 0
-  const nichtsZuTun = diff.entfernen.length === 0 && diff.legen.length === 0 && !nameGeaendert
-
-  /**
-   * **Der doppelte Name ist ein UI-Gate vor einem echten Riegel, keine zweite
-   * Wahrheit.** `UNIQUE (district_id, name)` aus Migration 112 hält ihn; das
-   * hier erspart dem Nutzer nur die Rohmeldung `23505`.
-   *
-   * Verglichen wird **zeichengenau, nicht case-insensitiv** — genau wie der
-   * Constraint. Ein `toLowerCase()` sperrte „sauberg" neben „Sauberg", obwohl
-   * die DB beide nebeneinander erlaubt: ein Gate, das mehr verbietet als die
-   * Regel dahinter, ist ein Fehler, kein Extra.
-   *
-   * Verglichen wird gegen den GESPEICHERTEN Wert, weil hier auch der
-   * gespeicherte Wert entsteht (Entscheidung Moritz 17.08.2026, s. `anlegen`).
-   *
-   * **Kein `kandidat.length > 0`-Frühausstieg**, obwohl er im ersten Entwurf
-   * stand: `standgruppen_name_nicht_leer` verbietet den leeren Namen in der DB,
-   * kein `g.name` kann also leer sein — die Bedingung hätte nie ein anderes
-   * Ergebnis erzeugt. Ein Prädikat, das nichts entscheidet, sieht beim nächsten
-   * Lesen wie eine Prüfung aus.
-   */
-  const vergeben = (kandidat: string, ausserId?: string) =>
-    gruppen.some((g) => g.id !== ausserId && g.name === kandidat)
-
   const neuName = sichtbarerName(neu)
-  const neuVergeben = vergeben(neuName)
-  const umbenennenVergeben = vergeben(nameNeu, offen?.id)
-
-  function oeffnen(g: Standgruppe) {
-    setOffenId(g.id)
-    // `markierungAus`, NICHT `new Set(g.staende)` — s. die Begründung dort
-    // (Schlusslesung 17.08.2026, F1). Ein nicht wählbares Mitglied darf nicht
-    // als angetippt starten, sonst kann es niemand mehr abwählen.
-    setMarkiert(markierungAus(g.staende, waehlbar))
-    setName(g.name)
-    setFehler(null)
-    // **Auch die Kartengröße zurücksetzen** (Schlusslesung F3). `schliessen()`
-    // tut es, aber der Editor kann auch OHNE `schliessen()` verschwinden: wird
-    // die offene Gruppe anderswo gelöscht, nimmt der nächste `router.refresh()`
-    // sie aus `gruppen`, `offen` wird `null` und der Kasten fällt aus dem Baum.
-    // `kino` bliebe dann stehen, und das nächste „Stände wählen" öffnete
-    // ungefragt im Vollflächen-Overlay. Dasselbe Phantom, das der Kommentar in
-    // `schliessen()` fürs Vollbild beschreibt — nur über den anderen Weg.
-    setKino(false)
-    setLoeschFrage(null)
-  }
-
-  function schliessen() {
-    // Vollbild verlassen, BEVOR der Kasten aus dem Baum fällt: sonst räumt der
-    // Browser es selbst ab, das `fullscreenchange`-Ereignis trifft auf einen
-    // bereits entfernten Kasten, und beim nächsten Öffnen stünde die Karte im
-    // Kinomodus, ohne dass jemand ihn gewählt hat.
-    if (kasten.current && document.fullscreenElement === kasten.current) {
-      document.exitFullscreen().catch(() => {})
-    }
-    setVoll(false)
-    setKino(false)
-    setOffenId(null)
-    setMarkiert(new Set())
-    setName('')
-    setFehler(null)
-  }
-
-  function umschalten(standId: string) {
-    // **Der Riegel sitzt HIER, nicht an der Prop** — das ist die Falle, die
-    // Schnitt 1 Geld gekostet hat. `aufAuswahl={busy ? undefined : umschalten}`
-    // sperrt zwar korrekt, kippt aber bei jedem Speichervorgang den
-    // Marker-`key` von „waehlbar" auf „starr" und zurück (`revierkarte-map.tsx`
-    // :284), und Leaflet wertet `interactive` nur beim Anlegen aus. Bei Söder
-    // sind das ~190 CircleMarker samt Tooltips, zweimal je Speichern.
-    if (laeuftRef.current) return
-    setMarkiert((vorher) => {
-      const nachher = new Set(vorher)
-      if (!nachher.delete(standId)) nachher.add(standId)
-      return nachher
-    })
-  }
-
-  /**
-   * Ein Schreibvorgang, ein Riegel, eine Fehlerzeile.
-   *
-   * `startTransition` um `router.refresh()`: ohne es ist `laeuft` sofort wieder
-   * false, während der Refresh noch unterwegs ist — die Props tragen dann kurz
-   * den ALTEN Stand und der Knopf lebt auf.
-   */
-  async function fuehreAus(was: string, arbeit: () => Promise<void>, danach?: () => void) {
-    if (laeuftRef.current) return
-    laeuftRef.current = true
-    setLaeuft(true)
-    setFehler(null)
-    try {
-      await arbeit()
-      danach?.()
-      startTransition(() => router.refresh())
-    } catch (e) {
-      // Der Fehler wird ausgewiesen, nicht verschluckt. Häufigste Ursache ist
-      // ein veralteter Stand: ein parallel entferntes Mitglied (0 statt 1
-      // betroffen) oder ein doppelter Name (23505 am UNIQUE).
-      setFehler(`${was} fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`)
-
-      // **Auch der Fehlschlag lädt neu.** `speichern()` macht bis zu drei
-      // Writes; scheitert der zweite, ist der erste bereits geschrieben — ohne
-      // diesen Refresh zeigte die Seite bis zum manuellen Neuladen einen Stand,
-      // den es in der DB nicht mehr gibt.
-      //
-      // Der Editor bleibt bewusst OFFEN und `markiert` unangetastet: die Auswahl
-      // ist die Absicht des Nutzers, und `diff` rechnet sie nach dem Refresh
-      // gegen den frischen Stand neu.
-      startTransition(() => router.refresh())
-    } finally {
-      laeuftRef.current = false
-      setLaeuft(false)
-    }
-  }
-
-  const busy = laeuft || pending
-
-  /**
-   * Die Sektion trägt **`zentrale-block`**, keine eigene Klasse (Selbstlesung
-   * 17.08.2026): `.zentrale-block h2` ist die **einzige** h2-Regel des Portals
-   * (uppercase, gesperrt, sekundär). Ohne sie fiele die Überschrift auf den
-   * Browser-Default zurück und sähe anders aus als jede andere
-   * Bereichsüberschrift der Zentrale. Das Vorbild `treiben-bereich.tsx` hat
-   * diesen Fehler — nicht mitgeändert, fremder Schnitt.
-   */
+  const neuVergeben = vergeben(gruppen, neuName)
 
   function anlegen() {
     // **Gespeichert wird, was geprüft wurde** (Entscheidung Moritz, 17.08.2026,
@@ -330,64 +162,6 @@ export default function StandgruppenBereich({
     )
   }
 
-  function speichern() {
-    if (!offen || nichtsZuTun || umbenennenVergeben || nameLeer) return
-    void fuehreAus(
-      'Das Speichern',
-      async () => {
-        const client = createClient()
-
-        if (nameGeaendert) {
-          await schreibe('Der Name der Standgruppe', () =>
-            client.from('standgruppen').update({ name: nameNeu }).eq('id', offen.id).select('id'),
-          )
-        }
-
-        /**
-         * **Erst LEGEN, dann entfernen.** Die Writes sind getrennte
-         * Transaktionen; PostgREST kennt keine Klammer darum. Bricht der zweite
-         * ab, bleibt ein Zwischenzustand stehen — die Frage ist also nicht OB,
-         * sondern WELCHER:
-         *
-         * - erst entfernen: Stände sind aus der Gruppe raus, die neuen fehlen.
-         * - erst legen: die Gruppe trägt kurz zu VIELE Stände. Sichtbar auf der
-         *   Karte, mit einem zweiten Speichern behoben.
-         *
-         * Die beiden Mengen sind disjunkt (`entfernen` sind Mitglieder ohne
-         * Markierung, `legen` sind Markierungen ohne Mitgliedschaft) — die
-         * Reihenfolge kann also nicht in den Primärschlüssel laufen.
-         */
-        if (diff.legen.length > 0) {
-          await schreibeViele('Die neuen Stände', diff.legen.length, () =>
-            client
-              .from('standgruppen_staende')
-              .insert(
-                diff.legen.map((mapObjectId) => ({
-                  gruppe_id: offen.id,
-                  map_object_id: mapObjectId,
-                })),
-              )
-              .select('map_object_id'),
-          )
-        }
-        if (diff.entfernen.length > 0) {
-          // `.eq('gruppe_id', …)` ist nicht redundant neben `.in(…)`: der
-          // Primärschlüssel ist zusammengesetzt, `map_object_id` allein trifft
-          // denselben Stand in JEDER Gruppe des Reviers.
-          await schreibeViele('Die abgewählten Stände', diff.entfernen.length, () =>
-            client
-              .from('standgruppen_staende')
-              .delete()
-              .eq('gruppe_id', offen.id)
-              .in('map_object_id', diff.entfernen)
-              .select('map_object_id'),
-          )
-        }
-      },
-      schliessen,
-    )
-  }
-
   function loeschen(g: Standgruppe) {
     void fuehreAus(
       'Das Löschen',
@@ -399,11 +173,22 @@ export default function StandgruppenBereich({
       },
       () => {
         setLoeschFrage(null)
-        if (offenId === g.id) schliessen()
+        // Auch aus der KARTE nehmen, nicht nur aus der Liste: die gelöschte
+        // Gruppe bliebe dort sonst hervorgehoben, bis der nächste
+        // `router.refresh()` durch ist — eine Menge ohne Zeile dahinter.
+        if (aktiveId === g.id) aufSchliessen()
       },
     )
   }
 
+  /**
+   * Die Sektion trägt **`zentrale-block`**, keine eigene Klasse (Selbstlesung
+   * 17.08.2026): `.zentrale-block h2` ist die **einzige** h2-Regel des Portals
+   * (uppercase, gesperrt, sekundär). Ohne sie fiele die Überschrift auf den
+   * Browser-Default zurück und sähe anders aus als jede andere
+   * Bereichsüberschrift der Zentrale. Das Vorbild `treiben-bereich.tsx` hat
+   * diesen Fehler — nicht mitgeändert, fremder Schnitt (C-40).
+   */
   return (
     <section className="zentrale-block" aria-labelledby="revier-gruppen-titel">
       <h2 id="revier-gruppen-titel">Standgruppen</h2>
@@ -420,16 +205,14 @@ export default function StandgruppenBereich({
       )}
 
       {gruppen.length === 0 ? (
-        <p className="zentrale-leer">
-          Noch keine Standgruppe angelegt.
-        </p>
+        <p className="zentrale-leer">Noch keine Standgruppe angelegt.</p>
       ) : (
         <ul className="revier-gruppen-liste" role="list">
           {gruppen.map((g) => {
             /**
              * **Mitglieder im Papierkorb gehören ausgewiesen.** Sie zählen in
              * der Pille mit, stehen aber nicht auf der Karte und lassen sich
-             * hier nicht abwählen — ohne diesen Hinweis sucht der Revierinhaber
+             * nicht abwählen — ohne diesen Hinweis sucht der Revierinhaber
              * einen Stand, den er nie findet. Dieselbe Bauform wie
              * „(N aus der App)" bei den Treiben, und dieselbe Stelle: als
              * Variable vor dem `return`, nicht als IIFE im JSX.
@@ -442,148 +225,85 @@ export default function StandgruppenBereich({
              * per CASCADE mit.
              */
             const imPapierkorb = g.staende.filter((id) => !sichtbar.has(id)).length
+            const aktiv = aktiveId === g.id
+            // Für die aktive Gruppe gilt, was die Karte zeigt — s. `aktiveMenge`.
+            const anzahl = aktiv && aktiveMenge ? aktiveMenge.size : g.staende.length
             return (
-            <li key={g.id} className="revier-gruppen-zeile">
-              <div className="revier-gruppen-kopf">
-                <span className="revier-gruppen-name">{g.name}</span>
-                <span className="zentrale-pill">
-                  {g.staende.length} {g.staende.length === 1 ? 'Stand' : 'Stände'}
-                </span>
-                {imPapierkorb > 0 && (
-                  <span className="zentrale-pill">{imPapierkorb} im Papierkorb</span>
-                )}
-              </div>
+              <li key={g.id} className="revier-gruppen-zeile">
+                <div className="revier-gruppen-kopf">
+                  <span className="revier-gruppen-name">{g.name}</span>
+                  <span className="zentrale-pill">
+                    {anzahl} {anzahl === 1 ? 'Stand' : 'Stände'}
+                  </span>
+                  {imPapierkorb > 0 && (
+                    <span className="zentrale-pill">{imPapierkorb} im Papierkorb</span>
+                  )}
+                </div>
 
-              <div className="revier-gruppen-knoepfe">
-                <button
-                  type="button"
-                  className="zentrale-knopf"
-                  onClick={() => (offenId === g.id ? schliessen() : oeffnen(g))}
-                  disabled={busy}
-                >
-                  {offenId === g.id ? 'Schließen' : 'Stände wählen'}
-                </button>
-
-                {loeschFrage === g.id ? (
-                  <>
-                    <span className="revier-gruppen-frage">
-                      Löschen? Die {g.staende.length} zugeordneten Stände verlieren nur ihre
-                      Zugehörigkeit — die Stände selbst bleiben auf der Karte.
-                    </span>
-                    <button
-                      type="button"
-                      className="zentrale-knopf"
-                      onClick={() => loeschen(g)}
-                      disabled={busy}
-                    >
-                      Ja, löschen
-                    </button>
-                    <button
-                      type="button"
-                      className="zentrale-abbrechen"
-                      onClick={() => setLoeschFrage(null)}
-                      disabled={busy}
-                    >
-                      Abbrechen
-                    </button>
-                  </>
-                ) : (
+                <div className="revier-gruppen-knoepfe">
+                  {/* **„Auf Karte" statt „Stände wählen"** — der Knopf zeigt die
+                      Gruppe erst nur an. Bearbeitet wird aus dem Band bei der
+                      Karte heraus, wo die Stände liegen. Zwei Schritte statt
+                      einem, dafür kann man eine Gruppe ansehen, ohne in einen
+                      Zustand zu geraten, aus dem man speichern oder abbrechen
+                      muss (Moritz, 18.08.2026: „gerade geht ja nur stände
+                      wählen und löschen"). */}
+                  {/* `setLoeschFrage(null)` gehört dazu (Schlusslesung
+                      18.08.2026, 3): das alte `oeffnen()` räumte die Rückfrage,
+                      der Weg über den Arbeitsbereich kennt sie nicht. Sonst
+                      bleibt eine angefangene Löschfrage stehen, während man
+                      dieselbe Gruppe auf die Karte holt — folgenlos im Ergebnis,
+                      aber eine Frage, die auf einen Klick wartet, der ihr nicht
+                      mehr gilt. Derselbe Fehlertyp wie die Grenzen-Rückfrage in
+                      `revierkarte.tsx`. */}
                   <button
                     type="button"
                     className="zentrale-knopf"
-                    onClick={() => setLoeschFrage(g.id)}
-                    disabled={busy}
+                    onClick={() => {
+                      setLoeschFrage(null)
+                      if (aktiv) aufSchliessen()
+                      else aufAnsehen(g)
+                    }}
+                    disabled={gesperrt}
                   >
-                    Löschen
+                    {aktiv ? 'Von der Karte nehmen' : 'Auf Karte'}
                   </button>
-                )}
-              </div>
 
-              {offenId === g.id && (
-                <div className="revier-gruppen-editor">
-                  <label className="revier-gruppen-feld">
-                    <span>Name</span>
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      disabled={busy}
-                      maxLength={120}
-                    />
-                  </label>
-                  {nameLeer && (
-                    <p className="zentrale-sub" role="status">
-                      Eine Standgruppe braucht einen Namen.
-                    </p>
-                  )}
-                  {umbenennenVergeben && (
-                    <p className="zentrale-sub" role="status">
-                      In diesem Revier gibt es schon eine Gruppe mit diesem Namen.
-                    </p>
-                  )}
-
-                  <p className="zentrale-sub">Stände auf der Karte antippen.</p>
-
-                  {/* `zentrale-karte-kasten` ist die vorhandene Klasse der
-                      Revierkarte, keine zweite: sie bringt 420 px Standard,
-                      `.kino` mit 78vh und `:fullscreen` mit 100vh/100vw schon
-                      mit. Damit ist die Karte hier exakt so groß wie die
-                      darüber, in allen drei Zuständen. */}
-                  <div ref={kasten} className={`zentrale-karte-kasten${kino ? ' kino' : ''}`}>
-                    {/* Die Leiste liegt IM Kasten: `requestFullscreen()` läuft
-                        auf `kasten`, im Vollbild ist also nur sichtbar, was ein
-                        Nachkomme davon ist. Ein Geschwister-Knopf „Vollbild
-                        beenden" wäre unbedienbar (Fremdprüfung 10.08.2026, K1).
-                        Speichern und Abbrechen bleiben dagegen unten — sie
-                        gehören zum Formular, nicht zur Karte. */}
-                    <div className="zentrale-karte-knoepfe">
-                      <span className="revier-gruppen-zaehler">
-                        {markiert.size} gewählt
-                        {diff.legen.length > 0 ? ` · +${diff.legen.length}` : ''}
-                        {diff.entfernen.length > 0 ? ` · −${diff.entfernen.length}` : ''}
+                  {loeschFrage === g.id ? (
+                    <>
+                      <span className="revier-gruppen-frage">
+                        Löschen? Die {g.staende.length} zugeordneten Stände verlieren nur ihre
+                        Zugehörigkeit — die Stände selbst bleiben auf der Karte.
                       </span>
-                      {/* Im Vollbild sinnlos — die Zwischengröße ist dort keine
-                          Größe mehr. Wortgleich zur Revierkarte. */}
-                      {!voll && (
-                        <button type="button" onClick={() => setKino((k) => !k)} disabled={busy}>
-                          {kino ? 'Kleiner' : 'Kinomodus'}
-                        </button>
-                      )}
-                      <button type="button" onClick={vollUmschalten} disabled={busy}>
-                        {voll ? 'Vollbild beenden' : 'Vollbild'}
+                      <button
+                        type="button"
+                        className="zentrale-knopf"
+                        onClick={() => loeschen(g)}
+                        disabled={gesperrt}
+                      >
+                        Ja, löschen
                       </button>
-                    </div>
-                    <div className="zentrale-karte-buehne">
-                      <Karte
-                        grenze={grenze}
-                        punkte={punkte}
-                        markiert={markiert}
-                        aufAuswahl={umschalten}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="revier-gruppen-knoepfe">
+                      <button
+                        type="button"
+                        className="zentrale-abbrechen"
+                        onClick={() => setLoeschFrage(null)}
+                        disabled={gesperrt}
+                      >
+                        Abbrechen
+                      </button>
+                    </>
+                  ) : (
                     <button
                       type="button"
                       className="zentrale-knopf"
-                      onClick={speichern}
-                      disabled={busy || nichtsZuTun || umbenennenVergeben || nameLeer}
+                      onClick={() => setLoeschFrage(g.id)}
+                      disabled={gesperrt}
                     >
-                      {busy ? 'Speichert …' : 'Speichern'}
+                      Löschen
                     </button>
-                    <button
-                      type="button"
-                      className="zentrale-abbrechen"
-                      onClick={schliessen}
-                      disabled={busy}
-                    >
-                      Abbrechen
-                    </button>
-                  </div>
+                  )}
                 </div>
-              )}
-            </li>
+              </li>
             )
           })}
         </ul>
@@ -597,7 +317,7 @@ export default function StandgruppenBereich({
             value={neu}
             onChange={(e) => setNeu(e.target.value)}
             placeholder="z. B. Sauberg"
-            disabled={busy}
+            disabled={gesperrt}
             maxLength={120}
           />
         </label>
@@ -607,7 +327,7 @@ export default function StandgruppenBereich({
           onClick={anlegen}
           // `sichtbarerName`, nicht `neu.trim()`: ein eingefügtes ZWSP ergäbe
           // sonst `length === 1` und eine sichtbar leere Gruppe.
-          disabled={busy || neuName.length === 0 || neuVergeben}
+          disabled={gesperrt || neuName.length === 0 || neuVergeben}
         >
           Anlegen
         </button>

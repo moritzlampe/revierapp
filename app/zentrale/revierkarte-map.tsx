@@ -73,6 +73,25 @@ const NEUTRAL = '#8B8775'
 const BRONZE = '#C08E48'
 
 /**
+ * Forest aus den Design Locks — die Standgruppe (18.08.2026).
+ *
+ * **Bewusst nicht Bronze:** die trägt bereits die Einzelauswahl des
+ * Inspektors, und beide nebeneinander müssen unterscheidbar bleiben. Heller als
+ * `ACCENT`, damit ein Gruppenstand sich von der normalen Sitzfüllung abhebt,
+ * ohne die Karte umzufärben.
+ */
+const FOREST = '#6E8A52'
+
+/**
+ * Wie stark alles zurücktritt, was NICHT zur gezeigten Standgruppe gehört.
+ *
+ * **Abblenden statt ausblenden**, und das ist der Punkt: im Bearbeiten-Modus
+ * muss man die übrigen Stände noch sehen, um sie hinzuzufügen. Ein Stand, den
+ * die Anzeige versteckt, ist einer, den niemand in die Gruppe holen kann.
+ */
+const GEDIMMT = 0.25
+
+/**
  * Ab dieser Zoomstufe stehen die Namen dauerhaft an den Punkten, darunter nur
  * beim Überfahren. Grund: Revier Söder hat 196 Objekte — dauerhaft beschriftet
  * wäre die Übersicht ein Schrifthaufen, in dem nichts mehr lesbar ist.
@@ -237,10 +256,21 @@ function Objekte({
   punkte,
   auswahlId,
   markiert,
+  gruppe,
   aufAuswahl,
 }: {
   punkte: Punkt[]
   auswahlId: string | null
+  /**
+   * Eine Standgruppe, die gerade gezeigt oder bearbeitet wird (18.08.2026).
+   *
+   * **Additiv neben `markiert`, nicht an dessen Stelle** — die Treiben-Karte
+   * benutzt `markiert` weiterhin und bleibt unberührt. Die beiden sehen ähnlich
+   * aus, meinen aber Verschiedenes: `markiert` ist eine AUSWAHL im Editor,
+   * `gruppe` eine dauerhafte Zugehörigkeit, die man auch nur ansehen kann. Sie
+   * blendet deshalb den Rest ab und schaltet keine Namensschilder ein.
+   */
+  gruppe?: { staende: ReadonlySet<string>; bearbeiten: boolean }
   /**
    * Mehrfachauswahl (Phase 4b): die Stände, die zu einem Treiben gehören.
    *
@@ -264,8 +294,20 @@ function Objekte({
     <>
       {punkte.map((p) => {
         const gewaehlt = p.id === auswahlId || !!markiert?.has(p.id)
-        // Der Name des ausgewählten Objekts steht immer, auch weit herausgezoomt:
-        // sonst wäre die Auswahl unter Zoom 16 nur ein Ring ohne Auskunft.
+        const inGruppe = !!gruppe?.staende.has(p.id)
+        /** Alles, was nicht zur gezeigten Gruppe gehört, tritt zurück. */
+        const gedimmt = gruppe !== undefined && !inGruppe
+        /**
+         * Der Name des ausgewählten Objekts steht immer, auch weit herausgezoomt:
+         * sonst wäre die Auswahl unter Zoom 16 nur ein Ring ohne Auskunft.
+         *
+         * **Gruppenmitgliedschaft zählt hier ausdrücklich NICHT** (18.08.2026).
+         * Sie ist eine MENGE, keine Auswahl: bei „Sauberg" wären das 52
+         * dauerhafte Namensschilder gleichzeitig, und die Karte, die diese
+         * Schwelle überhaupt erst eingeführt hat (196 Objekte in Söder), wäre
+         * genau dort wieder unlesbar. Das Leuchten trägt die Zugehörigkeit, der
+         * Name beantwortet eine andere Frage.
+         */
         const nameSteht = namenFest || gewaehlt
         return (
           <CircleMarker
@@ -287,11 +329,16 @@ function Objekte({
             interactive={!!aufAuswahl}
             eventHandlers={aufAuswahl ? { click: () => aufAuswahl(p.id) } : undefined}
             pathOptions={{
-              color: '#FFFFFF',
-              weight: 1.5,
+              // **Nur `pathOptions`, kein wechselnder `radius`:** react-leaflet
+              // zieht Style-Eigenschaften per `setStyle` nach, und darauf ist hier
+              // Verlass. Ein Größenwechsel wäre eine zweite Mechanik für dasselbe
+              // Ziel — Farbe und Deckkraft tragen es allein.
+              color: inGruppe ? FOREST : '#FFFFFF',
+              weight: inGruppe ? 3 : 1.5,
               // Alles, worauf ein Schütze sitzt, bekommt den Akzent — der Rest tritt zurück.
               fillColor: istStand(p.typ) ? ACCENT : NEUTRAL,
-              fillOpacity: 0.9,
+              fillOpacity: gedimmt ? GEDIMMT : 0.9,
+              opacity: gedimmt ? GEDIMMT : 1,
             }}
           >
             {/* Das `key` erzwingt ein Neubinden: Leaflet liest `permanent` nur
@@ -348,9 +395,12 @@ export default function RevierkarteMap({
   setzen,
   auswahlId = null,
   markiert,
+  gruppe,
   aufAuswahl,
   randRechts = 0,
 }: KarteProps & {
+  /** Standgruppe zum Anzeigen/Bearbeiten — s. `Objekte`. */
+  gruppe?: { staende: ReadonlySet<string>; bearbeiten: boolean }
   zeichnen?: ZeichenProps
   /** Setzmodus (Schritt 3b) — schließt `zeichnen` aus, beide wollen den Klick. */
   setzen?: SetzProps
@@ -447,6 +497,10 @@ export default function RevierkarteMap({
         punkte={punkte}
         auswahlId={zeichnen ? null : auswahlId}
         markiert={markiert}
+        // Beim Zeichnen und Setzen tritt die Gruppenanzeige ab: dort gehört die
+        // Aufmerksamkeit dem Entwurf, und ein abgeblendetes Revier machte das
+        // Zielen auf einen Grenzpunkt schwerer, nicht leichter.
+        gruppe={zeichnen || setzen ? undefined : gruppe}
         aufAuswahl={waehlbar}
       />
       <ZuAuswahl

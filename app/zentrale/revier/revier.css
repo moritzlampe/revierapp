@@ -63,12 +63,6 @@
   font-size: 0.9rem;
 }
 
-.revier-gruppen-editor {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--z-border);
-}
-
 .revier-gruppen-feld {
   display: flex;
   flex-direction: column;
@@ -81,33 +75,7 @@
   color: var(--z-text-secondary);
 }
 
-/* Die Karte selbst sitzt in `.zentrale-karte-kasten` aus `zentrale.css` — die
-   Klasse bringt 420px, `.kino` (78vh) und `:fullscreen` (100vh) schon mit.
-   Hier steht nur, was dort fehlt.
-
-   Der Zaehler sitzt in der Knopfleiste IM Kasten: im Vollbild ist er die
-   einzige Rueckmeldung darauf, was ein Klick bewirkt hat. `elevated` statt des
-   `sunken` von `.zentrale-pill`, weil er ueber der Karte liegt und sich davon
-   abheben muss. */
-.revier-gruppen-zaehler {
-  font-size: 0.8125rem;
-  padding: 5px 10px;
-  color: var(--z-text-primary);
-  background: var(--z-bg-elevated);
-  border: 1px solid var(--z-border-strong);
-  border-radius: 6px;
-  white-space: nowrap;
-}
-
-/* Fuellt die Buehne, solange der Leaflet-Chunk laedt — ohne Hoehe waere der
-   Kasten fuer einen Moment leer und die Seite spraenge beim Ankommen. */
-.revier-gruppen-karte-platzhalter {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-}
-
+/* Die Zeile zum Anlegen einer neuen Standgruppe, unter der Liste. */
 .revier-gruppen-neu {
   display: flex;
   align-items: flex-end;
