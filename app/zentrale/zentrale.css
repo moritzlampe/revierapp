@@ -507,6 +507,78 @@ body:has(.zentrale-karte-kasten.kino) {
    schrumpfen, und der Inspektor würde aus dem Kasten gedrückt. */
 .zentrale-karte-buehne { position: relative; flex: 1; min-width: 0; }
 
+/* **Wie hoch die beiden Leistenzeilen über der Karte zusammen bauen.**
+
+   Die EINE Stelle, an der Reiterleiste, Optionenzeile, Objektspalte und
+   Ziehgriff sich einig sind. Rechnung: Reiter bei `top: 10px`, Optionen bei
+   `top: 48px`, deren Knöpfe rund 30px hoch — macht 78px, aufgerundet mit Luft.
+
+   Der Wert ist gesetzt, nicht gemessen: die Zeilen liegen absolut über der
+   Karte, ihre Höhe steht also nirgends im Layout. Wer eine dritte Zeile
+   einzieht oder die Knöpfe größer macht, ändert diese Zahl — und nur sie. */
+.zentrale-karte-kasten { --karte-leisten-hoehe: 80px; }
+
+/* **Die Reiterleiste** (C-43, 18.08.2026). Links oben, mit Einzug um den
+   Leaflet-Zoom-Control herum — sie steht daneben, nicht darauf.
+
+   Kein `flex-wrap`, und das ist Absicht: vier kurze Wörter passen in jede
+   Kartenbreite. Bräche die Leiste doch um, wäre sie keine Leiste mehr — und das
+   wäre das Zeichen, dass ein fünfter Reiter einer zu viel ist. */
+.zentrale-karte-reiter {
+  position: absolute;
+  top: 10px;
+  left: 50px;
+  z-index: 1000; /* Leaflet-Controls liegen auf 1000, der Zoom sitzt links */
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 8px;
+}
+.zentrale-karte-reiter button {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 4px 12px;
+  color: var(--z-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zentrale-karte-reiter button:hover:not(:disabled):not(.aktiv) {
+  background: var(--z-bg-sunken);
+  color: var(--z-text-primary);
+}
+/* Der aktive Reiter ist gefüllt, nicht nur fett: vier Wörter nebeneinander auf
+   einer Luftbildkarte trennt ein Gewichtsunterschied allein zu leise. */
+.zentrale-karte-reiter button.aktiv {
+  color: var(--z-text-primary);
+  background: var(--z-bg-sunken);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--z-border-strong);
+}
+.zentrale-karte-reiter button:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+.zentrale-karte-reiter button:disabled { opacity: 0.4; cursor: default; }
+
+/* Die Knopfleiste über einer Karte — rechts oben, eine Zeile.
+
+   **Sie gehört NICHT nur der Revierkarte, und das ist die Falle, in die dieser
+   Umbau getreten ist** (Schlusslesung 18.08.2026, F2): `treiben-bereich.tsx`
+   benutzt dieselbe Klasse für seine Zähler-/Kino-/Vollbild-Leiste über der
+   Treiben-Karte. Die erste Fassung des Reiter-Umbaus hat sie einfach
+   umpositioniert (`top: 48px; left: 50px`) — die Treiben-Knöpfe wären damit
+   38 px in die Karte gerutscht und von rechts oben nach links gewandert, auf
+   einer Seite, die live deployt ist und mit Standgruppen nichts zu tun hat.
+
+   **Sechster Fall des Tagesmusters „ein Riegel, der beim Umzug nicht
+   mitgewandert ist" — und der einzige, den ich selbst erzeugt habe.** Der
+   Klassencheck konnte ihn nicht sehen: die Klasse existiert ja, sie hat nur
+   einen zweiten Mieter. Wer hier eine geteilte Klasse umbaut, sucht ihre
+   Nutzer, bevor er Werte ändert. */
 .zentrale-karte-knoepfe {
   position: absolute;
   top: 10px;
@@ -515,7 +587,49 @@ body:has(.zentrale-karte-kasten.kino) {
   display: flex;
   gap: 6px;
 }
-.zentrale-karte-knoepfe button {
+
+/* Die Optionenzeile des offenen Reiters (C-43) — eine EIGENE Klasse, s. oben.
+   Eine Zeile TIEFER als die Reiter, nicht daneben.
+
+   Eine Breite zu reservieren wäre der falsche Riegel: sie hinge an der Anzahl
+   der Knöpfe, und die ändert sich je Reiter, ohne dass hier jemand nachsieht.
+   Genau daran ist am 18.08.2026 das Standgruppen-Band aufgelaufen und hat
+   „Grenze bearbeiten" überlappt. Eine Zeile tiefer hängt von nichts ab.
+
+   **`flex-wrap: wrap` ist der Notnagel, nicht der Plan** (Schlusslesung
+   18.08.2026, F3): bricht die Zeile um, liegt ihre zweite Hälfte unterhalb von
+   `--karte-leisten-hoehe` und damit hinter der Objektspalte. Der Fall, der das
+   ausgelöst hätte, ist an der Quelle geschlossen — die Löschrückfrage übernimmt
+   die Zeile jetzt allein, statt sich hinter „Stände bearbeiten · Umbenennen"
+   zu stellen. Der Umbruch bleibt als Verhalten für einen Fall, den heute
+   niemand herstellt; er verliert dann Sichtbarkeit, keine Daten. */
+.zentrale-karte-optionen {
+  position: absolute;
+  top: 48px;
+  left: 50px;
+  right: 10px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Suchfeld und Klapp-Winkel: senkrecht über der Spalte, die sie bedienen — und
+   in einem EIGENEN Container, damit eine wachsende Optionenzeile sie nicht
+   verschiebt. Auf Reiterhöhe, weil sie zur Spalte gehören, nicht zum Werkzeug. */
+.zentrale-karte-spaltenkopf {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  display: flex;
+  gap: 6px;
+}
+
+.zentrale-karte-knoepfe button,
+.zentrale-karte-optionen button,
+.zentrale-karte-spaltenkopf button {
   font: inherit;
   font-size: 0.8125rem;
   padding: 5px 10px;
@@ -525,18 +639,65 @@ body:has(.zentrale-karte-kasten.kino) {
   border-radius: 6px;
   cursor: pointer;
 }
-.zentrale-karte-knoepfe button:hover { background: var(--z-bg-sunken); }
-.zentrale-karte-knoepfe button:focus-visible {
+.zentrale-karte-knoepfe button:hover:not(:disabled),
+.zentrale-karte-optionen button:hover:not(:disabled),
+.zentrale-karte-spaltenkopf button:hover:not(:disabled) {
+  background: var(--z-bg-sunken);
+}
+.zentrale-karte-knoepfe button:focus-visible,
+.zentrale-karte-optionen button:focus-visible,
+.zentrale-karte-spaltenkopf button:focus-visible {
   outline: 2px solid var(--z-accent);
   outline-offset: 2px;
 }
-.zentrale-karte-knoepfe button:disabled { opacity: 0.5; cursor: default; }
+.zentrale-karte-knoepfe button:disabled,
+.zentrale-karte-optionen button:disabled,
+.zentrale-karte-spaltenkopf button:disabled { opacity: 0.5; cursor: default; }
 /* Der Klapp-Winkel: schmaler als die Wortknöpfe, sonst gleiche Optik. */
-.zentrale-karte-knoepfe button.klapp {
+.zentrale-karte-spaltenkopf button.klapp {
   width: 28px;
   padding: 5px 0;
   font-size: 0.9375rem;
   line-height: 1;
+}
+
+/* Zähler, Namensfeld und Löschfrage der Standgruppen — sie stehen IN der
+   Optionenzeile und tragen deshalb deren Optik, nicht die der Spalte.
+
+   Der Zähler ist im Vollbild die einzige Rückmeldung darauf, was ein Klick
+   bewirkt hat. `elevated` statt des `sunken` von `.zentrale-pill`, weil er über
+   der Karte liegt und sich davon abheben muss. */
+.zentrale-karte-zaehler,
+.zentrale-karte-frage {
+  font-size: 0.8125rem;
+  padding: 5px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+.zentrale-karte-zaehler { white-space: nowrap; }
+/* Die Frage darf umbrechen — sie ist ein Satz, kein Etikett. Gedeckelt, damit
+   sie die Zeile nicht allein füllt und „Ja, löschen" aus dem Bild schiebt.
+
+   `overflow-wrap: anywhere`, weil der Deckel sonst nicht hält (Delta-Durchgang
+   18.08.2026, D2): der Gruppenname steht IN der Frage, `maxLength` erlaubt 120
+   Zeichen, und ein Name ohne Leerzeichen hat keine Umbruchstelle — er liefe aus
+   dem Kasten heraus und übermalte die Knöpfe rechts daneben. Ein Deckel, der
+   von der Eingabe abhängt, ist keiner. */
+.zentrale-karte-frage { max-width: 26rem; overflow-wrap: anywhere; }
+
+/* Das Namensfeld beim Umbenennen. Schmal gehalten: es steht über der Karte und
+   darf ihr nicht die halbe Breite nehmen. */
+.zentrale-karte-namensfeld {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 5px 10px;
+  max-width: 14rem;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
 }
 
 /* Bedienhinweis und Fehlermeldung beim Grenzen-Bearbeiten. Unten statt oben:
@@ -653,11 +814,29 @@ body:has(.zentrale-karte-kasten.kino) {
   /* Liegt ÜBER der Karte, statt neben ihr zu stehen (Moritz, 28.07.2026).
      Als Flex-Nachbar endete die Karte an ihrer Kante, und über der Spalte blieb
      ein grauer Streifen, auf dem die Knöpfe standen. Jetzt läuft die Karte unter
-     der Leiste durch und die Spalte legt sich ab 42px darüber.
+     der Leiste durch und die Spalte legt sich darüber.
      Der Preis steht in `Ausschnitt`: `fitBounds` muss den verdeckten Streifen
      aussparen, sonst lägen Stände hinter der Spalte. */
   position: absolute;
-  top: 42px;
+  /* **`--karte-leisten-hoehe` statt einer Zahl, seit C-43 (18.08.2026) — und
+     die alte 42 war ein echter Fehler, keine Feinheit.**
+
+     Über der Karte liegt seit dem Reiter-Umbau nicht mehr EINE Leiste, sondern
+     zwei Zeilen: Reiter bei `top: 10px`, Optionen des offenen Reiters bei
+     `top: 48px`. Mit 42px begann die Spalte MITTEN in der zweiten Zeile, und
+     weil sie im DOM hinter ihr steht (bei gleichem `z-index: 1000`), gewann
+     sie: das rechte Ende der Optionenzeile verschwand hinter dem Panel.
+
+     Getroffen hätte es ausgerechnet die längste Zeile des Umbaus — die
+     Löschrückfrage der Standgruppe, im schlimmsten Fall den Knopf „Behalten".
+     Eine Rückfrage, deren Verneinung unsichtbar ist, ist schlimmer als keine.
+
+     **Als Variable, weil DREI Regeln denselben Wert brauchen** (Spalte, Griff
+     und `--karte-leisten-hoehe` selbst): drei Zahlen, die zusammenpassen
+     müssen, sind drei Stellen, an denen man eine vergisst — und genau so ist
+     dieser Fehler entstanden. Wer eine dritte Leistenzeile einzieht, ändert
+     eine Zeile. */
+  top: var(--karte-leisten-hoehe);
   right: 0;
   bottom: 0;
   z-index: 1000; /* wie die Leaflet-Controls, sonst läge sie unter den Kacheln */
@@ -683,7 +862,8 @@ body:has(.zentrale-karte-kasten.kino) {
    linke Rand der Spalte. */
 .zentrale-inspektor-griff {
   position: absolute;
-  top: 42px;
+  /* Dieselbe Oberkante wie die Spalte, an deren Kante er zieht — s. dort. */
+  top: var(--karte-leisten-hoehe);
   bottom: 0;
   right: var(--inspektor-breite, 320px);
   z-index: 1000;
@@ -1098,102 +1278,17 @@ body:has(.zentrale-karte-kasten.kino) {
   border-left: 2px solid var(--z-accent);
 }
 
-/* --- Das Standgruppen-Band ueber der Revierkarte (18.08.2026) ---
+/* --- Standgruppen-Band: mit C-43 ersatzlos entfallen (18.08.2026) ---
 
-   **Es steht HIER und nicht in `revier/revier.css`, obwohl es heute nur dort
-   erscheint.** Die Klassen gehoeren zu `revierkarte.tsx`, und deren uebrige
-   Stile stehen ebenfalls hier. Laegen sie in `revier.css`, haenge die Karte an
-   einem Stylesheet, das eine ANDERE Datei importiert — dieselbe versteckte
-   Kopplung, die den `jagden-chip`-Fehler ausgemacht hat (04.08.2026): sichtbar
-   richtig, solange zufaellig das passende CSS im Dokument haengt.
+   Es war eine Fernbedienung an der Karte fuer eine Liste, die darunter stand.
+   Name, Zaehler, Speichern und Abbrechen sitzen jetzt in der Optionenzeile ihres
+   Reiters (`.zentrale-karte-zaehler`, `.zentrale-karte-namensfeld` weiter oben),
+   die Liste in der Spalte daneben. Damit ist auch die Ueberlappung weg, fuer die
+   `c51b9e2` nur ein Nachzug war.
 
-   Das Band sitzt LINKS oben, `.zentrale-karte-knoepfe` (Kinomodus, Vollbild)
-   rechts — dieselbe Hoehe, ohne einander zu ueberlappen. Der Zoom-Control von
-   Leaflet liegt ebenfalls links, daher der Einzug: das Band steht daneben,
-   nicht darauf. `z-index: 1000` wie die Knopfleiste, weil Leaflet-Controls dort
-   liegen. */
-.zentrale-karte-band {
-  position: absolute;
-  /* **Das Band steht UNTER der Knopfleiste, nicht neben ihr** (Moritz,
-     18.08.2026, an der Produktion gesehen).
-
-     Vorher stand hier `right: 240px` — ein Platzhalter, der auf einer falschen
-     Annahme beruhte: in `.zentrale-karte-knoepfe` sitzen nicht nur Kinomodus
-     und Vollbild, sondern auch „Grenze bearbeiten", „Objekt anlegen" und
-     „Grenze loeschen". Die Leiste ist damit ein Vielfaches breiter als
-     geschaetzt, und „Bearbeiten"/„Schliessen" lagen unter „Grenze bearbeiten".
-
-     Eine BREITE zu reservieren ist der falsche Riegel, weil sie von der Anzahl
-     der Knoepfe abhaengt — und die aendert sich, ohne dass hier jemand
-     nachsieht. Eine Zeile tiefer zu gehen haengt von nichts ab. */
-  top: 56px;
-  left: 50px;
-  right: 10px;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-/* Eigene Knopfregel statt `.zentrale-karte-knoepfe` mitzubenutzen: deren
-   Selektor traegt die Position rechts, und die gilt hier nicht. Das Aussehen
-   ist bewusst dasselbe — es ist dieselbe Ebene ueber der Karte. */
-.zentrale-karte-band button {
-  font: inherit;
-  font-size: 0.8125rem;
-  padding: 5px 10px;
-  color: var(--z-text-primary);
-  background: var(--z-bg-elevated);
-  border: 1px solid var(--z-border-strong);
-  border-radius: 6px;
-  cursor: pointer;
-}
-.zentrale-karte-band button:hover:not(:disabled) {
-  background: var(--z-bg-sunken);
-}
-.zentrale-karte-band button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* Der Gruppenname im Bearbeiten-Modus. Schmal gehalten: er steht ueber der
-   Karte und darf ihr nicht die halbe Breite nehmen. */
-.zentrale-karte-band-name {
-  font: inherit;
-  font-size: 0.8125rem;
-  padding: 5px 10px;
-  max-width: 14rem;
-  color: var(--z-text-primary);
-  background: var(--z-bg-elevated);
-  border: 1px solid var(--z-border-strong);
-  border-radius: 6px;
-}
-
-/* Im Ansehen-Modus ist der Name Text, kein Feld — umbenannt wird ueber
-   „Bearbeiten". Gleiche Hoehe wie das Feld, damit das Band beim Umschalten
-   nicht springt. */
-.zentrale-karte-band-name-fest {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  padding: 5px 10px;
-  color: var(--z-text-primary);
-  background: var(--z-bg-elevated);
-  border: 1px solid var(--z-border-strong);
-  border-radius: 6px;
-  white-space: nowrap;
-}
-
-/* Der Zaehler ist im Vollbild die einzige Rueckmeldung darauf, was ein Klick
-   bewirkt hat — deshalb liegt er IM Band und nicht darunter. `elevated` statt
-   des `sunken` von `.zentrale-pill`, weil er ueber der Karte liegt und sich
-   davon abheben muss. */
-.zentrale-karte-band-zaehler {
-  font-size: 0.8125rem;
-  padding: 5px 10px;
-  color: var(--z-text-primary);
-  background: var(--z-bg-elevated);
-  border: 1px solid var(--z-border-strong);
-  border-radius: 6px;
-  white-space: nowrap;
-}
+   **Die Lehre des geloeschten Blocks gilt weiter und steht deshalb hier:** die
+   Klassen von `revierkarte.tsx` gehoeren in DIESE Datei, nicht in
+   `revier/revier.css`. Laegen sie dort, haenge die Karte an einem Stylesheet,
+   das eine ANDERE Datei importiert — dieselbe versteckte Kopplung, die den
+   `jagden-chip`-Fehler ausgemacht hat (04.08.2026): sichtbar richtig, solange
+   zufaellig das passende CSS im Dokument haengt. */

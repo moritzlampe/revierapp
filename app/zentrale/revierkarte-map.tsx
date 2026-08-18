@@ -262,15 +262,34 @@ function Objekte({
   punkte: Punkt[]
   auswahlId: string | null
   /**
-   * Eine Standgruppe, die gerade gezeigt oder bearbeitet wird (18.08.2026).
+   * Die Standgruppen des Reviers, wenn ihr Reiter offen ist (18.08.2026).
    *
    * **Additiv neben `markiert`, nicht an dessen Stelle** — die Treiben-Karte
    * benutzt `markiert` weiterhin und bleibt unberührt. Die beiden sehen ähnlich
    * aus, meinen aber Verschiedenes: `markiert` ist eine AUSWAHL im Editor,
    * `gruppe` eine dauerhafte Zugehörigkeit, die man auch nur ansehen kann. Sie
-   * blendet deshalb den Rest ab und schaltet keine Namensschilder ein.
+   * schaltet deshalb keine Namensschilder ein.
+   *
+   * **Zwei Mengen statt einer, seit dem Reiter-Umbau** (Moritz, 18.08.2026:
+   * „grundlegend alle gleichzeitig sichtbar"). Vorher zeigte die Karte genau die
+   * eine angewählte Gruppe und blendete alles andere ab — bei vier Söder-Mengen
+   * hätte man vier Mal umschalten müssen, um zu sehen, welcher Stand schon
+   * vergeben ist.
+   *
+   * - `alle` — jeder Stand, der in IRGENDEINER Gruppe liegt. Leuchtet.
+   * - `staende` — die angewählte Gruppe, beim Bearbeiten der Entwurf. Hebt sich
+   *   zusätzlich ab, über einen eigenen Ring.
+   *
+   * **Zwei Stufen, keine vier Farben** (ebenfalls Moritz): bei überlappenden
+   * Mengen konkurrierten sonst mehrere Farben um denselben Punkt, und ein Stand
+   * in drei Gruppen hätte keine eindeutige. Die Frage „in welchen Gruppen liegt
+   * dieser Stand?" beantwortet die Spalte, nicht die Karte.
    */
-  gruppe?: { staende: ReadonlySet<string>; bearbeiten: boolean }
+  gruppe?: {
+    alle: ReadonlySet<string>
+    staende: ReadonlySet<string>
+    bearbeiten: boolean
+  }
   /**
    * Mehrfachauswahl (Phase 4b): die Stände, die zu einem Treiben gehören.
    *
@@ -294,9 +313,28 @@ function Objekte({
     <>
       {punkte.map((p) => {
         const gewaehlt = p.id === auswahlId || !!markiert?.has(p.id)
+        /** In der ANGEWÄHLTEN Gruppe — beim Bearbeiten: im Entwurf. */
         const inGruppe = !!gruppe?.staende.has(p.id)
-        /** Alles, was nicht zur gezeigten Gruppe gehört, tritt zurück. */
-        const gedimmt = gruppe !== undefined && !inGruppe
+        /** In irgendeiner Gruppe des Reviers. Schließt `inGruppe` ein. */
+        const inIrgendeiner = inGruppe || !!gruppe?.alle.has(p.id)
+        /**
+         * **Abgeblendet wird nur noch beim BEARBEITEN** (Reiter-Umbau
+         * 18.08.2026).
+         *
+         * Dort ist es weiterhin richtig und der Grund unverändert: man muss die
+         * übrigen Stände sehen, um sie hinzuzufügen — ein Stand, den die Anzeige
+         * versteckt, ist einer, den niemand in die Gruppe holen kann; deshalb
+         * abblenden statt ausblenden.
+         *
+         * **Beim bloßen Ansehen NICHT, und das ist die Änderung.** Vorher trat
+         * alles zurück, sobald eine Gruppe auf der Karte lag — der Revierinhaber
+         * sah dann 52 leuchtende Stände in einem Revier, das zu 75 % blass war,
+         * und konnte gerade die Frage nicht beantworten, für die er hinsieht:
+         * welcher Stand ist noch frei? Mit `alle` leuchtet die Zugehörigkeit
+         * ohnehin; das Abblenden wäre eine zweite, schwächere Aussage über
+         * dieselbe Sache.
+         */
+        const gedimmt = !!gruppe?.bearbeiten && !inGruppe
         /**
          * Der Name des ausgewählten Objekts steht immer, auch weit herausgezoomt:
          * sonst wäre die Auswahl unter Zoom 16 nur ein Ring ohne Auskunft.
@@ -322,7 +360,22 @@ function Objekte({
             // Stück, es käme kein Grenzpunkt zustande), und wäre die Karte
             // während des Zeichnens erstmals aufgebaut worden, blieben die
             // Objekte danach dauerhaft unanklickbar. Der Key erzwingt den
-            // Neuaufbau — er passiert nur beim Wechsel des Zeichenmodus.
+            // Neuaufbau.
+            //
+            // **Er kippt seit C-43 häufiger, und das ist in Kauf genommen**
+            // (Fremdprüfung Codex 18.08.2026, P4): früher nur beim Wechsel des
+            // Zeichenmodus, jetzt zusätzlich beim Betreten und Verlassen des
+            // Standgruppen-Reiters sowie am Anfang und Ende einer
+            // Standbearbeitung. Bei Söder sind das ~196 CircleMarker samt
+            // Tooltips je Wechsel.
+            //
+            // Getragen wird das von der Häufigkeit: alle vier sind BEWUSSTE
+            // Handlungen, die ein Mensch pro Sitzung eine Handvoll Mal macht.
+            // Der teure Fall war ein anderer und bleibt geschlossen — **`busy`
+            // kippt den Key nicht**, ein Speichervorgang baut die Marker also
+            // nicht zweimal neu auf. Genau daran ist Schnitt 1 gescheitert, und
+            // deshalb sitzt der Doppelklick-Riegel in `umschalten()` statt an
+            // der Prop (s. `arbeitsbereich.tsx`).
             key={`${p.id}|${aufAuswahl ? 'waehlbar' : 'starr'}`}
             center={[p.lat, p.lng]}
             radius={5}
@@ -333,8 +386,11 @@ function Objekte({
               // zieht Style-Eigenschaften per `setStyle` nach, und darauf ist hier
               // Verlass. Ein Größenwechsel wäre eine zweite Mechanik für dasselbe
               // Ziel — Farbe und Deckkraft tragen es allein.
-              color: inGruppe ? FOREST : '#FFFFFF',
-              weight: inGruppe ? 3 : 1.5,
+              // **Stufe 1 von zwei: Zugehörigkeit überhaupt.** Jeder Stand in
+              // irgendeiner Gruppe bekommt den Forest-Rand; die angewählte
+              // Gruppe zusätzlich mehr Gewicht und den Ring weiter unten.
+              color: inIrgendeiner ? FOREST : '#FFFFFF',
+              weight: inGruppe ? 3 : inIrgendeiner ? 2 : 1.5,
               // Alles, worauf ein Schütze sitzt, bekommt den Akzent — der Rest tritt zurück.
               fillColor: istStand(p.typ) ? ACCENT : NEUTRAL,
               fillOpacity: gedimmt ? GEDIMMT : 0.9,
@@ -355,6 +411,33 @@ function Objekte({
           </CircleMarker>
         )
       })}
+
+      {/* **Stufe 2 von zwei: die angewählte Gruppe** (Reiter-Umbau 18.08.2026).
+          Derselbe Mechanismus wie der Auswahlring darunter, nur in Forest und
+          etwas enger — beide sind damit gleichzeitig lesbar, wenn ein Stand
+          zugleich ausgewählt und Gruppenmitglied ist.
+
+          **Ein Ring statt einer fünften Farbe**, weil Mengen sich überlappen:
+          ein Stand in „Sauberg" UND „Betonstraße" hat keine eindeutige Farbe,
+          wohl aber eine eindeutige Antwort auf „gehört er zu der, die ich gerade
+          ansehe?". Der Rand am Marker trägt die erste Stufe, der Ring die
+          zweite.
+
+          Nur wenn es überhaupt mehr als die angewählte Gruppe gibt, wäre der
+          Ring verzichtbar — er steht trotzdem immer, damit die Anzeige beim
+          Anlegen der zweiten Gruppe nicht ihre Bedeutung wechselt. */}
+      {gruppe &&
+        punkte
+          .filter((p) => gruppe.staende.has(p.id))
+          .map((p) => (
+            <CircleMarker
+              key={`gruppe-${p.id}`}
+              center={[p.lat, p.lng]}
+              radius={8}
+              interactive={false}
+              pathOptions={{ color: FOREST, weight: 2, fill: false }}
+            />
+          ))}
 
       {/* Der Auswahlring liegt als eigener, nicht anklickbarer Kreis zuletzt im
           Baum und damit über allen Markern. Ein zweites Merkmal neben der Farbe:
@@ -399,8 +482,12 @@ export default function RevierkarteMap({
   aufAuswahl,
   randRechts = 0,
 }: KarteProps & {
-  /** Standgruppe zum Anzeigen/Bearbeiten — s. `Objekte`. */
-  gruppe?: { staende: ReadonlySet<string>; bearbeiten: boolean }
+  /** Standgruppen zum Anzeigen/Bearbeiten, zwei Stufen — s. `Objekte`. */
+  gruppe?: {
+    alle: ReadonlySet<string>
+    staende: ReadonlySet<string>
+    bearbeiten: boolean
+  }
   zeichnen?: ZeichenProps
   /** Setzmodus (Schritt 3b) — schließt `zeichnen` aus, beide wollen den Klick. */
   setzen?: SetzProps

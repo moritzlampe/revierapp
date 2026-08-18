@@ -129,6 +129,53 @@ export function vergeben(
   return gruppen.some((g) => g.id !== ausserId && g.name === kandidat)
 }
 
+/**
+ * **Stufe 1 der Kartenanzeige: jeder Stand, der in IRGENDEINER Gruppe liegt**
+ * (C-43, 18.08.2026).
+ *
+ * Moritz' Vorgabe war „grundlegend alle gleichzeitig sichtbar": vorher zeigte
+ * die Karte genau die eine angewählte Gruppe, und bei den vier Söder-Mengen
+ * hätte man viermal umschalten müssen, um zu sehen, welcher Stand schon vergeben
+ * ist.
+ *
+ * **Die AKTIVE Gruppe steuert ihre GEZEIGTE Menge bei, nicht ihre gespeicherte,
+ * und das ist der ganze Grund für diese Funktion.** Nimmt man überall
+ * `g.staende`, blieben beim Bearbeiten die eben abgewählten Stände in Stufe 1
+ * stehen und leuchteten weiter, während der Zähler daneben `−1` meldet — Karte
+ * und Zähler behaupteten Verschiedenes über denselben Klick. Dieselbe Falle wie
+ * bei `aktiveMenge` in der Spalte, nur eine Ebene tiefer: was die Karte zeigt,
+ * muss zu dem passen, was daneben gezählt wird.
+ *
+ * `gezeigt` ist `null`, solange keine Gruppe angewählt ist; dann zählt schlicht
+ * jede gespeicherte Menge.
+ *
+ * **Steht hier und nicht als Einzeiler in der Komponente** — dieselbe Lehre wie
+ * bei `markierungAus` und `vergeben`: die erste Fassung war ein inline
+ * `flatMap`, und genau deshalb hätte kein Test sie je gesehen.
+ *
+ * **Ein Refresh-Fenster bleibt offen, benannt statt geheilt** (Fremdprüfung
+ * Codex 18.08.2026, Q3): nach dem Löschen einer Gruppe setzt `zeige(null)` die
+ * Auswahl sofort zurück, die `gruppen`-Prop trägt die gelöschte Zeile aber bis
+ * zum Eintreffen der Serverdaten weiter. Ihre exklusiven Stände leuchten
+ * deshalb ein bis zwei Sekunden nach, obwohl die Gruppe weg ist.
+ *
+ * Nicht behoben, weil der Fix teurer wäre als der Fehler: eine Menge gelöschter
+ * IDs mitzuführen wäre der Grabstein-Mechanismus aus `revierkarte.tsx`
+ * (`geschrieben: Record<string, Punkt | null>`) — ein zweiter Zustand, der mit
+ * dem ersten widerspruchsfrei gehalten werden muss, für ein Fenster, das von
+ * selbst heilt und in dem die DB die ganze Zeit recht hat. Dieselbe Abwägung
+ * wie bei E-R8. Fällig, wenn es je auffällt.
+ */
+export function alleStaende(
+  gruppen: readonly Standgruppe[],
+  aktiveId: string | null,
+  gezeigt: ReadonlySet<string> | null,
+): Set<string> {
+  return new Set(
+    gruppen.flatMap((g) => (g.id === aktiveId && gezeigt ? [...gezeigt] : g.staende)),
+  )
+}
+
 /** Was an `standgruppen_staende` geschrieben werden muss, um `markiert` zu erreichen. */
 export interface GruppenAenderung {
   /** `map_object_id` je zu entfernender Mitgliedschaft. */

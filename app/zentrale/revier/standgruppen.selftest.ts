@@ -7,7 +7,7 @@
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 // Wird vom Sammel-Script `npm run selftest` per Glob mitgenommen.
 import assert from 'node:assert/strict'
-import { ausZeilen, gruppenDiff, markierungAus, vergeben } from './standgruppen.ts'
+import { alleStaende, ausZeilen, gruppenDiff, markierungAus, vergeben } from './standgruppen.ts'
 
 // --- markierungAus(): der Zustand, mit dem die Komponente gruppenDiff fuettert ---
 //
@@ -193,5 +193,78 @@ assert.equal(
   false,
   'Kleinschreibung ebenso — der Constraint erlaubt beide nebeneinander',
 )
+
+// --- alleStaende(): Stufe 1 der Kartenanzeige (C-43, 18.08.2026) ---
+//
+// Die Zusicherung, auf die es ankommt, ist die dritte: waehrend des Bearbeitens
+// muss die AKTIVE Gruppe ihre GEZEIGTE Menge beisteuern. Sonst leuchtet ein eben
+// abgewaehlter Stand weiter, waehrend der Zaehler daneben `−1` meldet — Karte
+// und Zaehler behaupteten Verschiedenes ueber denselben Klick.
+const zwei = [
+  { id: 'g1', name: 'Sauberg', staende: ['A', 'B'] },
+  { id: 'g2', name: 'Buchberg', staende: ['C'] },
+]
+
+assert.deepEqual(
+  [...alleStaende(zwei, null, null)].sort(),
+  ['A', 'B', 'C'],
+  'ohne Auswahl zaehlt jede gespeicherte Menge',
+)
+
+assert.deepEqual(
+  [...alleStaende(zwei, 'g1', null)].sort(),
+  ['A', 'B', 'C'],
+  'eine aktive Gruppe OHNE Entwurf aendert nichts',
+)
+
+assert.deepEqual(
+  [...alleStaende(zwei, 'g1', new Set(['A']))].sort(),
+  ['A', 'C'],
+  'der Entwurf der aktiven Gruppe ersetzt ihre gespeicherte Menge — B ist abgewaehlt',
+)
+
+assert.deepEqual(
+  [...alleStaende(zwei, 'g1', new Set(['A', 'B', 'D']))].sort(),
+  ['A', 'B', 'C', 'D'],
+  'ein neu angetippter Stand leuchtet sofort mit',
+)
+
+// Ein Stand in ZWEI Gruppen faellt nur einmal an — es ist eine Menge, keine
+// Liste. Ohne das zaehlte die Karte ihn doppelt, was heute folgenlos waere und
+// beim ersten `size`-Leser nicht mehr.
+assert.deepEqual(
+  [
+    ...alleStaende(
+      [
+        { id: 'g1', name: 'Sauberg', staende: ['A', 'B'] },
+        { id: 'g2', name: 'Buchberg', staende: ['B', 'C'] },
+      ],
+      null,
+      null,
+    ),
+  ].sort(),
+  ['A', 'B', 'C'],
+  'ueberlappende Gruppen ergeben eine Menge, keine Doppelung',
+)
+
+// Der Entwurf einer Gruppe darf einen Stand NICHT aus einer anderen Gruppe
+// nehmen: wer B aus „Sauberg" abwaehlt, waehrend „Buchberg" ihn ebenfalls
+// fuehrt, sieht ihn weiter leuchten — richtig so, er ist ja noch vergeben.
+assert.deepEqual(
+  [
+    ...alleStaende(
+      [
+        { id: 'g1', name: 'Sauberg', staende: ['A', 'B'] },
+        { id: 'g2', name: 'Buchberg', staende: ['B'] },
+      ],
+      'g1',
+      new Set(['A']),
+    ),
+  ].sort(),
+  ['A', 'B'],
+  'ein Stand, den eine ANDERE Gruppe fuehrt, leuchtet nach dem Abwaehlen weiter',
+)
+
+assert.deepEqual([...alleStaende([], null, null)], [], 'ein Revier ohne Gruppen leuchtet nicht')
 
 console.log('standgruppen.selftest.ts: alle Zusicherungen gehalten')

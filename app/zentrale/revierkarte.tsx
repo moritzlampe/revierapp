@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -75,17 +75,76 @@ function spaltenBreite(px: number, kastenBreite: number): number {
  * in der Karte, weil er das Speichern kennt — die Karte stellt nur dar.
  */
 /**
- * Eine Standgruppe, die auf dieser Karte gezeigt oder bearbeitet wird.
+ * Die vier Reiter über der Karte (C-43, Moritz' Entwurf vom 18.08.2026).
+ *
+ * **Der Anlass war ein Layoutfehler, der Grund ist ein struktureller.** Bis
+ * hierher lagen alle Werkzeuge in EINER Leiste, und welcher Knopf gilt,
+ * entschieden Bedingungen an jedem Knopf einzeln — `beschaeftigt`,
+ * `gruppeBearbeitet`, `!editMode && setzen === null`, dazu acht weitere an
+ * Suchfeld, Klapp-Winkel, Spalte, Griff, `randRechts`, `auswahlId`, `aufAuswahl`
+ * und Band. Jede für sich richtig; zusammen die Stelle, an der **drei der
+ * sechzehn Befunde des 18.08.2026 saßen** (das halb gezogene Ausblenden, die
+ * Listensperre, der Klapp-Winkel).
+ *
+ * **Mit Reitern ist immer genau EINER aktiv, und das ist der ganze Gewinn:** die
+ * Verriegelung wird die FORM statt einer Bedingung, die man vergessen kann. Ein
+ * Knopf, den es im falschen Modus gar nicht gibt, braucht kein `disabled` — und
+ * `werkzeugOffen` sperrt nur noch eine einzige Sache, die Reiterleiste.
+ */
+export type Reiter = 'objekte' | 'standgruppen' | 'grenze' | 'ansicht'
+
+const REITER: { key: Reiter; label: string }[] = [
+  { key: 'objekte', label: 'Objekte' },
+  { key: 'standgruppen', label: 'Standgruppen' },
+  { key: 'grenze', label: 'Grenze' },
+  { key: 'ansicht', label: 'Ansicht' },
+]
+
+/**
+ * Die Standgruppen des Reviers, so weit die Karte sie braucht.
  *
  * **Die Karte besitzt diesen Zustand NICHT** — er kommt aus
- * `revier/arbeitsbereich.tsx`, weil die Gruppenliste unter der Karte ihn genauso
- * braucht. Hier liegt nur an, was zum Zeigen und Bedienen nötig ist.
+ * `revier/arbeitsbereich.tsx`, weil die Spalte ihn genauso braucht. Hier liegt
+ * nur an, was zum Zeigen und Bedienen nötig ist.
+ *
+ * **`spalte` ist ein fertiger Knoten, keine zwanzig weitere Felder.** Die Liste
+ * braucht Gruppen, Punkte, sichtbare IDs, den Schreibvorgang und das Anlegen;
+ * alles davon einzeln durchzureichen hieße, dieses Interface auf die doppelte
+ * Länge zu ziehen, damit die Karte Daten weitergibt, die sie nie ansieht. So
+ * bleibt die Datenhoheit oben, wo sie hingehört, und die Karte kennt nur den
+ * Platz, an den der Knoten gehört.
+ *
+ * **Sie ist eine FUNKTION, weil genau ein Wert die andere Richtung läuft:** ob
+ * die Spalte ausgeklappt ist, weiß nur die Karte — der Winkel dafür sitzt in
+ * ihrer Reiterleiste, und Objekt- und Gruppenliste teilen sich denselben
+ * Zustand, weil sie denselben Platz teilen. Ihn nach oben zu ziehen hieße, den
+ * Klappzustand der Objektspalte in einer Komponente zu halten, die von Objekten
+ * nichts weiß.
  */
-export interface Gruppenband {
-  name: string
-  /** Was leuchtet: im Ansehen-Modus die gespeicherte Menge, beim Bearbeiten der Entwurf. */
-  staende: ReadonlySet<string>
-  bearbeiten: boolean
+export interface GruppenAnschluss {
+  /** Jeder Stand in IRGENDEINER Gruppe — Stufe 1 der Kartenanzeige. */
+  alle: ReadonlySet<string>
+  /**
+   * Die angewählte Gruppe, `null` wenn keine. `staende` ist im Ruhezustand die
+   * gespeicherte Menge, beim Bearbeiten der Entwurf.
+   *
+   * **`id` war gestrichen und ist zurück, und der Grund gehört aufgeschrieben:**
+   * die Ponytail-Lesung fand sie ungelesen (stimmte) und schloss auf
+   * entbehrlich (stimmte nicht). Die Fremdprüfung fand denselben Tag darauf,
+   * dass die Löschrückfrage OHNE sie eine andere Gruppe treffen kann als die,
+   * deren Name in ihr steht (Codex Q4) — sie hängt jetzt an dieser ID.
+   *
+   * Zweiter Fall in zwei Tagen, in dem ein Streichvorschlag beim Umsetzen
+   * kippt. Ein Feld, das niemand liest, ist entbehrlich; ein Feld, das niemand
+   * liest, WEIL der Riegel fehlt, der es lesen müsste, ist ein Befund.
+   */
+  aktiv: { id: string; name: string; staende: ReadonlySet<string> } | null
+  /**
+   * Was gerade getan wird. **Ein Wert statt zweier Booleans**, damit
+   * „umbenennen und Stände zugleich" gar nicht ausdrückbar ist — dieselbe
+   * Überlegung wie bei `modus` im Arbeitsbereich.
+   */
+  modus: 'ansehen' | 'staende' | 'name'
   busy: boolean
   entwurfName: string
   zaehler: { gewaehlt: number; legen: number; entfernen: number }
@@ -94,18 +153,49 @@ export interface Gruppenband {
   speicherbar: boolean
   aufUmschalten: (id: string) => void
   aufName: (wert: string) => void
-  aufBearbeiten: () => void
+  aufStaende: () => void
+  aufUmbenennen: () => void
   aufSpeichern: () => void
   aufAbbrechen: () => void
-  aufSchliessen: () => void
+  aufLoeschen: () => void
+  /** Die Gruppenliste für die rechte Spalte — s. oben. */
+  spalte: (ausgeklappt: boolean) => ReactNode
+  /**
+   * Der letzte Schreibfehler des Standgruppen-Bereichs, oder `null`.
+   *
+   * **Er MUSS durch die Karte laufen, statt oben zu bleiben** (Schlusslesung
+   * 18.08.2026, F7): `requestFullscreen()` läuft auf dem Kartenkasten, und
+   * sichtbar ist im Vollbild nur, was ein Nachkomme davon ist — dieselbe Lehre
+   * wie K1 am Treiben-Bereich (10.08.2026). Speichern, Umbenennen und
+   * „Ja, löschen" sind im Vollbild bedienbar, weil die Optionenzeile im Kasten
+   * liegt; die Fehlermeldung dazu lag es nicht.
+   *
+   * Ein fehlgeschlagener Write (RLS mit 0 Zeilen, `23505` am UNIQUE) hätte sich
+   * dort so gezeigt: „Speichert …" endet, der Modus bleibt stehen, sonst
+   * nichts. Das ist S4 in Reinform — ein Fehler, der sich als gültige Auskunft
+   * liest.
+   */
+  fehler: string | null
 }
 
 export default function Revierkarte({
   grenze,
   punkte,
   revierId,
-  gruppe,
-}: KarteProps & { revierId: string; gruppe?: Gruppenband }) {
+  gruppen,
+}: KarteProps & {
+  revierId: string
+  /**
+   * **Pflicht, nicht optional** (Fremdprüfung Codex 18.08.2026, P3). Optional
+   * war es tote Flexibilität für einen Aufrufer, den es nicht gibt — und sie
+   * hatte einen Preis: ohne Anschluss galt die Spalte im Standgruppen-Reiter
+   * trotzdem als montiert, `randRechts` rechnete mit einer Breite, die niemand
+   * einnimmt, und `aria-controls` zeigte auf ein Element, das gar nicht im DOM
+   * ist. Ein Zustand, den kein Aufrufer je herstellt, aber jeder Leser
+   * mitdenken muss.
+   */
+  gruppen: GruppenAnschluss
+}) {
   const kasten = useRef<HTMLDivElement>(null)
   const [voll, setVoll] = useState(false)
   const [kino, setKino] = useState(false)
@@ -254,48 +344,65 @@ export default function Revierkarte({
    * vergessen — als benannter Wert an einer Stelle nicht.
    */
   /**
-   * **Der sechste Modus, und er muss in BEIDE Richtungen verriegeln**
-   * (18.08.2026, Standgruppen).
+   * Welcher Reiter offen ist. **Der eine Zustand, der die Modi trägt** (C-43).
    *
-   * Hin-Richtung: `gruppeBearbeitet` steht unten in `beschaeftigt` — solange eine
-   * Standgruppe bearbeitet wird, sperren Grenzenzeichnen, Objekt anlegen und
-   * Löschen. Sonst verlöre ein Klick auf „Grenze zeichnen" den Entwurf der
-   * Standmenge, ohne ihn je gezeigt zu haben.
-   *
-   * Rück-Richtung: der Wert ist nur wahr, wenn weder gezeichnet noch eine
-   * Position gesetzt wird — **nicht** „kein anderer Modus": `objektBearbeitung`
-   * und `laeuft` stehen NICHT im Ausdruck.
-   *
-   * `objektBearbeitung` ist dabei über die UI-Gates unerreichbar. **`laeuft`
-   * dagegen tritt regulär ein** und muss es auch: die Gruppen-Speicherung setzt
-   * es selbst, während die Bearbeitung noch gilt — das Band zeigt dann
-   * „Speichert …", und `umschalten` hält über `laeuftRef` dicht. Die erste
-   * Fassung erklärte beide für unerreichbar; für eines der beiden stimmte das
-   * nicht (Delta-Durchgang 18.08.2026).
-   *
-   * **Nicht wegen des Markerklicks** — den verwirft `revierkarte-map.tsx` beim
-   * Zeichnen und Setzen ohnehin selbst (`waehlbar = zeichnen || setzen ?
-   * undefined : aufAuswahl`), und `gruppe` wird dort ebenfalls genullt. Die
-   * erste Fassung dieses Absatzes begründete den Riegel mit genau diesem
-   * Angriff und beschrieb damit eine Mechanik, die eine zweite Schicht längst
-   * abfängt (Schlusslesung 18.08.2026, 6b).
-   *
-   * Er trägt trotzdem, nur für anderes: Abblendung, das genullte `auswahlId`
-   * und das Ausblenden von Spalte und Suchfeld hängen an ihm, und die gehören
-   * beim Zeichnen weg. (Das BAND hängt an einer eigenen Bedingung an seiner
-   * Renderstelle — bewusst OHNE `gruppe.bearbeiten`, denn es steht auch im
-   * Ansehen-Modus. Gemeinsam ist beiden nur der `!editMode && setzen === null`-
-   * Teil; „gleichlautend" stand hier zuerst und las sich wie „Band nur beim
-   * Bearbeiten sichtbar".)
-   *
-   * **Beide Richtungen sind nötig, und die zweite ist die, die man vergisst.**
-   * Ein Riegel, der nur eine Seite kennt, ist kein Riegel — er ist eine
-   * Verabredung.
+   * `objekte` als Start, weil das Revier meistens wegen seiner Objekte geöffnet
+   * wird — und weil die Objektspalte damit dasteht wie bisher, ohne dass jemand
+   * erst einen Reiter suchen muss.
    */
-  const gruppeBearbeitet =
-    gruppe !== undefined && gruppe.bearbeiten && !zeichner.editMode && setzen === null
+  const [reiter, setReiter] = useState<Reiter>('objekte')
 
-  const beschaeftigt = laeuft || objektBearbeitung || setzen !== null || gruppeBearbeitet
+  /**
+   * Wird an einer Standgruppe gearbeitet (Stände oder Name)?
+   *
+   * **Der Reiter gehört in den Ausdruck**, obwohl der Modus ohne ihn gar nicht
+   * entstehen kann: fiele er weg, hinge die Kartenanzeige an einem Zustand, den
+   * ein Reiterwechsel nicht mehr sichtbar zurücksetzt. Der Riegel soll die
+   * gleiche Grenze ziehen wie die Anzeige, nicht eine benachbarte.
+   */
+  const gruppeOffen = reiter === 'standgruppen' && gruppen.modus !== 'ansehen'
+
+  /**
+   * Zeigt die rechte Spalte überhaupt etwas?
+   *
+   * Der Grenze-Reiter hat bewusst keine Liste (Moritz' Entwurf: „leer, wie
+   * heute") — beim Zeichnen ist die Karte Werkzeug, und eine Auswahlliste
+   * daneben wäre ein zweiter Weg auf eine Auswahl, die es dort nicht gibt.
+   * Genau dieser zweite Weg war am 18.08.2026 der schwerste Befund der
+   * Schlusslesung.
+   *
+   * **Steht hier oben und nicht kurz vor dem `return`**, weil ein Effekt ihn
+   * in seiner Abhängigkeitsliste führt (`zieht`, s. u.). Die Liste wird beim
+   * RENDERN ausgewertet, nicht im Effekt-Rumpf — eine Definition weiter unten
+   * liefe in die temporale Totzone.
+   */
+  const spalteMontiert = reiter !== 'grenze'
+
+  /**
+   * **Ist irgendein Werkzeug offen? Der EINE Riegel, der übrig bleibt.**
+   *
+   * Vorher hieß dieser Wert `beschaeftigt` und stand einzeln an fünf Knöpfen,
+   * dazu kamen acht weitere Bedingungen an Suchfeld, Spalte, Griff, Winkel und
+   * Kartenprops. Er sperrt jetzt **genau eine Sache: die Reiterleiste** — und
+   * damit alles andere, weil ein Werkzeug nur in seinem eigenen Reiter startbar
+   * ist und man diesen nicht verlassen kann, solange es offen ist.
+   *
+   * **`gruppen.busy` gehört dazu, und das ist der Fall, den man übersieht**
+   * (Schlusslesung 18.08.2026, 2a): es ist `laeuft || pending`, und `pending`
+   * läuft weiter, während die Serverdaten unterwegs sind. Wer in diesem Fenster
+   * den Reiter wechselt und zurückkommt, säße auf dem alten Stand.
+   *
+   * **`laeuft` ist der Write DIESER Komponente** (Grenze speichern/löschen,
+   * Position setzen) — ein eigener Zustand neben `gruppen.busy`, weil die beiden
+   * verschiedene Schreibvorgänge meinen.
+   */
+  const werkzeugOffen =
+    laeuft ||
+    objektBearbeitung ||
+    zeichner.editMode ||
+    setzen !== null ||
+    gruppeOffen ||
+    gruppen.busy
 
   /**
    * Die Grenzen-Rückfrage räumen, wenn im Inspektor ein Modus aufgeht
@@ -428,9 +535,21 @@ export default function Revierkarte({
    * `user-select: none` samt Resize-Zeiger zurück und klebte am ganzen Kasten.
    * Der Zustand muss weg, nicht seine Anzeige. Von Codex gefunden, 28.07.2026.
    */
+  /**
+   * **`spalteMontiert` gehört seit C-43 dazu** (Eigenfund 18.08.2026, von der
+   * Fremdprüfung als Teil von P2 bestätigt): der Griff verschwindet jetzt auf
+   * einem DRITTEN Weg, nämlich beim Wechsel in den Grenze-Reiter. Die
+   * Abhängigkeiten kannten nur die zwei alten. Wechselt ein zweiter Finger den
+   * Reiter, während der erste zieht, bliebe `zieht` wahr — und beim
+   * Zurückwechseln klebte `user-select: none` samt Resize-Zeiger am ganzen
+   * Kasten.
+   *
+   * Derselbe Fehler, den Codex am 28.07.2026 hier schon einmal gefunden hat;
+   * die Bedingung ist beim Umbau nicht mitgewachsen.
+   */
   useEffect(() => {
-    if (!inspektorOffen || zeichner.editMode) setZieht(false)
-  }, [inspektorOffen, zeichner.editMode])
+    if (!inspektorOffen || !spalteMontiert || zeichner.editMode) setZieht(false)
+  }, [inspektorOffen, spalteMontiert, zeichner.editMode])
 
   /**
    * Auswahl von der Karte — klappt die Spalte auf, wenn sie zu ist.
@@ -903,6 +1022,65 @@ export default function Revierkarte({
     if (setzZielFehlt) setSetzen(null)
   }, [setzZielFehlt])
 
+  /**
+   * Die Löschrückfrage der angewählten Standgruppe — **als ID der Gruppe, für
+   * die sie gestellt wurde, nicht als `boolean`** (Fremdprüfung Codex
+   * 18.08.2026, Q4, `[mittel]`).
+   *
+   * Der `boolean` stand hier zuerst, und er war ein Loch: die Spaltenzeilen
+   * sind im Ansehen-Modus nicht gesperrt, man kann also eine ANDERE Gruppe
+   * anwählen, während die Rückfrage offen ist. `gruppen.aktiv.name` ist
+   * reaktiv — der Fragetext sprang stillschweigend auf die neue Gruppe, und
+   * „Ja, löschen" hätte eine Frage beantwortet, die niemand gestellt hat.
+   * Schlimmer beim Abwählen: die Rückfrage verschwand nur aus der Anzeige
+   * (`&& gruppen.aktiv`), blieb aber gesetzt und erschien beim nächsten
+   * Anwählen sofort wieder.
+   *
+   * Mit der ID beantwortet der Vergleich beides: die Rückfrage zeigt genau
+   * dann, wenn sie der ANGEWÄHLTEN Gruppe gilt.
+   *
+   * **Sie „stirbt beim Wechsel" dabei nicht, und genau das stand hier zuerst**
+   * (Schlusslesung 18.08.2026, F4): der Zustand bleibt gesetzt, nur die Anzeige
+   * verbirgt ihn. Wer Gruppe B anwählt und zu A zurückkehrt, findet die
+   * Rückfrage für A wieder vor. Hingenommen, und nicht dasselbe wie der alte
+   * Fehler: sie gilt weiterhin GENAU der Gruppe, für die sie gestellt wurde —
+   * überflüssig, aber nie falsch. `wechsle()` räumt sie ohnehin, und ein
+   * Rückkanal aus der Spalte hier herauf kostete mehr, als der Fall wert ist.
+   *
+   * **Als eigener Zustand neben `loeschFrage` (Grenze), nicht als gemeinsamer**
+   * — die beiden fragen nach verschiedenen Dingen, und ein gemeinsamer Wert
+   * müsste tragen, WELCHES gerade gefragt wird. Beide leben ohnehin in
+   * getrennten Reitern und können sich nie gleichzeitig zeigen.
+   */
+  const [gruppeLoeschFrage, setGruppeLoeschFrage] = useState<string | null>(null)
+
+  /**
+   * Der Reiterwechsel. **Die eine Stelle, an der ein Reiter aufräumt** —
+   * gesperrt ist er bereits, solange ein Werkzeug offen ist, hier geht es also
+   * nur um Zustände, die einen Wechsel überleben würden, ohne noch etwas zu
+   * bedeuten.
+   *
+   * **Beide Rückfragen fallen, und das ist der Fehler, den dieses Repo an
+   * derselben Stelle schon zweimal hatte** (`revierkarte.tsx` für die Grenze,
+   * `standgruppen-bereich.tsx` für die Gruppe): eine offene Rückfrage bleibt
+   * sonst im Hintergrund stehen und ist **wieder scharf**, sobald man den Reiter
+   * zurückwechselt. Sie wartet dann auf einen Klick, der ihr nicht mehr gilt.
+   *
+   * **Die Objektauswahl fällt nur, wenn die Spalte sie verliert.** Nach
+   * „Ansicht" bleibt der Inspektor stehen (Moritz' Entwurf: „unverändert"), eine
+   * Auswahl wegzuräumen wäre dort ein Verlust ohne Anlass. Nach „Standgruppen"
+   * und „Grenze" ist der Inspektor aus dem Baum — eine unsichtbar
+   * weiterlaufende Auswahl käme beim Zurückwechseln überraschend wieder.
+   */
+  function wechsle(neu: Reiter) {
+    if (neu === reiter) return
+    setReiter(neu)
+    setFehler(null)
+    setLoeschFrage(false)
+    setGruppeLoeschFrage(null)
+    if (neu === 'standgruppen' || neu === 'grenze') setAuswahlId(null)
+  }
+
   return (
     <div
       ref={kasten}
@@ -917,14 +1095,202 @@ export default function Revierkarte({
           tippte links, während rechts die Treffer erschienen.
           Die Meldungen bleiben in der Bühne: die sitzen unten und gehören zur
           Karte, nicht zur Spalte. */}
-      <div className="zentrale-karte-knoepfe">
-        {!zeichner.editMode && (
-          <button type="button" onClick={starten} disabled={beschaeftigt}>
+      {/**
+       * **Die Reiterleiste.** Genau einer ist aktiv, und das ersetzt die
+       * Bedingungen, die vorher an jedem einzelnen Knopf standen.
+       *
+       * **Gesperrt wird nur, was NICHT der aktive Reiter ist.** Den aktiven
+       * mitzusperren sähe im Zeichenmodus aus wie eine tote Leiste; so bleibt
+       * sichtbar, wo man ist, und die Sperre erklärt sich über den einzigen
+       * Weg, der offen bleibt: Fertig oder Abbrechen darunter.
+       */}
+      {/* **Bewusst KEIN `role="tablist"`/`role="tab"`** (Fremdprüfung Codex
+          18.08.2026, P10). Die erste Fassung trug sie, und das war ein
+          Versprechen, das der Code nicht hält: das ARIA-Tab-Pattern verlangt
+          verknüpfte `tabpanel`-Elemente, Pfeiltasten-Navigation und einen
+          Roving-Tabindex. Nichts davon ist da — und die Reiter schalten auch
+          keine Panels um, sondern einen MODUS der Karte darunter.
+
+          Ein Vorlesegerät hätte „Registerkarte 1 von 4" angesagt und den Nutzer
+          dann mit Pfeiltasten ins Leere laufen lassen. **Falsche ARIA ist
+          schlimmer als keine:** vier Umschaltknöpfe mit `aria-pressed` sind
+          genau das, was sie sind, und funktionieren mit Tabulator wie jeder
+          andere Knopf. Das echte Pattern nachzubauen wäre Aufwand für eine
+          Bedienung, die niemand erwartet. */}
+      <div className="zentrale-karte-reiter" role="group" aria-label="Werkzeuge der Revierkarte">
+        {REITER.map((r) => {
+          const offen = reiter === r.key
+          return (
+            <button
+              key={r.key}
+              type="button"
+              aria-pressed={offen}
+              className={offen ? 'aktiv' : undefined}
+              disabled={werkzeugOffen && !offen}
+              onClick={() => wechsle(r.key)}
+            >
+              {r.label}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="zentrale-karte-optionen">
+        {/* **Objekte** — der Standard-Reiter. Anlegen steht hier und nicht in
+            der Spalte: es ist auch bei eingeklappter Spalte erreichbar,
+            `anlegenStarten` klappt sie dann auf. Kein zweiter Abbrechen-Knopf,
+            der steht im Fuß der Spalte, und die ist im Setzmodus garantiert
+            offen. */}
+        {reiter === 'objekte' && !setzen && (
+          <button type="button" onClick={anlegenStarten} disabled={werkzeugOffen}>
+            Objekt anlegen
+          </button>
+        )}
+
+        {/* **Standgruppen** — die drei Handlungen wirken auf die angewählte
+            Gruppe; ausgewählt wird in der Spalte (Moritz' Entwurf 18.08.2026).
+            Ohne Auswahl gibt es nichts zu tun, deshalb sind sie dann gesperrt
+            statt versteckt: ein Knopf, der erscheint und verschwindet, während
+            man in einer Liste klickt, ist unruhiger als einer, der wartet. */}
+        {reiter === 'standgruppen' &&
+          (gruppen.modus === 'ansehen' ? (
+            <>
+              {/* **Die Rückfrage übernimmt die Zeile allein** (Schlusslesung
+                  18.08.2026, F3). Stünde sie neben „Stände bearbeiten ·
+                  Umbenennen", wäre die Zeile im schlimmsten Fall rund 890 px
+                  breit — unterhalb dieser Bühnenbreite bräche sie um, und ihre
+                  zweite Hälfte läge unterhalb von `--karte-leisten-hoehe`, also
+                  hinter der Objektspalte. Getroffen hätte es ausgerechnet
+                  „Ja, löschen" und „Behalten".
+
+                  Allein braucht sie rund 530 px, am 26-rem-Deckel des Fragetexts
+                  höchstens 620 px — statt rund 890 px. Sie bricht damit erst
+                  unter etwa 680 px Kastenbreite um, und dann nach LINKS über die
+                  Karte statt nach rechts hinter die Spalte: sie verliert dort
+                  Eleganz, nicht Erreichbarkeit. (Die Zahl stand hier zuerst als
+                  „480 px" und war zu optimistisch — Delta-Durchgang 18.08.2026,
+                  D6.)
+
+                  Der Nebeneffekt ist außerdem richtig: während eine Rückfrage
+                  offen steht, soll man nicht umbenennen können. */}
+              {gruppen.aktiv && gruppeLoeschFrage === gruppen.aktiv.id ? (
+                <>
+                  <span className="zentrale-karte-frage">
+                    &bdquo;{gruppen.aktiv.name}&ldquo; löschen? Die Stände bleiben auf der
+                    Karte.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGruppeLoeschFrage(null)
+                      gruppen.aufLoeschen()
+                    }}
+                    disabled={gruppen.busy}
+                  >
+                    Ja, löschen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGruppeLoeschFrage(null)}
+                    disabled={gruppen.busy}
+                  >
+                    Behalten
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* **Die Spalte klappt dabei auf, falls sie zu ist**
+                      (Schlusslesung 18.08.2026, F5). Der Klapp-Winkel ist
+                      während der Bearbeitung gesperrt, und das ist richtig — die
+                      Spalte zeigt live, welche Stände angetippt sind, sie
+                      wegzuklappen nähme dem Nutzer die Kontrolle über seine
+                      eigene Auswahl. Der Riegel sperrte aber BEIDE Richtungen:
+                      wer eingeklappt startete, kam bis zum Abbrechen nicht mehr
+                      an die Liste. Dieselbe Sackgasse wie bei „Objekt anlegen",
+                      und derselbe Ausweg — den Modus starten heißt, seinen
+                      Anzeigeort mitzuöffnen. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspektorOffen(true)
+                      gruppen.aufStaende()
+                    }}
+                    disabled={werkzeugOffen || gruppen.aktiv === null}
+                  >
+                    Stände bearbeiten
+                  </button>
+                  <button
+                    type="button"
+                    onClick={gruppen.aufUmbenennen}
+                    disabled={werkzeugOffen || gruppen.aktiv === null}
+                  >
+                    Umbenennen
+                  </button>
+                  {/* Die Rückfrage gilt GENAU der Gruppe, für die sie gestellt
+                      wurde — s. `gruppeLoeschFrage`. Wählt jemand eine andere
+                      an, zeigt der Vergleich sie nicht mehr, statt
+                      stillschweigend auf das neue Ziel zu deuten. */}
+                  <button
+                    type="button"
+                    onClick={() => setGruppeLoeschFrage(gruppen.aktiv?.id ?? null)}
+                    disabled={werkzeugOffen || gruppen.aktiv === null}
+                  >
+                    Löschen
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Der Zähler sagt, was der nächste Klick auf „Speichern" tun wird;
+                  im Namensmodus steht an seiner Stelle das Feld. **Genau eines von
+                  beiden**, weil ein Formular genau eine Sache tun soll — vor dem
+                  Reiter-Umbau standen Name und Zähler nebeneinander im selben Band,
+                  und `speicherbar` musste beide Prüfungen zugleich tragen. */}
+              {gruppen.modus === 'staende' ? (
+                <span className="zentrale-karte-zaehler">
+                  {gruppen.zaehler.gewaehlt} gewählt
+                  {gruppen.zaehler.legen > 0 ? ` · +${gruppen.zaehler.legen}` : ''}
+                  {gruppen.zaehler.entfernen > 0 ? ` · −${gruppen.zaehler.entfernen}` : ''}
+                </span>
+              ) : (
+                <input
+                  type="text"
+                  className="zentrale-karte-namensfeld"
+                  value={gruppen.entwurfName}
+                  onChange={(e) => gruppen.aufName(e.target.value)}
+                  disabled={gruppen.busy}
+                  maxLength={120}
+                  aria-label="Name der Standgruppe"
+                />
+              )}
+              {/* Der Abschluss ist für beide Modi derselbe — er stand hier zweimal
+                  zeichengleich (Ponytail 18.08.2026). Zwei Kopien eines Knopfpaars
+                  driften auseinander, und die Sperre `!speicherbar` ist genau die
+                  Stelle, an der das ein S2-Fall würde. */}
+              <button
+                type="button"
+                onClick={gruppen.aufSpeichern}
+                disabled={gruppen.busy || !gruppen.speicherbar}
+              >
+                {gruppen.busy ? 'Speichert …' : 'Speichern'}
+              </button>
+              <button type="button" onClick={gruppen.aufAbbrechen} disabled={gruppen.busy}>
+                Abbrechen
+              </button>
+            </>
+          ))}
+
+        {/* **Grenze** — im Modus tragen Fertig · Punkt zurück · Abbrechen die
+            Zeile allein; das ist zugleich der einzige Weg zurück zur
+            Reiterleiste. */}
+        {reiter === 'grenze' && !zeichner.editMode && (
+          <button type="button" onClick={starten} disabled={werkzeugOffen}>
             {aktuelleGrenze ? 'Grenze bearbeiten' : 'Grenze zeichnen'}
           </button>
         )}
 
-        {zeichner.editMode && (
+        {reiter === 'grenze' && zeichner.editMode && (
           <>
             <button type="button" onClick={speichern} disabled={laeuft}>
               {laeuft ? 'Speichert …' : 'Fertig'}
@@ -938,26 +1304,14 @@ export default function Revierkarte({
           </>
         )}
 
-        {/* Anlegen steht bei den Grenzen-Knöpfen, nicht in der Objektspalte: es
-            ist dieselbe Sorte Handlung („in diesem Revier etwas neu
-            einrichten"), und es ist auch bei eingeklappter Spalte erreichbar —
-            `anlegenStarten` klappt sie dann auf.
-            Kein zweiter Abbrechen-Knopf hier: der steht im Fuß der Spalte, und
-            die ist im Setzmodus garantiert offen. */}
-        {!zeichner.editMode && (
-          <button type="button" onClick={anlegenStarten} disabled={beschaeftigt}>
-            Objekt anlegen
-          </button>
-        )}
-
-        {!zeichner.editMode && aktuelleGrenze && !loeschFrage && (
-          <button type="button" onClick={() => setLoeschFrage(true)} disabled={beschaeftigt}>
+        {reiter === 'grenze' && !zeichner.editMode && aktuelleGrenze && !loeschFrage && (
+          <button type="button" onClick={() => setLoeschFrage(true)} disabled={werkzeugOffen}>
             Grenze löschen
           </button>
         )}
-        {!zeichner.editMode && aktuelleGrenze && loeschFrage && (
+        {reiter === 'grenze' && !zeichner.editMode && aktuelleGrenze && loeschFrage && (
           <>
-            <button type="button" onClick={loeschen} disabled={beschaeftigt}>
+            <button type="button" onClick={loeschen} disabled={werkzeugOffen}>
               {laeuft ? 'Löscht …' : 'Wirklich löschen'}
             </button>
             <button type="button" onClick={() => setLoeschFrage(false)} disabled={laeuft}>
@@ -966,33 +1320,42 @@ export default function Revierkarte({
           </>
         )}
 
-        {/* Im Vollbild sinnlos — die Zwischengröße ist dort keine Größe mehr. */}
-        {!voll && (
-          <button type="button" onClick={() => setKino((k) => !k)}>
-            {kino ? 'Kleiner' : 'Kinomodus'}
-          </button>
+        {/* **Ansicht** — im Vollbild ist die Zwischengröße keine Größe mehr.
+            Der Klapp-Winkel steht bewusst NICHT hier, obwohl Moritz' Entwurf
+            „Spalte ein/aus" unter diesem Reiter führt: er sitzt senkrecht über
+            der Spalte, die er auf- und zuklappt, und das IST seine Erklärung.
+            Zwei Klicks entfernt (erst Reiter, dann Schalter) wäre er eine Geste
+            weniger und ein Weg mehr; zweimal derselbe Schalter wären zwei
+            Wahrheiten. */}
+        {reiter === 'ansicht' && (
+          <>
+            {!voll && (
+              <button type="button" onClick={() => setKino((k) => !k)}>
+                {kino ? 'Kleiner' : 'Kinomodus'}
+              </button>
+            )}
+            <button type="button" onClick={umschalten}>
+              {voll ? 'Vollbild beenden' : 'Vollbild'}
+            </button>
+          </>
         )}
-        <button type="button" onClick={umschalten}>
-          {voll ? 'Vollbild beenden' : 'Vollbild'}
-        </button>
 
         {/* Ganz rechts, und damit senkrecht über der Objektspalte: erst das
-            Suchfeld, direkt darunter die Legende in der Spalte. Beim Zeichnen
-            weg — dann gibt es keine Liste zu filtern, und die Leiste braucht
-            den Platz für Fertig · Punkt zurück · Abbrechen.
-            Im Setzmodus aus demselben Grund: die Spalte zeigt dann ein Formular,
-            keine Liste. Ein Feld, in das man tippen kann und in dem nichts
-            passiert, ist schlechter als keins.
+            Suchfeld, direkt darunter die Legende in der Spalte.
 
-            **Beim Bearbeiten einer Standgruppe ebenso, und das fehlte zuerst**
-            (Delta-Durchgang 18.08.2026): der Fix gegen den zweiten Weg auf die
-            Auswahl nahm nur die SPALTE aus dem Baum, nicht das Feld darüber.
-            Übrig blieb genau der Zustand, den dieser Absatz beschreibt — man
-            tippt, und nichts passiert. Bei eingeklappter Spalte war es
-            schlimmer: die Trefferliste erschien, ein Klick setzte `auswahlId`
-            ohne sichtbare Wirkung, und nach dem Modusende riss die Spalte mit
-            dieser alten Auswahl auf. */}
-        {!zeichner.editMode && !setzen && !gruppeBearbeitet && (
+            **Es hängt jetzt am REITER statt an drei Negationen.** Vorher stand
+            hier `!editMode && !setzen && !gruppeBearbeitet` — und die dritte
+            Bedingung fehlte zuerst (Delta-Durchgang 18.08.2026): der Fix gegen
+            den zweiten Weg auf die Auswahl nahm nur die SPALTE aus dem Baum,
+            nicht das Feld darüber. Man tippte, und nichts passierte; bei
+            eingeklappter Spalte war es schlimmer, weil die Trefferliste
+            erschien und ein Klick eine unsichtbare Auswahl setzte.
+
+            Genau diese Klasse Fehler kann der Reiter nicht mehr haben: es gibt
+            keine Liste zu filtern, wenn der Objekte-Reiter nicht offen ist.
+            `!setzen` bleibt daneben stehen, denn der Setzmodus lebt IM
+            Objekte-Reiter und ersetzt die Liste durch ein Formular. */}
+        {reiter === 'objekte' && !setzen && (
           <div className="zentrale-karte-suchfeld">
             <input
               ref={sucheRef}
@@ -1033,11 +1396,42 @@ export default function Revierkarte({
           </div>
         )}
 
+      </div>
+
+      {/**
+       * **Nur noch der Klapp-Winkel, und das ist ein Fix, keine Kosmetik**
+       * (Eigenfund 18.08.2026, an den CSS-Werten gemessen).
+       *
+       * Hier standen zuerst Suchfeld UND Winkel, beide bei `top: 10px` rechts.
+       * Zwei Zahlen aus dem Stylesheet zeigen, warum das nicht ging: die
+       * Reiterleiste reicht mit `left: 50px` und vier Reitern bis etwa
+       * **416 px**, der Kopf brauchte mit dem 170-px-Suchfeld etwa **228 px** —
+       * unter rund 654 px Bühnenbreite lagen sie übereinander. Erreichbar ohne
+       * Extremfall: `spaltenBreite()` erlaubt der Spalte bis zu 45 % des
+       * Kastens.
+       *
+       * **Das Suchfeld sitzt jetzt in der Optionenzeile des Objekte-Reiters** —
+       * und folgt damit Moritz' Entwurf sogar wörtlich („Objekte | Objekt
+       * anlegen, Suche"). Das Argument gegen die gemeinsame Zeile („eine
+       * wachsende Zeile verschiebt es") trägt dort nicht: vor dem Feld steht nur
+       * „Objekt anlegen", und die langen Rückfragen leben in den Reitern OHNE
+       * Suchfeld.
+       *
+       * Übrig bleibt der Winkel mit 28 px. Damit kollidiert oben nichts mehr,
+       * und er steht weiter senkrecht über der Kante, die er verschiebt. Bei
+       * eingeklappter Spalte bleibt er stehen; er ist der einzige Weg zurück. */}
+      <div className="zentrale-karte-spaltenkopf">
         {/* Der Klapp-Winkel gehört hierher, nicht in die Spalte: hier bleibt er
             stehen, wenn die Spalte weg ist. Damit braucht es auch keine
             34-Pixel-Restleiste mehr — eingeklappt ist die Spalte jetzt ganz
-            weg und die Karte bekommt den vollen Platz. */}
-        {!zeichner.editMode && (
+            weg und die Karte bekommt den vollen Platz.
+
+            **Reiterunabhängig, solange überhaupt eine Spalte montiert ist.** Er
+            schaltet je nach Reiter die Objekt- oder die Gruppenliste; das ist
+            derselbe Handgriff auf denselben Platz, deshalb derselbe Schalter und
+            derselbe Zustand. Nur die Beschriftung sagt, was gerade darin steht —
+            ein Vorlese-Gerät nennt sonst eine Spalte, die es nicht gibt. */}
+        {spalteMontiert && (
           <button
             type="button"
             className="klapp"
@@ -1046,16 +1440,23 @@ export default function Revierkarte({
             // Spalte („Position speichern", „Objekt anlegen"), und eingeklappt
             // wäre er unsichtbar — der Nutzer hielte den Entwurf für verworfen.
             // Derselbe Grund wie bei einem offenen Objektentwurf.
-            // `gruppeBearbeitet` dazu (Delta-Durchgang 18.08.2026): im
-            // Gruppenmodus ist die Spalte gar nicht montiert. Der Winkel kippte
-            // `inspektorOffen` also unsichtbar, und nach dem Modusende stand die
-            // Spalte überraschend anders — dazu zeigte `aria-controls` auf ein
-            // Element, das nicht im DOM ist.
-            disabled={objektBearbeitung || setzen !== null || gruppeBearbeitet}
+            //
+            // **Beim Bearbeiten einer Standgruppe ebenfalls**, und aus einem
+            // Grund, den es vor dem Reiter-Umbau nicht gab: die Gruppenspalte
+            // ist jetzt MONTIERT und zeigt live, welche Stände angetippt sind.
+            // Sie wegzuklappen nähme dem Nutzer die Kontrolle über eine
+            // Auswahl, die er gerade macht. (Vorher war die Spalte im
+            // Gruppenmodus gar nicht da, und der Winkel kippte `inspektorOffen`
+            // unsichtbar — Delta-Durchgang 18.08.2026.)
+            disabled={objektBearbeitung || setzen !== null || gruppeOffen}
             aria-expanded={inspektorOffen}
             aria-controls="zentrale-inspektor"
-            aria-label={inspektorOffen ? 'Objektspalte einklappen' : 'Objektspalte ausklappen'}
-            title={inspektorOffen ? 'Objektspalte einklappen' : 'Objektspalte ausklappen'}
+            aria-label={`${reiter === 'standgruppen' ? 'Standgruppen' : 'Objektspalte'} ${
+              inspektorOffen ? 'einklappen' : 'ausklappen'
+            }`}
+            title={`${reiter === 'standgruppen' ? 'Standgruppen' : 'Objektspalte'} ${
+              inspektorOffen ? 'einklappen' : 'ausklappen'
+            }`}
           >
             {inspektorOffen ? '›' : '‹'}
           </button>
@@ -1110,88 +1511,32 @@ export default function Revierkarte({
       )}
 
       {/**
-       * **Das Standgruppen-Band** (18.08.2026). Es liegt IN der Bühne, wie die
-       * Hinweiszeilen darüber — im Vollbild ist nur sichtbar, was ein Nachkomme
-       * des Kastens ist, und ein Band außerhalb wäre dort unbedienbar (dieselbe
-       * Lehre wie K1 am Treiben-Bereich, 10.08.2026).
+       * **Das Standgruppen-Band ist mit dem Reiter-Umbau ersatzlos entfallen**
+       * (C-43). Es war eine Fernbedienung an der Karte für eine Liste, die
+       * darunter stand — Name, Zähler, Speichern und Abbrechen sitzen jetzt in
+       * der Optionenzeile ihres Reiters, die Liste in der Spalte daneben. Damit
+       * ist auch die Überlappung weg, für die `c51b9e2` nur ein Nachzug war.
        *
-       * **Es erscheint nicht, solange gezeichnet oder gesetzt wird** — nicht aus
-       * Platzgründen, sondern weil beide Modi den Kartenklick verbrauchen. Ein
-       * Band, dessen Knöpfe nichts bewirken, ist schlimmer als keins.
-       *
-       * Der ganze Bearbeiten-Zustand sitzt hier und nicht in der Liste darunter:
-       * Namensfeld, Zähler, Speichern und Abbrechen gehören dorthin, wo die
-       * Stände angetippt werden. Läge das Speichern unten, müsste man nach jedem
-       * Antippen scrollen — genau die Bedienung, gegen die dieser Umbau gebaut
-       * ist.
+       * Was bleibt, ist die Hinweiszeile: dieselbe Aussage wie beim Zeichnen und
+       * Setzen — „die Karte ist jetzt Werkzeug". Sie stand hier vorher NICHT,
+       * und das war eine Lücke: der Gruppenmodus war der einzige Kartenmodus
+       * ohne Ansage, was ein Klick bewirkt.
        */}
-      {gruppe && !zeichner.editMode && setzen === null && (
-        <div className="zentrale-karte-band">
-          {gruppe.bearbeiten ? (
-            <>
-              <input
-                type="text"
-                className="zentrale-karte-band-name"
-                value={gruppe.entwurfName}
-                onChange={(e) => gruppe.aufName(e.target.value)}
-                disabled={gruppe.busy}
-                maxLength={120}
-                aria-label="Name der Standgruppe"
-              />
-              <span className="zentrale-karte-band-zaehler">
-                {gruppe.zaehler.gewaehlt} gewählt
-                {gruppe.zaehler.legen > 0 ? ` · +${gruppe.zaehler.legen}` : ''}
-                {gruppe.zaehler.entfernen > 0 ? ` · −${gruppe.zaehler.entfernen}` : ''}
-              </span>
-              <button
-                type="button"
-                onClick={gruppe.aufSpeichern}
-                disabled={gruppe.busy || !gruppe.speicherbar}
-              >
-                {gruppe.busy ? 'Speichert …' : 'Speichern'}
-              </button>
-              <button type="button" onClick={gruppe.aufAbbrechen} disabled={gruppe.busy}>
-                Abbrechen
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="zentrale-karte-band-name-fest">{gruppe.name}</span>
-              <span className="zentrale-karte-band-zaehler">
-                {gruppe.staende.size} {gruppe.staende.size === 1 ? 'Stand' : 'Stände'}
-              </span>
-              {/* **`gruppe.busy` MUSS dazu** (Schlusslesung 18.08.2026, 2a).
-                  `beschaeftigt` deckt die Kartenmodi ab, aber nicht das
-                  Refresh-Fenster nach einem Write — `busy` ist `laeuft ||
-                  pending`, und `pending` läuft weiter, während die Serverdaten
-                  unterwegs sind. Wer in diesem Fenster erneut „Bearbeiten"
-                  klickt, bekommt den Entwurf aus dem ALTEN Stand geseedet: die
-                  eben gespeicherte Änderung fiele heraus, der Zähler zeigte ein
-                  Phantom-`−N`, und ein argloses „Speichern" nähme die eigene
-                  Speicherung zurück. */}
-              <button
-                type="button"
-                onClick={gruppe.aufBearbeiten}
-                disabled={beschaeftigt || gruppe.busy}
-              >
-                Bearbeiten
-              </button>
-              <button type="button" onClick={gruppe.aufSchliessen} disabled={gruppe.busy}>
-                Schließen
-              </button>
-            </>
-          )}
-        </div>
+      {gruppeOffen && gruppen.modus === 'staende' && (
+        <p className="zentrale-karte-hinweis">
+          In die Karte tippen nimmt einen Stand in die Gruppe auf oder heraus
+          {gruppen.aktiv && ` · „${gruppen.aktiv.name}"`}
+        </p>
       )}
 
-      {/* Die Meldungen des Bands stehen UNTER ihm, nicht darin: eine Zeile, die
-          im Band selbst erscheint, verschöbe seine Knöpfe unter dem Finger. */}
-      {gruppe?.bearbeiten && gruppe.nameLeer && (
+      {/* Die Meldungen stehen UNTER der Zeile, nicht darin: eine Meldung im
+          Band selbst verschöbe seine Knöpfe unter dem Finger. */}
+      {gruppen.modus === 'name' && gruppen.nameLeer && (
         <p className="zentrale-karte-hinweis" role="status">
           Eine Standgruppe braucht einen Namen.
         </p>
       )}
-      {gruppe?.bearbeiten && gruppe.nameVergeben && (
+      {gruppen.modus === 'name' && gruppen.nameVergeben && (
         <p className="zentrale-karte-hinweis" role="status">
           In diesem Revier gibt es schon eine Gruppe mit diesem Namen.
         </p>
@@ -1203,13 +1548,37 @@ export default function Revierkarte({
         </p>
       )}
 
+      {/* Der Schreibfehler des Standgruppen-Bereichs — **in der Bühne, damit er
+          im Vollbild überhaupt existiert** (Schlusslesung 18.08.2026, F7). Die
+          Begründung steht am Feld `fehler` des Anschlusses; kurz: sichtbar ist
+          im Vollbild nur, was ein Nachkomme des Kastens ist, und der Bereich
+          darüber ist keiner.
+
+          **`!fehler` davor, und das ist ein Bruch, den erst der F7-Fix erzeugt
+          hat** (Delta-Durchgang 18.08.2026, D3/D7): `.zentrale-karte-fehler`
+          ist absolut auf `bottom: 46px` gesetzt. Zwei davon gleichzeitig lägen
+          deckungsgleich übereinander und wären BEIDE unlesbar — erreichbar,
+          weil die Gruppen-Fehlerzeile einen Reiterwechsel überlebt: erst
+          scheitert ein Gruppen-Write, dann im Objekte-Reiter ein Positions-
+          oder Grenzen-Write.
+
+          Der Vorrang liegt beim Fehler DIESER Komponente, weil er der jüngere
+          ist: `fehler` entsteht am gerade offenen Reiter, `gruppen.fehler`
+          bleibt aus einem früheren stehen. Eine ältere Meldung darf eine neue
+          nicht verdecken. */}
+      {!fehler && gruppen.fehler && (
+        <p className="zentrale-karte-fehler" role="alert">
+          {gruppen.fehler}
+        </p>
+      )}
+
       <Karte
         grenze={aktuelleGrenze}
         punkte={aktuellePunkte}
-        // Im Gruppenmodus gibt es keine Einzelauswahl: der Inspektorring würde
-        // neben dem Leuchten der Gruppe eine zweite Bedeutung derselben Form
-        // behaupten, und der Klick gehört ohnehin der Mitgliedschaft.
-        auswahlId={gruppeBearbeitet ? null : auswahlId}
+        // Im Standgruppen-Reiter gibt es keine Einzelauswahl: der Inspektorring
+        // würde neben dem Leuchten der Gruppe eine zweite Bedeutung derselben
+        // Form behaupten, und der Klick gehört dort der Mitgliedschaft.
+        auswahlId={reiter === 'standgruppen' ? null : auswahlId}
         // **Der Markerklick gehört genau einem Modus.** Beim Bearbeiten einer
         // Standgruppe schaltet er Mitgliedschaft um statt den Inspektor zu
         // öffnen; während einer Objektbearbeitung ist er ganz aus, sonst
@@ -1217,29 +1586,52 @@ export default function Revierkarte({
         // sperrt die Karte selbst (`waehlbar`), weil dort der Klick gebraucht
         // wird.
         //
-        // **Die Reihenfolge der Zweige ist keine Rangfolge, sondern folgt einem
-        // Riegel weiter oben** (Schlusslesung 18.08.2026, 6a): dass der
-        // Gruppenzweig vor `objektBearbeitung` steht, wäre eine stille
-        // Vorfahrt, wenn beide zugleich wahr sein könnten. Können sie nicht —
-        // `objektBearbeitung` setzt `beschaeftigt`, und das sperrt den Weg in
-        // den Gruppenmodus; umgekehrt nimmt `gruppeBearbeitet` den
-        // Objekt-Inspektor aus dem Baum, und ohne ihn kann `objektBearbeitung`
-        // gar nicht erst entstehen.
+        // **Seit den Reitern ist die Reihenfolge der Zweige keine Frage mehr.**
+        // Vorher war sie eine stille Vorfahrt, die nur deshalb keine war, weil
+        // zwei Riegel sich gegenseitig ausschlossen (Schlusslesung 18.08.2026,
+        // 6a) — jetzt schließt der Reiter sie aus: `objektBearbeitung` kann nur
+        // im Objekte-Reiter entstehen, `gruppeOffen` nur im Standgruppen-Reiter,
+        // und mehr als einer ist nicht offen.
         //
-        // Die erste Fassung schrieb „die Objektspalte samt Suche" — das
-        // Suchfeld hing damals noch NICHT an dieser Bedingung (Delta-Durchgang
-        // 18.08.2026). Der Schluss stimmte, die genannte Mechanik nicht.
+        // **Die Auswahl gibt es nur dort, wo der Inspektor steht** — also in den
+        // Reitern „Objekte" und „Ansicht". Im Standgruppen-Reiter schaltet der
+        // Klick beim Bearbeiten Mitgliedschaft um und ist sonst aus; im
+        // Grenze-Reiter ist er ganz aus.
+        //
+        // **Der Grenze-Reiter war die Lücke** (Fremdprüfung Codex 18.08.2026,
+        // P2, `[mittel]`): dort galt vorher der `sonst`-Zweig, der Marker war
+        // also klickbar, `aufKartenAuswahl` setzte `auswahlId` **und**
+        // `inspektorOffen` — beides unsichtbar, weil die Spalte in diesem
+        // Reiter nicht montiert ist. Beim Wechsel zu „Objekte" riss sie mit
+        // einer Auswahl auf, die niemand getroffen zu haben glaubte. Wörtlich
+        // dieselbe Klasse wie der zweite Weg über die Objektsuche, den die
+        // Schlusslesung am selben Tag gefunden hat — und derselbe Grund: der
+        // Klick war korrekt zugeteilt, nur nicht überall zugeteilt.
+        //
+        // `spalteMontiert && reiter !== 'standgruppen'` ist zeichengleich die
+        // Bedingung, unter der der Objekt-Inspektor unten gerendert wird. Das
+        // ist Absicht: eine Auswahl ohne ihren Anzeigeort ist keine.
         aufAuswahl={
-          gruppeBearbeitet
-            ? gruppe.aufUmschalten
-            : objektBearbeitung
-              ? undefined
-              : aufKartenAuswahl
+          reiter === 'standgruppen'
+            ? gruppeOffen && gruppen.modus === 'staende'
+              ? gruppen.aufUmschalten
+              : undefined
+            : spalteMontiert && !objektBearbeitung
+              ? aufKartenAuswahl
+              : undefined
         }
-        // Was leuchtet. Auch im ANSEHEN-Modus gesetzt — die Gruppe soll sichtbar
-        // sein, ohne dass man in einen Zustand gerät, aus dem man speichern oder
-        // abbrechen muss.
-        gruppe={gruppe ? { staende: gruppe.staende, bearbeiten: gruppeBearbeitet } : undefined}
+        // Was leuchtet — zwei Stufen, s. `revierkarte-map.tsx`. Nur im eigenen
+        // Reiter: im Objekte-Reiter färbte die Zugehörigkeit sonst die halbe
+        // Karte grün, während jemand Objekte sucht.
+        gruppe={
+          reiter === 'standgruppen' && gruppen
+            ? {
+                alle: gruppen.alle,
+                staende: gruppen.aktiv?.staende ?? new Set<string>(),
+                bearbeiten: gruppen.modus === 'staende',
+              }
+            : undefined
+        }
         setzen={
           setzen
             ? {
@@ -1258,8 +1650,10 @@ export default function Revierkarte({
               }
             : undefined
         }
-        // Was die Spalte gerade überdeckt. Beim Zeichnen ist sie weg, dann null.
-        randRechts={inspektorOffen && !zeichner.editMode && !gruppeBearbeitet ? inspektorBreite : 0}
+        // Was die Spalte gerade überdeckt. Im Grenze-Reiter ist sie weg, dann
+        // null — dieselbe Bedingung wie ihre Montage, damit die Karte nicht um
+        // eine Breite herumrechnet, die niemand einnimmt.
+        randRechts={inspektorOffen && spalteMontiert ? inspektorBreite : 0}
         zeichnen={
           zeichner.editMode
             ? {
@@ -1280,18 +1674,27 @@ export default function Revierkarte({
       />
       </div>
 
-      {/* Beim Zeichnen weg: die Karte ist dann Werkzeug, kein Auswahlmittel, und
-          zwei gleichzeitig offene Bearbeitungen wären zwei Wahrheiten.
-
-          **Beim Bearbeiten einer Standgruppe ebenso** (Fremdprüfung Codex
-          18.08.2026, Paket 2 Nr. 1): die Spalte trägt die Objektsuche, und ein
-          Trefferklick dort läuft über `aufKartenAuswahl` direkt in den
-          Objekt-Inspektor — samt seiner Bearbeiten- und Löschwege. Gruppenentwurf
-          und Objektbearbeitung wären gleichzeitig offen, obwohl `beschaeftigt`
-          genau das verhindern soll. Der Markerklick war korrekt zugeteilt, die
-          Spalte war der zweite Weg auf dieselbe Auswahl — und den sieht man
-          nicht, wenn man nur auf die Karte schaut. */}
-      {!zeichner.editMode && !gruppeBearbeitet && (
+      {/**
+       * **Die Spalte, je Reiter mit anderem Inhalt.**
+       *
+       * Im Grenze-Reiter ist sie ganz weg: die Karte ist dort Werkzeug, kein
+       * Auswahlmittel, und zwei gleichzeitig offene Bearbeitungen wären zwei
+       * Wahrheiten.
+       *
+       * **Rahmen, Griff und Breite sind gemeinsam, der Inhalt nicht.** Die
+       * Spalte ist ein PLATZ neben der Karte; welche Liste darin steht, sagt der
+       * Reiter. Zwei getrennte Rahmen mit je eigener Breite wären zwei Zustände
+       * für dieselbe Kante — und der Nutzer müsste sie zweimal einstellen.
+       *
+       * **Der zweite Weg auf eine Auswahl ist damit strukturell zu**
+       * (Fremdprüfung Codex 18.08.2026, Paket 2 Nr. 1): früher trug die
+       * Objektspalte ihre Suche auch während einer Gruppenbearbeitung, ein
+       * Trefferklick lief über `aufKartenAuswahl` in den Objekt-Inspektor, und
+       * Gruppenentwurf plus Objektbearbeitung standen gleichzeitig offen. Jetzt
+       * ist der Inspektor im Standgruppen-Reiter nicht montiert — es gibt keinen
+       * Klick, den man zuteilen müsste.
+       */}
+      {spalteMontiert && (
         <>
           {/* Eigener Flex-Streifen zwischen Bühne und Spalte statt eines
               Overlays: beim Ziehen ändert sich nur eine Zahl, das Layout macht
@@ -1301,7 +1704,7 @@ export default function Revierkarte({
               className="zentrale-inspektor-griff"
               role="separator"
               aria-orientation="vertical"
-              aria-label="Breite der Objektspalte"
+              aria-label="Breite der Spalte"
               // Bewusst ohne aria-valuenow: der `max-width`-Riegel im CSS kann
               // die sichtbare Breite unter den gespeicherten Wert drücken, ohne
               // dass ein Ereignis feuert (Vollbild verlassen, Fenster kleiner).
@@ -1330,23 +1733,32 @@ export default function Revierkarte({
             />
           )}
 
-          <ObjektInspektor
-            revierId={revierId}
-            punkte={aktuellePunkte}
-            auswahlId={auswahlId}
-            aufAuswahl={setAuswahlId}
-            aufSpeichern={objektSpeichern}
-            aufModus={setObjektBearbeitung}
-            suche={suche}
-            aufSuchfeldFokus={() => sucheRef.current?.focus()}
-            ausgeklappt={inspektorOffen}
-            setzen={setzen}
-            aufPositionStarten={positionStarten}
-            aufPositionSpeichern={positionAbschliessen}
-            aufAnlegen={anlegenAbschliessen}
-            aufSetzAbbrechen={setzAbbrechen}
-            aufLoeschen={objektLoeschen}
-          />
+          {/* Der Standgruppen-Reiter bringt seine eigene Liste mit — sie kommt
+              fertig aus dem Arbeitsbereich, wo ihre Daten liegen. Fehlt sie
+              (kein Anschluss übergeben), bleibt die Spalte leer statt die
+              Objektliste zu zeigen: eine Liste, die etwas anderes zeigt als der
+              Reiter verspricht, wäre schlimmer als keine. */}
+          {reiter === 'standgruppen' ? (
+            gruppen.spalte(inspektorOffen)
+          ) : (
+            <ObjektInspektor
+              revierId={revierId}
+              punkte={aktuellePunkte}
+              auswahlId={auswahlId}
+              aufAuswahl={setAuswahlId}
+              aufSpeichern={objektSpeichern}
+              aufModus={setObjektBearbeitung}
+              suche={suche}
+              aufSuchfeldFokus={() => sucheRef.current?.focus()}
+              ausgeklappt={inspektorOffen}
+              setzen={setzen}
+              aufPositionStarten={positionStarten}
+              aufPositionSpeichern={positionAbschliessen}
+              aufAnlegen={anlegenAbschliessen}
+              aufSetzAbbrechen={setzAbbrechen}
+              aufLoeschen={objektLoeschen}
+            />
+          )}
         </>
       )}
     </div>
