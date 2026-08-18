@@ -1114,17 +1114,21 @@ body:has(.zentrale-karte-kasten.kino) {
    liegen. */
 .zentrale-karte-band {
   position: absolute;
-  top: 10px;
+  /* **Das Band steht UNTER der Knopfleiste, nicht neben ihr** (Moritz,
+     18.08.2026, an der Produktion gesehen).
+
+     Vorher stand hier `right: 240px` — ein Platzhalter, der auf einer falschen
+     Annahme beruhte: in `.zentrale-karte-knoepfe` sitzen nicht nur Kinomodus
+     und Vollbild, sondern auch „Grenze bearbeiten", „Objekt anlegen" und
+     „Grenze loeschen". Die Leiste ist damit ein Vielfaches breiter als
+     geschaetzt, und „Bearbeiten"/„Schliessen" lagen unter „Grenze bearbeiten".
+
+     Eine BREITE zu reservieren ist der falsche Riegel, weil sie von der Anzahl
+     der Knoepfe abhaengt — und die aendert sich, ohne dass hier jemand
+     nachsieht. Eine Zeile tiefer zu gehen haengt von nichts ab. */
+  top: 56px;
   left: 50px;
-  /* **Platz fuer die Knopfleiste rechts** (Fremdpruefung Codex 18.08.2026,
-     Paket 2 Nr. 8). Vorher stand hier `right: 10px` — Band und Knopfleiste
-     begannen beide bei `top: 10px`, trugen denselben `z-index` und ueberlappten
-     bei schmaler Breite oder langem Gruppennamen. `flex-wrap` half nicht: es
-     bricht das Band um, reserviert der Leiste aber keinen Platz.
-     240px deckt den breitesten Zustand ab („Vollbild beenden" neben
-     „Kleiner"). Reicht der Rest nicht, waechst das Band per `flex-wrap` nach
-     UNTEN — die Leiste bleibt oben rechts frei. */
-  right: 240px;
+  right: 10px;
   z-index: 1000;
   display: flex;
   align-items: center;
