@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import {
   MapContainer,
   TileLayer,
   Polygon,
+  Rectangle,
   CircleMarker,
   Tooltip,
   useMap,
@@ -65,6 +66,47 @@ export type SetzProps = {
   ursprung: Ort | null
   aufOrt: (ort: Ort) => void
 }
+
+/**
+ * Rechteckauswahl für Standgruppen (C-45, 18.08.2026).
+ *
+ * **Kein eigener Modus, und das ist Moritz' Entscheidung vom 19.08.2026**
+ * (*„kann man nicht einfach wenn man die stände anklickt zum auswählen auch
+ * ermöglichen da einfach ein rechteck zu ziehen? kein extra modus dafür"*).
+ * Der erste Entwurf hatte einen Knopf „Rechteck wählen" samt Zustand — und
+ * damit einen weiteren Riegel, der beim nächsten Umbau hätte mitwandern
+ * müssen. Sieben davon sind am 18.08.2026 nicht mitgewandert. Die Geste hängt
+ * jetzt an derselben Bedingung wie der Klick, den sie ergänzt: kein Zustand,
+ * kein Knopf, keine zweite Wahrheit darüber, was die Karte gerade tut.
+ *
+ * **Unterschieden wird an einer Pixelschwelle, nicht an einem Schalter:** ein
+ * Tipp bleibt ein Tipp (der Marker schaltet seine Mitgliedschaft um), ein Zug
+ * wird ein Rechteck. Genau diese Schwelle ist zugleich der Riegel gegen die
+ * doppelte Wirkung — ohne sie erzeugte jeder Klick ein Rechteck ohne Fläche.
+ *
+ * **Gemeldet werden die beiden ECKEN des Zugs, nicht eine fertige Menge.** Die
+ * Karte weiß nicht, welcher Punkt ein wählbarer Stand ist (ein Parkplatz ist
+ * einer, ein Papierkorb-Objekt nicht) — und sie soll es nicht wissen. Wer
+ * drinliegt, rechnet `imRechteck()` beim Aufrufer, wo `waehlbar` ohnehin liegt
+ * und wo ein Selbsttest hinsieht.
+ */
+
+/**
+ * Ab wie vielen Pixeln aus einem Tipp ein Zug wird.
+ *
+ * Dieselbe Größenordnung wie Leaflets eigener `Draggable` (3 px). Darunter
+ * bleibt das Ereignis ein Klick und der Marker schaltet um; darüber entsteht
+ * ein Rechteck.
+ *
+ * **Was ohne die Schwelle geschähe, stand hier zuerst falsch** (Schlusslesung
+ * 19.08.2026, F7). Behauptet war „derselbe Tipp hätte zwei Wirkungen — der
+ * Marker nähme den Stand heraus, das Rechteck legte ihn zurück". Tatsächlich
+ * feuert `pointerup` VOR `click`: ohne Schwelle setzte jeder Tipp `gezogen`,
+ * der Klick-Riegel verschluckte den Markerklick, und ein Tipp könnte nur noch
+ * HINZUFÜGEN — abwählen ginge nie wieder. Die Schwelle ist also nötiger, als
+ * die alte Begründung sagte, und aus einem anderen Grund.
+ */
+const ZUG_SCHWELLE = 4
 
 const ACCENT = '#4A5A2A'
 const NEUTRAL = '#8B8775'
@@ -222,6 +264,326 @@ function SetzLage({
         />
       )}
     </>
+  )
+}
+
+/**
+ * Der Zug, aus dem ein Rechteck wird — die zweite Hälfte von C-45.
+ *
+ * **Gehorcht dem Container, nicht der Karte, und das ist der tragende Befund
+ * des Recon.** Ein `useMapEvents({ mousedown })` hätte hier ein Loch: Leaflet
+ * gibt ein Kartenereignis nur weiter, wenn kein interaktiver Layer getroffen
+ * wurde — bei Söder liegen 196 CircleMarker im Weg, und ein Zug, der auf einem
+ * Stand beginnt (also der Normalfall, wenn man eine Traube einrahmt), käme nie
+ * an. Leaflets eigener `Map.BoxZoom` hängt aus genau diesem Grund am Container
+ * (`map._container`), und diese Komponente ist sein Nachbau ohne das
+ * abschließende `fitBounds`.
+ *
+ * **Ziehen verschiebt die Karte nicht mehr, solange dieser Layer steht** —
+ * dieselbe Geste kann nicht zwei Dinge tun. Der Preis ist benannt und von
+ * Moritz am 19.08.2026 angenommen; er trägt, weil das Mausrad bei Leaflet
+ * **auf den Zeiger** zoomt und damit das Schwenken ersetzt, und weil der Layer
+ * nur während „Stände bearbeiten" existiert. `boxZoom` geht mit aus: sonst
+ * zöge Shift+Ziehen gleichzeitig ein Auswahlrechteck und eine Zoombox.
+ *
+ * **Beide Handler werden nur zurückgegeben, wie sie vorgefunden wurden.** Ein
+ * bedingungsloses `enable()` im Aufräumen wäre der Fall, den dieses Repo am
+ * 18.08.2026 siebenmal hatte: ein Riegel, der beim Umzug nicht mitwandert —
+ * nur umgekehrt, als Schalter, der etwas einschaltet, das vorher aus war.
+ *
+ * **Pointer- statt Mausereignisse**, anders als bei Leaflets BoxZoom (der auf
+ * `e.which`/`e.button` prüft und damit reine Maus ist). Es kostet nichts und
+ * lässt die Geste auf einem Zeigegerät überhaupt entstehen. **Belegt ist sie
+ * dort nicht:** Leaflets eigenes CSS setzt `touch-action: pan-x pan-y` auf dem
+ * Container, auf dem iPad schiebt der Browser also womöglich die Seite, statt
+ * einen Zug zu liefern. Das steht als ungeprüft in der Übergabe, nicht als
+ * Zusage.
+ */
+function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
+  const map = useMap()
+  const [box, setBox] = useState<[[number, number], [number, number]] | null>(null)
+
+  /**
+   * Der Rückkanal als Ref, damit der Effekt unten ihn LESEN kann, ohne auf ihn
+   * zu HÖREN — dieselbe Überlegung wie bei `modusRef` im Arbeitsbereich:
+   * `aufWahl` ist bei jedem Rendern eine neue Funktion. Stünde sie in den
+   * Abhängigkeiten, liefe der Effekt bei jedem Tipp neu und schaltete dabei
+   * `dragging` und `boxZoom` aus und wieder an — mitten im Ziehen.
+   *
+   * **Nachgezogen wird im Effekt, nicht beim Rendern**, obwohl der
+   * Arbeitsbereich es dort tut: `react-hooks/refs` schlägt auf die
+   * Zuweisung im Rumpf an, und die Regel hat recht — ein Ref, der beim Rendern
+   * geschrieben wird, ist bei einem verworfenen Renderlauf schon geändert.
+   *
+   * **`useLayoutEffect`, nicht `useEffect`** (Fremdprüfung Codex 19.08.2026,
+   * P4, `[medium]`): ein passiver Effekt läuft erst NACH dem Paint. Endet ein
+   * Zug in diesem Fenster, ruft `beiLos()` noch den Rückkanal des vorigen
+   * Renderns auf — mit dessen `waehltStaende` aus dem Closure. Der Modus wäre
+   * dann schon zu und die Auswahl liefe trotzdem in den Entwurf. Ein
+   * Layout-Effekt ist commit-synchron, das Fenster gibt es nicht mehr.
+   */
+  const aufWahlRef = useRef(aufWahl)
+  useLayoutEffect(() => {
+    aufWahlRef.current = aufWahl
+  }, [aufWahl])
+
+  // Ebenfalls commit-synchron, aus demselben Grund (Codex P4): beim Unmount
+  // überlebte ein passives Cleanup den beendeten Modus um ein Paint, und der
+  // Dokument-Listener wertete in diesem Fenster noch einen Zug aus.
+  useLayoutEffect(() => {
+    const container = map.getContainer()
+    const zogVorher = map.dragging.enabled()
+    const zoomteVorher = map.boxZoom.enabled()
+    map.dragging.disable()
+    map.boxZoom.disable()
+    // Leaflets eigene Klasse — sie färbt auch `.leaflet-interactive`, der
+    // Zeiger bleibt also über den Markern derselbe. Genau richtig: dort gilt
+    // die Geste ebenso.
+    L.DomUtil.addClass(container, 'leaflet-crosshair')
+
+    /**
+     * Wo der Zug begann — **geografisch, nicht in Containerpixeln**. `null`
+     * heißt: es zieht niemand.
+     *
+     * **Das ist der offene Punkt der Schlusslesung** (Fable 5, 19.08.2026,
+     * F8), und die Falle stammt aus dem eigenen Text: die Hinweiszeile fordert
+     * den Nutzer ausdrücklich auf, in diesem Modus am Rad zu zoomen, weil das
+     * Kartenziehen belegt ist. Das Rad wirkt auch MITTEN im Zug. Ein
+     * Pixel-Anker zeigt danach auf einen anderen Ort — das gezeichnete
+     * Rechteck (aus geo-stabilen Ecken) und das ausgewertete (aus dem alten
+     * Pixel, neu projiziert) fielen auseinander, und ausgewählt würde nicht,
+     * was zu sehen war.
+     *
+     * Pixel braucht nur die Schwelle, und die projiziert deshalb bei jedem
+     * Vergleich frisch — in der Ansicht, die gerade gilt.
+     */
+    let start: L.LatLng | null = null
+    /**
+     * Welcher Zeiger zieht gerade?
+     *
+     * **Ohne diese Zahl übernimmt ein zweiter Finger den laufenden Zug**
+     * (Fremdprüfung Codex 19.08.2026, P9, `[medium]`): jedes `pointermove`
+     * würde das Rechteck bewegen, egal von welchem Gerät es kommt, und ein
+     * beliebiges `pointerup` würde es auswerten. `isPrimary` hält den zweiten
+     * Finger schon am Anfang draußen, die Id hält ihn während des Zugs
+     * draußen — beides ist nötig, weil ein Zeiger auch nach dem Start
+     * dazukommen kann.
+     */
+    let zeigerId: number | null = null
+    /**
+     * Hat DIESE Instanz Textauswahl und Bildziehen gesperrt?
+     *
+     * **Sonst gibt das Aufräumen etwas frei, das ein anderer gesperrt hat**
+     * (Fremdprüfung Codex 19.08.2026, P1, `[low]`): `L.DomUtil` führt beide
+     * Sperren global, nicht je Karte. Ein `loesen()` ohne laufenden Zug —
+     * und der Cleanup ruft genau das — hätte die Sperre eines fremden
+     * Leaflet-Handlers aufgehoben.
+     */
+    let sperrt = false
+    /**
+     * Ist die Schwelle überschritten? Nur für die ANZEIGE — was ausgewertet
+     * wird, entscheidet `beiLos` am Loslasspunkt (Codex P7).
+     */
+    let ueberSchwelle = false
+    /**
+     * Gerade ein Rechteck fertig gezogen?
+     *
+     * **Der Riegel gegen die doppelte Wirkung, zweite Stufe.** Leaflet
+     * unterdrückt einen Klick nach einem Zug über `dragging.moved()` — das ist
+     * hier ausgeschaltet, der Klick käme also durch. Ein kleines Rechteck über
+     * einem Marker hätte ihn dann per Rechteck aufgenommen und per Klick
+     * gleich wieder entfernt.
+     */
+    let gezogen = false
+    /** Frist, nach der der Klick-Riegel von selbst fällt — s. `beiLos`. */
+    let riegelFrist = 0
+
+    /**
+     * Liegt der Zeiger weit genug vom Startpunkt entfernt, dass aus dem Tipp
+     * ein Zug wird?
+     *
+     * Gerechnet wird in Containerpixeln der AKTUELLEN Ansicht: der
+     * geografische Anker wird dafür jedes Mal frisch projiziert. Damit
+     * überlebt die Schwelle ein Zoomen mitten im Zug — sie misst, was der
+     * Nutzer sieht, nicht was er vor drei Zoomstufen sah.
+     */
+    function weitGenug(e: PointerEvent): boolean {
+      if (!start) return false
+      const hier = map.mouseEventToContainerPoint(e)
+      return hier.distanceTo(map.latLngToContainerPoint(start)) >= ZUG_SCHWELLE
+    }
+
+    /**
+     * Den unmittelbar folgenden Klick unterdrücken.
+     *
+     * **Der Riegel gilt nur für diesen einen Klick** — Leaflets eigenes Muster
+     * (`Map.BoxZoom._resetStateTimeout`). Ohne die Frist bliebe das Flag
+     * stehen, wenn auf das Loslassen gar kein Klick folgt (außerhalb des
+     * Fensters losgelassen, Touch ohne Click), und verschluckte irgendwann
+     * einen völlig unabhängigen Tipp (Schlusslesung 19.08.2026, F1).
+     */
+    function riegleKlick() {
+      gezogen = true
+      window.clearTimeout(riegelFrist)
+      riegelFrist = window.setTimeout(() => {
+        gezogen = false
+      }, 0)
+    }
+
+    function loesen() {
+      document.removeEventListener('pointermove', beiZug)
+      document.removeEventListener('pointerup', beiLos)
+      document.removeEventListener('pointercancel', loesen)
+      document.removeEventListener('keydown', beiTaste)
+      if (sperrt) {
+        L.DomUtil.enableTextSelection()
+        L.DomUtil.enableImageDrag()
+        sperrt = false
+      }
+      start = null
+      ueberSchwelle = false
+      zeigerId = null
+      setBox(null)
+    }
+
+    function beiDruck(e: PointerEvent) {
+      // Nur die primäre Taste. Rechtsklick gehört dem Kontextmenü, und die
+      // mittlere schiebt in manchen Browsern die Seite.
+      if (e.button !== 0 || !e.isPrimary) return
+      start = map.mouseEventToLatLng(e)
+      ueberSchwelle = false
+      zeigerId = e.pointerId
+      L.DomUtil.disableTextSelection()
+      L.DomUtil.disableImageDrag()
+      sperrt = true
+      document.addEventListener('pointermove', beiZug)
+      document.addEventListener('pointerup', beiLos)
+      // Ein abgebrochener Zeiger (Systemgeste, Stift abgesetzt) räumt nur auf
+      // und wählt nichts — er hinterlässt sonst ein Rechteck, das niemand
+      // losgelassen hat.
+      document.addEventListener('pointercancel', loesen)
+      document.addEventListener('keydown', beiTaste)
+    }
+
+    function beiZug(e: PointerEvent) {
+      if (!start || e.pointerId !== zeigerId) return
+      // Die Schwelle gilt nur für den ERSTEN Ausschlag. Danach folgt das
+      // Rechteck dem Zeiger, auch wenn er wieder in die Nähe des Starts kommt —
+      // sonst flackerte es beim Zurückziehen.
+      if (!ueberSchwelle && weitGenug(e)) ueberSchwelle = true
+      if (!ueberSchwelle) return
+      const jetzt = map.mouseEventToLatLng(e)
+      setBox([
+        [start.lat, start.lng],
+        [jetzt.lat, jetzt.lng],
+      ])
+    }
+
+    function beiLos(e: PointerEvent) {
+      if (e.button !== 0 || e.pointerId !== zeigerId) return
+      const a = start
+      // Vor `loesen()` messen: danach sind Anker und Anzeigezustand weg.
+      const weit = weitGenug(e)
+      const zugLief = ueberSchwelle
+      loesen()
+      if (!a) return
+
+      // **Der Endpunkt kommt aus dem Loslassen, nicht aus dem letzten
+      // `pointermove`** (Fremdprüfung Codex 19.08.2026, P7, `[medium]`).
+      // Zwei Gründe, und der zweite ist der wichtigere:
+      //
+      // (1) Wer zum Schluss schnell zieht, lässt weiter außen los, als das
+      //     letzte Move meldet — das ausgewertete Rechteck wäre kleiner als
+      //     die gemeinte Fläche.
+      // (2) Blieben Auswertung und Schwelle am Move hängen, endete ein Zug
+      //     ohne zugestelltes Move jenseits der Schwelle LAUTLOS: der Nutzer
+      //     zieht, lässt los, und nichts passiert. Das ist S4 in Reinform.
+      //
+      // `ueberSchwelle` trägt seither nur noch die ANZEIGE während des Zugs.
+      //
+      // **Zwei verschiedene Fälle enden hier ohne Auswahl, und der zweite ist
+      // der Grund für `zugLief`** (Delta-Durchgang 19.08.2026, Punkt 4):
+      //
+      // (a) Es wurde nie gezogen — ein Tipp. Der gehört dem Marker darunter,
+      //     der Klick muss also durch.
+      // (b) Es wurde gezogen und der Zeiger kam zum Start ZURÜCK. Das ist ein
+      //     Abbruch, und wer abbricht, will keine Wirkung. Ohne diese
+      //     Unterscheidung schaltete der nachfolgende Klick den Stand unter
+      //     dem Startpunkt um — und Züge beginnen laut Entwurf regelmäßig auf
+      //     einem Stand. Ein Mitglied wäre dabei aus der Gruppe geflogen.
+      if (!weit) {
+        if (zugLief) riegleKlick()
+        return
+      }
+
+      riegleKlick()
+      const b = map.mouseEventToLatLng(e)
+      aufWahlRef.current({ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng })
+    }
+
+    function beiTaste(e: KeyboardEvent) {
+      // Wie bei Leaflets BoxZoom: Escape nimmt den laufenden Zug zurück.
+      if (e.key === 'Escape') loesen()
+    }
+
+    /**
+     * Den Klick nach einem Zug abfangen.
+     *
+     * **Capture, nicht Bubble:** Leaflet hört den Klick am Container in der
+     * Bubble-Phase; ein Capture-Listener kommt davor und kann ihn abfangen,
+     * bevor daraus ein Markerklick wird.
+     *
+     * **Am DOKUMENT, nicht am Container — und das war der schwerste Befund des
+     * Tages** (Fremdprüfung Codex 19.08.2026, P12, offener Punkt, `[medium]`).
+     * Am Container hing der Riegel an einer Bedingung, die der Nutzer selbst
+     * verletzt: **endet der Zug außerhalb der Karte** — über der Objektspalte,
+     * über der Optionenzeile, neben dem Browserfenster —, kommt dort nie ein
+     * Klick an. `gezogen` bliebe gesetzt und verschluckte den NÄCHSTEN, völlig
+     * unabhängigen Klick. Der Nutzer tippt einen Stand an, und nichts passiert.
+     *
+     * Am Dokument wird das Flag IMMER zurückgesetzt; gestoppt wird nur, wenn
+     * der Klick tatsächlich in die Karte ging.
+     */
+    function beiKlick(e: MouseEvent) {
+      if (!gezogen) return
+      gezogen = false
+      if (e.target instanceof Node && container.contains(e.target)) {
+        e.stopPropagation()
+      }
+    }
+
+    container.addEventListener('pointerdown', beiDruck)
+    document.addEventListener('click', beiKlick, true)
+
+    return () => {
+      container.removeEventListener('pointerdown', beiDruck)
+      document.removeEventListener('click', beiKlick, true)
+      window.clearTimeout(riegelFrist)
+      loesen()
+      L.DomUtil.removeClass(container, 'leaflet-crosshair')
+      if (zogVorher) map.dragging.enable()
+      if (zoomteVorher) map.boxZoom.enable()
+    }
+  }, [map])
+
+  if (!box) return null
+  return (
+    <Rectangle
+      bounds={box}
+      // Kein Klickziel: das Rechteck entsteht während des Zugs und läge sonst
+      // über den Markern, die es einsammeln soll.
+      interactive={false}
+      // Forest wie die Gruppenzugehörigkeit — das Rechteck sagt „diese kommen
+      // hinein", nicht „diese sind ausgewählt". Gestrichelt, weil es ein
+      // Entwurf ist, den das Loslassen erst wahr macht.
+      pathOptions={{
+        color: FOREST,
+        weight: 1.5,
+        dashArray: '4 4',
+        fillColor: FOREST,
+        fillOpacity: 0.1,
+      }}
+    />
   )
 }
 
@@ -476,6 +838,7 @@ export default function RevierkarteMap({
   punkte,
   zeichnen,
   setzen,
+  aufRechteck,
   auswahlId = null,
   markiert,
   gruppe,
@@ -491,6 +854,25 @@ export default function RevierkarteMap({
   zeichnen?: ZeichenProps
   /** Setzmodus (Schritt 3b) — schließt `zeichnen` aus, beide wollen den Klick. */
   setzen?: SetzProps
+  /**
+   * Rechteckauswahl (C-45): Anfang und Ende des Zugs, in Ziehrichtung — der
+   * Empfänger normalisiert. Nur gesetzt, wenn ein Zug Stände einsammeln soll.
+   *
+   * **Eine Funktion, kein Objekt mit einem Feld** (Ponytail 19.08.2026). Der
+   * erste Entwurf hatte ein `RechteckProps` nach dem Vorbild von `zeichnen`
+   * und `setzen` — die tragen aber drei bis fünf Felder, hier wäre die Hülle
+   * eine Hülle um nichts. Das Vorbild ist `aufAuswahl` zwei Zeilen weiter, und
+   * die Namensgleichheit ist der Punkt: es ist derselbe Rückkanal, nur für
+   * mehrere Stände auf einmal.
+   *
+   * **Optional, und hier ist das keine tote Flexibilität** (anders als bei
+   * `gruppen` in `revierkarte.tsx`, wo P3 sie zu Recht gestrichen hat): der
+   * Treiben-Bereich importiert diese Datei direkt und übergibt sie nicht. Ohne
+   * sie wird der Layer gar nicht gerendert, es läuft kein Effekt, und
+   * `dragging` bleibt unangetastet — der zweite Aufrufer merkt von C-45
+   * nichts.
+   */
+  aufRechteck?: (a: Ort, b: Ort) => void
   auswahlId?: string | null
   /** Mehrfachauswahl der Treiben-Karte (4b) — s. `Objekte`. */
   markiert?: ReadonlySet<string>
@@ -573,6 +955,15 @@ export default function RevierkarteMap({
           aufOrt={setzen.aufOrt}
         />
       )}
+
+      {/* **Der Ausschluss steht HIER und nicht beim Aufrufer** — dieselbe
+          Begründung wie bei `waehlbar` weiter unten: ein Riegel, der als
+          Ausdruck am Aufrufer steht, wird beim nächsten Aufrufer vergessen.
+          Zeichnen und Setzen verbrauchen den Zug ebenso wie den Klick; ein
+          Auswahlrechteck darüber nähme dem Grenzeneditor das Ziehen seiner
+          Stützpunkte. Heute stellt kein Aufrufer diese Kombination her, und
+          genau deshalb fiele es niemandem auf. */}
+      {aufRechteck && !zeichnen && !setzen && <RechteckWahl aufWahl={aufRechteck} />}
 
       {/* Während des Zeichnens ist die Auswahl aus: ein Klick soll dann einen
           Grenzpunkt setzen, nicht ein Objekt auswählen — der Marker würde das

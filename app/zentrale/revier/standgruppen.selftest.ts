@@ -7,7 +7,14 @@
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 // Wird vom Sammel-Script `npm run selftest` per Glob mitgenommen.
 import assert from 'node:assert/strict'
-import { alleStaende, ausZeilen, gruppenDiff, markierungAus, vergeben } from './standgruppen.ts'
+import {
+  alleStaende,
+  ausZeilen,
+  gruppenDiff,
+  imRechteck,
+  markierungAus,
+  vergeben,
+} from './standgruppen.ts'
 
 // --- markierungAus(): der Zustand, mit dem die Komponente gruppenDiff fuettert ---
 //
@@ -266,5 +273,103 @@ assert.deepEqual(
 )
 
 assert.deepEqual([...alleStaende([], null, null)], [], 'ein Revier ohne Gruppen leuchtet nicht')
+
+// --- imRechteck(): die Rechteckauswahl (C-45, 18.08.2026) ---
+//
+// Ein Raster aus vier Staenden plus einem Objekt, das NICHT waehlbar ist
+// (Parkplatz oder im Papierkorb — fuer die Rechnung dasselbe).
+const raster = [
+  { id: 'NW', lat: 53.30, lng: 10.30 },
+  { id: 'NO', lat: 53.30, lng: 10.40 },
+  { id: 'SW', lat: 53.20, lng: 10.30 },
+  { id: 'SO', lat: 53.20, lng: 10.40 },
+  { id: 'PARKPLATZ', lat: 53.25, lng: 10.35 },
+]
+const nurStaende = new Set(['NW', 'NO', 'SW', 'SO'])
+
+// Positivkontrolle zuerst: ohne sie belegt die Reihe darunter nur, dass die
+// Funktion gern nichts trifft.
+assert.deepEqual(
+  imRechteck(raster, nurStaende, { lat: 53.25, lng: 10.25 }, { lat: 53.35, lng: 10.45 }),
+  ['NW', 'NO'],
+  'ein Rechteck ueber der Nordhaelfte nimmt genau deren zwei Staende',
+)
+
+// **Die Richtungsunabhaengigkeit ist der Grund, warum die Normalisierung hier
+// steht und nicht im Layer.** Gezogen wird in alle vier Richtungen; jede muss
+// dieselbe Menge liefern.
+const vonNW = imRechteck(raster, nurStaende, { lat: 53.35, lng: 10.25 }, { lat: 53.25, lng: 10.45 })
+const vonSO = imRechteck(raster, nurStaende, { lat: 53.25, lng: 10.45 }, { lat: 53.35, lng: 10.25 })
+const vonNO = imRechteck(raster, nurStaende, { lat: 53.35, lng: 10.45 }, { lat: 53.25, lng: 10.25 })
+const vonSW = imRechteck(raster, nurStaende, { lat: 53.25, lng: 10.25 }, { lat: 53.35, lng: 10.45 })
+assert.deepEqual(vonNW, ['NW', 'NO'], 'von Nordwest gezogen')
+assert.deepEqual(vonSO, vonNW, 'von Suedost gezogen ergibt dasselbe')
+assert.deepEqual(vonNO, vonNW, 'von Nordost gezogen ergibt dasselbe')
+assert.deepEqual(vonSW, vonNW, 'von Suedwest gezogen ergibt dasselbe')
+
+// **Der `waehlbar`-Riegel, zeichengleich zum Einzelklick.** Der Parkplatz liegt
+// mitten im Rechteck und bleibt trotzdem draussen — sonst holte ein Zug ueber
+// das halbe Revier genau die Objekte herein, die auf der Karte gar nicht als
+// Stand erscheinen.
+assert.deepEqual(
+  imRechteck(raster, nurStaende, { lat: 53.15, lng: 10.25 }, { lat: 53.35, lng: 10.45 }),
+  ['NW', 'NO', 'SW', 'SO'],
+  'ein Rechteck ueber allem nimmt die vier Staende und NICHT den Parkplatz',
+)
+assert.deepEqual(
+  imRechteck(raster, new Set(), { lat: 53.15, lng: 10.25 }, { lat: 53.35, lng: 10.45 }),
+  [],
+  'ohne waehlbare Staende nimmt auch das groesste Rechteck nichts',
+)
+
+// Die Kante zaehlt als drinnen: ein Rechteck, das genau auf den Punkten endet,
+// nimmt sie mit. Ein Punkt, der auf der Linie liegt und herausfaellt, waere dem
+// Nutzer nicht erklaerbar.
+assert.deepEqual(
+  imRechteck(raster, nurStaende, { lat: 53.30, lng: 10.30 }, { lat: 53.20, lng: 10.40 }),
+  ['NW', 'NO', 'SW', 'SO'],
+  'Staende genau auf der Kante liegen drinnen',
+)
+
+// **Ein entartetes Rechteck trifft, was auf seiner Linie liegt — und das ist
+// gewollt.** Die erste Fassung dieses Blocks behauptete das Gegenteil („ein Zug
+// ohne Flaeche trifft nichts") und blieb nur deshalb gruen, weil der Testpunkt
+// neben allem lag. **Die Fremdpruefung hat beides gefunden** (Codex 19.08.2026,
+// P1/P6/P9): die zu starke Behauptung im Kommentar UND die Zusicherung, die sie
+// nicht deckt.
+//
+// Richtig ist: `imRechteck` prueft keine Flaeche. Der Riegel gegen einen
+// versehentlichen Klick sitzt als Pixelschwelle im Layer und muss dort sitzen —
+// s. den Kopf der Funktion. Ein waagerechter Zug ueber zwei Staende ist ein
+// Zug, kein Tipp.
+assert.deepEqual(
+  imRechteck(raster, nurStaende, { lat: 53.30, lng: 10.25 }, { lat: 53.30, lng: 10.45 }),
+  ['NW', 'NO'],
+  'ein waagerechter Zug ueber zwei Staende nimmt beide, obwohl er keine Hoehe hat',
+)
+assert.deepEqual(
+  imRechteck(raster, nurStaende, { lat: 53.20, lng: 10.30 }, { lat: 53.30, lng: 10.30 }),
+  ['NW', 'SW'],
+  'dasselbe senkrecht, ohne Breite',
+)
+// Neben allem liegt neben allem — auch ohne Flaeche.
+assert.deepEqual(
+  imRechteck(raster, nurStaende, { lat: 53.2501, lng: 10.3501 }, { lat: 53.2501, lng: 10.3501 }),
+  [],
+  'ein Punktzug neben den Staenden trifft nichts',
+)
+
+assert.deepEqual(
+  imRechteck([], nurStaende, { lat: 53.1, lng: 10.1 }, { lat: 53.9, lng: 10.9 }),
+  [],
+  'ein Revier ohne Objekte liefert nichts',
+)
+
+// Nichts getroffen heisst nichts hinzufuegen — das Rechteck liegt neben allem.
+assert.deepEqual(
+  imRechteck(raster, nurStaende, { lat: 52.0, lng: 9.0 }, { lat: 52.1, lng: 9.1 }),
+  [],
+  'ein Rechteck abseits des Reviers trifft nichts',
+)
 
 console.log('standgruppen.selftest.ts: alle Zusicherungen gehalten')

@@ -10,10 +10,12 @@ import { sichtbarerName } from '../namen'
 import {
   alleStaende,
   gruppenDiff,
+  imRechteck,
   markierungAus,
   vergeben,
   type Standgruppe,
 } from './standgruppen'
+import type { Ort } from '../objekte'
 import type { Punkt } from '../revierkarte-map'
 
 /**
@@ -302,6 +304,52 @@ export default function RevierArbeitsbereich({
   }
 
   /**
+   * Ein Rechteck über der Karte: alles Wählbare darin kommt HINZU (C-45).
+   *
+   * **Hinzufügen, nie ersetzen, und das ist die Entscheidung, ohne die die
+   * Geste unbrauchbar wäre:** Söders Standmengen liegen in mehreren Trauben
+   * (Sauberg 52, Dornenbüsche 43), man braucht also mehrere Rechtecke
+   * nacheinander. Ersetzte das zweite die Auswahl, löschte es das Ergebnis des
+   * ersten — und der Nutzer sähe seine Arbeit verschwinden, ohne dass er etwas
+   * abgewählt hätte. Abwählen bleibt der Einzelklick, wie bisher.
+   *
+   * **Derselbe Riegel wie in `umschalten()`, nicht ein zweiter:** `laeuftRef`
+   * gegen den Schreibvorgang, `waehltStaende` gegen den falschen Modus, und
+   * `waehlbar` steckt in `imRechteck`. Ein Zug ist dieselbe Handlung wie ein
+   * Tipp, nur für mehrere Stände — er darf also unter keinen anderen
+   * Bedingungen stehen.
+   *
+   * **Beim Zug sieht man diese Sperre allerdings anders als beim Tipp, und das
+   * ist benannt statt geheilt** (Schlusslesung 19.08.2026, F6, `[low]`):
+   * während „Speichert …" läuft, bleibt der Layer montiert. Ein Zug malt dann
+   * ein sichtbares gestricheltes Rechteck, dessen Loslassen `laeuftRef` still
+   * verwirft — beim Klick fällt dieselbe Sperre nicht auf, weil ein Klick
+   * nichts malt.
+   *
+   * **Nicht behoben, weil der Fix teurer wäre als der Fehler:** den Layer bei
+   * `busy` abzuhängen gäbe mitten im Speichern das Kartenziehen zurück und
+   * nähme es gleich wieder weg — eine Geste, die unter der Hand wechselt, ist
+   * schlimmer als eine, die kurz nicht wirkt. Das Fenster ist der eine
+   * PostgREST-Aufruf, und der Knopf daneben sagt die ganze Zeit „Speichert …".
+   *
+   * **Der frühe Ausstieg bei leerer Treffermenge ist nicht kosmetisch:**
+   * `setEntwurf` mit einem neuen Set ist für React immer eine Änderung, auch
+   * wenn derselbe Inhalt darin steht. Ohne ihn erzeugte ein Rechteck über einer
+   * leeren Wiese ein Rendern, ein neues `hervorgehoben` und damit einen neuen
+   * `alleStaende`-Durchlauf über alle Gruppen — für nichts.
+   */
+  function rechteckWahl(a: Ort, b: Ort) {
+    if (laeuftRef.current || !waehltStaende) return
+    const dazu = imRechteck(punkte, waehlbar, a, b)
+    if (dazu.length === 0) return
+    setEntwurf((vorher) => {
+      const nachher = new Set(vorher ?? [])
+      for (const id of dazu) nachher.add(id)
+      return nachher
+    })
+  }
+
+  /**
    * Ein Schreibvorgang, ein Riegel, eine Fehlerzeile — auch für die Spalte, die
    * ihn als Prop bekommt.
    *
@@ -502,6 +550,7 @@ export default function RevierArbeitsbereich({
             speicherbar,
             fehler,
             aufUmschalten: umschalten,
+            aufRechteck: rechteckWahl,
             aufName: setName,
             aufStaende: staendeBearbeiten,
             aufUmbenennen: umbenennen,

@@ -245,3 +245,66 @@ export function gruppenDiff(
     legen: [...markiert].filter((id) => !vorhanden.has(id) && sichtbar.has(id)),
   }
 }
+
+/**
+ * Welche Staende liegen in dem Rechteck, das der Nutzer gerade gezogen hat?
+ *
+ * **Der Anlass ist eine Zahl** (C-45, Moritz 18.08.2026): Soeders reale
+ * Standmengen sind Sauberg 52, Dornenbuesche 43, Betonstrasse 39, Buchberg 38.
+ * Wer die einzeln antippt, tippt zweiundfuenfzig Mal — und ein Fehlgriff faellt
+ * in dieser Menge niemandem auf.
+ *
+ * **Die Funktion normalisiert die beiden Ecken selbst, und das ist kein
+ * Typ-Purismus.** Der Layer meldet Anfang und Ende des Zugs, so wie sie
+ * entstanden sind: gezogen wird in alle vier Richtungen, `a` kann also noerdlich
+ * ODER suedlich von `b` liegen. Rechnete der Layer min/max, saesse die
+ * Richtungsunabhaengigkeit in einer Komponente, die kein Test sieht — dieselbe
+ * Luecke, in der am 17.08.2026 der schwerste Befund des Tages sass
+ * (`markierungAus`, s. dort). Hier ist sie pruefbar.
+ *
+ * **`waehlbar` ist derselbe Riegel wie beim Einzelklick** (`umschalten()` im
+ * Arbeitsbereich): ein Parkplatz unter dem Rechteck bleibt unbeteiligt, ein
+ * Stand im Papierkorb ebenso. Ohne ihn holte ein Zug ueber das halbe Revier
+ * genau die Objekte herein, die der Nutzer auf der Karte gar nicht sieht.
+ *
+ * **Die Kante zaehlt als drinnen** (`>=` / `<=`): wer ein Rechteck genau am Rand
+ * eines Standes aufzieht, meint ihn. Ein Punkt, der auf der Linie liegt und
+ * herausfaellt, waere fuer den Nutzer nicht erklaerbar.
+ *
+ * **Es gibt hier KEINE Flaechenpruefung, und das ist Absicht** (Fremdpruefung
+ * Codex 19.08.2026, P1/P9). Ein Zug, der in einer Richtung entartet ist — eine
+ * perfekt waagerechte Mausbewegung —, ist trotzdem ein Zug: der Nutzer hat
+ * gezogen, und was auf der Linie liegt, meint er. Der Riegel gegen einen
+ * versehentlichen KLICK sitzt woanders und muss dort sitzen, weil er in Pixeln
+ * rechnet: `ZUG_SCHWELLE` in `revierkarte-map.tsx` wertet erst ab vier Pixeln
+ * Zeigerweg aus. Eine zweite Pruefung hier waere eine zweite Wahrheit ueber
+ * dieselbe Frage — und sie haette die falsche Einheit, weil ein Grad Laenge je
+ * nach Zoomstufe ein Pixel oder hundert Kilometer ist.
+ *
+ * **Nicht behandelt, weil es hier nicht vorkommt:** ein Rechteck ueber den
+ * 180. Laengengrad. Der Vergleich waere dort umgekehrt zu bilden; Reviere in
+ * Niedersachsen erreichen ihn nicht, und ein Riegel dagegen waere Code fuer
+ * einen Fall, den niemand herstellen kann.
+ */
+export function imRechteck(
+  punkte: readonly { id: string; lat: number; lng: number }[],
+  waehlbar: ReadonlySet<string>,
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): string[] {
+  const sued = Math.min(a.lat, b.lat)
+  const nord = Math.max(a.lat, b.lat)
+  const west = Math.min(a.lng, b.lng)
+  const ost = Math.max(a.lng, b.lng)
+
+  return punkte
+    .filter(
+      (p) =>
+        waehlbar.has(p.id) &&
+        p.lat >= sued &&
+        p.lat <= nord &&
+        p.lng >= west &&
+        p.lng <= ost,
+    )
+    .map((p) => p.id)
+}

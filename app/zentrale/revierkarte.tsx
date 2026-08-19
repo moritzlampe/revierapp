@@ -152,6 +152,17 @@ export interface GruppenAnschluss {
   nameVergeben: boolean
   speicherbar: boolean
   aufUmschalten: (id: string) => void
+  /**
+   * Ein Rechteck über der Karte (C-45) — die beiden Ecken des Zugs, in
+   * Ziehrichtung.
+   *
+   * **Steht neben `aufUmschalten` und nicht an seiner Stelle:** ein Tipp meint
+   * einen Stand und schaltet ihn um, ein Zug meint mehrere und nimmt sie
+   * ausschließlich auf. Beides in einen Rückkanal zu pressen hieße, dem
+   * Empfänger die Unterscheidung noch einmal aufzumachen, die die Karte gerade
+   * getroffen hat.
+   */
+  aufRechteck: (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => void
   aufName: (wert: string) => void
   aufStaende: () => void
   aufUmbenennen: () => void
@@ -1524,7 +1535,15 @@ export default function Revierkarte({
        */}
       {gruppeOffen && gruppen.modus === 'staende' && (
         <p className="zentrale-karte-hinweis">
-          In die Karte tippen nimmt einen Stand in die Gruppe auf oder heraus
+          {/* **Der zweite Satz ist Pflicht, nicht Komfort** (C-45): solange
+              dieser Modus läuft, zieht die Maus ein Auswahlrechteck statt der
+              Karte. Das ist eine Geste, die sich ändert, ohne dass man es
+              sieht — und genau die Sorte Zustandswechsel, die dieses Repo sonst
+              über die Form ausschließt. Hier geht das nicht (es gibt nur eine
+              Ziehgeste), also wird sie ausgewiesen. */}
+          In die Karte tippen nimmt einen Stand in die Gruppe auf oder heraus ·
+          ein Rechteck ziehen nimmt alle darin auf · zum Verschieben der Karte
+          am Rad zoomen
           {gruppen.aktiv && ` · „${gruppen.aktiv.name}"`}
         </p>
       )}
@@ -1631,6 +1650,16 @@ export default function Revierkarte({
                 bearbeiten: gruppen.modus === 'staende',
               }
             : undefined
+        }
+        // **Die Rechteckauswahl hängt an derselben Bedingung wie der Klick, den
+        // sie ergänzt** (C-45, Moritz 19.08.2026: „kein extra modus dafür").
+        // Zeichengleich zum `gruppen.aufUmschalten`-Zweig oben — und das ist
+        // der ganze Punkt: es gibt keinen zweiten Zustand, der sagen könnte,
+        // die Karte sei im Rechteckmodus, während der Klick etwas anderes tut.
+        // Fällt der Stände-Modus weg, verschwindet der Layer und gibt das
+        // Kartenziehen im selben Rendern zurück.
+        aufRechteck={
+          gruppeOffen && gruppen.modus === 'staende' ? gruppen.aufRechteck : undefined
         }
         setzen={
           setzen
