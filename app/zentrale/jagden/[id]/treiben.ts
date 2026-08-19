@@ -186,9 +186,29 @@ export function standDiff(
     .filter((s) => sichtbar.has(s.standId) && !markiert.has(s.standId))
     .map((s) => s.id)
 
-  // Gegen ALLE festen Zeilen geprüft, auch die unsichtbaren: sonst liefe ein
-  // erneutes Markieren eines Stands, dessen Objekt gelöscht wurde, in den
-  // UNIQUE (drive_id, map_object_id) — 23505 statt einer stillen Doppelzeile.
+  /**
+   * **`vorhanden` ist KEIN zweiter Riegel — das stand hier bis zum 19.08.2026
+   * falsch** (C-39). Der Kommentar behauptete, gegen ALLE festen Zeilen geprüft
+   * werden zu müssen (auch die unsichtbaren), sonst liefe ein erneutes
+   * Markieren eines Stands, dessen Objekt gelöscht wurde, in
+   * `UNIQUE (drive_id, map_object_id)` und damit in `23505`.
+   *
+   * **Das kann nicht eintreten:** `legen` verlangt im selben Ausdruck
+   * `sichtbar.has(id)`. Ein sichtbarer Stand liegt in beiden Fassungen von
+   * `vorhanden` — gegen alle oder nur gegen die sichtbaren gefiltert ist hier
+   * dasselbe. Die beiden Ausdrücke sind nicht verschieden stark, sie sind
+   * gleich.
+   *
+   * **Belegt per Mutationsprobe an der Schwesterfunktion `gruppenDiff()`**
+   * (`revier/standgruppen.ts`), die denselben Aufbau hat: `new Set(staende)`
+   * durch `new Set(staende.filter((id) => sichtbar.has(id)))` ersetzt → der
+   * Selbsttest blieb GRÜN, während dieselbe Probe an den `sichtbar`-Riegeln
+   * sofort rot wurde. Der Riegel für diesen Fall ist `sichtbar`, nicht
+   * `vorhanden`.
+   *
+   * Die kurze Form bleibt, weil sie die kürzere ist, nicht weil sie die
+   * sicherere wäre.
+   */
   const vorhanden = new Set(stands.filter((s) => s.fest).map((s) => s.standId))
 
   /**
@@ -202,9 +222,10 @@ export function standDiff(
    * bekäme lautlos einen Stand, den keine Karte je wieder zeigt und den niemand
    * mehr abwählen kann.
    *
-   * Beide Riegel prüfen Verschiedenes und bleiben deshalb beide: `vorhanden`
-   * gegen ALLE Zeilen verhindert die Doppelzeile (23505), `sichtbar` den toten
-   * Stand.
+   * **`sichtbar` trägt beide Zweige.** `vorhanden` beantwortet eine andere
+   * Frage — „liegt für diesen Stand schon eine Zeile?" —, es ist aber kein
+   * zweiter Riegel gegen die Doppelzeile; die Begründung dafür steht oben an
+   * `vorhanden`.
    */
   const legen = [...markiert].filter((id) => !vorhanden.has(id) && sichtbar.has(id))
 

@@ -81,17 +81,31 @@ const mitWeg = [stand('r1', 'A'), stand('rWeg', 'GELOESCHT')]
 const diffWeg = standDiff(mitWeg, new Set(['A']), new Set(['A', 'B']))
 assert.deepEqual(diffWeg.loeschen, [], 'unsichtbar heisst nicht abgewaehlt')
 assert.deepEqual(diffWeg.legen, [])
-// **`markiert` ist NICHT immer eine Teilmenge von `sichtbar`, und genau daran
-// haengt der zweite Riegel.** Der Fall ist real und nicht konstruiert: waehrend
-// die Auswahl im Browser steht, loescht jemand anderes das Kartenobjekt. Beim
-// naechsten Rendern ist der Stand markiert, aber nicht mehr sichtbar.
+// **`markiert` ist NICHT immer eine Teilmenge von `sichtbar`.** Der Fall ist
+// real und nicht konstruiert: waehrend die Auswahl im Browser steht, loescht
+// jemand anderes das Kartenobjekt. Beim naechsten Rendern ist der Stand
+// markiert, aber nicht mehr sichtbar.
 //
-// Wuerde `legen` nur gegen die SICHTBAREN Zeilen geprueft, waere die vorhandene
-// Zeile nicht auffindbar und der Insert liefe in UNIQUE (drive_id,
-// map_object_id) — 23505 mitten im Speichern. Deshalb gegen ALLE festen Zeilen.
+// **Hier stand bis zum 19.08.2026 dieselbe falsche Begruendung wie im Rumpf von
+// `standDiff()`** (C-39, gefunden von der Fremdpruefung P10): wuerde `legen` nur
+// gegen die SICHTBAREN Zeilen geprueft, liefe der Insert in
+// UNIQUE (drive_id, map_object_id). Das kann nicht eintreten — `legen` verlangt
+// `sichtbar.has(id)` im selben Ausdruck.
+//
+// **Der Fall unten beweist ohnehin nichts ueber `vorhanden`, und das ist der
+// eigentliche Befund:** `GELOESCHT` ist zugleich fest UND unsichtbar, es
+// scheitert also an BEIDEN Riegeln gleichzeitig. Der Test ist gruen, gleich
+// welcher von beiden wirkt — die alte Zusicherungsbotschaft („die Zeile gibt es
+// schon") benannte trotzdem einen davon als Grund. Genau so sieht ein Test aus,
+// der die falsche Sache belegt.
+//
+// Er bleibt als Regression stehen, weil die Kombination real vorkommt; was
+// welcher Riegel leistet, zeigen `diffGleich` weiter oben (fest und sichtbar,
+// nur `vorhanden` greift) und `diffTot` weiter unten (markiert, aber weder fest
+// noch sichtbar — nur `sichtbar` greift).
 const nurWeg = [stand('rWeg', 'GELOESCHT')]
 const diffWegMarkiert = standDiff(nurWeg, new Set(['GELOESCHT']), new Set(['A']))
-assert.deepEqual(diffWegMarkiert.legen, [], 'die Zeile gibt es schon, auch wenn sie unsichtbar ist')
+assert.deepEqual(diffWegMarkiert.legen, [], 'fest und unsichtbar zugleich: beide Riegel greifen')
 assert.deepEqual(diffWegMarkiert.loeschen, [], 'und abgewaehlt wurde sie auch nicht')
 
 // **Ein markierter, aber unsichtbarer Stand wird NICHT angelegt**

@@ -139,7 +139,35 @@ export default function TreibenBereich({
   const diff = offen ? standDiff(offen.stands, markiert, sichtbar) : { loeschen: [], legen: [] }
   const nameNeu = sichtbarerName(name)
   const nameGeaendert = offen !== null && nameNeu.length > 0 && nameNeu !== offen.name
-  const nichtsZuTun = diff.loeschen.length === 0 && diff.legen.length === 0 && !nameGeaendert
+
+  /**
+   * **Ein geleertes Namensfeld sperrt das Formular, statt still übergangen zu
+   * werden** (C-41, Fremdprüfung 17.08.2026 Nr. 6, `[medium]`).
+   *
+   * `nameGeaendert` wird bei leerem Namen absichtlich `false`, damit niemand ein
+   * Treiben namenlos macht. **Das allein genügt nicht, sobald es einen ZWEITEN
+   * Änderungsweg gibt:** hat der Nutzer gleichzeitig einen Stand angetippt, ist
+   * `nichtsZuTun` trotzdem `false`. `speichern()` lief, übersprang das
+   * Namens-UPDATE stillschweigend, schrieb die Standmenge und **schloss den
+   * Editor** — Erfolg gemeldet für ein Formular, dessen geleertes Feld niemand
+   * übernommen hat. S4: ein Fehler, der sich als gültige Auskunft liest.
+   *
+   * **Der Zuschnitt weicht bewusst vom Vorbild ab.** Bei den Standgruppen
+   * (`revier/arbeitsbereich.tsx`) ist Umbenennen ein EIGENER Modus, dort gilt je
+   * Modus genau eine Bedingung. Hier sind Name und Standmenge EIN Formular mit
+   * EINEM Speichern-Knopf — genau daraus entsteht der Fehler. Folge, benannt und
+   * gewollt: ein leerer Name sperrt auch das Speichern einer reinen
+   * Standänderung. Das ist die Semantik eines leeren Pflichtfelds, und
+   * `revier-name.tsx` hält sie seit jeher; ein Speichern, das nur die Hälfte
+   * tut, wäre wieder S4.
+   *
+   * **`nameNeu`, nicht `name`**: `sichtbarerName` räumt unsichtbare Zeichen weg,
+   * ein eingefügtes ZWSP ergäbe sonst ein optisch leeres Feld ohne Erklärung bei
+   * totem Knopf — dieselbe Begründung wie an `revier-name.tsx`.
+   */
+  const nameLeer = offen !== null && nameNeu.length === 0
+  const speicherbar =
+    !nameLeer && (diff.loeschen.length > 0 || diff.legen.length > 0 || nameGeaendert)
 
   function oeffnen(t: Treiben) {
     setOffenId(t.id)
@@ -256,7 +284,7 @@ export default function TreibenBereich({
   }
 
   function speichern() {
-    if (!offen || nichtsZuTun) return
+    if (!offen || !speicherbar) return
     void fuehreAus(
       'Das Speichern',
       async () => {
@@ -333,7 +361,17 @@ export default function TreibenBereich({
 
   return (
     <section className="jagd-treiben" aria-labelledby="jagd-treiben-titel">
-      <h2 id="jagd-treiben-titel">Treiben &amp; Stände</h2>
+      {/* `jagden-abschnitt` ist die Abschnittsüberschrift DIESER Seite — `detail.tsx`
+          benutzt sie dreimal, `liste.tsx` einmal, und dieses h2 war die einzige
+          Ausnahme (C-40): ohne Klasse greift keine Regel, weder aus `jagden.css`
+          noch aus `globals.css`, und sie fiel auf den Browser-Default zurück.
+          **Nicht `zentrale-block`**, obwohl die Standgruppen diesen Weg gegangen
+          sind: dessen h2 ist versal, gesperrt und sekundär — hier stünde es neben
+          drei normalen Abschnittsüberschriften und wäre die zweite Ausnahme
+          statt einer Korrektur. */}
+      <h2 id="jagd-treiben-titel" className="jagden-abschnitt">
+        Treiben &amp; Stände
+      </h2>
 
       {fehler && (
         <p className="zentrale-fehler" role="alert">
@@ -446,8 +484,31 @@ export default function TreibenBereich({
                         onChange={(e) => setName(e.target.value)}
                         disabled={busy}
                         maxLength={120}
+                        // Beides aus dem Vorbild `revier-name.tsx` (dort aus der
+                        // Fremdprüfung R8): ohne die Verbindung gehört die
+                        // Meldung zu gar nichts, ein Screenreader liest das Feld
+                        // vor und den Satz darunter nie.
+                        //
+                        // **Was sie NICHT leistet, damit es niemand annimmt**
+                        // (Schlusslesung 19.08.2026): ein `aria-describedby`,
+                        // das gesetzt wird, während der Fokus schon im Feld
+                        // steht, wird von den gängigen Screenreadern nicht
+                        // sofort angesagt, sondern erst beim nächsten Fokus auf
+                        // das Feld. Für eine sofortige Ansage bräuchte das `<p>`
+                        // zusätzlich `role="status"`. Bewusst nicht gemacht —
+                        // derselbe abgenommene Zuschnitt wie im Vorbild.
+                        aria-invalid={nameLeer}
+                        aria-describedby={nameLeer ? 'jagd-treiben-namenshinweis' : undefined}
                       />
                     </label>
+                    {/* Die Meldung steht UNTER dem Feld, nicht im Band der Karte:
+                        sie gehört zum Formular. Feste ID: `offenId` ist ein
+                        einzelner Wert, es kann nie ein zweiter Editor offen sein. */}
+                    {nameLeer && (
+                      <p className="zentrale-hinweis" id="jagd-treiben-namenshinweis">
+                        Ein Treiben braucht einen Namen.
+                      </p>
+                    )}
 
                     <p className="zentrale-sub">Stände auf der Karte antippen.</p>
 
@@ -481,7 +542,9 @@ export default function TreibenBereich({
                        * speichern.
                        */}
                       <div className="zentrale-karte-knoepfe">
-                        <span className="jagd-treiben-zaehler">
+                        {/* Die vorhandene Klasse aus `zentrale.css`, nicht die
+                            eigene — Begründung im Grabstein in `jagden.css`. */}
+                        <span className="zentrale-karte-zaehler">
                           {markiert.size} gewählt
                           {diff.legen.length > 0 ? ` · +${diff.legen.length}` : ''}
                           {diff.loeschen.length > 0 ? ` · −${diff.loeschen.length}` : ''}
@@ -513,7 +576,7 @@ export default function TreibenBereich({
                         type="button"
                         className="zentrale-knopf"
                         onClick={speichern}
-                        disabled={busy || nichtsZuTun}
+                        disabled={busy || !speicherbar}
                       >
                         {busy ? 'Speichert …' : 'Speichern'}
                       </button>

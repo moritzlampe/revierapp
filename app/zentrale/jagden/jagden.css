@@ -572,18 +572,10 @@
    Klasse bringt 420px, `.kino` (78vh) und `:fullscreen` (100vh) schon mit, und
    damit ist die Treiben-Karte in allen drei Zustaenden exakt so gross wie die
    Revierkarte. Hier steht nur, was dort fehlt. */
-/* Der Zaehler sitzt in der Knopfleiste IM Kasten (Fremdpruefung K1) — im
-   Vollbild ist er die einzige Rueckmeldung darauf, was ein Klick bewirkt hat.
-   Die Leiste selbst kommt aus `zentrale.css` und ist dort schon gestylt. */
-.jagd-treiben-zaehler {
-  font-size: 0.8125rem;
-  padding: 5px 10px;
-  color: var(--z-text-primary);
-  background: var(--z-bg-elevated);
-  border: 1px solid var(--z-line);
-  border-radius: 6px;
-  white-space: nowrap;
-}
+/* `.jagd-treiben-zaehler` ist am 19.08.2026 entfallen (C-40): sie trug
+   `var(--z-line)`, das im Repo nirgends definiert ist — der Rahmen fehlte. Mit
+   dem richtigen Wert war sie zeichengleich zu `.zentrale-karte-zaehler`
+   (`zentrale.css`), und der Treiben-Zaehler benutzt jetzt die. */
 
 /* Fuellt die Buehne, solange der Leaflet-Chunk laedt — ohne Hoehe waere der
    Kasten fuer einen Moment leer und die Seite spraenge beim Ankommen. */
