@@ -433,8 +433,8 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
     function loesen() {
       document.removeEventListener('pointermove', beiZug)
       document.removeEventListener('pointerup', beiLos)
-      document.removeEventListener('pointercancel', loesen)
-      document.removeEventListener('keydown', beiTaste)
+      document.removeEventListener('pointercancel', beiAbbruch)
+      window.removeEventListener('blur', loesen)
       if (sperrt) {
         L.DomUtil.enableTextSelection()
         L.DomUtil.enableImageDrag()
@@ -444,6 +444,22 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       ueberSchwelle = false
       zeigerId = null
       setBox(null)
+    }
+
+    /**
+     * Ein abgebrochener Zeiger räumt auf — **aber nur der eigene**
+     * (Fremdprüfung Codex 19.08.2026, P6, `[low]`). `pointercancel` hing
+     * vorher ungefiltert an `loesen`, ein zweiter Finger konnte damit den Zug
+     * des Hauptzeigers beenden, den `zeigerId` in `beiZug` und `beiLos`
+     * gerade schützt.
+     *
+     * **Die Funktion war von der Ponytail-Lesung gestrichen worden**, weil sie
+     * nur `loesen()` rief. Das stimmte damals; jetzt trifft sie eine
+     * Entscheidung, und damit ist sie wieder ihr eigenes Ding.
+     */
+    function beiAbbruch(e: PointerEvent) {
+      if (e.pointerId !== zeigerId) return
+      loesen()
     }
 
     function beiDruck(e: PointerEvent) {
@@ -461,8 +477,20 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       // Ein abgebrochener Zeiger (Systemgeste, Stift abgesetzt) räumt nur auf
       // und wählt nichts — er hinterlässt sonst ein Rechteck, das niemand
       // losgelassen hat.
-      document.addEventListener('pointercancel', loesen)
-      document.addEventListener('keydown', beiTaste)
+      document.addEventListener('pointercancel', beiAbbruch)
+      // **Der Riegel gegen den verlorenen `pointerup`** (Fremdprüfung Codex
+      // 19.08.2026, P4, `[medium]`): wer bei gedrückter Taste das Fenster
+      // wechselt, erzeugt weder `pointerup` noch `pointercancel`. Ohne diesen
+      // Pfad blieben das gezeichnete Rechteck, die Dokument-Listener UND die
+      // globale Textauswahl-Sperre stehen — auf der ganzen Seite, bis zum
+      // nächsten Zug.
+      //
+      // **Bis heute Vormittag deckte Escape diesen Fall mit ab**, und mit
+      // seiner Streichung (C-59) wurde er der einzige Weg in einen hängenden
+      // Zustand. `blur` ist dafür ohnehin der richtige Mechanismus: er trifft
+      // genau das Ereignis, das den Zug tatsächlich beendet, statt eine Taste
+      // zu verlangen, die der Nutzer in diesem Moment nicht drückt.
+      window.addEventListener('blur', loesen)
     }
 
     function beiZug(e: PointerEvent) {
@@ -511,6 +539,31 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       //     Unterscheidung schaltete der nachfolgende Klick den Stand unter
       //     dem Startpunkt um — und Züge beginnen laut Entwurf regelmäßig auf
       //     einem Stand. Ein Mitglied wäre dabei aus der Gruppe geflogen.
+      //
+      // **(b) ist seit dem 19.08.2026 der EINZIGE Abbruchweg, und das ist
+      // Moritz' Entscheidung** (C-59). Daneben stand ein Escape-Handler,
+      // abgeschrieben von Leaflets `Map.BoxZoom` — und er brach nur halb ab:
+      // er räumte den Zug samt Klick-Riegel weg, das folgende Loslassen
+      // erzeugte trotzdem einen Klick, und der schaltete den Stand darunter
+      // um. Wer abbrach, bekam eine Änderung.
+      //
+      // **Warum es bei Leaflet nicht auffällt, stand hier zuerst falsch**
+      // (Fremdprüfung Codex 19.08.2026, P5). Behauptet war, Leaflets Escape
+      // funktioniere, weil `dragging.moved()` den Klick unterdrücke. Das
+      // trifft doppelt nicht zu: Leaflets `Draggable` startet bei gedrückter
+      // Shift-Taste gar nicht erst, und `_onKeyDown` setzt `_moved` SOFORT
+      // zurück, statt es wie `_onMouseUp` um einen Tick zu verzögern.
+      //
+      // **Leaflet hat also denselben halben Abbruch — er ist dort nur
+      // folgenlos**, weil ein Kartenklick nach einem abgebrochenen Zoom
+      // nichts tut. Hier schaltet er einen Stand um. Der Handler war nicht
+      // falsch abgeschrieben; er wurde in ein System übernommen, in dem der
+      // Klick eine Wirkung hat. **Das ist die eigentliche Lehre, und sie ist
+      // allgemeiner: eine übernommene Lösung bringt die Voraussetzungen ihres
+      // Herkunftssystems mit, und die stehen nirgends im Code.**
+      //
+      // Statt sie zu flicken, ist sie weg: ein Abbruchweg, der trägt, ist
+      // mehr wert als zwei, von denen einer eine Nebenwirkung hat.
       if (!weit) {
         if (zugLief) riegleKlick()
         return
@@ -519,11 +572,6 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       riegleKlick()
       const b = map.mouseEventToLatLng(e)
       aufWahlRef.current({ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng })
-    }
-
-    function beiTaste(e: KeyboardEvent) {
-      // Wie bei Leaflets BoxZoom: Escape nimmt den laufenden Zug zurück.
-      if (e.key === 'Escape') loesen()
     }
 
     /**
