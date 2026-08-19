@@ -1,0 +1,248 @@
+-- ============================================================
+-- 113 — Chat-Beitritt nur noch durch den Gruppen-Ersteller
+-- Nativer Track, 19.08.2026
+-- ============================================================
+--
+-- WAS DIESE MIGRATION TUT
+-- Sie streicht einen Zweig aus `chat_group_members_insert`. Vorher:
+--
+--     with check (
+--       group_id in (select get_my_created_group_ids())
+--       or user_id = auth.uid()          <-- dieser hier
+--     )
+--
+-- Der zweite Zweig prüft, dass jemand sich SELBST einträgt. Er prüft NICHT,
+-- ob er darf. Wer eine `group_id` kennt, ist damit Mitglied jeder Gruppe.
+--
+--
+-- DER ANLASS IST NACHGESTELLT, NICHT BEFÜRCHTET
+-- 19.08.2026 an der Produktion, als `authenticated` mit Heinrichs uid, alles
+-- mit ROLLBACK, gegen den Direktchat „Test2", in dem er nie war:
+--
+--     vorher : 0 Nachrichten sichtbar, 0 Gruppenzeile sichtbar
+--     INSERT : geht durch
+--     nachher: 146 Nachrichten, 1 Gruppenzeile
+--
+-- Zeichengleich die Regel aus AGENTS.md: **die Frage ist nicht „wer darf
+-- lesen", sondern „wer darf diese Zeile schreiben"** — dieselbe Wurzel wie
+-- 079 (jeder stellte sich selbst einen Begehungsschein aus) und 083 (der
+-- Storage-Pfad hing an einer Zeile, die der Angreifer schrieb).
+--
+-- ES BLEIBT NICHT BEIM LESEN. Drei Rechte hängen an derselben Mitgliedszeile:
+--   * `messages_select_group`  -> die ganze Historie
+--   * `messages_insert_group`  -> selbst schreiben
+--   * Storage-Policy 083       -> die Fotos des Chats, lesend wie schreibend
+-- Alle drei laufen über `get_my_group_ids()`, und das liest genau die Zeile,
+-- die der Angreifer sich selbst anlegt.
+--
+--
+-- WARUM DAS KEIN THEORETISCHER FUND IST
+-- Die `group_id` muss man kennen — raten lässt sich eine uuid nicht. Man muss
+-- sie aber auch nicht raten: **wer einmal drin war, kennt sie.** Und beide
+-- Wege hinaus sind gebaut und ausgeliefert:
+--   * `leaveChatGroup()` in der PWA (`src/lib/chat-group-actions.ts`)
+--   * `chat_group_members_delete` (Ersteller wirft hinaus)
+--   * `chat_group_members_hunt_leader_delete` (Jagdleiter wirft hinaus)
+-- Vor dieser Migration sind **Rauswerfen und Verlassen beide wirkungslos**:
+-- ein INSERT auf sich selbst, und der Rückkehrer liest alles, was seit seinem
+-- Weggang gesagt wurde. Genau das ist der Fall, der im Oktober zählt — dann
+-- sitzen Gäste in Drückjagd-Chats, die man auch wieder herausnehmen können
+-- muss.
+--
+--
+-- WARUM DER ZWEIG KEINEN LEGITIMEN AUFRUFER HAT
+-- Gelesen, nicht vermutet — jede Insert-Stelle beider Repos (19.08.2026):
+--   PWA  app/app/chat/create/page.tsx:109        eigene Zeile UND die der
+--                                               ausgewaehlten Kontakte, als EIN
+--                                               Batch, nach eigenem
+--                                               chat_groups-Insert
+--   PWA  app/app/hunt/create/page.tsx:640        NUR die eigene Zeile, nach
+--                                               eigenem chat_groups-Insert
+--   PWA  app/zentrale/jagden/liste.tsx:304       NUR die eigene Zeile, dito
+--   PWA  app/app/chat/[groupId]/info/page.tsx:310  FREMDE Zeile — braucht
+--                                               ohnehin den Ersteller-Zweig
+--   nativ src/lib/data/hunts.ts:331 (createHunt) eigene Zeile, nach eigenem
+--                                               chat_groups-Insert
+-- Die ersten drei und die letzte sind über `get_my_created_group_ids()`
+-- gedeckt, weil die Gruppe eine Anweisung vorher von derselben Person angelegt
+-- wurde. Die vierte war nie vom gestrichenen Zweig gedeckt.
+--
+-- Die zwei Wege, auf denen ein FREMDER legitim dazukommt, sind SECURITY
+-- DEFINER und umgehen RLS ohnehin:
+--   `accept_hunt_invitation()` (049) · `get_or_create_direct_chat()` (023)
+--
+--
+-- KEIN BESTAND HÄNGT DARAN, GEMESSEN
+-- `joined`-Teilnehmer, die in der Chatgruppe ihrer Jagd FEHLEN: **0**
+-- (19.08.2026). Niemand ist heute darauf angewiesen, sich selbst einzutragen,
+-- um in den Jagd-Chat zu kommen. Die Einengung sperrt also niemanden aus.
+--
+--
+-- WARUM `alter policy` UND NICHT drop/create
+-- Der Ausdruck und die Rolle sind alles, was sich ändert. `alter policy` kann
+-- beides und lässt die Tabelle zu keinem Zeitpunkt ohne INSERT-Policy stehen.
+--
+-- WARUM `to authenticated`
+-- Die Policy stand auf `to public` und ruft eine Funktion. Projektregel aus
+-- AGENTS.md: **ruft eine Policy eine Funktion, braucht sie `to
+-- authenticated`** — sonst wird für `anon` aus einem stillen „0 Zeilen" ein
+-- hartes `42501 permission denied`. Für `anon` ändert sich nichts, was ihm
+-- fehlte: er hat danach gar keine INSERT-Policy mehr und wird abgewiesen,
+-- statt an einer Funktion zu scheitern, die er nicht ausführen darf.
+--
+--
+-- DIE ZWEITE TUER: UPDATE — GEMESSEN, BESTRITTEN, UND DESHALB HINGESCHRIEBEN
+-- Die naheliegende zweite Tuer ist `chat_group_members_update_own`
+-- (`using (user_id = auth.uid())`, **ohne eigenes with check**): die eigene
+-- Mitgliedszeile nehmen und ihr `group_id` auf eine fremde Gruppe umschreiben.
+-- Derselbe Angriff durch eine andere Tuer.
+--
+-- **Gemessen ist sie zu** (19.08.2026, alles mit ROLLBACK, kein `returning`):
+--   * Heinrichs Zeile aus „Moritz" auf „Test2" umhaengen        -> 42501
+--   * dieselbe Zeile auf „Testgruppe Design", wo er Mitglied ist -> 23505
+--     (Unique) — RLS liess also durch; der Unterschied ist allein die
+--     Mitgliedschaft im ZIEL
+--   * Angriff in voller Form: eigene Gruppe als Traegerzeile anlegen, eigene
+--     Mitgliedschaft eintragen, diese auf die fremde Gruppe umhaengen -> 42501
+--     bei Positivkontrolle: Anlegen, Eintragen und ein `last_read_at`-UPDATE
+--     auf derselben Gruppe gehen alle drei durch
+-- Die Mechanik an einer Wegwerf-Tabelle mit Kontrolle nachgebaut: gleiche
+-- Tabelle, gleiche UPDATE-Policy, einziger Unterschied die SELECT-Policy —
+--     for select using (topf = 'meiner')  -> UPDATE aus der Sicht heraus: 42501
+--     for select using (true)             -> derselbe UPDATE: geht durch
+-- Postgres verlangt also, dass die NEUE Zeile die SELECT-Policies erfuellt,
+-- wenn die UPDATE-Policy kein eigenes `with check` hat.
+--
+-- **DIE FREMDPRUEFUNG HAT DAS BESTRITTEN, UND DAS IST DER GRUND FUER DIE
+-- ZWEITE ANWEISUNG UNTEN.** Codex meldete `[high]`, die SELECT-Policy greife
+-- nur, wenn die Abfrage die neue Zeile lesen will (`returning` / `.select()`),
+-- und ohne das sei der Angriff offen. Nachgestellt in genau seiner Form, ohne
+-- `returning`, mit Positivkontrolle: **er prallt ab.** Seine Mechanik-These
+-- trifft fuer diese Postgres-Fassung nicht zu.
+--
+-- **Der Riegel wird trotzdem hingeschrieben, statt den Streit zu gewinnen.**
+-- Wenn zwei Leser die Semantik verschieden lesen, ist sie zu subtil, um eine
+-- Produktionstabelle darauf zu stellen — und der eigene Kopf nannte sie schon
+-- vorher „zerbrechlich": wer `chat_group_members_select` lockert, oeffnet die
+-- Tuer, ohne 113 anzufassen. Eine Zeile beendet die Frage.
+--
+-- **Die Form ist selbstbezueglich und deshalb vorab an einer Wegwerf-Tabelle
+-- geprueft** (19.08.2026, ROLLBACK): `get_my_group_ids()` ist STABLE und liest
+-- den Snapshot vom Anweisungsbeginn, sieht also die Mitgliedschaften VOR dem
+-- UPDATE.
+-- **Dass daraus keine Policy-Rekursion wird, traegt aber der SECURITY DEFINER,
+-- nicht STABLE** (Schlusslesung F2): die Funktion liest als Owner an RLS
+-- vorbei — Migration 009 existiert genau deswegen. Ergebnis mit exakt dieser
+-- Policy-Form:
+--     harmloses UPDATE auf der eigenen Zeile (`last_read_at`) -> geht durch
+--     Umhaengen in eine fremde Gruppe                          -> 42501
+-- **Es sind ZWEI laufende Schreibgruende, nicht einer** (Schlusslesung
+-- 19.08.2026, F3 — der erste Entwurf dieses Absatzes behauptete „der einzige"):
+--   * `last_read_at` — PWA `chat/[groupId]/page.tsx:130` und `:143`
+--   * `hidden_at`    — PWA `home-content.tsx:407` (Chat ausblenden) und `:440`
+--                      (Rueckgaengig), Migration 035
+-- Beide treffen die EIGENE Zeile bei unveraendertem `group_id` und bestehen
+-- den neuen `with check`. Nachgesehen, nicht angenommen. Einen UPDATE-Pfad
+-- VOR der Mitgliedschaft gibt es nicht — alle vier filtern auf die eigene,
+-- bereits bestehende Zeile.
+--
+-- **KEIN Freeze-Trigger**, obwohl 085/087/090/112 dafuer das Hausmuster waeren
+-- und er auch fuer Rollen hielte, die RLS umgehen. Er kostet Funktion, Trigger
+-- und REVOKE fuer einen Weg, der danach zweifach zu ist. Als Backlog-Punkt
+-- gefuehrt, nicht vergessen.
+--
+--
+-- WAS DIESE MIGRATION BEWUSST NICHT TUT
+--  * Sie räumt KEINE bestehende Mitgliedszeile ab. Es gibt keine, die auf
+--    diesem Weg entstanden wäre (22 Zeilen, alle plausibel); und ein DELETE
+--    auf Zeilen, die ein Mensch angelegt hat, wäre ein eigener Anker-2-Lauf.
+--  * Sie fasst die DELETE-Policies NICHT an. Dass ein Ersteller und ein
+--    Jagdleiter hinauswerfen dürfen, ist gewollt — es wirkt jetzt bloss
+--    endlich.
+--  * Sie legt KEINEN Beitrittsweg über einen Einladecode an. Wenn ein solcher
+--    Weg kommt, gehört er in eine SECURITY-DEFINER-Funktion, die den Code
+--    prüft — wie `schein_einloesen` (080) und `jagd_beitreten` (098). Eine
+--    Policy kann einen Code im WHERE nicht sehen.
+--  * Sie setzt KEIN `kind` und rührt `chat_groups` nicht an.
+--
+--
+-- ZWEI FRAGEN, DIE KEIN PRUEFER BEANTWORTET HAT — SELBST GEMESSEN
+-- Die Fremdpruefung hat nur fuer EINEN ihrer neun Fokuspunkte eine Zeile
+-- geschrieben (P9), die uebrigen acht blieben ohne „kein Befund". Die
+-- Schlusslesung deckte davon P3, P4 und P5 ab; zwei blieben offen und sind
+-- hier nachgemessen (19.08.2026, alles mit ROLLBACK):
+--
+-- **P1 — kann jemand eine fremde Gruppe UEBERNEHMEN?** Waere `created_by`
+-- umschreibbar, machte der Angreifer sich zum Ersteller und duerfte sich
+-- danach regulaer eintragen — 113 waere wertlos.
+-- Gemessen: `update chat_groups set created_by = <ich> where id = <fremd>`
+-- aendert **0 Zeilen**. `chat_groups_update` laeuft ueber
+-- `get_my_created_group_ids()` und filtert die fremde Zeile aus dem UPDATE
+-- heraus — kein `42501`, sondern ein stiller Nulltreffer. Der Weg ist zu.
+-- *(Verschenken der EIGENEN Gruppe bleibt moeglich und ist gewollt-harmlos.)*
+--
+-- **P8 — muss der Bestand aufgeraeumt werden?** 22 Mitgliedszeilen. Sieben
+-- gehoeren Menschen, die weder Ersteller der Gruppe noch Teilnehmer ihrer
+-- Jagd sind — auf den ersten Blick genau die Bauform des Angriffs.
+-- **Alle sieben liegen in Gruppen OHNE `hunt_id`**, also in normalen Gruppen-
+-- und Direktchats, und dort ist genau das der regulaere Weg: die
+-- PWA-Anlegeseite schreibt Ersteller UND ausgewaehlte Kontakte als einen
+-- Batch. **0 Zeilen in Jagd-Chats.** Kein Aufraeumen noetig.
+--
+--
+-- ZWEI WEITERE BEFUNDE DER FREMDPRUEFUNG, BEIDE WIDERLEGT — MIT MESSUNG
+-- (1) `[medium]` „Der Tabellenkommentar beschreibt eine nicht vorhandene
+--     Foto-Lesesperre": Migration 005 lege `chat-photos` als OEFFENTLICHEN
+--     Bucket an, oeffentliche URLs umgingen RLS, ein entferntes Mitglied
+--     koenne bekannte Foto-URLs weiter oeffnen.
+--     **Gemessen an der Produktion (19.08.2026): alle drei Buckets stehen auf
+--     `public = false`** — `app-photos`, `chat-photos`, `group-avatars`.
+--     Umgestellt am 01.08.2026 (A-S6). Codex hat die Migrationshistorie
+--     gelesen, und die kennt die Umstellung nicht. Der Kommentar bleibt.
+-- (2) `[high]` zur UPDATE-Tuer: s. oben, in seiner eigenen Form nachgestellt
+--     und abgeprallt. Die Empfehlung ist trotzdem eingebaut.
+--
+-- EIN BEFUND DER FREMDPRUEFUNG STIMMT UND WIRD HIER NICHT GEHEILT
+-- `[medium]` „Die Migration ist auf einem sauberen Schema nicht ausfuehrbar":
+-- `public.get_my_created_group_ids()` ist in KEINER eingecheckten Migration
+-- definiert, ebensowenig der bisherige OR-Ausdruck der Policy. Nachgeprueft,
+-- der Befund stimmt — und er ist groesser als er aussieht: **auch die
+-- Bucket-Umstellung aus (1) steht in keiner Migration.** Ein Clean-Reset
+-- scheitert also an Zeile 1 dieser Datei, und zwar nicht wegen 113.
+-- **Nicht hier geheilt, mit Grund:** den Produktions-Drift einzufangen ist
+-- eine eigene, groessere Migration, die niemand nebenbei schreibt, und sie
+-- gehoert nicht in einen Sicherheits-Fix, der heute appliziert werden soll.
+-- Als Backlog-Punkt gefuehrt (C-57). Wer 113 aus der Historie neu spielt, muss
+-- die Funktion vorher anlegen.
+-- **Die Schlusslesung hat einen VIERTEN Drift-Fall gefunden** (F8): keine
+-- eingecheckte Migration erlaubt einem einfachen Mitglied das DELETE der
+-- eigenen Zeile — 006 kennt nur den Ersteller, 067 nur den Jagdleiter. Sie
+-- schloss daraus, `leaveChatGroup()` koenne still 0 Zeilen loeschen und die
+-- Erzaehlung oben sei zur Haelfte ungeprueft.
+-- **An der Produktion gemessen ist das widerlegt:** `chat_group_members_delete_own`
+-- existiert dort mit `using (user_id = auth.uid())` — Verlassen wirkt. Die
+-- Policy steht bloss in keiner Migration. Der Befund ist damit kein Loch,
+-- sondern der vierte Beleg fuer C-57.
+-- ============================================================
+
+alter policy chat_group_members_insert
+  on public.chat_group_members
+  to authenticated
+  with check (group_id in (select public.get_my_created_group_ids()));
+
+-- Die zweite Tuer, ausdruecklich statt erschlossen (s. Kopf). `using` bleibt
+-- unveraendert; neu ist allein das `with check`, das die Zeile an den Gruppen
+-- festhaelt, in denen der Aufrufer schon ist.
+alter policy chat_group_members_update_own
+  on public.chat_group_members
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid() and group_id in (select public.get_my_group_ids()));
+
+comment on table public.chat_group_members is
+  'Mitgliedschaft in einer Chatgruppe. ACHTUNG, die Zeile IST die '
+  'Berechtigung: Lesen, Schreiben und die Fotos des Chats haengen alle an '
+  'get_my_group_ids(), und das liest genau diese Zeile. Anlegen darf sie seit '
+  '113 nur der Ersteller der Gruppe; ein Beitritt aus eigenem Antrieb gehoert '
+  'in eine SECURITY-DEFINER-Funktion, die eine Einladung prueft, nicht in eine '
+  'Policy.';
