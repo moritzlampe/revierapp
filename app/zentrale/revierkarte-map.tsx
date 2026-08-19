@@ -386,6 +386,16 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
      */
     let ueberSchwelle = false
     /**
+     * Wurde der laufende Zug abgebrochen, ohne dass der Zeiger schon oben war?
+     *
+     * **Der gemeinsame Zustand der drei Abbruchwege** (CP-61). Er trennt „es
+     * zieht niemand mehr" von „es zieht noch jemand, aber es soll nichts mehr
+     * bewirken" — und genau diese zweite Lage gab es vorher nicht, weshalb
+     * jeder unfreiwillige Abbruch entweder eine Wirkung hinterließ oder einen
+     * hängenden Zustand. Siehe `abbrechen()`.
+     */
+    let abgebrochen = false
+    /**
      * Gerade ein Rechteck fertig gezogen?
      *
      * **Der Riegel gegen die doppelte Wirkung, zweite Stufe.** Leaflet
@@ -430,19 +440,89 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       }, 0)
     }
 
+    /**
+     * Textauswahl und Bildziehen freigeben — aber nur, wenn DIESE Instanz sie
+     * gesperrt hat (s. `sperrt`).
+     *
+     * Eigene Funktion, seit ein Abbruch sie FRÜHER freigeben muss als das
+     * Aufräumen: `abbrechen()` lässt die Listener stehen und wird die globalen
+     * Sperren trotzdem sofort los.
+     */
+    function entsperren() {
+      if (!sperrt) return
+      L.DomUtil.enableTextSelection()
+      L.DomUtil.enableImageDrag()
+      sperrt = false
+    }
+
     function loesen() {
       document.removeEventListener('pointermove', beiZug)
       document.removeEventListener('pointerup', beiLos)
       document.removeEventListener('pointercancel', beiAbbruch)
-      window.removeEventListener('blur', loesen)
-      if (sperrt) {
-        L.DomUtil.enableTextSelection()
-        L.DomUtil.enableImageDrag()
-        sperrt = false
-      }
+      document.removeEventListener('contextmenu', L.DomEvent.stop)
+      window.removeEventListener('blur', abbrechen)
+      entsperren()
       start = null
       ueberSchwelle = false
       zeigerId = null
+      abgebrochen = false
+      setBox(null)
+    }
+
+    /**
+     * Den laufenden Zug abbrechen, OHNE das Loslassen aus den Augen zu
+     * verlieren.
+     *
+     * **Warum nicht einfach `loesen()`, und das ist der Kern von CP-61:**
+     * `loesen()` nimmt die Listener ab. Das folgende `pointerup` kommt dann
+     * nirgends mehr an, `riegleKlick()` feuert nie — und der Browser stellt
+     * trotzdem einen `click` zu, der den Stand unter dem Zeiger umschaltet.
+     * **Wer abbricht, bekäme eine Änderung.** Zeichengleich der Fehler, für den
+     * der Escape-Handler am 19.08.2026 gestrichen wurde (C-59); der `blur`-Pfad
+     * desselben Tages hat ihn unbemerkt nachgebaut.
+     *
+     * **Ein Riegel zum Abbruchzeitpunkt löst es nicht:** `riegleKlick()` gilt
+     * nach Leaflets Muster genau einen Tick, das Loslassen kommt Sekunden
+     * später. Der Riegel MUSS am Loslassen sitzen, also muss der Zug bis dahin
+     * beobachtet bleiben.
+     *
+     * Der Zug bleibt deshalb für die EREIGNISSE bestehen und ist nur für die
+     * WIRKUNG tot: `beiZug` zeichnet nicht mehr, `beiLos` wertet nicht mehr aus
+     * und riegelt stattdessen den Klick, genau wie beim Zurückziehen.
+     *
+     * **Die globalen Sperren fallen trotzdem sofort** — sie dürfen ein
+     * verlassenes Fenster nicht überleben, und das war der Anlass, aus dem der
+     * `blur`-Pfad überhaupt entstand (Fremdprüfung Codex 19.08.2026, P4).
+     *
+     * **Der `contextmenu`-Riegel geht dabei SOFORT ab, und dieser Absatz stand
+     * hier zuerst falsch** (Fremdprüfung Codex GPT-5.4, 19.08.2026, P3/P5,
+     * `[medium]`): behauptet war, die verbleibenden Listener seien allesamt
+     * „wirkungslos". `L.DomEvent.stop` am `document` ist das Gegenteil — es
+     * unterdrückt JEDEN Rechtsklick der ganzen Seite. Wird nach dem Abbruch
+     * außerhalb des Fensters losgelassen, kommt nie ein `pointerup`, `loesen()`
+     * läuft nie, und das Kontextmenü bliebe bis zum nächsten abgeschlossenen
+     * Zug oder bis zum Unmount tot — auf der ganzen Seite, nicht nur auf der
+     * Karte.
+     *
+     * **Er wird nach dem Abbruch auch nicht mehr gebraucht:** er schützt das
+     * `pointerup` eines LAUFENDEN Zugs vor dem nativen Menü, und der Zug ist
+     * hier zu Ende. Ein Riegel, dessen Anlass weg ist, darf nicht liegenbleiben.
+     *
+     * Was danach stehenbleibt, ist wirklich wirkungslos oder nötig — es sind
+     * VIER, nicht drei (Schlusslesung Fable 5, 19.08.2026, Nebenbefund):
+     * `pointermove` steigt an `abgebrochen` aus, `pointercancel` räumt auf,
+     * `blur` ruft ein zweites Mal hierher und tut dann nichts, und `pointerup`
+     * ist genau das Ereignis, auf das der Klick-Riegel wartet.
+     */
+    function abbrechen() {
+      // Kein `|| abgebrochen`: `entsperren()` riegelt sich selbst,
+      // `removeEventListener` auf einen abgemeldeten Listener ist ein No-op und
+      // `setBox(null)` auf `null` ebenso — ein zweiter Aufruf tut ohnehin
+      // nichts (Ponytail-Lesung 19.08.2026).
+      if (zeigerId === null) return
+      abgebrochen = true
+      entsperren()
+      document.removeEventListener('contextmenu', L.DomEvent.stop)
       setBox(null)
     }
 
@@ -468,6 +548,9 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       if (e.button !== 0 || !e.isPrimary) return
       start = map.mouseEventToLatLng(e)
       ueberSchwelle = false
+      // Ein neuer Zug hebt einen alten Abbruch auf, dessen Loslassen nie
+      // ankam (Fenster verlassen und dort losgelassen).
+      abgebrochen = false
       zeigerId = e.pointerId
       L.DomUtil.disableTextSelection()
       L.DomUtil.disableImageDrag()
@@ -478,6 +561,27 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       // und wählt nichts — er hinterlässt sonst ein Rechteck, das niemand
       // losgelassen hat.
       document.addEventListener('pointercancel', beiAbbruch)
+      // **Das native Kontextmenü während des Zugs unterdrücken** (CP-61) —
+      // zeichengleich zu Leaflets `Map.BoxZoom`, das `contextmenu:
+      // DomEvent.stop` am `document` bindet (`Map.BoxZoom.js:75`, abgemeldet
+      // in Zeile 113). Genau diese eine Zeile fehlte im Nachbau.
+      //
+      // Ohne sie öffnet ein Rechtsklick mitten im Zug das Menü, und Chrome
+      // kann dabei das linke `pointerup` verschlucken: kein `pointerup`, kein
+      // `pointercancel`, kein `blur` — der Zug bliebe samt gezeichnetem
+      // Rechteck und globaler Textauswahl-Sperre hängen, bis der nächste
+      // beginnt.
+      //
+      // **Am `document`, nicht am Container**, und das ist keine
+      // Bequemlichkeit: der Zeiger ist während eines Zugs regelmäßig außerhalb
+      // der Karte, dort griffe ein Container-Listener gerade nicht. Er lebt
+      // nur zwischen `beiDruck` und `loesen()`; es gibt kein Fenster, in dem
+      // hier ein Menü verschwände, das jemand haben wollte.
+      //
+      // **`L.DomEvent.stop` direkt statt einer eigenen Funktion**
+      // (Ponytail-Lesung 19.08.2026): stabile Referenz, also an- und
+      // abmeldbar — und genau die Form, in der Leaflet es selbst schreibt.
+      document.addEventListener('contextmenu', L.DomEvent.stop)
       // **Der Riegel gegen den verlorenen `pointerup`** (Fremdprüfung Codex
       // 19.08.2026, P4, `[medium]`): wer bei gedrückter Taste das Fenster
       // wechselt, erzeugt weder `pointerup` noch `pointercancel`. Ohne diesen
@@ -490,11 +594,15 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       // Zustand. `blur` ist dafür ohnehin der richtige Mechanismus: er trifft
       // genau das Ereignis, das den Zug tatsächlich beendet, statt eine Taste
       // zu verlangen, die der Nutzer in diesem Moment nicht drückt.
-      window.addEventListener('blur', loesen)
+      // **Abbrechen, nicht abreißen** (CP-61): `loesen()` stand hier bis zum
+      // 19.08.2026 und ließ den folgenden Klick durch — s. `abbrechen()`.
+      window.addEventListener('blur', abbrechen)
     }
 
     function beiZug(e: PointerEvent) {
-      if (!start || e.pointerId !== zeigerId) return
+      // `abgebrochen` steht vor der Id-Prüfung, weil es den häufigeren Fall
+      // trifft: nach einem Abbruch laufen die Moves des EIGENEN Zeigers weiter.
+      if (!start || abgebrochen || e.pointerId !== zeigerId) return
       // Die Schwelle gilt nur für den ERSTEN Ausschlag. Danach folgt das
       // Rechteck dem Zeiger, auch wenn er wieder in die Nähe des Starts kommt —
       // sonst flackerte es beim Zurückziehen.
@@ -508,13 +616,68 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
     }
 
     function beiLos(e: PointerEvent) {
-      if (e.button !== 0 || e.pointerId !== zeigerId) return
+      /**
+       * **KEIN `e.button !== 0` — und das ist der schwerste Befund dieses
+       * Diffs** (Schlusslesung Fable 5, 19.08.2026, F8, `[medium]`).
+       *
+       * `pointerup` feuert je ZEIGER genau einmal, nämlich wenn die LETZTE
+       * Taste losgelassen wird, und trägt deren `button`. Wer mitten im Zug
+       * eine zweite Taste drückt und die linke ZUERST losläßt, erzeugt also ein
+       * `pointerup` mit `button === 2`. Ein Guard darauf hätte es verworfen —
+       * `loesen()` liefe nie.
+       *
+       * **Die Folge war nicht nur ein Hänger, sondern ein Phantom-Schreiben:**
+       * das Rechteck klebte am tastenlosen Zeiger und wanderte mit, Rechtsklick
+       * und Textauswahl blieben seitenweit gesperrt, und der nächste Linksklick
+       * IRGENDWO — etwa auf „Speichern" in der Spalte — erreichte als verspätetes
+       * `pointerup` doch noch diese Funktion: `abgebrochen` false, die Schwelle
+       * gegen den alten Anker fast immer überschritten. Es feuerte `aufWahl` mit
+       * einem Rechteck vom alten Startpunkt bis unter den Knopf, in genau den
+       * Entwurf, der gerade gespeichert wurde.
+       *
+       * **Der Guard war von Leaflets `_onMouseUp` übernommen** (`(e.which !== 1)
+       * && (e.button !== 1)`, `Map.BoxZoom.js:121`). Dort ist er RICHTIG, weil
+       * `mouseup` je TASTE feuert und die Handler jede einzeln sehen. Hier
+       * feuert `pointerup` je Zeiger. **Zum zweiten Mal an derselben Datei
+       * dieselbe Bauform:** eine übernommene Lösung bringt die Voraussetzungen
+       * ihres Herkunftssystems mit, und die stehen nirgends im Code — beim
+       * Escape-Handler war es `dragging.moved()`, hier die Ereigniskörnung.
+       *
+       * `zeigerId` leistet, wofür der Guard gedacht war: er ist der Zeiger, der
+       * diesen Zug begonnen hat, und `beiDruck` nimmt nur primäre Zeiger mit
+       * `button === 0` an. Welche Taste zuletzt hochkam, sagt über die Gültigkeit
+       * des Zugs nichts.
+       */
+      if (e.pointerId !== zeigerId) return
       const a = start
       // Vor `loesen()` messen: danach sind Anker und Anzeigezustand weg.
       const weit = weitGenug(e)
       const zugLief = ueberSchwelle
+      const abbruch = abgebrochen
       loesen()
       if (!a) return
+
+      // **Hier mündet der unfreiwillige Abbruch** (CP-61): `blur` mitten im
+      // Zug. Er endet zeichengleich wie das Zurückziehen unter (b) — kein
+      // Rechteck, aber der Klick wird geriegelt, sofern überhaupt ein Zug lief.
+      // Ein Abbruch, der einen Stand umschaltet, ist kein Abbruch.
+      //
+      // **Hier steht ausdrücklich NICHT „und das Kontextmenü", obwohl es zuerst
+      // so dastand** (Schlusslesung Fable 5, 19.08.2026, F6): `abbrechen()` hat
+      // genau EINEN Aufrufer, den `blur`-Listener. Der Rechtsklick-Fall wird
+      // durch `L.DomEvent.stop` VERHINDERT und erreicht diesen Zweig nie —
+      // verhindern und abfangen sind nicht dasselbe. Wer den Unterschied
+      // einebnet, hält die Menü-Unterdrückung später für redundant, streicht
+      // sie, und hat den verschluckten `pointerup` zurück; genau den fängt
+      // dieser Zweig nämlich nicht.
+      //
+      // `zugLief` und nicht `true`: wer nur drückt, das Fenster verliert und
+      // dann loslässt, hat getippt, nicht gezogen — der Tipp gehört weiter dem
+      // Marker darunter. Dieselbe Unterscheidung wie unten bei (a) gegen (b).
+      if (abbruch) {
+        if (zugLief) riegleKlick()
+        return
+      }
 
       // **Der Endpunkt kommt aus dem Loslassen, nicht aus dem letzten
       // `pointermove`** (Fremdprüfung Codex 19.08.2026, P7, `[medium]`).
@@ -540,8 +703,8 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       //     dem Startpunkt um — und Züge beginnen laut Entwurf regelmäßig auf
       //     einem Stand. Ein Mitglied wäre dabei aus der Gruppe geflogen.
       //
-      // **(b) ist seit dem 19.08.2026 der EINZIGE Abbruchweg, und das ist
-      // Moritz' Entscheidung** (C-59). Daneben stand ein Escape-Handler,
+      // **(b) ist der einzige Abbruch, den der Nutzer ABSICHTLICH auslöst, und
+      // das ist Moritz' Entscheidung** (C-59). Daneben stand ein Escape-Handler,
       // abgeschrieben von Leaflets `Map.BoxZoom` — und er brach nur halb ab:
       // er räumte den Zug samt Klick-Riegel weg, das folgende Loslassen
       // erzeugte trotzdem einen Klick, und der schaltete den Stand darunter
@@ -564,6 +727,18 @@ function RechteckWahl({ aufWahl }: { aufWahl: (a: Ort, b: Ort) => void }) {
       //
       // Statt sie zu flicken, ist sie weg: ein Abbruchweg, der trägt, ist
       // mehr wert als zwei, von denen einer eine Nebenwirkung hat.
+      //
+      // **Die Streichung hat den Fehler aber nicht aus der Welt geschafft, nur
+      // aus dieser Taste** (CP-61, 19.08.2026): derselbe halbe Abbruch steckte
+      // danach im `blur`-Pfad desselben Tages und im verschluckten `pointerup`
+      // eines Rechtsklicks.
+      //
+      // **Eine Klasse mit drei Eingängen — aber mit drei VERSCHIEDENEN Fixes,
+      // und dieser Satz stand hier zuerst falsch** (Schlusslesung Fable 5,
+      // 19.08.2026, F6): Escape ist gestrichen, `blur` läuft über `abgebrochen`
+      // in diesen Ausgang, der Rechtsklick wird vorher unterdrückt. Nur EINER
+      // der drei geht durch den gemeinsamen Zustand. Gemeinsam ist die
+      // Fehlerklasse, nicht der Mechanismus.
       if (!weit) {
         if (zugLief) riegleKlick()
         return
@@ -722,7 +897,6 @@ function Objekte({
   return (
     <>
       {punkte.map((p) => {
-        const gewaehlt = p.id === auswahlId || !!markiert?.has(p.id)
         /** In der ANGEWÄHLTEN Gruppe — beim Bearbeiten: im Entwurf. */
         const inGruppe = !!gruppe?.staende.has(p.id)
         /** In irgendeiner Gruppe des Reviers. Schließt `inGruppe` ein. */
@@ -749,14 +923,28 @@ function Objekte({
          * Der Name des ausgewählten Objekts steht immer, auch weit herausgezoomt:
          * sonst wäre die Auswahl unter Zoom 16 nur ein Ring ohne Auskunft.
          *
-         * **Gruppenmitgliedschaft zählt hier ausdrücklich NICHT** (18.08.2026).
-         * Sie ist eine MENGE, keine Auswahl: bei „Sauberg" wären das 52
-         * dauerhafte Namensschilder gleichzeitig, und die Karte, die diese
-         * Schwelle überhaupt erst eingeführt hat (196 Objekte in Söder), wäre
-         * genau dort wieder unlesbar. Das Leuchten trägt die Zugehörigkeit, der
-         * Name beantwortet eine andere Frage.
+         * **Eine MENGE schaltet hier keine Namen ein — weder `gruppe` noch
+         * `markiert`.** Sie ist eine Zugehörigkeit, keine Auswahl. Für die
+         * Standgruppen gilt das seit dem 18.08.2026; `markiert` blieb damals
+         * bewusst stehen, weil sonst das Verhalten des Treiben-Bereichs
+         * ungeprüft mitgewandert wäre. Seit dem 19.08.2026 gilt es für beide
+         * (C-48).
+         *
+         * **Die Zahl, um die es geht:** Söders reale Treiben sind Sauberg 52,
+         * Dornenbüsche 43, Betonstraße 39, Buchberg 38. Ein Treiben dieser
+         * Größe legte bis zu 52 dauerhafte Namensschilder über genau die Karte,
+         * für die die Zoom-Schwelle überhaupt eingeführt wurde (196 Objekte in
+         * Söder). Die Schilder trugen den Namen also nur dort, wo die Menge
+         * klein ist, und machten die Karte unlesbar, wo sie groß ist.
+         *
+         * **Der Preis ist benannt und von Moritz angenommen** (19.08.2026):
+         * der Treiben-Editor hat — anders als die Standgruppen ihre Spalte —
+         * KEINE Liste, die die gewählten Stände beim Namen nennt, sondern nur
+         * den Zähler „N gewählt". Unter Zoom 16 nennt dort seither nichts mehr
+         * einen Namen. Ersatz sind die Zoomstufe (ab 16 stehen ohnehin alle)
+         * und das Überfahren; die Zugehörigkeit trägt weiter der bronzene Ring.
          */
-        const nameSteht = namenFest || gewaehlt
+        const nameSteht = namenFest || p.id === auswahlId
         return (
           <CircleMarker
             // Die Interaktivität gehört in den `key`, so unschön das aussieht.
