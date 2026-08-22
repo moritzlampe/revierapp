@@ -79,15 +79,64 @@ export default async function JagdDetailPage({
     )
   }
 
-  // `maybeSingle`, nicht `single`: eine Jagd, die RLS nicht durchlässt, ist
-  // hier kein Serverfehler, sondern die Auskunft „gibt es für dich nicht".
-  const { data: jagd, error: jagdFehler } = await supabase
-    .from('hunts')
-    .select(
-      'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id'
-    )
-    .eq('id', id)
-    .maybeSingle()
+  /**
+   * **Fünf Abfragen in EINER Welle, nicht fünf nacheinander** (CP-69). Keine
+   * von ihnen braucht ein Ergebnis einer anderen — alle hängen nur an `user.id`
+   * bzw. der Jagd-`id` aus der Adresse.
+   *
+   * **Der Anlass ist gemessen** (22.08.2026): „Löschen dauert sehr lange". Der
+   * Server war es nicht (`explain analyze`: 47,8 ms) — die Zeit steckte hier,
+   * weil `fuehreAus()` nach JEDEM Write `router.refresh()` ruft und den Knopf
+   * bis zum Ende der Kette gesperrt hält.
+   *
+   * **`geladen()` gehört NICHT ins Array:** es wirft, und ein Wurf im
+   * `Promise.all` risse die anderen vier Ergebnisse mit — die Meldung nennte
+   * dann nicht mehr, welche Abfrage gescheitert ist.
+   *
+   * **Der Preis, benannt — und die erste Fassung dieses Absatzes hat ihn
+   * kleingeredet** (Fremdprüfung 22.08.2026, Punkt 8): dort stand „sie laufen
+   * gleichzeitig, die Wartezeit bleibt gleich". Das stimmt nicht. Vorher wartete
+   * der Nicht-gefunden-Pfad auf **eine** Abfrage — ein Treffer über den
+   * Primärschlüssel, das Schnellste, was diese Seite tut. Jetzt wartet er auf
+   * die **langsamste von fünf**, und `kontakte` trägt zwei Sortierungen.
+   *
+   * Der Tausch bleibt richtig, aber er ist einer: ein selten begangener Weg
+   * wird etwas langsamer, damit der Weg, den jeder nimmt, vier Rundreisen
+   * spart. Wer das umdrehen wollte, müsste `hunts` allein vorziehen — und
+   * bezahlte dafür auf dem häufigen Weg genau die Rundreise, die dieser Umbau
+   * einspart.
+   *
+   * `maybeSingle`, nicht `single`: eine Jagd, die RLS nicht durchlässt, ist
+   * hier kein Serverfehler, sondern die Auskunft „gibt es für dich nicht".
+   */
+  const [jagdErgebnis, reviereErgebnis, teilnehmerErgebnis, profileErgebnis, kontakteErgebnis] =
+    await Promise.all([
+      supabase
+        .from('hunts')
+        .select(
+          'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id'
+        )
+        .eq('id', id)
+        .maybeSingle(),
+      supabase
+        .from('districts')
+        .select('id, name, boundary')
+        .eq('owner_id', user.id)
+        .eq('hidden', false),
+      supabase
+        .from('hunt_participants')
+        .select('id, user_id, guest_name, role, tags, status')
+        .eq('hunt_id', id),
+      supabase.from('profiles').select('id, display_name').order('display_name'),
+      supabase
+        .from('kontakte')
+        .select('id, vorname, nachname, kategorien')
+        .is('inaktiv_seit', null)
+        .order('nachname', { ascending: true, nullsFirst: false })
+        .order('vorname', { ascending: true, nullsFirst: false }),
+    ])
+
+  const { data: jagd, error: jagdFehler } = jagdErgebnis
 
   if (jagdFehler) throw new Error(`Die Jagd konnte nicht geladen werden: ${jagdFehler.message}`)
 
@@ -107,14 +156,7 @@ export default async function JagdDetailPage({
   }
 
   // Das Revier der Jagd — und zugleich die Prüfung, ob es ein eigenes ist.
-  const reviere = geladen<Revier[]>(
-    await supabase
-      .from('districts')
-      .select('id, name, boundary')
-      .eq('owner_id', user.id)
-      .eq('hidden', false),
-    'Reviere'
-  )
+  const reviere = geladen<Revier[]>(reviereErgebnis, 'Reviere')
   const revier = reviere.find((r) => r.id === jagd.district_id)
 
   // Der Chat-Hinweis überlebt den Redirect — sonst verschwände er genau dann,
@@ -123,22 +165,13 @@ export default async function JagdDetailPage({
     redirect(`/zentrale/jagden/${id}?revier=${revier.id}${chatFehlt ? '&chat=fehlt' : ''}`)
   }
 
-  const teilnehmer = geladen<Teilnehmer[]>(
-    await supabase
-      .from('hunt_participants')
-      .select('id, user_id, guest_name, role, tags, status')
-      .eq('hunt_id', id),
-    'Teilnehmer'
-  )
+  const teilnehmer = geladen<Teilnehmer[]>(teilnehmerErgebnis, 'Teilnehmer')
 
   // Alle Profile in einem Rutsch: `profiles_select_authenticated` lässt jeden
   // Angemeldeten alle Zeilen sehen, und im Bestand sind es 9 (03.08.2026). Eine
   // Suche wäre bei dieser Menge Zierat; wenn sie fällig wird, ist es dieselbe
   // Stelle wie nativ (`fetchInvitableProfiles`, ebenfalls ohne Suche).
-  const profile = geladen<Profil[]>(
-    await supabase.from('profiles').select('id, display_name').order('display_name'),
-    'Profile'
-  )
+  const profile = geladen<Profil[]>(profileErgebnis, 'Profile')
 
   // **Das Adressbuch — die Menschen ohne Konto** (Moritz, 03.08.2026: „wir
   // werden aber ja auch jagden anlegen mit leuten die noch keinen haben oder
@@ -158,15 +191,7 @@ export default async function JagdDetailPage({
   // seinen Zweck hat. Wer als Aktiver eingeladen wurde und danach stillgelegt
   // wird, bleibt Teilnehmer — die `hunt_participants`-Zeile ist unberührt, hier
   // geht es allein um die Auswahl der NOCH NICHT Eingeladenen.
-  const kontakte = geladen<EinladbarerKontakt[]>(
-    await supabase
-      .from('kontakte')
-      .select('id, vorname, nachname, kategorien')
-      .is('inaktiv_seit', null)
-      .order('nachname', { ascending: true, nullsFirst: false })
-      .order('vorname', { ascending: true, nullsFirst: false }),
-    'Kontakte'
-  )
+  const kontakte = geladen<EinladbarerKontakt[]>(kontakteErgebnis, 'Kontakte')
 
   // **Die Rechtefrage, und sie ist der Grund, warum diese Seite sie serverseitig
   // stellt:** Ersteller ODER wer die Rolle trägt UND zugesagt hat. Zeichengleich
@@ -211,65 +236,75 @@ export default async function JagdDetailPage({
   // dann zusammen mit einem Hinweis für genau diesen Fall.
   const treibenSichtbar = !!revier && istLeiter && vorbereitbar(jagd.status)
 
-  const treibenZeilen = treibenSichtbar
-      ? vollstaendig<TreibenZeile>(
-          await supabase
-            .from('hunt_drives')
-            // Ein Literal, kein zusammengesetzter String: PostgREST typt den
-            // Embed über die Select-Zeichenkette. Dieselbe Auflage wie nativ.
-            .select(
-              'id, name, sequence, status, hunt_drive_stands ( id, map_object_id, seat_assignment_id )',
-              { count: 'exact' }
-            )
-            .eq('hunt_id', id)
-            .order('sequence', { ascending: true })
-            .order('created_at', { ascending: true }),
-          'Treiben'
-        )
-      : []
-
   /**
-   * Die Kartenobjekte des Reviers. **Gelöschte kommen hier nicht an, und zwar
-   * durch RLS, nicht durch eine `.is()`-Bedingung:** alle fünf SELECT-Policies
-   * auf `map_objects` tragen `deleted_at IS NULL` (gemessen 08.08.2026). Das ist
-   * der Grund, warum `standDiff()` seine `sichtbar`-Menge braucht — eine
-   * Standzeile auf einem gelöschten Objekt erreicht den Client nie und darf
-   * deshalb auch nie aus einem Kartenklick verschwinden. Im Bestand gibt es
-   * genau eine solche Zeile.
+   * **Welle 2, und zwar wieder gleichzeitig** (CP-69). Beide Abfragen brauchen
+   * `treibenSichtbar` — also `revier` aus Welle 1 und `istLeiter`, das seinerseits
+   * `hunt_participants` braucht. Deshalb sind sie nicht in Welle 1 gerutscht.
+   * Untereinander sind sie unabhängig; vorher warteten sie trotzdem aufeinander.
    *
-   * `vollstaendig()` mit demselben Argument wie auf der Revierseite: eine Karte
-   * mit fehlenden Ständen sieht nicht wie ein Fehler aus, sondern wie ein Revier
-   * ohne Stände. Söder hat 228 Objekte, der Abstand zur PostgREST-Grenze ist
-   * hier am kleinsten.
+   * `null` statt einer Abfrage, wenn die Sektion nicht sichtbar ist: `Promise.all`
+   * nimmt das anstandslos, und der Zweig bleibt derselbe wie vorher — eine Jagd
+   * ohne Revier oder ohne Jagdleiterrecht stellt gar keine Abfrage.
    */
-  const objekte =
+  const [treibenErgebnis, objekteErgebnis] = await Promise.all([
+    treibenSichtbar
+      ? supabase
+          .from('hunt_drives')
+          // Ein Literal, kein zusammengesetzter String: PostgREST typt den
+          // Embed über die Select-Zeichenkette. Dieselbe Auflage wie nativ.
+          .select(
+            'id, name, sequence, status, hunt_drive_stands ( id, map_object_id, seat_assignment_id )',
+            { count: 'exact' }
+          )
+          .eq('hunt_id', id)
+          .order('sequence', { ascending: true })
+          .order('created_at', { ascending: true })
+      : null,
+    /**
+     * Die Kartenobjekte des Reviers. **Gelöschte kommen hier nicht an, und zwar
+     * durch RLS, nicht durch eine `.is()`-Bedingung:** alle fünf SELECT-Policies
+     * auf `map_objects` tragen `deleted_at IS NULL` (gemessen 08.08.2026). Das ist
+     * der Grund, warum `standDiff()` seine `sichtbar`-Menge braucht — eine
+     * Standzeile auf einem gelöschten Objekt erreicht den Client nie und darf
+     * deshalb auch nie aus einem Kartenklick verschwinden. Im Bestand gibt es
+     * genau eine solche Zeile.
+     *
+     * `vollstaendig()` mit demselben Argument wie auf der Revierseite: eine Karte
+     * mit fehlenden Ständen sieht nicht wie ein Fehler aus, sondern wie ein Revier
+     * ohne Stände. Söder hat 228 Objekte, der Abstand zur PostgREST-Grenze ist
+     * hier am kleinsten.
+     */
     treibenSichtbar && revier
-      ? vollstaendig<Objekt>(
-          await supabase
-            .from('map_objects')
-            .select('id, name, type, position', { count: 'exact' })
-            .eq('district_id', revier.id)
-            // **Nur Standtypen, und die erste Fassung filterte NICHT** — sie lud
-            // alle Objekte, während der Kommentar in `treiben-bereich.tsx` „nur
-            // Stände" behauptete (Fremdprüfung 10.08.2026, A9 und B9). Auf der
-            // Karte war damit jeder Marker wählbar, und der Fremdschlüssel von
-            // `hunt_drive_stands.map_object_id` nimmt jeden `map_objects`-Typ:
-            // Parkplatz, Wildkamera oder Kirrung ließen sich als Stand
-            // speichern und später mit einem Schützen belegen.
-            //
-            // Der Filter sitzt in der ABFRAGE, nicht im Client: dann kann kein
-            // Codeweg im Browser versehentlich ein Nicht-Stand-Objekt anbieten —
-            // dieselbe Haltung wie beim `inaktiv_seit`-Filter der Kontakte
-            // weiter oben.
-            //
-            // `STAND_TYPEN` ist die vorhandene Hausregel aus `../../objekte`
-            // (`istStand`), keine zweite Liste. Im Bestand zeigen alle 204
-            // Standzeilen auf genau diese drei Typen (gemessen 10.08.2026) — der
-            // Filter nimmt also keiner bestehenden Zeile ihre Sichtbarkeit.
-            .in('type', STAND_TYPEN),
-          'Kartenobjekte'
-        )
-      : []
+      ? supabase
+          .from('map_objects')
+          .select('id, name, type, position', { count: 'exact' })
+          .eq('district_id', revier.id)
+          // **Nur Standtypen, und die erste Fassung filterte NICHT** — sie lud
+          // alle Objekte, während der Kommentar in `treiben-bereich.tsx` „nur
+          // Stände" behauptete (Fremdprüfung 10.08.2026, A9 und B9). Auf der
+          // Karte war damit jeder Marker wählbar, und der Fremdschlüssel von
+          // `hunt_drive_stands.map_object_id` nimmt jeden `map_objects`-Typ:
+          // Parkplatz, Wildkamera oder Kirrung ließen sich als Stand
+          // speichern und später mit einem Schützen belegen.
+          //
+          // Der Filter sitzt in der ABFRAGE, nicht im Client: dann kann kein
+          // Codeweg im Browser versehentlich ein Nicht-Stand-Objekt anbieten —
+          // dieselbe Haltung wie beim `inaktiv_seit`-Filter der Kontakte
+          // weiter oben.
+          //
+          // `STAND_TYPEN` ist die vorhandene Hausregel aus `../../objekte`
+          // (`istStand`), keine zweite Liste. Im Bestand zeigen alle 204
+          // Standzeilen auf genau diese drei Typen (gemessen 10.08.2026) — der
+          // Filter nimmt also keiner bestehenden Zeile ihre Sichtbarkeit.
+          .in('type', STAND_TYPEN)
+      : null,
+  ])
+
+  const treibenZeilen = treibenErgebnis
+    ? vollstaendig<TreibenZeile>(treibenErgebnis, 'Treiben')
+    : []
+
+  const objekte = objekteErgebnis ? vollstaendig<Objekt>(objekteErgebnis, 'Kartenobjekte') : []
 
   // `beschreibung` und `fotoUrl` bleiben `null`, statt geladen zu werden: die
   // Treiben-Karte hat keinen Objekt-Inspektor, sie zeigt Namen und wählt aus.
