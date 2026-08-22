@@ -138,6 +138,16 @@ export default function TreibenBereich({
 
   const diff = offen ? standDiff(offen.stands, markiert, sichtbar) : { loeschen: [], legen: [] }
   const nameNeu = sichtbarerName(name)
+  /**
+   * **Bereinigter Entwurf gegen ROHEN DB-Wert — asymmetrisch mit Absicht**
+   * (CP-66). Trüge ein Treiben `"Buchenkamp "`, wäre das beim blossen ÖFFNEN
+   * schon true und ein Klick schriebe ein ungefragtes Namens-UPDATE.
+   *
+   * **Nicht hier reparieren:** `offen.name` ebenfalls durch `sichtbarerName`
+   * zu ziehen macht so einen Namen UNBEREINIGBAR — man tippt die saubere
+   * Fassung, der Knopf bleibt tot, das Leerzeichen für immer drin. Der Riegel
+   * sitzt deshalb in Migration 114; dort steht auch, was er nicht fängt.
+   */
   const nameGeaendert = offen !== null && nameNeu.length > 0 && nameNeu !== offen.name
 
   /**
@@ -483,7 +493,14 @@ export default function TreibenBereich({
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         disabled={busy}
-                        maxLength={120}
+                        // Kein `maxLength`: hier stand 120, eine erfundene
+                        // Zahl, an der der Browser eingefügten Text still
+                        // abschnitt — gespeichert wurde der gekürzte Name, und
+                        // gemeldet wurde Erfolg (CP-65, dieselbe S4-Familie wie
+                        // C-41, nur leiser). Grenzen gehören in die DB, wo sie
+                        // für beide Clients gelten; eine LÄNGE hat dort keine
+                        // Textspalte dieses Projekts (111). Wie `revier-name.tsx`.
+                        //
                         // Beides aus dem Vorbild `revier-name.tsx` (dort aus der
                         // Fremdprüfung R8): ohne die Verbindung gehört die
                         // Meldung zu gar nichts, ein Screenreader liest das Feld
@@ -606,7 +623,6 @@ export default function TreibenBereich({
             onChange={(e) => setNeu(e.target.value)}
             placeholder="z. B. Buchenkamp"
             disabled={busy}
-            maxLength={120}
           />
         </label>
         <button
