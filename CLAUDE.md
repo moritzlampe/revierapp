@@ -56,6 +56,28 @@ Schreibrichtung: dieses Repo → Vault, Mo–Sa 09:33 automatisch per launchd, s
 ein Original ersetzen, sonst steht der Automatismus wieder still, und zwar lautlos (TCC,
 Nachweis in `~/AgenticOS/raw/2026-08-08-vault-ingest-ausfall.md`).
 
+⚠ **Seit 22.08.2026 gelten Vault-Regeln zu Umfang, Identität und Frequenz.** R1/R2/R3
+stehen in `~/AgenticOS/CLAUDE.md`, die Herleitung mit allen Messwerten in
+`~/AgenticOS/wiki/vault-zustand.md`. **Hier bewusst nicht kopiert** — vier Kopien sind vier
+Orte, an denen eine Regel veralten kann.
+
+Was davon den Arbeitsablauf *hier* betrifft:
+
+- **Ein Ingest je Arbeitstag**, am Ende der Arbeit — nicht nach jedem Arbeitsschritt. Der
+  Nutzen fällt beim nächsten Sessionstart an; vier Läufe an einem Tag nützen dreimal
+  niemandem.
+- **Nach jedem Lauf die Stichprobe** (jüngste Funde in Wiki *und* `raw/` zählen) — mit einem
+  **frischen** Unsinnswort als Gegenprobe. Ein dokumentiertes Gegenprobenwort trifft beim
+  nächsten Mal sich selbst.
+- **`ingest-delta.sh` hat seit dem 22.08.2026 eine Sperre** (`.ingest.lock`, atomar, verwaist
+  nach 60 min). `pgrep` vor manueller Vault-Arbeit bleibt trotzdem nötig — die Sperre schützt
+  gegen einen zweiten Ingest, nicht gegen einen Menschen.
+
+⚠ **Der Ingest pusht am Ende nach GitHub** (`git@github.com:moritzlampe/AgenticOS.git`).
+**Was in einer Übergabe steht, ist damit veröffentlicht** — verdichtet und neu formuliert,
+aber inhaltlich. Arbeitsweise, Zahlen und Belege gehören dorthin; personenbezogene Inhalte,
+Betreffzeilen und Zugangsdaten nicht.
+
 ---
 
 ## Tech-Stack
