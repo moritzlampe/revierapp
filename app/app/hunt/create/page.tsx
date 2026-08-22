@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import type { KontoName } from '@/lib/konto-namen'
 import { createClient } from '@/lib/supabase/client'
 import StandAssignmentMapView from '@/components/hunt/StandAssignmentMapView'
 import type { AssignStand, AssignParticipant, FreePosition } from '@/components/hunt/StandAssignmentMap'
@@ -46,7 +47,6 @@ type District = {
 type Contact = {
   id: string
   display_name: string
-  phone?: string
   inApp: boolean
   selected: boolean
   tagGL: boolean   // 👥 Gruppenleiter
@@ -162,18 +162,22 @@ export default function CreateHuntPage() {
       }
     }
 
-    // Andere registrierte Nutzer laden
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, display_name, phone')
-      .neq('id', user.id)
-      .limit(50)
+    // Andere registrierte Nutzer — s. `src/lib/konto-namen.ts`.
+    // `phone` faellt ersatzlos weg: es wurde selektiert und nur im Zweig
+    // `!c.inApp` gerendert, den ein Profil nie erreicht (inApp: true eine
+    // Zeile weiter) — ein toter Lesezugriff auf eine heikle Spalte.
+    const { data: profiles, error: kontakteFehler } = await supabase.rpc('konto_namen')
+
+    // Ein Fehlschlag darf sich nicht als leere Einladeliste lesen (S4).
+    if (kontakteFehler) {
+      setError('Die Jaeger mit Konto konnten nicht geladen werden.')
+      return
+    }
 
     if (profiles) {
-      setContacts(profiles.map(p => ({
+      setContacts(profiles.filter((p: KontoName) => p.id !== user.id).map((p: KontoName) => ({
         id: p.id,
         display_name: p.display_name,
-        phone: p.phone || undefined,
         inApp: true,
         selected: false,
         tagGL: false,
@@ -1341,7 +1345,12 @@ export default function CreateHuntPage() {
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleContact(c.id)}>
                   <div className="text-sm font-semibold">{c.display_name}</div>
                   <div className="text-xs" style={{ color: c.inApp ? 'var(--green)' : 'var(--text-3)' }}>
-                    {c.inApp ? '✓ In der App' : c.phone || 'Bekommt Link'}
+                    {/* `c.phone` ist mit dem Wegfall der Spalte entfallen
+                        (22.08.2026, s. den Loader oben). Der `!inApp`-Zweig
+                        selbst bleibt: `inApp` steht heute fest auf true, die
+                        Struktur ist aelter als dieser Diff und gehoert dem
+                        Adressbuch-Pfad, nicht dieser Aenderung. */}
+                    {c.inApp ? '✓ In der App' : 'Bekommt Link'}
                   </div>
                 </div>
                 {/* Tags */}

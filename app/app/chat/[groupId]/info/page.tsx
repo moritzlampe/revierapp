@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import type { KontoName } from '@/lib/konto-namen'
 import { createClient } from '@/lib/supabase/client'
 import { getChatDisplayInfo } from '@/lib/chat-utils'
 import type { ChatMember } from '@/lib/chat-utils'
@@ -86,6 +87,7 @@ export default function GroupInfoPage() {
   const [newName, setNewName] = useState('')
   const [showAddMember, setShowAddMember] = useState(false)
   const [contacts, setContacts] = useState<{ id: string; display_name: string }[]>([])
+  const [kontakteFehler, setKontakteFehler] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
@@ -240,13 +242,20 @@ export default function GroupInfoPage() {
   // Kontakte laden (zum Hinzufügen)
   const loadContacts = useCallback(async () => {
     const memberIds = members.map(m => m.user_id)
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, display_name')
-      .limit(50)
+    // konto_namen() statt profiles — s. `src/lib/konto-namen.ts`. Die alte
+    // Abfrage lief OHNE jeden Filter und schnitt Mitglieder wie eigene
+    // Kennung erst clientseitig weg; die Zeile darunter bleibt unveraendert.
+    const { data: profiles, error: ladefehler } = await supabase.rpc('konto_namen')
+
+    // **Ein Fehlschlag darf sich nicht als „Keine Kontakte gefunden" lesen**
+    // (S4, Fremdpruefung 22.08.2026). Der Unterschied ist der ganze Punkt:
+    // „es gibt niemanden mehr" ist eine Auskunft, „ich konnte nicht laden"
+    // ist ein Fehler, und beide sahen bisher gleich aus.
+    setKontakteFehler(Boolean(ladefehler))
+    if (ladefehler) return
 
     if (profiles) {
-      setContacts(profiles.filter(p => !memberIds.includes(p.id) && p.id !== userId))
+      setContacts(profiles.filter((p: KontoName) => !memberIds.includes(p.id) && p.id !== userId))
     }
   }, [supabase, members, userId])
 
@@ -666,7 +675,9 @@ export default function GroupInfoPage() {
               <div className="space-y-1" style={{ maxHeight: '12rem', overflowY: 'auto' }}>
                 {filteredContacts.length === 0 && (
                   <p style={{ color: 'var(--text-3)', fontSize: '0.8125rem', textAlign: 'center', padding: '0.75rem 0' }}>
-                    Keine Kontakte gefunden.
+                    {kontakteFehler
+                      ? 'Die Kontakte konnten nicht geladen werden.'
+                      : 'Keine Kontakte gefunden.'}
                   </p>
                 )}
                 {filteredContacts.map((c, i) => (

@@ -72,7 +72,20 @@ export function maskKillForViewer(
   viewer: ViewerContext,
 ): DisplayKill | null {
   const killerName = resolveReporterName(killer?.display_name)
-  const killerAnonymous = killer?.anonymize_kills ?? false
+  // **Ein unbekanntes Profil gilt als ANONYM, nicht als offen** (22.08.2026).
+  //
+  // Bis dahin stand hier `?? false`: fehlte der Schuetze in der Karte, wurde
+  // sein Stueck behandelt, als haette er nichts verborgen. Das war
+  // unerreichbar, solange `profiles_select_authenticated` jedem jedes Profil
+  // gab — **und Migration 116 macht es erreichbar**: `kills_district_owner`
+  // laesst den Revierbesitzer jede Erlegung in seinem Revier sehen, ganz ohne
+  // Jagd-Beziehung zum Schuetzen. Der Normalfall eines Schein-Inhabers, der
+  // solo jagt.
+  //
+  // Bei einer Datenschutzfunktion ist der unbekannte Zustand der geschuetzte.
+  // Zeichengleich in quickhunt-native (`src/lib/strecke/visibility.ts`), dort
+  // mit zwei Tests belegt.
+  const killerAnonymous = killer?.anonymize_kills ?? true
 
   // (1) Eigener Kill → immer voll anzeigen
   const isOwnKill = viewer.user_id !== null && kill.reporter_id === viewer.user_id

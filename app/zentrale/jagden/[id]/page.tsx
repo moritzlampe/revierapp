@@ -127,7 +127,10 @@ export default async function JagdDetailPage({
         .from('hunt_participants')
         .select('id, user_id, guest_name, role, tags, status')
         .eq('hunt_id', id),
-      supabase.from('profiles').select('id, display_name').order('display_name'),
+      // konto_namen() statt profiles — s. `src/lib/konto-namen.ts`. Die RPC
+      // sortiert selbst nach display_name; das `.order` entfaellt deshalb,
+      // nicht aus Nachlaessigkeit.
+      supabase.rpc('konto_namen'),
       supabase
         .from('kontakte')
         .select('id, vorname, nachname, kategorien')
@@ -167,10 +170,15 @@ export default async function JagdDetailPage({
 
   const teilnehmer = geladen<Teilnehmer[]>(teilnehmerErgebnis, 'Teilnehmer')
 
-  // Alle Profile in einem Rutsch: `profiles_select_authenticated` lässt jeden
-  // Angemeldeten alle Zeilen sehen, und im Bestand sind es 9 (03.08.2026). Eine
-  // Suche wäre bei dieser Menge Zierat; wenn sie fällig wird, ist es dieselbe
-  // Stelle wie nativ (`fetchInvitableProfiles`, ebenfalls ohne Suche).
+  // Alle Kontonamen in einem Rutsch — seit dem 22.08.2026 über `konto_namen()`
+  // (115), nicht mehr über `profiles`.
+  //
+  // **Hier stand, `profiles_select_authenticated` lasse jeden Angemeldeten
+  // alle Zeilen sehen.** Das stimmte, und genau diese Policy nimmt Migration
+  // 116 weg (A-P1) — der Kommentar hätte den Aufruf mit dem Loch begründet,
+  // das er umgeht. Der Bestand sind weiterhin 9 Konten; eine Suche wäre bei
+  // dieser Menge Zierat, und wenn sie fällig wird, ist es dieselbe Stelle wie
+  // nativ (`fetchInvitableProfiles`, ebenfalls ohne Suche).
   const profile = geladen<Profil[]>(profileErgebnis, 'Profile')
 
   // **Das Adressbuch — die Menschen ohne Konto** (Moritz, 03.08.2026: „wir

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import type { KontoName } from '@/lib/konto-namen'
 import { createClient } from '@/lib/supabase/client'
 import { useGeolocation } from '@/hooks/useGeolocation'
 import { useHuntPositions } from '@/hooks/useHuntPositions'
@@ -350,8 +351,30 @@ export default function HuntPage() {
   useEffect(() => {
     if (!hunt || !isHuntScheduled(hunt.status) || !isJagdleiter || !userId) return
     let cancelled = false
-    supabase.from('profiles').select('id, display_name').neq('id', userId).order('display_name').limit(100)
-      .then(({ data }) => { if (!cancelled && data) setInviteContacts(data) })
+    // konto_namen() statt profiles — s. `src/lib/konto-namen.ts`. Der
+    // Selbst-Ausschluss bleibt hier: die RPC liefert bewusst alle Konten.
+    supabase.rpc('konto_namen')
+      .then(({ data, error }) => {
+        if (cancelled) return
+        // **Der Fehler wird nicht verschluckt, aber S4 ist hier nur HALB
+        // geschlossen** (Fremdpruefung 22.08.2026 F3, Schlusslesung T4).
+        //
+        // Der Log ist das Mindeste. Was er NICHT leistet: der Nutzer sieht
+        // weiterhin eine leere Einladeliste und kann sie nicht von „es gibt
+        // niemanden mehr" unterscheiden. **Der erste Entwurf begruendete das
+        // mit „der vorige Stand bleibt stehen" — das ist praktisch leer**,
+        // denn `inviteContacts` startet als `[]` und der Effekt laeuft real
+        // genau einmal. Ein Argument, das nur auf dem Papier traegt, ist
+        // schlimmer als keins.
+        //
+        // Ein sichtbarer Zustand braucht hier mehr als eine Zeile (die Liste
+        // steckt in einem groesseren Einladebereich) und steht im Backlog.
+        if (error) {
+          console.error('[jagd] Einladeliste nicht abrufbar:', error.message)
+          return
+        }
+        if (data) setInviteContacts(data.filter((p: KontoName) => p.id !== userId))
+      })
     return () => { cancelled = true }
   }, [hunt, isJagdleiter, userId, supabase])
 

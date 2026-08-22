@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import type { KontoName } from '@/lib/konto-namen'
 import { createClient } from '@/lib/supabase/client'
 
 import { getAvatarColor } from '@/lib/avatar-color'
@@ -38,14 +39,21 @@ export default function CreateChatGroupPage() {
     if (!user) return
     setCurrentUserId(user.id)
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, display_name')
-      .neq('id', user.id)
-      .limit(50)
+    // konto_namen() statt profiles — s. `src/lib/konto-namen.ts`. Eine
+    // beziehungsbasierte Liste waere HIER zirkulaer: wer noch mit niemandem
+    // geschrieben hat, saehe niemanden — der erste Chat waere unmoeglich.
+    const { data: profiles, error: kontakteFehler } = await supabase.rpc('konto_namen')
+
+    // **Ein Fehlschlag darf sich nicht als „es gibt niemanden" lesen** (S4,
+    // Fremdpruefung 22.08.2026). Vorher wurde `error` verworfen und der leere
+    // Anfangszustand gerendert — der Chat-Weg war damit still gesperrt.
+    if (kontakteFehler) {
+      setError('Die Kontakte konnten nicht geladen werden.')
+      return
+    }
 
     if (profiles) {
-      setContacts(profiles.map(p => ({
+      setContacts(profiles.filter((p: KontoName) => p.id !== user.id).map((p: KontoName) => ({
         id: p.id,
         display_name: p.display_name,
         selected: false,

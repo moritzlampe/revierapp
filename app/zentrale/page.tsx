@@ -282,10 +282,17 @@ export default async function ZentraleUebersicht({
     'Jagderlaubnisse'
   )
 
-  // Nur die gebrauchten Profile, nicht alle. `profiles_select_authenticated`
-  // lässt jeden Angemeldeten jedes Profil lesen — ein ungefiltertes SELECT wäre
-  // damit ein Lesepfad, der mit der Nutzerzahl wächst und irgendwann an der
+  // Nur die gebrauchten Profile, nicht alle — ein ungefiltertes SELECT wäre ein
+  // Lesepfad, der mit der Nutzerzahl wächst und irgendwann an der
   // PostgREST-Grenze abgeschnitten wird (C-25).
+  //
+  // **Der Read bleibt auf `profiles` und ist nach Migration 116 gedeckt**, aber
+  // nicht mehr aus dem Grund, der hier stand: die Begründung nannte
+  // `profiles_select_authenticated`, und genau die entfällt (A-P1). Tragend
+  // sind danach `profiles_select_co_hunters` und die neue
+  // `profiles_select_hunt_creator` — die Sichtbarkeit von `hunt_participants`
+  // und die von `profiles` sind mit 116 deckungsgleich, und die Kennungen hier
+  // stammen aus Teilnehmerzeilen.
   const profilIds = [...new Set(einladungen.map((t) => t.user_id).filter((id) => id !== null))]
   const profile =
     profilIds.length > 0

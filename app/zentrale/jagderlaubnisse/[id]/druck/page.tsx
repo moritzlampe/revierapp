@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { geladen } from '../../../laden'
+import { POSTGREST_LIMIT, geladen } from '../../../laden'
 import { typLabel } from '../../../objekte'
 import {
   alsBerlinDatum,
@@ -181,11 +181,55 @@ export default async function ScheinDruckSeite({
     )
   }
 
-  const aussteller = geladen<{ display_name: string }[]>(
-    await supabase.from('profiles').select('display_name').eq('id', schein.issuer_id),
-    'Der Aussteller'
+  /**
+   * **Der Ausstellername kommt aus `konto_namen()` (115), nicht mehr aus
+   * `profiles`** — seit dem 22.08.2026.
+   *
+   * Migration 116 engt `profiles` auf Chat-Partner und Mitjaeger derselben
+   * beigetretenen Jagd ein. **Ein Begehungsschein ist aber genau die
+   * Beziehung, die keine gemeinsame Jagd voraussetzt** — das ist sein Zweck.
+   * Der Aussteller ist zudem nicht zwingend der heutige Revierbesitzer:
+   * `hunting_licenses_issuer_select` laesst auch ueber `district_id` lesen,
+   * und `issuer_id` bleibt stehen, wenn `districts.owner_id` wechselt.
+   *
+   * **Ohne die Umstellung waere das der einzige HARTE Ausfall der ganzen
+   * A-P1-Reparatur** (Fremdpruefung 22.08.2026, F1 `[hoch]`): der Riegel
+   * darunter gibt bei fehlendem Namen kein Blatt aus — hier also nicht bloss
+   * eine fehlende Zeile, sondern gar kein Dokument.
+   *
+   * Der Aufruf holt alle Kontonamen und sucht einen heraus — die RPC nimmt
+   * bewusst keinen Parameter, s. `src/lib/konto-namen.ts`.
+   */
+  const konten = geladen<{ id: string; display_name: string }[]>(
+    await supabase.rpc('konto_namen'),
+    'Die Kontonamen'
   )
-  const ausstellerName = aussteller[0]?.display_name?.trim() || null
+  const ausstellerName =
+    konten.find((k) => k.id === schein.issuer_id)?.display_name?.trim() || null
+
+  /**
+   * **Die Teilantwort wird ausgewiesen, nicht verschluckt** (Fremdpruefung
+   * 22.08.2026, F2 `[mittel]`).
+   *
+   * `konto_namen()` ist ungepagt, PostgREST kappt bei `POSTGREST_LIMIT`
+   * Zeilen — die Zahl steht in `laden.ts`, nicht hier: zwei Orte fuer
+   * dieselbe Grenze driften. Ein
+   * Aussteller jenseits der Grenze faende sich in `konten` nicht — und der
+   * Riegel darunter machte daraus „kein Blatt", **ohne dass irgendwo steht,
+   * warum**. Das ist der Unterschied zwischen einem Ausfall und einem
+   * Raetsel.
+   *
+   * Bestand 22.08.2026: 9 Konten. Der Fall ist also weit weg, aber er ist
+   * DETERMINISTISCH, nicht zufaellig: ab der Grenze faellt er immer aus.
+   * Die saubere Loesung ist ein parametrisierter Exact-ID-Aufruf — sie
+   * braucht eine Migration und steht im Backlog. Bis dahin sagt die Seite
+   * wenigstens, was los ist.
+   */
+  if (!ausstellerName && konten.length >= POSTGREST_LIMIT) {
+    return (
+      <Hinweisblatt text="Das Kontoverzeichnis ist zu lang, um den Aussteller sicher aufzuloesen — es wird bei 1000 Eintraegen abgeschnitten. Ohne gesicherten Aussteller wird kein Blatt ausgegeben." />
+    )
+  }
 
   /**
    * **Ohne Aussteller kein Blatt** (Fremdpruefung 05.08.2026, S4).

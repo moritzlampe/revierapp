@@ -19,7 +19,7 @@ export interface ZaehlErgebnis extends LeseErgebnis {
 }
 
 /** Server-Default von PostgREST. Wer ihn genau trifft, ist verdächtig. */
-const POSTGREST_LIMIT = 1000
+export const POSTGREST_LIMIT = 1000
 
 /**
  * Deutet ein Leseergebnis, oder wirft.
