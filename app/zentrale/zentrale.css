@@ -1392,3 +1392,133 @@ body:has(.zentrale-karte-kasten.kino) {
   color: var(--z-text-secondary);
 }
 .zentrale-inspektor-historie .fehler { color: var(--z-gesperrt); }
+
+/* Prüfung eintragen — der Schreibweg am PC (Konzept-Ergänzung 25.08.2026) */
+
+.zentrale-inspektor-pruefen { margin: 10px 0 0; }
+
+.zentrale-inspektor-pruefen .oeffnen {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 4px 10px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-sunken);
+  border: 1px solid var(--z-border-strong);
+  cursor: pointer;
+}
+.zentrale-inspektor-pruefen .oeffnen:hover { background: var(--z-bg-base); }
+.zentrale-inspektor-pruefen .oeffnen:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+
+.zentrale-inspektor-pruefen.offen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--z-bg-sunken);
+  border: 1px solid var(--z-border);
+}
+
+.zentrale-inspektor-pruefen fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.zentrale-inspektor-pruefen legend {
+  padding: 0 0 4px;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-pruefen fieldset label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.zentrale-inspektor-pruefen input[type='radio'] {
+  accent-color: var(--z-accent);
+  margin: 0;
+  flex: none;
+}
+
+.zentrale-inspektor-pruefen .feld {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.875rem;
+}
+.zentrale-inspektor-pruefen .feld > span:first-child {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-pruefen textarea,
+.zentrale-inspektor-pruefen input[type='date'] {
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 6px 8px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  width: 100%;
+}
+.zentrale-inspektor-pruefen textarea { resize: vertical; }
+.zentrale-inspektor-pruefen textarea:focus-visible,
+.zentrale-inspektor-pruefen input[type='date']:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 1px;
+}
+
+.zentrale-inspektor-pruefen .hinweis {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+/* Der Rückdatierungs-Hinweis ist kein Fehler, sondern eine Ansage: was du
+   gleich tust, ist richtig und ändert die Anzeige oben trotzdem nicht. */
+.zentrale-inspektor-pruefen .hinweis.warnung {
+  padding: 7px 9px;
+  background: var(--z-bg-elevated);
+  border-left: 2px solid var(--z-mangel);
+  color: var(--z-text-primary);
+}
+.zentrale-inspektor-pruefen .fehler {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--z-gesperrt);
+}
+
+.zentrale-inspektor-pruefen .knoepfe { display: flex; gap: 8px; }
+.zentrale-inspektor-pruefen .knoepfe button {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 5px 12px;
+  color: var(--z-on-accent);
+  background: var(--z-accent);
+  border: 1px solid var(--z-accent);
+  cursor: pointer;
+}
+.zentrale-inspektor-pruefen .knoepfe button:hover:not(:disabled) { background: var(--z-accent-hover); }
+.zentrale-inspektor-pruefen .knoepfe button:disabled { opacity: 0.55; cursor: default; }
+.zentrale-inspektor-pruefen .knoepfe button:focus-visible {
+  outline: 2px solid var(--z-text-primary);
+  outline-offset: 2px;
+}
+.zentrale-inspektor-pruefen .knoepfe .ab {
+  color: var(--z-text-secondary);
+  background: none;
+  border-color: var(--z-border-strong);
+}
+.zentrale-inspektor-pruefen .knoepfe .ab:hover:not(:disabled) {
+  background: var(--z-bg-base);
+  color: var(--z-text-primary);
+}

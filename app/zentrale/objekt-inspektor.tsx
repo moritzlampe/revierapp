@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Punkt, PunktPruefung } from './revierkarte-map'
 import Papierkorb from './papierkorb'
 import StorageImg from '@/components/photo/StorageImg'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { KontoName } from '@/lib/konto-namen'
-import { istWartbar, zustandsSatz } from './wartung'
+import { istWartbar, zustandsSatz, type PruefStatus } from './wartung'
+import { schreibe } from './schreiben'
 import {
   OBJEKT_TYPEN,
   filterBaum,
@@ -507,6 +509,175 @@ function Liste({
   )
 }
 
+/**
+ * Welche Objekte gerade eine Prüfung schreiben — **modulweit, nicht je
+ * Komponenteninstanz.**
+ *
+ * **Ein Fix aus der Fremdprüfung** (25.08.2026, `[hoch]`): der Riegel lag
+ * zuerst als `useRef` in der Komponente. `Details` trägt aber `key={id}` und
+ * wird beim Objektwechsel neu aufgebaut — wer während eines langsamen Writes
+ * von Stand A zu B und zurück zu A klickt, bekommt eine frische Instanz mit
+ * frischem Ref und kann ein zweites Mal auslösen. `map_object_checks` hat
+ * keine DELETE-Policy; das Duplikat bliebe für immer stehen.
+ *
+ * Ein `Set` auf Modulebene überlebt den Neuaufbau, weil es nicht zur
+ * Komponente gehört. Es lebt so lange wie die Seite — nach einem Reload ist es
+ * leer, und das ist richtig: ein Write, der einen Reload überdauert hat, ist
+ * ohnehin abgeschlossen oder verloren.
+ *
+ * **Was das NICHT löst, und es lässt sich hier nicht lösen:** geht die Antwort
+ * auf einen bereits durchgelaufenen Insert verloren (Timeout, Verbindung weg),
+ * legt ein erneuter Versuch eine zweite Zeile an. Dagegen hülfe nur eine
+ * Idempotenz-Kennung in der Tabelle, und die gibt es nicht — das wäre eine
+ * Migration. Der Schaden wäre zwei identische Prüfzeilen mit fast gleichem
+ * Zeitstempel: die Anzeige stimmt weiterhin, die Historie hat eine Zeile zu
+ * viel. Benannt statt behauptet.
+ */
+const schreibtGerade = new Set<string>()
+
+/**
+ * Zählt die SPEICHERVORGÄNGE dieser Seitensitzung — nicht die Renders.
+ *
+ * Modulweit, damit der Zähler den Neuaufbau der Komponente beim Objektwechsel
+ * überlebt; einer, der bei jedem Klick wieder bei null anfinge, wäre keiner.
+ *
+ * **Was er leistet:** zwei Nachträge desselben Menschen für denselben Tag
+ * bekommen verschiedene Zeitstempel, und der spätere ist der jüngere. Das ist
+ * der Fall, um den es geht — eine Korrektur muss den Eintrag überholen, den sie
+ * korrigiert.
+ *
+ * **Was er nicht leistet:** zwei Menschen, die im selben Moment für denselben
+ * Stand denselben Tag nachtragen, und mehr als 60 Nachträge je Sitzung. Dagegen
+ * hilft nur eine Ordnung in der Datenbank. Dafür steht die Warnung
+ * `wirdUeberholt` — **der Riegel ist die Warnung, der Zähler die
+ * Wahrscheinlichkeitssenkung.**
+ */
+let nachtragZaehler = 0
+
+/** Der nächste Versatz, in Millisekunden. Nur aus dem Speicherpfad rufen. */
+function naechsterVersatz(): number {
+  return (nachtragZaehler++ % 60) * 1000
+}
+
+/**
+ * Der früheste eintragbare Prüftag.
+ *
+ * **Gegen den Zahlendreher im Jahr** (Schlusslesung 25.08.2026, F3): `0202`
+ * statt `2026` besteht jede andere Prüfung — es ist kein Zukunftsdatum und
+ * formatgültig — und wäre eine für immer unlöschbare Unsinnszeile in einem Log
+ * ohne DELETE-Policy.
+ *
+ * 2000 statt eines echten Reviergründungsdatums, weil es ein solches nicht gibt
+ * und eine erfundene Zahl schlechter wäre als eine offensichtlich großzügige.
+ * Die Grenze soll Tippfehler fangen, nicht Geschichte abschneiden.
+ */
+const FRUEHESTER_PRUEFTAG = '2000-01-01'
+
+/** Die drei Zustände zur Wahl, in der Reihenfolge der Feld-App. */
+const ZUSTAND_WAHL: readonly { wert: PruefStatus; label: string }[] = [
+  { wert: 'ok', label: 'Geprüft, alles heil' },
+  { wert: 'mangel', label: 'Mangel' },
+  { wert: 'gesperrt', label: 'Gesperrt — nicht besetzen' },
+]
+
+/**
+ * Heute als `YYYY-MM-DD` **in Berliner Zeit**, für das Datumsfeld.
+ *
+ * Nicht `new Date().toISOString().slice(0,10)` — das ist der UTC-Tag, und um
+ * 00:30 Berliner Zeit ist das der Vortag. Die Falle ist in diesem Repo schon
+ * zweimal bezahlt worden (`kontakte.inaktiv_seit`, `heuteUtc` in `scheine.ts`).
+ * `en-CA` liefert `YYYY-MM-DD`, das Format, das `<input type="date">` erwartet.
+ */
+function heuteBerlin(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Berlin',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+/**
+ * Aus dem gewählten Tag den Zeitpunkt, der in die Datenbank geht.
+ *
+ * **Heute → jetzt, ein früherer Tag → 12:00 Berliner Zeit.** Beides hat einen
+ * Grund:
+ *
+ * - **Heute die echte Uhrzeit**, weil zwei Prüfungen am selben Tag sonst
+ *   denselben Zeitstempel trügen. Die View aus 117 entscheidet dann per `id`,
+ *   welche gewinnt — das ist eine totale Ordnung, aber keine, die dem
+ *   entspricht, was der Mensch getan hat.
+ * - **Rückdatiert Mittag**, nicht Mitternacht. Um 00:00 kippt der Kalendertag
+ *   je nach Zeitzone des Betrachters; 12:00 ist von jeder europäischen
+ *   Zeitzone aus derselbe Tag. Die Uhrzeit ist ohnehin erfunden — niemand
+ *   weiß mehr, ob es halb neun oder halb elf war —, also wird sie so gewählt,
+ *   dass sie das Datum nicht verfälscht.
+ *
+ * Der Offset kommt aus `Intl`, nicht aus einer eigenen Rechnung: Sommerzeit
+ * wäre sonst von Hand nachzuhalten, und der Umstellungstag hat 25 Stunden.
+ */
+function zeitpunktAus(tag: string, versatzMs: number): Date | null {
+  if (tag === heuteBerlin()) return new Date()
+
+  // **`null` statt eines Ersatzzeitpunkts, und das ist ein Fix aus der
+  // Fremdprüfung** (25.08.2026, `[hoch]`). Die erste Fassung gab bei einem
+  // leeren oder unlesbaren Feld `new Date()` zurück — „lieber jetzt als ein
+  // Invalid Date". Das war falsch: das Datumsfeld lässt sich leeren, und dann
+  // hätte ein Klick den AKTUELLEN Zeitpunkt in ein Log ohne DELETE-Policy
+  // geschrieben, obwohl niemand einen Prüftag gewählt hat. **Eine Funktion,
+  // die einen fehlenden Wert durch einen plausiblen ersetzt, macht aus einer
+  // Lücke eine Behauptung.**
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tag)) return null
+  const mittagUtc = new Date(`${tag}T12:00:00Z`)
+  if (Number.isNaN(mittagUtc.getTime())) return null
+
+  // Wie viel Uhr ist es in Berlin, wenn es 12:00 UTC ist? Die Differenz IST
+  // der Offset dieses Tages — im Sommer 2, im Winter 1.
+  const stundeInBerlin = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Berlin',
+      hour: '2-digit',
+      hour12: false,
+    }).format(mittagUtc)
+  )
+  const offset = stundeInBerlin - 12
+  const mittagBerlin = mittagUtc.getTime() - offset * 3600_000
+
+  /**
+   * **Plus `versatzMs`, das der AUFRUFER bestimmt** — und genau darin lag der
+   * dritte Anlauf.
+   *
+   * Das Problem, gegen das der Versatz gebaut ist: zwei Nachträge für denselben
+   * Tag bekämen sonst exakt denselben Zeitstempel. Die View aus 117 löst den
+   * Gleichstand über `id` auf, und das ist eine UUID — eine totale, aber
+   * **zufällige** Ordnung. Wer eine Sperre nachträgt, nachdem für denselben Tag
+   * schon „ok" steht, hätte einen Münzwurf um die Sichtbarkeit der Sperre.
+   *
+   * **Zwei Fassungen davor waren falsch, beide von einer Gegenprobe widerlegt:**
+   *
+   * 1. *Sekunden und Millisekunden der Uhr.* Zwei Aufrufe in derselben
+   *    Millisekunde ergaben denselben Wert — der Versatz senkte die
+   *    Wahrscheinlichkeit und garantierte nichts, während der Kommentar
+   *    „eindeutig" behauptete.
+   * 2. *Ein Zähler, der IN dieser Funktion hochlief.* Die Funktion wird auch
+   *    beim Rendern aufgerufen (für `wirdUeberholt`) — der Zähler wurde also
+   *    von Tastendrücken verbraucht, nicht von Nachträgen. Mit `% 60` wickelt
+   *    er dann um, und die Folge war schlimmer als das Ausgangsproblem: eine
+   *    Korrektur konnte einen **älteren** Zeitstempel bekommen als der Eintrag,
+   *    den sie korrigiert — nicht fifty-fifty, sondern verlässlich falsch
+   *    (Schlusslesung 25.08.2026, F1).
+   *
+   * **Deshalb ist die Funktion jetzt nebenwirkungsfrei.** Sie rechnet nur; wer
+   * zählt, ist der Speicherpfad (`naechsterVersatz()`). Der Render übergibt 0
+   * und bekommt einen stabilen Vergleichswert.
+   *
+   * Der Versatz bleibt unter 60 Sekunden und damit weit innerhalb des
+   * Kalendertags — auch an den Umstellungstagen. **Sichtbar ändert sich
+   * nichts:** die Anzeige formatiert auf Minuten, es steht weiter „12:00".
+   */
+  return new Date(mittagBerlin + versatzMs)
+}
+
 /** Eine Zeile der Prüfhistorie — die rohe Tabelle, nicht die View aus 117. */
 type HistorieZeile = {
   id: string
@@ -579,6 +750,278 @@ function wannUndWer(p: PunktPruefung): string {
 }
 
 /**
+ * Einen Prüfstand eintragen — **am PC, nachträglich.**
+ *
+ * **Warum das Portal das überhaupt kann, obwohl das Konzept ihm nur
+ * „überblicken und nachlesen" gibt** (§4.2): Moritz am 25.08.2026 — *„wenn
+ * jetzt jemand im Wald die Hochsitze prüft aber das am PC danach eintragen
+ * will?"* Der Fall stand in keinem Abschnitt. §4.1 erfasst in der Feld-App,
+ * §4.4 später mobil in der PWA; der Mensch mit dem Zettel, der abends am
+ * Schreibtisch sitzt, kam nicht vor.
+ *
+ * **Keine Migration nötig:** `map_object_checks_insert` verlangt
+ * `checked_by = auth.uid()` und ein sichtbares Kartenobjekt — beides ist hier
+ * gegeben. Der Weg war die ganze Zeit offen, es hat ihn nur niemand gebaut.
+ *
+ * **Das Datum ist der Unterschied zur Feld-App und der Grund, warum es diese
+ * Komponente gibt.** Dort ist „jetzt" richtig: man steht davor. Hier ist es
+ * falsch — wer Dienstag oben war und Donnerstag tippt, schriebe sonst
+ * Donnerstag in ein Protokoll, das die Frage „wer war vor der Drückjagd oben"
+ * beantworten soll. **Der PC ist der Ort, an dem man nachträglich sauber
+ * macht; ohne Datumsfeld wäre er der Ort, an dem man das Protokoll verdirbt.**
+ */
+function Pruefen({ objekt }: { objekt: Punkt }) {
+  const router = useRouter()
+  const [offen, setOffen] = useState(false)
+  const [status, setStatus] = useState<PruefStatus>('ok')
+  const [notiz, setNotiz] = useState('')
+  const [tag, setTag] = useState(() => heuteBerlin())
+  const [fehler, setFehler] = useState<string | null>(null)
+  const [laeuft, setLaeuft] = useState(false)
+
+  const notizPflicht = status !== 'ok'
+  const notizFehlt = notizPflicht && notiz.trim() === ''
+
+  /**
+   * Der gewählte Tag als Zeitpunkt, **nur zum Vergleichen** — `null`, wenn das
+   * Feld leer oder kaputt ist. Versatz 0, weil der Render nichts verbrauchen
+   * darf; der Wert, der wirklich geschrieben wird, entsteht im Klick.
+   */
+  const zeitpunkt = zeitpunktAus(tag, 0)
+  /** Ein Tag in der Zukunft. `max` am Feld hält das nicht dicht (s. `speichern`). */
+  const inDerZukunft = tag > heuteBerlin()
+
+  /**
+   * Ist diese Eintragung älter als die, die gerade angezeigt wird?
+   *
+   * **Dann passiert beim Speichern scheinbar nichts**, und das muss vorher
+   * dastehen: die Ansicht zeigt die JÜNGSTE Prüfung je Objekt (View aus 117).
+   * Eine rückdatierte Zeile landet in der Historie, gewinnt dort aber nicht —
+   * der Zustand oben bleibt, wie er war. Ohne diesen Hinweis sähe ein
+   * korrekter Schreibvorgang wie ein Fehlschlag aus, und der nächste Klick
+   * legte eine zweite Zeile an.
+   */
+  const wirdUeberholt =
+    objekt.pruefung !== null &&
+    zeitpunkt !== null &&
+    zeitpunkt <= new Date(objekt.pruefung.checkedAt)
+
+  async function speichern() {
+    // **Alle Prüfungen VOR dem Riegel** — sie sind nur Rechenarbeit, und ein
+    // abgewiesener Klick soll das Formular nicht kurz sperren.
+    if (schreibtGerade.has(objekt.id)) return
+
+    if (notizFehlt) {
+      // Abbrechen heißt abbrechen — es wird NICHT ersatzweise ohne Notiz
+      // gemeldet. Wörtlich die Regel der Feld-App: „ein Mangel ohne
+      // Beschreibung ist genau die Zeile, die später niemand deuten kann
+      // („irgendwas war an Stand 14")."
+      setFehler('Ohne Beschreibung nicht speichern — sonst weiß später niemand, was war.')
+      return
+    }
+    /**
+     * **Der Zeitpunkt entsteht HIER, nicht im Render** (Schlusslesung
+     * 25.08.2026, F1 und F2). Zwei Gründe, und beide sind Befunde:
+     *
+     * - Der Versatz muss Speichervorgänge zählen, nicht Tastendrücke.
+     * - Im Heute-Fall wäre `zeitpunkt` aus dem Render die Uhrzeit des letzten
+     *   Renders. Wer das Formular ausfüllt und eine halbe Stunde wartet,
+     *   schriebe eine halbe Stunde alte Zeit — die Feld-App schreibt die
+     *   Klick-Zeit.
+     */
+    const wann = zeitpunktAus(tag, naechsterVersatz())
+    if (wann === null) {
+      setFehler('Kein Prüftag gewählt. Bitte ein Datum eintragen.')
+      return
+    }
+    /**
+     * **Die Zukunftsgrenze im Handler, nicht nur am Feld** (Fremdprüfung
+     * 25.08.2026, `[hoch]`). `max` ist eine Browser-Hilfe und hält gegen
+     * Tastatureingabe, DevTools und ältere Browser nicht dicht.
+     *
+     * Der Schaden wäre doppelt und dauerhaft: die View aus 117 wählt die
+     * Zeile als jüngste (sie ist es ja), während `inDieserSaison` in
+     * `wartung.ts` sie als „nicht geprüft" liest — Karte und Bilanz sagten
+     * dann Verschiedenes über denselben Stand, und **jede spätere echte
+     * Prüfung bliebe bis zu diesem Zukunftstag unsichtbar.** Löschen geht
+     * nicht, die Tabelle hat keine DELETE-Policy.
+     *
+     * Der dauerhafte Riegel gehört in die Datenbank (CN-80), damit er für alle
+     * drei Clients gilt. Bis dahin ist dies die einzige Stelle, an der er
+     * überhaupt existiert.
+     */
+    if (inDerZukunft) {
+      setFehler('Eine Prüfung kann nicht in der Zukunft liegen.')
+      return
+    }
+    // Dieselbe Browser-Hilfe wie `max`, und derselbe Grund, sie zu wiederholen:
+    // das Feld hält gegen Tastatureingabe nicht dicht.
+    if (tag < FRUEHESTER_PRUEFTAG) {
+      setFehler('Das Datum liegt zu weit zurück — bitte den Prüftag prüfen.')
+      return
+    }
+
+    schreibtGerade.add(objekt.id)
+    setLaeuft(true)
+    setFehler(null)
+
+    try {
+      // **Der Auth-Aufruf steht INNERHALB des try** (Fremdprüfung, `[medium]`).
+      // Vorher lag er davor: lehnte das Promise wegen eines Netzfehlers ab,
+      // wurde weder eine Meldung gesetzt noch der Riegel gelöst — das Formular
+      // blieb dauerhaft gesperrt, ohne zu sagen warum.
+      const { data: sitzung, error: authFehler } = await createClient().auth.getUser()
+      if (authFehler || !sitzung.user) {
+        setFehler('Die Anmeldung konnte nicht geprüft werden. Bitte die Seite neu laden.')
+        return
+      }
+
+      await schreibe('Die Prüfung', () =>
+        createClient()
+          .from('map_object_checks')
+          .insert({
+            map_object_id: objekt.id,
+            checked_by: sitzung.user.id,
+            checked_at: wann.toISOString(),
+            status,
+            note: notizPflicht ? notiz.trim() : null,
+          })
+          // `.select()` ist Pflicht, sonst meldet ein RLS-Fehlschlag Erfolg
+          // mit null Zeilen (S1, s. `schreiben.ts`).
+          .select('id')
+      )
+      setOffen(false)
+      setNotiz('')
+      setStatus('ok')
+      setTag(heuteBerlin())
+      // Der Zustand ist ein Server-Prop — ohne Refresh stünde oben weiter die
+      // alte Zeile, obwohl die neue geschrieben ist.
+      router.refresh()
+    } catch (e) {
+      setFehler(e instanceof Error ? e.message : 'Die Prüfung konnte nicht gespeichert werden.')
+    } finally {
+      schreibtGerade.delete(objekt.id)
+      setLaeuft(false)
+    }
+  }
+
+  if (!offen) {
+    return (
+      <div className="zentrale-inspektor-pruefen">
+        <button type="button" className="oeffnen" onClick={() => setOffen(true)}>
+          Prüfung eintragen
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="zentrale-inspektor-pruefen offen">
+      {/* Ein `fieldset` mit `legend`, kein `div` mit Überschrift: drei sich
+          ausschließende Zustände sind genau das, wofür Radios da sind — samt
+          Pfeiltasten-Bedienung und Gruppen-Ansage im Screenreader. */}
+      <fieldset>
+        <legend>Zustand</legend>
+        {ZUSTAND_WAHL.map((w) => (
+          <label key={w.wert}>
+            <input
+              type="radio"
+              name={`pruefstatus-${objekt.id}`}
+              value={w.wert}
+              checked={status === w.wert}
+              disabled={laeuft}
+              onChange={() => {
+                setStatus(w.wert)
+                setFehler(null)
+              }}
+            />
+            <span>{w.label}</span>
+          </label>
+        ))}
+      </fieldset>
+
+      {notizPflicht && (
+        <label className="feld">
+          <span>{status === 'gesperrt' ? 'Was ist kaputt?' : 'Was ist aufgefallen?'}</span>
+          <textarea
+            rows={2}
+            value={notiz}
+            disabled={laeuft}
+            onChange={(e) => {
+              setNotiz(e.target.value)
+              setFehler(null)
+            }}
+          />
+          {status === 'gesperrt' && (
+            <span className="hinweis">
+              Der Stand wird als „nicht besetzen&ldquo; geführt, bis jemand ihn wieder
+              freigibt.
+            </span>
+          )}
+        </label>
+      )}
+
+      <label className="feld">
+        <span>Geprüft am</span>
+        {/* `max` auf heute: eine Prüfung, die noch nicht stattgefunden hat,
+            gibt es nicht. Der Browser hält das Feld allein nicht dicht — der
+            Riegel dagegen gehört in die Datenbank (CN-80), und bis dahin liest
+            das Portal ein Zukunftsdatum ohnehin als „nicht geprüft"
+            (s. `inDieserSaison`). */}
+        <input
+          type="date"
+          value={tag}
+          min={FRUEHESTER_PRUEFTAG}
+          max={heuteBerlin()}
+          disabled={laeuft}
+          onChange={(e) => {
+            setTag(e.target.value)
+            setFehler(null)
+          }}
+        />
+        <span className="hinweis">
+          Vorbelegt auf heute. Wer vorgestern oben war, stellt es zurück.
+        </span>
+      </label>
+
+      {wirdUeberholt && (
+        <p className="hinweis warnung">
+          Diese Eintragung ist nicht jünger als die zuletzt gespeicherte Prüfung.
+          Sie erscheint in der Historie, ändert den Zustand oben aber
+          möglicherweise nicht.
+        </p>
+      )}
+
+      {fehler && (
+        <p className="fehler" role="alert">
+          {fehler}
+        </p>
+      )}
+
+      <div className="knoepfe">
+        <button type="button" onClick={() => void speichern()} disabled={laeuft}>
+          {laeuft ? 'Wird gespeichert …' : 'Eintragen'}
+        </button>
+        <button
+          type="button"
+          className="ab"
+          disabled={laeuft}
+          onClick={() => {
+            setOffen(false)
+            setFehler(null)
+            setNotiz('')
+            setStatus('ok')
+            setTag(heuteBerlin())
+          }}
+        >
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Wann und in welchem Zustand ein Bauwerk zuletzt gesehen wurde — samt der
  * Historie dahinter.
  *
@@ -622,6 +1065,15 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
         .select('id, status, checked_at, note, checked_by')
         .eq('map_object_id', objekt.id)
         .order('checked_at', { ascending: false })
+        // **`id` als zweites Kriterium ist Pflicht** — wörtlich die „aktive
+        // Falle" aus Migration 117, und dieser Lesepfad hatte sie seit heute
+        // früh (Schlusslesung 25.08.2026, F4). `checked_at` allein ist bei zwei
+        // gleichen Zeitstempeln keine totale Ordnung, und dann kippt die
+        // Reihenfolge der Liste zwischen zwei Öffnungen, ohne dass sich etwas
+        // geändert hätte. Vorher war das theoretisch; der Nachtragsweg aus
+        // diesem Diff erzeugt systematisch nahe beieinanderliegende Zeitstempel
+        // und macht es real.
+        .order('id', { ascending: false })
         // **Einer mehr als angezeigt wird**, damit „es gibt noch weitere"
         // beweisbar ist statt geraten. Eine still abgeschnittene Historie sieht
         // aus wie eine vollständige — dieselbe Bauform, gegen die `vollstaendig()`
@@ -681,6 +1133,18 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
           genau kaputt ist. Migration 066 fragt sie ausschließlich in diesen
           beiden Fällen ab. */}
       {objekt.pruefung?.note ? <p className="notiz">„{objekt.pruefung.note}&ldquo;</p> : null}
+
+      {/* **Eintragen nur bei Objektarten, die geprüft werden** (Fremdprüfung
+          25.08.2026, Fokuspunkt 9). Die Zeile darüber sagt bei einem
+          Altbestand-Objekt „Dieser Objekttyp wird nicht mehr geprüft" — und
+          direkt darunter stand ein Knopf, der genau das anbot. Ein Widerspruch
+          in zwei aufeinanderfolgenden Zeilen, und die falsche Hälfte hätte
+          gewonnen: eine neue Zeile in einem Log ohne DELETE-Policy.
+
+          Lesen bleibt, Schreiben nicht. Wer einen Parkplatz künftig doch
+          prüfen will, ändert `WARTBAR` — an einer Stelle, für alle drei
+          Ansichten. */}
+      {istWartbar(objekt.typ) ? <Pruefen objekt={objekt} /> : null}
 
       {/* `<details>` statt eines eigenen Zustands: das Aufklappen kann der
           Browser samt Tastatur und Screenreader. Dieselbe Bauart wie der
