@@ -1,0 +1,175 @@
+-- 118: Ein Foto gehört zu genau einer Prüfung — oder zum Stand
+--
+-- ANLASS (Moritz, 22.08.2026, ausdrücklich für die nächste Sitzung
+-- freigegeben): zur Standprüfung soll ein Bild gehören dürfen. „im Wald ist
+-- der Empfang schlecht, und eine Meldung, die am Upload hängenbleibt, ist
+-- schlechter als eine ohne Bild" — das Foto wird also ANGEBOTEN, nie
+-- verlangt. Konzept: docs/konzepte/QuickHunt_Konzept_Standzustand_V1.md.
+-- Backlog: CN-77 (diese Spalte), CN-78 (der Client-Weg dazu).
+--
+--
+-- WARUM ÜBERHAUPT EINE SPALTE
+--
+-- `map_object_photos` trägt heute 185 Zeilen, alle aus der PWA, alle mit
+-- derselben Bedeutung: „so sieht der Stand aus". Ein Schadensfoto ohne
+-- eigenen Bezug landete in genau dieser Galerie — und niemand sähe, zu
+-- WELCHEM Mangel es gehört. Nach dem dritten Eintrag ist die Reihe ein
+-- Haufen Bilder mit Datum, aus dem sich nicht mehr lesen lässt, was einmal
+-- gemeldet wurde.
+--
+-- Die Spalte ist die ganze Unterscheidung: ohne = Objektfoto, mit =
+-- Schadensfoto zu dieser einen Prüfung.
+--
+--
+-- WARUM NULLABLE UND OHNE DEFAULT
+--
+-- Additiv und rückwärtskompatibel (Projektregel, beide Clients teilen die
+-- DB). Die 185 bestehenden Zeilen bleiben unberührt und bedeuten weiter, was
+-- sie bedeuten. Die PWA schreibt weiter ohne die Spalte und merkt von dieser
+-- Migration nichts.
+--
+--
+-- WARUM EIN ZUSAMMENGESETZTER FREMDSCHLÜSSEL UND KEIN TRIGGER
+--
+-- Die Bedingung, die zählen muss, lautet nicht „`check_id` zeigt auf eine
+-- Prüfung", sondern „auf eine Prüfung DESSELBEN Objekts". Eine einspaltige
+-- Referenz ließe zu, ein Foto an die Prüfung eines FREMDEN Standes zu hängen
+-- — und `map_object_photos` ist eine Zeile, die der Nutzer selbst schreibt.
+-- Das ist die Bauform, vor der die Projektregel warnt: eine Beziehung an
+-- etwas hängen, das der Angreifer bestimmt.
+--
+-- Ein Invoker-Trigger täte es auch (106, 112). Er kostet aber eine Funktion,
+-- und damit die EXECUTE-Entzüge aus 082 und die `pg_temp`-Disziplin aus 076
+-- — zwei Regeln, die man beim nächsten Mal wieder richtig anwenden muss.
+-- Der zusammengesetzte Fremdschlüssel kostet einen Unique-Constraint und
+-- gilt für JEDE Rolle, `service_role` eingeschlossen; ein Trigger gilt nur
+-- dort, wo er feuert.
+--
+-- `unique (id, map_object_id)` auf `map_object_checks` ist dabei
+-- rechnerisch redundant — `id` ist bereits Primärschlüssel. Postgres
+-- verlangt den Constraint trotzdem als Ziel eines mehrspaltigen
+-- Fremdschlüssels. Er kostet einen Index auf einer Tabelle mit derzeit
+-- 0 Zeilen.
+--
+--
+-- WARUM DAS OBJEKTFOTO TROTZDEM ERLAUBT BLEIBT
+--
+-- `match simple` ist der Vorgabewert und heißt: ist EINE der beiden Spalten
+-- NULL, prüft der Fremdschlüssel gar nichts. `check_id is null` ist genau
+-- der Objektfoto-Fall, und er bleibt legal, obwohl `map_object_id` NOT NULL
+-- ist. Das ist keine Lücke, sondern die Unterscheidung selbst.
+--
+--
+-- WARUM KEIN `on delete`
+--
+-- Also NO ACTION: eine Prüfung mit Fotos lässt sich nicht löschen.
+--
+-- `map_object_checks` hat weder UPDATE- noch DELETE-Policy — ein Prüfeintrag
+-- wird überholt, nicht korrigiert (066). Für Clients ist der Fall damit
+-- ohnehin unerreichbar; die Frage stellt sich nur für `service_role` und für
+-- den Menschen im SQL-Editor.
+--
+-- `set null` wäre dort die stille Variante: aus einem Schadensfoto würde
+-- lautlos ein Objektfoto, das Bild bliebe stehen und behauptete etwas
+-- anderes als vorher. Genau der S4-Fall — ein Zustand, der sich als
+-- gültige Auskunft liest.
+--
+-- `cascade` wäre die andere stille Variante: das Aufräumen einer Prüfung
+-- nähme Bilder mit, die niemand gemeint hat, und ließe ihre Dateien als
+-- Waisen im Bucket zurück (die Storage-Fläche hängt an keiner Tabelle, 083).
+--
+-- NO ACTION macht daraus einen lauten Fehlschlag: wer eine Prüfung löschen
+-- will, muss ihre Fotos zuerst ansehen.
+--
+--
+-- WARUM `deferrable initially deferred` — UND WARUM DIE MESSUNG DAGEGEN SPRACH
+--
+-- `map_object_checks.map_object_id` UND `map_object_photos.map_object_id`
+-- hängen BEIDE mit ON DELETE CASCADE an `map_objects`, und `map_objects`
+-- kaskadiert seinerseits von `districts`. Ein `delete from map_objects` räumt
+-- also beide Kinder in DERSELBEN Anweisung ab — und die Frage ist, ob der
+-- NO-ACTION-Riegel dazwischen zuschlägt, weil er die Fotozeile noch sieht.
+--
+-- **Die Fremdprüfung vom 25.08.2026 hat genau das als [high] gemeldet**, mit
+-- Verweis auf PostgreSQL BUG #18064: konkurrierende Kaskaden werden nicht
+-- topologisch sortiert.
+--
+-- **Nachgemessen wurde es trotzdem, und die Messung sprach dagegen:** dieselbe
+-- Topologie in temporären Tabellen, zweimal — einmal mit der Prüftabelle
+-- zuerst, einmal mit der Fototabelle zuerst, und einmal über zwei
+-- Kaskadenebenen (Revier → Objekt → beide Kinder). Beide Male lief das DELETE
+-- durch und räumte alles ab. Der Grund ist die Reihenfolge der AFTER-Trigger:
+-- der NO-ACTION-Prüftrigger wird ERST beim Löschen der Prüfzeile eingereiht,
+-- also nach beiden Kaskadentriggern der äusseren Anweisung.
+--
+-- **Der Riegel steht hier trotzdem, und zwar wegen dieses Satzes:** er hängt
+-- damit an einer Eigenschaft der Trigger-Warteschlange, die niemand nachprüft,
+-- wenn irgendwann ein DRITTER Kaskadenpfad an `map_objects` entsteht. Mit
+-- `initially deferred` läuft die Prüfung am Ende der TRANSAKTION, also nach
+-- jeder Kaskade, egal in welcher Reihenfolge sie feuert. Der Unterschied für
+-- einen Client ist keiner: ein Insert im Autocommit committet sofort, der
+-- Fehler kommt in derselben Antwort. Was wegfällt, ist die Abhängigkeit von
+-- einer Reihenfolge — dieselbe Abwägung wie „Riegel statt Absprache".
+--
+--
+-- WARUM KEIN INDEX AUF `check_id`
+--
+-- Gelesen wird je Objekt (`where map_object_id = …`), nie je Prüfung — die
+-- Zuordnung passiert danach im Client. Der einzige andere Leser wäre die
+-- Fremdschlüsselprüfung beim Löschen einer Prüfzeile, und die trifft heute
+-- 185 Zeilen. Fällig wird der Index, wenn eine Prüfübersicht Fotos je
+-- Prüfung zählt — dann als `where check_id is not null`.
+--
+--
+-- WARUM KEINE POLICY DIESE SPALTE AUSWERTET
+--
+-- Die Rechte an der Fotozeile hängen unverändert am Kartenobjekt:
+-- `map_object_photos_insert` verlangt `uploaded_by = auth.uid()` und ein
+-- sichtbares Objekt, `map_object_photos_read` ein sichtbares Objekt.
+-- `map_object_checks_read` (066) verlangt dasselbe. Wer das Foto sehen darf,
+-- darf also auch die Prüfung sehen, zu der es gehört — die Spalte öffnet
+-- keine neue Lesefläche und darf umgekehrt nie eine Berechtigung TRAGEN
+-- (dieselbe Auflage wie in 100, 101 und 106).
+--
+--
+-- WAS DIESE MIGRATION NICHT ANFASST
+--
+-- Den Zukunfts-Zeitstempel aus CN-80 (`checked_at` ist client-bestimmbar).
+-- Er ist vorbestehend seit 066, von der Fremdprüfung zu 117 gefunden und
+-- unabhängig hiervon fällig.
+--
+--
+-- APPLY-WEG: `apply_migration` (MCP). Die Datei trägt bewusst KEIN
+-- `\set ON_ERROR_STOP on` und keine Transaktionsklammer — beides schlösse
+-- diesen Weg aus (`\set` ist ein psql-Metabefehl). Mehrere Anweisungen in
+-- EINEM Aufruf laufen bei Postgres ohnehin in einer impliziten Transaktion.
+--
+-- **Was `apply_migration` NICHT tut** (Fremdprüfung 25.08.2026, [medium]):
+-- es registriert nicht „118". Es legt eine Zeile mit EIGENEM Zeitstempel an,
+-- so wie `20260822101044` für 117 und `20260822100913` für 115 — gegen
+-- `list_migrations` gelesen, nicht angenommen. **Die Nummer im Dateinamen
+-- steht in `supabase_migrations.schema_migrations` überhaupt nie**; sie ist
+-- die Reihenfolge des Repos für einen Neuaufbau. Der psql-Weg registriert
+-- dagegen GAR NICHTS — bei 114 und 117 musste die Zeile von Hand nachgetragen
+-- werden. Zwischen beiden ist der MCP-Weg der bessere, nicht der vollständige.
+--
+-- **Nicht idempotent**, wie die meisten Migrationen dieses Repos (039 trägt
+-- den Hinweis ausdrücklich): ein zweiter Lauf scheitert an `add column` und
+-- `add constraint`. Ein gemischtes `if not exists` nur an der Spalte wäre
+-- schlimmer als keines — es sähe nach Wiederholbarkeit aus, die die beiden
+-- Constraints nicht haben.
+
+alter table public.map_object_checks
+  add constraint map_object_checks_id_objekt_key unique (id, map_object_id);
+
+alter table public.map_object_photos
+  add column check_id uuid;
+
+alter table public.map_object_photos
+  add constraint map_object_photos_check_am_selben_objekt
+  foreign key (check_id, map_object_id)
+  references public.map_object_checks (id, map_object_id)
+  deferrable initially deferred;
+
+comment on column public.map_object_photos.check_id is
+  'Zu welcher Standprüfung dieses Foto gehört (Migration 118). NULL = Objektfoto ("so sieht der Stand aus"), gesetzt = Schadensfoto zu genau dieser Prüfung. Der zusammengesetzte Fremdschlüssel erzwingt, dass die Prüfung am SELBEN Kartenobjekt hängt. Keine Policy darf die Spalte auswerten.';
