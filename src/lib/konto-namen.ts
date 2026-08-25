@@ -41,3 +41,49 @@
  * Volle Begründung: `quickhunt-native/docs/migrationen/115_konto_namen.md`.
  */
 export type KontoName = { id: string; display_name: string }
+
+/**
+ * Wo PostgREST eine ungepagte Antwort abschneidet.
+ *
+ * Der Server-Default (`db-max-rows`). Wer ihn GENAU trifft, ist verdächtig:
+ * eine Antwort mit exakt 1000 Zeilen ist fast nie eine vollständige.
+ */
+const KONTO_NAMEN_DECKEL = 1000
+
+/**
+ * Ist die Antwort von `konto_namen()` vollständig — oder hat PostgREST
+ * gekappt?
+ *
+ * **Ein Prädikat und ausdrücklich KEIN Helfer, der die Folge mitentscheidet.**
+ * Das ist die Regel, die im Dateikopf steht („ein Helfer, den ein Aufrufer
+ * umgehen muss, ist ein Helfer, der driftet") — und die beiden Aufrufer
+ * brauchen hier tatsächlich Verschiedenes:
+ *
+ * - **Das Portal wirft** (`app/zentrale/revier/page.tsx`). Eine Revier-Auskunft,
+ *   die halb stimmt, ist schlimmer als keine; das ist die Haltung von
+ *   `laden.ts`, und am Schreibtisch kostet ein Abbruch nichts.
+ * - **Die PWA im Wald wirft NICHT** (`app/app/du/revier/[id]/page.tsx`). Dort
+ *   ist die Karte der Zweck. Ein Revier-Editor, der sich nicht öffnet, weil ein
+ *   Prüfername fehlen KÖNNTE, ist der teurere Fehler — die Namen fallen
+ *   stattdessen sämtlich weg, und „ohne Namen" ist die bereits dokumentierte
+ *   Bedeutung von „Konto nicht auflösbar".
+ *
+ * **Warum überhaupt geprüft wird:** `konto_namen()` ist ungepagt und nimmt
+ * bewusst KEINEN Parameter — eine übergebene Kennung wäre ein Orakel zum
+ * Durchprobieren (dieselbe Entscheidung wie bei `meine_einladungen()`,
+ * Migration 080). Es gibt also keinen gefilterten Weg. Ohne diese Prüfung
+ * stünde nach dem Kappen bei einer vorhandenen Prüfung „ohne Namen", obwohl
+ * der Name abrufbar wäre — eine stille Falschauskunft.
+ *
+ * **Bestand am 25.08.2026: 9 Konten.** Der Fall ist weit außer Reichweite; er
+ * kostet eine Zeile je Aufrufer. **Sechs weitere `konto_namen()`-Leser im Repo
+ * prüfen ihn bis heute nicht** — das ist Backlog CP-71, und dies ist das
+ * Werkzeug dafür. (Hier stand „fünf"; nachgezählt und korrigiert von der
+ * Schlusslesung am 25.08.2026, T8. Das Backlog nannte die richtige Zahl.)
+ *
+ * Die Zahl selbst ist modulprivat (Ponytail 25.08.2026): eine exportierte
+ * Konstante, die niemand von außen liest, ist Fläche ohne Leser.
+ */
+export function kontoNamenVollstaendig(zeilen: readonly KontoName[]): boolean {
+  return zeilen.length < KONTO_NAMEN_DECKEL
+}

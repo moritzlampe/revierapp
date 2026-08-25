@@ -1,11 +1,18 @@
-// Gegenprobe fuer die Standzustands-Logik der Revierzentrale. Kein Test-Runner
-// im Repo, deshalb ein eigenstaendiges Skript (Muster: objekte.selftest.ts):
+// Gegenprobe fuer die Standzustands-Logik. Kein Test-Runner im Repo, deshalb
+// ein eigenstaendiges Skript (Muster: objekte.selftest.ts):
 //
-//   node --experimental-strip-types app/zentrale/wartung.selftest.ts
+//   node --experimental-strip-types src/lib/revier/wartung.selftest.ts
 //
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 import assert from 'node:assert/strict'
-import { OBJEKT_TYPEN } from './objekte.ts'
+// Relativ und quer ueber die Verzeichnisgrenze, weil `node
+// --experimental-strip-types` den Alias `@/` NICHT aufloest — dieselbe
+// Einschraenkung, aus der die Importfreiheit von `wartung.ts` folgt.
+//
+// **Der Riegel muss gegen eine LAUFZEIT-Liste pruefen**, und die gibt es nur
+// im Portal: `ObjektType` in `src/lib/types/revier.ts` ist ein reiner Typ und
+// nach dem Strippen weg. `OBJEKT_TYPEN` ist ein Array und damit zaehlbar.
+import { OBJEKT_TYPEN } from '../../../app/zentrale/objekte.ts'
 import {
   WARTBAR,
   alsPruefungen,

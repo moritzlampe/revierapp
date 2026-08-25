@@ -4,9 +4,9 @@ import { parsePolygonHex } from '@/lib/geo-utils'
 import { punktAus } from '../karte-geo'
 import type { Punkt } from '../revierkarte-map'
 import { geladen, vollstaendig } from '../laden'
-import { alsPruefungen, ampel, bilanz, type PruefZeile } from '../wartung'
+import { alsPruefungen, ampel, bilanz, type PruefZeile } from '@/lib/revier/wartung'
 import { getJagdjahr } from '@/lib/diary/season'
-import type { KontoName } from '@/lib/konto-namen'
+import { kontoNamenVollstaendig, type KontoName } from '@/lib/konto-namen'
 import { istStand } from '../objekte'
 import { Kennzahl } from '../kennzahl'
 import RevierName from '../revier-name'
@@ -15,16 +15,6 @@ import { ausZeilen, type StandgruppeZeile } from './standgruppen'
 import './revier.css'
 
 const zahl = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
-
-/**
- * Ab wie vielen Zeilen eine ungepagte Antwort als möglicherweise abgeschnitten
- * gilt — der PostgREST-Default `db-max-rows` (s. `laden.ts`).
- *
- * Eine Zahl, keine Messung: sie steht in der Serverkonfiguration, nicht in der
- * Antwort. Genau deshalb ist `>=` richtig und nicht `>` — bei exakt 1000
- * Zeilen ist nicht unterscheidbar, ob es zufällig 1000 sind oder mehr.
- */
-const POSTGREST_GRENZE = 1000
 
 /**
  * Revier — zweiter Bereich der Zentrale (Konzept §1.1), und der letzte der
@@ -244,7 +234,7 @@ export default async function RevierPage({
    * als CP-71 im Backlog, nicht hier, weil sie nicht zu diesem Diff gehört.
    */
   const kontoZeilen = geladen<KontoName[]>(namenErgebnis, 'Kontonamen')
-  if (kontoZeilen.length >= POSTGREST_GRENZE) {
+  if (!kontoNamenVollstaendig(kontoZeilen)) {
     throw new Error(
       `Kontonamen: ${kontoZeilen.length} Zeilen — das ist die PostgREST-Grenze. ` +
         'Die Antwort ist womöglich abgeschnitten, und Prüfernamen fehlten dann ' +

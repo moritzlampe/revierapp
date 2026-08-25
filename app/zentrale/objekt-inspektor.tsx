@@ -7,7 +7,7 @@ import StorageImg from '@/components/photo/StorageImg'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { KontoName } from '@/lib/konto-namen'
-import { istWartbar, zustandsSatz, type PruefStatus } from './wartung'
+import { istWartbar, zustandsSatz, type PruefStatus } from '@/lib/revier/wartung'
 import { schreibe } from './schreiben'
 import {
   OBJEKT_TYPEN,

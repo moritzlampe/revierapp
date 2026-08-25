@@ -1,19 +1,35 @@
 /**
- * Der Standzustand — die reine Logik dahinter, für die Auskunft im Portal.
+ * Der Standzustand — die reine Logik dahinter, für BEIDE Clients dieses Repos.
  *
- * Konzept: `docs/konzepte/QuickHunt_Konzept_Standzustand_V1.md` §4.2
- * (quickhunt-native). Datengrundlage ist die View `map_object_letzte_pruefung`
- * aus Migration 117: die jüngste Prüfzeile je Kartenobjekt, für alle drei
- * Clients dieselbe.
+ * Konzept: `docs/konzepte/QuickHunt_Konzept_Standzustand_V1.md` §4.2 (Portal)
+ * und §4.4 (PWA mobil), beide in quickhunt-native. Datengrundlage ist die View
+ * `map_object_letzte_pruefung` aus Migration 117: die jüngste Prüfzeile je
+ * Kartenobjekt, für alle drei Clients dieselbe.
  *
  * **Abgeschrieben, nicht erfunden.** Quelle ist der native Track,
  * `src/lib/revier/wartung.ts` (entworfen von Moritz am 22.08.2026, dort mit
- * Jest-Tests abgesichert). Schlüssel, Schwellen und Zählregeln sind dort
- * gelockt; das Portal übernimmt sie wörtlich, damit Karte, Kachel und Agenda
+ * Jest-Tests abgesichert) — **derselbe Pfad wie hier, und das ist Absicht:**
+ * wer die Regel im einen Repo sucht, findet sie im anderen an derselben
+ * Stelle. Schlüssel, Schwellen und Zählregeln sind dort gelockt; diese Fassung
+ * übernimmt sie wörtlich, damit Karte, Kachel, Agenda und das mobile Sheet
  * dieselbe Aussage treffen wie die Feld-App. Wer die Regel ändern will, ändert
- * sie dort zuerst. Dasselbe Muster wie `OBJEKT_KATEGORIEN` in `objekte.ts` —
- * ein Import über die Repo-Grenze ginge nicht, und R1 lässt das Portal ohnehin
- * nur unter `app/zentrale/**` schreiben.
+ * sie dort zuerst. Dasselbe Muster wie `OBJEKT_KATEGORIEN` in
+ * `app/zentrale/objekte.ts` — ein Import über die REPO-Grenze ginge nicht.
+ *
+ * **Umgezogen am 25.08.2026 aus `app/zentrale/wartung.ts`.** Der alte Ort war
+ * mit R1 begründet („das Portal schreibt nur unter `app/zentrale/**`"), und
+ * das trug, solange nur das Portal las. Mit §4.4 liest auch
+ * `app/app/du/revier/[id]/**` mit, und `@/*` zeigt in `tsconfig.json` allein
+ * auf `src/*` — von dort wäre der alte Ort nur über `../../../../zentrale/`
+ * erreichbar gewesen, einen Pfad, den jede Routenverschiebung bricht.
+ * **R1 ist dabei nicht gedehnt worden:** die Regel trennt die beiden
+ * Bau-Stränge dieses Repos, und beide Leser gehören demselben. Der native
+ * Track schreibt hier nicht.
+ *
+ * ⚠ **Folge, die vorher nicht galt: eine Änderung an dieser Datei trifft die
+ * live PWA.** Bis zum 25.08.2026 war sie reiner Portal-Code; wer sie jetzt für
+ * eine Portal-Frage anpasst, ändert stillschweigend auch, was im Wald auf dem
+ * Handy steht. Beide Aufrufer gehören in den Gerätetest.
  *
  * **Die eine Einsicht, aus der alles folgt: es sind ZWEI Fragen.**
  *
@@ -30,9 +46,11 @@
  * **Füllung** den Saisonstand.
  *
  * Bewusst **ohne jeden Import** — dadurch mit
- * `node --experimental-strip-types app/zentrale/wartung.selftest.ts` prüfbar,
+ * `node --experimental-strip-types src/lib/revier/wartung.selftest.ts` prüfbar,
  * ohne Pfad-Alias, Env oder Netz. Dasselbe Muster wie `handlungsbedarf.ts`,
- * `objekte.ts` und `namen.ts`.
+ * `objekte.ts` und `namen.ts` im Portal-Verzeichnis. **Die Importfreiheit ist
+ * hier zusätzlich lasttragend:** das Modul wird jetzt aus zwei Verzeichnissen
+ * mit verschiedenen Bau-Ketten geladen.
  *
  * **Deshalb nehmen die Funktionen die Saison als Parameter, statt sie
  * auszurechnen:** die Jagdjahr-Regel steht bereits in `src/lib/diary/season.ts`

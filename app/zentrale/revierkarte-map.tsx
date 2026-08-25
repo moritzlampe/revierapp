@@ -17,7 +17,7 @@ import { BKG_TOPPLUS } from '@/lib/map/tiles'
 import BoundaryDrawLayer from '@/components/map/BoundaryDrawLayer'
 import type { DrawPoint } from '@/hooks/useBoundaryEditor'
 import { istStand, type Ort } from './objekte'
-import type { Ampel, Pruefung } from './wartung'
+import type { Ampel, Pruefung } from '@/lib/revier/wartung'
 
 /**
  * Ein Kartenobjekt, so wie der Browser es braucht. Heißt weiter `Punkt`, weil es

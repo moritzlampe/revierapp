@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { geladen, vollstaendig } from './laden'
 import { Kennzahl } from './kennzahl'
 import { FRIST_TAGE, laeuftBaldAb } from './handlungsbedarf'
-import { alsPruefungen, inDieserSaison, istWartbar, type PruefZeile } from './wartung'
+import { alsPruefungen, inDieserSaison, istWartbar, type PruefZeile } from '@/lib/revier/wartung'
 import { getJagdjahr } from '@/lib/diary/season'
 import { typLabel } from './objekte'
 // `alsDatum` und nicht `terminText`: `valid_until` ist ein `date`, kein

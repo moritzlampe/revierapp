@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Crosshair, CircleNotch } from '@phosphor-icons/react'
@@ -16,6 +16,14 @@ import ObjektEditSheet from '@/components/revier/ObjektEditSheet'
 import ObjektDetailSheet from '@/components/revier/ObjektDetailSheet'
 import PositionConfirmBar from '@/components/revier/PositionConfirmBar'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
+import { getJagdjahr } from '@/lib/diary/season'
+import {
+  alsPruefungen,
+  bilanz,
+  istWartbar,
+  type PruefStatus,
+  type PruefZeile,
+} from '@/lib/revier/wartung'
 
 const RevierMap = dynamic(() => import('@/components/revier/RevierMap'), { ssr: false })
 
@@ -32,6 +40,22 @@ type Props = {
   district: District
   objects: MapObject[]
   userId: string
+  /** Die jüngste Prüfzeile je Kartenobjekt (View aus Migration 117). */
+  pruefZeilen: PruefZeile[]
+  /**
+   * Der Prüfstand konnte nicht geladen werden.
+   *
+   * **Eigene Prop und nicht „leere Liste", und das ist der Punkt** — dieselbe
+   * Unterscheidung, die die Feld-App mit `CheckState.kind === 'error'` macht.
+   * Fielen beide auf `[]` zusammen, stünde bei einem Netz- oder RLS-Fehler an
+   * jedem Stand „Noch nie geprüft", auch an einem gesperrten. Die Sperre wäre
+   * unsichtbar, und zwar genau dann, wenn jemand einteilt.
+   */
+  pruefFehler: boolean
+  /** Kennung → Klarname des Prüfers. Leer, wenn nicht auflösbar (s. `page.tsx`). */
+  prueferNamen: Record<string, string>
+  /** Der Zeitpunkt vom Server, gegen den Saison und Zukunftsgrenze rechnen. */
+  jetztIso: string
 }
 
 // --- State Machine ---
@@ -133,7 +157,15 @@ function writeProblem(res: {
   return null
 }
 
-export default function RevierContent({ district, objects: initialObjects, userId }: Props) {
+export default function RevierContent({
+  district,
+  objects: initialObjects,
+  userId,
+  pruefZeilen: initialPruefZeilen,
+  pruefFehler,
+  prueferNamen,
+  jetztIso,
+}: Props) {
   const router = useRouter()
   const [objects, setObjects] = useState<MapObject[]>(initialObjects)
   const [creation, setCreation] = useState<CreationStage>({ stage: 'idle' })
@@ -155,6 +187,92 @@ export default function RevierContent({ district, objects: initialObjects, userI
     name: '',
     description: '',
   })
+
+  /**
+   * Der Standzustand, live — die Zeilen aus der View, im State statt in der
+   * Prop, damit eine eben eingetragene Prüfung sofort dasteht.
+   *
+   * **Kein `router.refresh()` nach dem Schreiben, und das ist ein Unterschied
+   * zum Portal.** Dort ist der Nachtrag eine seltene Handlung am Schreibtisch;
+   * hier steht jemand im Wald vor dem Stand, oft mit schlechtem Empfang, und
+   * geht gleich zum nächsten. Ein voller Server-Rundgang je Prüfung wäre die
+   * Wartezeit genau dort, wo sie am teuersten ist.
+   *
+   * ⚠ **Hier stand, ein Ersetzen je `map_object_id` bilde die View „exakt
+   * nach". Das war falsch, und die Fremdprüfung hat es gefunden** (25.08.2026,
+   * A6 `[high]`). Die Begründung — mobil kann nicht rückdatiert werden, die
+   * eigene Zeile ist also immer die jüngste — gilt nur, solange **niemand
+   * sonst schreibt.** Schreibt A „ok", danach B „gesperrt", und trifft erst
+   * dann As Antwort ein, ersetzt A seine Zeile durch die eigene ältere: die
+   * View führt Bs Sperre, As Bildschirm zeigt „Geprüft". **Ein
+   * sicherheitsrelevanter Zustand, der falsch steht, bis jemand neu lädt.**
+   *
+   * **Was `handleCheck` deshalb tut:** es liest nach dem Insert die eine
+   * View-Zeile dieses Objekts nach — gefiltert, indiziert, ein Bruchteil eines
+   * vollen Rundgangs — und übernimmt, was dort steht. Die Wartezeit liegt
+   * hinter dem gelungenen Schreiben; die Meldung ist zu diesem Zeitpunkt
+   * bereits sicher.
+   */
+  const [pruefZeilen, setPruefZeilen] = useState<PruefZeile[]>(initialPruefZeilen)
+
+  /**
+   * Der Zeitpunkt, gegen den Saison und Zukunftsgrenze rechnen.
+   *
+   * **Warum er wachsen muss und nicht bloß eine Konstante ist** (s. `jetztIso`
+   * in `page.tsx`): `wartung.ts` zählt eine Prüfung mit `checked_at > jetzt`
+   * als NICHT dieser Saison — der Riegel gegen zukunftsdatierte Einträge. Der
+   * Server liest `jetztIso` beim Seitenaufbau ab; jede Prüfung, die danach
+   * geschrieben wird, trägt ein späteres `checked_at` und liefe genau in diesen
+   * Riegel. Der Stand bliebe nach dem eigenen Eintrag „offen", die
+   * Zusammenfassung im Kopf rührte sich nicht, und niemand käme darauf, warum.
+   *
+   * Deshalb rückt der Zeitpunkt auf den geschriebenen Zeitstempel vor, sobald
+   * einer eintrifft.
+   *
+   * ⚠ **Hier stand „er kommt aus derselben Uhr wie die Zeile selbst". Das ist
+   * falsch** (Fremdprüfung 25.08.2026, A8 `[medium]`): `jetztIso` stammt vom
+   * Next-Server, `checked_at` von Postgres. Zwei Rechner, zwei Uhren. Das
+   * Nachrücken funktioniert trotzdem, aber aus einem schwächeren Grund als
+   * behauptet — es nimmt schlicht das Maximum aus beiden, und mehr braucht es
+   * für diesen Zweck nicht.
+   *
+   * **Zwei benannte Grenzen, beide bewusst nicht gebaut** (Backlog CP-73):
+   * eine Sitzung, die über den 1. April hinweg offen bleibt, rechnet weiter
+   * gegen das alte Jagdjahr; und liegt die Postgres-Uhr **vor** der des
+   * Next-Servers, könnte eine fremde, gerade erst geschriebene Zeile kurz als
+   * zukunftsdatiert gelten. Beide brauchen einen Abgleich beim Sichtbarwerden
+   * — ein eigener Schritt, kein Nebenbei.
+   */
+  const [jetzt, setJetzt] = useState(() => new Date(jetztIso))
+
+  const pruefungen = useMemo(() => alsPruefungen(pruefZeilen), [pruefZeilen])
+  const saison = getJagdjahr(jetzt)
+
+  /**
+   * „173 Sitze · 32 offen · 3 Mangel · 2 gesperrt" — die Zusammenfassung aus
+   * Konzept §3, dieselbe in allen drei Clients.
+   *
+   * **Die vier Zahlen addieren sich absichtlich NICHT.** `offen` ist die
+   * ARBEIT (diese Saison nicht bestätigt), `mangel`/`gesperrt` der ZUSTAND
+   * (bekannt kaputt, unabhängig vom Alter). Ein Mangel vom letzten Jahr steht
+   * in beiden. Die Begründung steht ausgeschrieben in `wartung.ts`.
+   *
+   * **Bei einem Ladefehler steht hier NICHTS** statt einer Reihe Nullen. „0
+   * offen" wäre die Auskunft „alles erledigt" — und die wäre falsch und
+   * beruhigend zugleich, die schlechteste Verbindung.
+   */
+  const zustandsBilanz = useMemo(
+    () =>
+      pruefFehler
+        ? null
+        : bilanz(
+            objects.map((o) => ({ id: o.id, typ: o.type })),
+            pruefungen,
+            saison,
+            jetzt,
+          ),
+    [pruefFehler, objects, pruefungen, saison, jetzt],
+  )
 
   // Live-Boundary aus DB (aktualisiert sich nach Speichern)
   const [boundaryRaw, setBoundaryRaw] = useState<unknown>(district.boundary)
@@ -550,6 +668,151 @@ export default function RevierContent({ district, objects: initialObjects, userI
     setCreation({ stage: 'detail', object: updated })
   }, [creation, showToast])
 
+  /**
+   * Läuft für dieses Kartenobjekt gerade ein Schreibvorgang?
+   *
+   * **Als Ref und nicht als State**, und das ist der tragende Teil: `useState`
+   * wirkt erst zum nächsten Render, zwei schnelle Tipps kämen also beide durch
+   * und schrieben zwei Zeilen in ein Log ohne DELETE-Policy (S5).
+   *
+   * **Je Objekt-ID, obwohl heute ein einzelnes Flag genügte** — und das ist
+   * nachgesehen, nicht angenommen: `onObjectClick` ist `undefined`, solange
+   * `creation.stage === 'detail'` gilt (s. die RevierMap-Prop weiter unten).
+   * Ein direkter Wechsel von Stand A zu Stand B ist damit gar nicht möglich;
+   * das Sheet geht immer erst zu, und dabei baut React es ab.
+   *
+   * ⚠ **Ein früherer Kommentar an dieser Stelle behauptete das Gegenteil**
+   * („React hält über den Objektwechsel hinweg dieselbe Instanz, ein Riegel im
+   * Sheet bliebe für Stand B gesetzt"). Die React-Mechanik stimmt, die Lage
+   * nicht — die Karte lässt den Wechsel nicht zu. Der Riegel wäre im Sheet
+   * also ebenso richtig gewesen.
+   *
+   * **Warum er trotzdem hier bleibt:** der Riegel gehört dorthin, wo der Write
+   * steht, und der steht hier. Ein Ref im Sheet stürbe mit dem Sheet — auch mit
+   * dem `key` unten —, und ein Schreibvorgang, der das Sheet überlebt, wäre
+   * dann ungeschützt.
+   */
+  const pruefLaeuft = useRef<Set<string>>(new Set())
+
+  /**
+   * Eine Standprüfung eintragen (Konzept Standzustand §4.4).
+   *
+   * **Keine Migration nötig, und das ist der ganze Grund, warum es dieses
+   * Stück gibt:** `map_object_checks_insert` (Migration 066) verlangt
+   * `checked_by = auth.uid()` und ein sichtbares Kartenobjekt — beides ist hier
+   * gegeben. Der Weg stand offen, es hatte ihn nur niemand gebaut.
+   *
+   * **`checked_at` wird NICHT mitgeschickt.** Der Default `now()` der Tabelle
+   * ist hier richtig, und das ist der Unterschied zum Portal, wo ein Datumsfeld
+   * steht: dort trägt jemand abends am PC nach, was er tagsüber gesehen hat,
+   * hier steht er davor. Ein Datumsfeld im Wald wäre eine Frage, deren Antwort
+   * immer „jetzt" lautet.
+   *
+   * **Die Notiz ist bei Mangel und Sperre Pflicht** (Moritz, 25.08.2026 —
+   * damit folgt die PWA dem Portal, nicht der Feld-App, die eine leere Eingabe
+   * als `null` durchlässt). Das Argument steht wörtlich im nativen Code:
+   * *„Ein Mangel ohne Beschreibung ist genau die Zeile, die später niemand
+   * deuten kann („irgendwas war an Stand 14")."* Die Feld-App schreibt den Satz
+   * hin und erzwingt ihn nicht; dann ist sie die Stelle, die nachzieht.
+   * **Der Riegel steht hier und nicht nur im Sheet** — ein Gate, das allein in
+   * der Anzeige sitzt, ist keines (S2).
+   *
+   * Gibt `true` zurück, wenn die Zeile wirklich liegt.
+   */
+  const handleCheck = useCallback(
+    async (objektId: string, status: PruefStatus, note: string | null): Promise<boolean> => {
+      const notiz = note?.trim() ? note.trim() : null
+      if (status !== 'ok' && notiz === null) {
+        showToast('Bitte kurz beschreiben, was los ist.')
+        return false
+      }
+      if (pruefLaeuft.current.has(objektId)) return false
+      pruefLaeuft.current.add(objektId)
+      try {
+        const supabase = createClient()
+        const antwort = await supabase
+          .from('map_object_checks')
+          .insert({ map_object_id: objektId, checked_by: userId, status, note: notiz })
+          // `.select()` ist Pflicht: ohne sie ist `data` immer `null`, und ein
+          // von RLS auf 0 Zeilen zusammengestrichener Insert sähe aus wie ein
+          // Erfolg (S1, `writeProblem` oben).
+          .select('map_object_id, status, checked_at, note, checked_by')
+
+        const problem = writeProblem(antwort)
+        if (problem) {
+          console.error('Prüfung fehlgeschlagen:', problem)
+          showToast('Prüfung konnte nicht gespeichert werden.')
+          return false
+        }
+
+        const geschriebene = (antwort.data as PruefZeile[])[0]
+        /**
+         * **Eine Zeile ohne `checked_at` ist ein Schreibfehler, kein Erfolg**
+         * (Fremdprüfung 25.08.2026, A8). Der Fall kann nicht eintreten — die
+         * Spalte ist NOT NULL mit Default `now()` —, aber der Typ lässt ihn zu
+         * (eine View kennt keine NOT-NULL-Zusage). Ohne diesen Zweig wanderte
+         * die Zeile in den Zustand, `alsPruefungen()` verwürfe sie dort still,
+         * und der Stand stünde unmittelbar nach einer gelungenen Meldung wieder
+         * auf „Noch nie geprüft".
+         */
+        if (!geschriebene?.checked_at) {
+          console.error('Prüfung ohne Zeitstempel zurückgekommen:', geschriebene)
+          showToast('Prüfung konnte nicht gespeichert werden.')
+          return false
+        }
+
+        /**
+         * Was jetzt in der View steht — **nachgelesen, nicht angenommen**
+         * (Fremdprüfung 25.08.2026, A6 `[high]`, Begründung an `pruefZeilen`).
+         *
+         * Eine Zeile, gefiltert auf dieses eine Objekt. Schlägt der Nachlesen
+         * fehl, gilt die eben geschriebene Zeile — sie ist die beste bekannte
+         * Auskunft und in aller Regel auch die richtige. **Ein Fehlschlag hier
+         * macht die Meldung nicht ungültig:** sie liegt bereits, und genau
+         * deshalb steht dieser Aufruf hinter dem `writeProblem`-Tor und nicht
+         * davor.
+         */
+        let zeile = geschriebene
+        try {
+          const nachgelesen = await supabase
+            .from('map_object_letzte_pruefung')
+            .select('map_object_id, status, checked_at, note, checked_by')
+            .eq('map_object_id', objektId)
+            .maybeSingle()
+          if (nachgelesen.data) zeile = nachgelesen.data as PruefZeile
+        } catch (e) {
+          // **Der `catch` ist lasttragend und kein Zierat.** Ohne ihn risse ein
+          // Netzabbruch beim Nachlesen die ganze `handleCheck` mit — und
+          // meldete einen Fehlschlag für eine Prüfung, die längst in der
+          // Datenbank steht. Der Melder tippt sie dann ein zweites Mal, und in
+          // einem Log ohne DELETE-Policy stehen danach zwei Zeilen (CP-74).
+          // **Der Fehler wäre also schlimmer als das Problem, gegen das das
+          // Nachlesen gebaut ist.** Selbst gefunden beim Gegenlesen des
+          // A6-Fixes, nach dem letzten Prüflauf.
+          console.warn('Prüfstand konnte nach dem Schreiben nicht nachgelesen werden:', e)
+        }
+
+        setPruefZeilen((vorher) => [
+          ...vorher.filter((z) => z.map_object_id !== objektId),
+          zeile,
+        ])
+        // Der Bezugszeitpunkt rückt vor, sonst liest der Zukunfts-Riegel den
+        // eigenen Eintrag als noch nicht geschehen (s. `setJetzt` oben).
+        // **`geschriebene` und nicht `zeile`:** gewinnt beim Nachlesen ein
+        // fremder, noch jüngerer Eintrag, ist der eigene trotzdem der Beleg
+        // dafür, dass die Uhr mindestens bis hierher gelaufen ist.
+        const geschrieben = new Date(geschriebene.checked_at)
+        setJetzt((bisher) => (geschrieben > bisher ? geschrieben : bisher))
+
+        showToast(status === 'gesperrt' ? 'Gesperrt ✓' : 'Eingetragen ✓')
+        return true
+      } finally {
+        pruefLaeuft.current.delete(objektId)
+      }
+    },
+    [userId, showToast],
+  )
+
   const handleDetailPositionChange = useCallback(() => {
     if (creation.stage !== 'detail') return
     const obj = creation.object
@@ -593,6 +856,10 @@ export default function RevierContent({ district, objects: initialObjects, userI
   }, [creation, district.id, showToast])
 
   // --- Abgeleitete Werte ---
+
+  /** Die Prüfung des Objekts, dessen Sheet gerade offen ist. */
+  const offenePruefung =
+    creation.stage === 'detail' ? (pruefungen.get(creation.object.id) ?? null) : null
 
   const isInteractive = creation.stage === 'awaiting-tap'
     || creation.stage === 'positioning'
@@ -648,6 +915,21 @@ export default function RevierContent({ district, objects: initialObjects, userI
             {objects.length} {objects.length === 1 ? 'Objekt' : 'Objekte'}
             {areaHa ? ` · ${Math.round(areaHa)} ha` : ''}
           </p>
+          {/* Die Zusammenfassung aus Konzept §3 — dieselbe in allen drei
+              Clients. Eigene Zeile und nicht an die obige angehängt: die
+              beantwortet „was liegt in diesem Revier", diese „was ist zu tun".
+              Zwei Fragen, und auf einem Telefon passen sie nicht nebeneinander.
+
+              Nur wenn es wartbare Objekte GIBT. Ein Revier aus lauter
+              Parkplätzen bekommt keine Zeile „0 Sitze" — das wäre eine
+              Auskunft über eine Frage, die dort niemand stellt. */}
+          {zustandsBilanz && zustandsBilanz.sitze > 0 && (
+            <p className="text-xs truncate" style={{ color: 'var(--text-3)' }}>
+              {zustandsBilanz.sitze} Sitze · {zustandsBilanz.offen} offen
+              {zustandsBilanz.mangel > 0 ? ` · ${zustandsBilanz.mangel} Mangel` : ''}
+              {zustandsBilanz.gesperrt > 0 ? ` · ${zustandsBilanz.gesperrt} gesperrt` : ''}
+            </p>
+          )}
         </div>
       </div>
 
@@ -965,12 +1247,45 @@ export default function RevierContent({ district, objects: initialObjects, userI
 
         {creation.stage === 'detail' && (
           <ObjektDetailSheet
+            /**
+             * **Der `key` ist der Riegel gegen zwei Findings der Fremdprüfung**
+             * (25.08.2026, B6 und B9, beide `[high]`). Ohne ihn hält React über
+             * einen Wechsel des Objekts hinweg dieselbe Instanz: die halb
+             * getippte Mangel-Notiz von Stand A stünde im Formular für Stand B
+             * und landete beim Bestätigen in dessen Append-only-Log, und die
+             * Fotoliste von A bliebe sichtbar und LÖSCHBAR, während B lädt.
+             *
+             * **Beides ist heute nicht erreichbar, und das ist nachgesehen:**
+             * alle vier Stellen, die `stage: 'detail'` setzen, tragen dieselbe
+             * `object.id`, und `onObjectClick` unten ist `undefined`, solange
+             * ein Sheet offen ist — zwischen zwei Ständen liegt immer ein
+             * Abbau. Der Prüfer sah nur das Sheet; das Tor steht hier.
+             *
+             * **Trotzdem gesetzt, und zwar genau deshalb:** die Unerreichbarkeit
+             * hängt an einer Bedingung in einer anderen Datei. „Zum nächsten
+             * Stand tippen, ohne zuzumachen" ist ein plausibler Wunsch, und wer
+             * ihn erfüllt, hätte keinen Anlass, hier nachzusehen. Eine Zeile
+             * macht die ganze Klasse unmöglich statt bloß unwahrscheinlich —
+             * bei einem Log ohne DELETE-Policy ist das der billigere Tausch.
+             */
+            key={creation.object.id}
             object={creation.object}
             userId={userId}
             onClose={handleDetailClose}
             onPositionChange={handleDetailPositionChange}
             onDelete={handleDetailDelete}
             onUpdate={handleDetailUpdate}
+            pruefung={offenePruefung}
+            pruefFehler={pruefFehler}
+            // `null` heißt „unbekannt", nicht „niemand": ein Prüfer, dessen
+            // Konto gelöscht wurde, steht nicht mehr in `konto_namen()` — die
+            // Prüfung hat trotzdem stattgefunden.
+            prueferName={prueferNamen[offenePruefung?.checkedBy ?? ''] ?? null}
+            /* Ob dieser Objekttyp überhaupt einen Wartungszustand hat — der
+               Schnitt auf sieben Arten aus Konzept §4.1.2. Ein Steinbruch hat
+               keinen. */
+            wartbar={istWartbar(creation.object.type)}
+            onCheck={(status, note) => handleCheck(creation.object.id, status, note)}
           />
         )}
       </div>
