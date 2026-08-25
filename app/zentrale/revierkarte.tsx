@@ -850,6 +850,10 @@ export default function Revierkarte({
       lat: ort.lat,
       lng: ort.lng,
       fotoUrl: null,
+      // Ein gerade angelegtes Objekt hat noch keine Prüfung — und wird auf der
+      // Karte also markenlos gezeichnet. Das ist genau richtig: „noch nie
+      // angesehen" ist der Wahrheit näher als jede andere Marke.
+      pruefung: null,
     }
     setGeschrieben((v) => ({ ...v, [neu.id]: neu }))
     // Direkt auswählen: wer ein Objekt anlegt, will sehen, dass es da ist —

@@ -3,11 +3,14 @@ import { createClient } from '@/lib/supabase/server'
 import { geladen, vollstaendig } from './laden'
 import { Kennzahl } from './kennzahl'
 import { FRIST_TAGE, laeuftBaldAb } from './handlungsbedarf'
+import { alsPruefungen, inDieserSaison, istWartbar, type PruefZeile } from './wartung'
+import { getJagdjahr } from '@/lib/diary/season'
+import { typLabel } from './objekte'
 // `alsDatum` und nicht `terminText`: `valid_until` ist ein `date`, kein
 // `timestamptz`. Der Unterschied ist im Repo schon einmal danebengegangen
 // (Fremdprüfung 04.08.2026 an `kontakte.inaktiv_seit`) und in `scheine.ts` bei
 // `alsBerlinDatum` ausführlich begründet.
-import { alsDatum, alsStatus, effektiverStatus } from './jagderlaubnisse/scheine'
+import { alsBerlinDatum, alsDatum, alsStatus, effektiverStatus } from './jagderlaubnisse/scheine'
 // Statt eines zweiten Intl-Formatters daneben: `terminText(…, false)` ist
 // bereits das Datum ohne Uhrzeit in Berliner Zeit. Der Endtermin einer
 // mehrtägigen Jagd ist ein Tag, keine Feierabendzeit (Migration 095).
@@ -59,6 +62,7 @@ type Teilnehmer = {
   status: string | null
 }
 type Profil = { id: string; display_name: string | null }
+type Kartenobjekt = { id: string; name: string; type: string }
 type Schein = {
   id: string
   holder_name: string | null
@@ -66,6 +70,37 @@ type Schein = {
   status: string | null
   valid_from: string
   valid_until: string
+}
+
+/**
+ * Wie viele Einzelfälle eine Agenda-Zeile aufklappt.
+ *
+ * ponytail: nach Augenmaß. Zwölf sind eine Bildschirmhöhe und zugleich das,
+ * was man an einem Nachmittag abgeht.
+ */
+const POSTEN_MAX = 12
+
+/**
+ * Die ersten `POSTEN_MAX` Einträge, plus eine Zeile, die den Rest benennt.
+ *
+ * Der Rest steht als Posten und nicht im Kopf, weil der Kopf die
+ * VOLLZÄHLIGE Zahl trägt („173 sind nicht geprüft") — die Liste darunter zeigt
+ * weniger, und genau diese Differenz muss dort stehen, wo man sie bemerkt.
+ */
+function postenMitRest<T extends { id: string }>(
+  alle: readonly T[],
+  zeile: (t: T) => { schluessel: string; text: string; zusatz: string }
+): { schluessel: string; text: string; zusatz: string }[] {
+  const gezeigt = alle.slice(0, POSTEN_MAX).map(zeile)
+  const rest = alle.length - gezeigt.length
+  if (rest > 0) {
+    gezeigt.push({
+      schluessel: 'rest',
+      text: `… und ${rest} weitere`,
+      zusatz: 'auf der Revierkarte',
+    })
+  }
+  return gezeigt
 }
 
 /** Eine Zeile der Agenda: Kopf mit Zahl, aufklappbar die Einzelfälle. */
@@ -271,16 +306,45 @@ export default async function ZentraleUebersicht({
         )
       : []
 
-  // `holder_id is null` wird NICHT in der Abfrage gefiltert: dieselben Zeilen
-  // tragen beide Agenda-Punkte (offen UND bald ablaufend), und bei vier Scheinen
-  // je Revier ist eine Abfrage billiger als zwei.
-  const scheine = vollstaendig<Schein>(
-    await supabase
+  /**
+   * **Drei Abfragen in einer Welle**, weil alle drei nur an `revier.id` hängen
+   * und keine auf eine andere wartet. Der Standzustand ist die jüngste
+   * Ergänzung; ihn seriell anzuhängen hätte die Seite um eine volle Rundreise
+   * verlängert (~250–330 ms von hier aus, gemessen 22.08.2026) — dasselbe
+   * Muster wie CP-69.
+   */
+  const [scheinErgebnis, objekteErgebnis, pruefErgebnis] = await Promise.all([
+    // `holder_id is null` wird NICHT in der Abfrage gefiltert: dieselben Zeilen
+    // tragen beide Agenda-Punkte (offen UND bald ablaufend), und bei vier Scheinen
+    // je Revier ist eine Abfrage billiger als zwei.
+    supabase
       .from('hunting_licenses')
       .select('id, holder_name, holder_id, status, valid_from, valid_until', { count: 'exact' })
       .eq('district_id', revier.id),
-    'Jagderlaubnisse'
-  )
+    /**
+     * Die Kartenobjekte — nur die drei Spalten, die die Agenda braucht.
+     *
+     * **`vollstaendig()` wie auf der Revierseite:** eine Abschneidung wäre hier
+     * besonders tückisch, weil zu wenige Objekte eine zu KLEINE Zahl offener
+     * Stände ergäben — die Agenda sagte dann glaubwürdig „weniger zu tun als
+     * wahr ist", und das ist die schlimmste Ausgabe, die diese Sektion haben
+     * kann (Fremdprüfung 08.08.2026, P3, damals zu den Jagden).
+     */
+    supabase
+      .from('map_objects')
+      .select('id, name, type', { count: 'exact' })
+      .eq('district_id', revier.id),
+    // Die jüngste Prüfzeile je Objekt (View aus Migration 117) — dieselbe
+    // Wahrheit, aus der Revierseite, Karte und Feld-App ihre Auskunft ziehen.
+    supabase
+      .from('map_object_letzte_pruefung')
+      .select('map_object_id, status, checked_at, note, checked_by')
+      .eq('district_id', revier.id),
+  ])
+
+  const scheine = vollstaendig<Schein>(scheinErgebnis, 'Jagderlaubnisse')
+  const kartenobjekte = vollstaendig<Kartenobjekt>(objekteErgebnis, 'Kartenobjekte')
+  const pruefungen = alsPruefungen(geladen<PruefZeile[]>(pruefErgebnis, 'Standprüfungen'))
 
   // Nur die gebrauchten Profile, nicht alle — ein ungefiltertes SELECT wäre ein
   // Lesepfad, der mit der Nutzerzahl wächst und irgendwann an der
@@ -411,6 +475,143 @@ export default async function ZentraleUebersicht({
         text: s.holder_name || 'Ohne Namen',
         zusatz: `bis ${alsDatum(s.valid_until)}`,
       })),
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Der Standzustand (Konzept Standzustand §4.2) — zwei Zeilen, zwei Achsen.
+  //
+  // **Warum das hierher gehört und nicht auf die Revierseite:** die offene
+  // Prüfung ist der Musterfall des Trennsatzes. Die Zahl ändert sich, weil
+  // ZEIT vergangen ist — am 1. April fällt jedes „ok" der letzten Saison zurück
+  // auf offen, ohne dass jemand etwas getan hätte. Genau das ist eine Agenda.
+  // Der Bestand („140 von 173 geprüft") steht drüben beim Revier.
+  //
+  // **Die Sperre ist der Grenzfall, und sie steht bewusst trotzdem hier.**
+  // Streng gelesen ändert sie sich nur, wenn jemand etwas tut — also Bestand.
+  // Aber eine Sperre ist eine Anweisung für JETZT („nicht besetzen"), und die
+  // darf nicht darauf warten, dass jemand von sich aus die Revierseite öffnet.
+  // Der Trennsatz sortiert Zahlen, nicht Gefahren.
+  // ---------------------------------------------------------------------------
+
+  const jagdjahr = getJagdjahr(jetzt)
+  const wartbare = kartenobjekte.filter((o) => istWartbar(o.type))
+
+  /**
+   * Diese Saison noch nicht angesehen — die ARBEIT.
+   *
+   * Enthält absichtlich auch, was bekannt kaputt ist: ein Mangel vom letzten
+   * Jahr ist gleichzeitig „diese Saison nicht bestätigt". Die beiden Zeilen
+   * überschneiden sich also, und das ist keine Doppelzählung, sondern zwei
+   * Fragen an dieselbe Zeile (Konzept §3).
+   */
+  const offen = wartbare
+    .filter((o) => {
+      const p = pruefungen.get(o.id)
+      return !p || !inDieserSaison(p.checkedAt, jagdjahr, jetzt)
+    })
+    /**
+     * **Älteste Prüfung zuerst, nie geprüfte ganz vorn.**
+     *
+     * Das ist die Reihenfolge, in der man durchs Revier geht (Konzept
+     * Standzustand §4.3), und sie braucht keine Bedienung. Ohne sie stünde hier
+     * die Reihenfolge, in der die Datenbank die Zeilen zurückgibt — also
+     * keine.
+     *
+     * `''` als Schlüssel für „noch nie geprüft" sortiert vor jedes ISO-Datum.
+     * Das ist gewollt: eine Unbekannte wiegt schwerer als ein Stand, der
+     * letztes Jahr heil war.
+     *
+     * **Nackter Vergleich statt `localeCompare`, und das ist gemessen**
+     * (Schlusslesung 25.08.2026, Finding 2): ICU sortiert
+     * `'…:05+00:00'` HINTER `'…:05.5+00:00'`, obwohl der erste früher liegt —
+     * der Sekundenbruchteil verschiebt die Reihenfolge. Byteweise stimmt sie
+     * (`'+'` 0x2B < `'.'` 0x2E). PostgREST liefert `checked_at` mal mit, mal
+     * ohne Bruchteil, je nachdem ob er null ist; beide Formen kommen also vor.
+     * Sub-sekündlich und damit kosmetisch — aber eine Sortierung, die man
+     * korrekt haben kann, sortiert man korrekt.
+     */
+    .sort((a, b) => {
+      const av = pruefungen.get(a.id)?.checkedAt ?? ''
+      const bv = pruefungen.get(b.id)?.checkedAt ?? ''
+      return av < bv ? -1 : av > bv ? 1 : 0
+    })
+
+  if (offen.length > 0) {
+    bedarf.push({
+      schluessel: 'staende-offen',
+      kopf: `${offen.length} ${
+        offen.length === 1 ? 'Jagdeinrichtung ist' : 'Jagdeinrichtungen sind'
+      } für ${jagdjahr.label} noch nicht geprüft`,
+      ziel: `/zentrale/revier?revier=${revier.id}`,
+      /**
+       * **Nur die nächsten paar, nicht alle** — und der Fall ist keine
+       * Vorsorge, er tritt sofort ein: Söder hat **173** wartbare Objekte und
+       * null Prüfungen (gemessen 25.08.2026), die Zeile stünde also mit 173
+       * Posten in der Agenda. Das ist keine Aufgabe mehr, sondern ein Bestand
+       * — und Bestände gehören laut Trennsatz (§1.3a) ohnehin nicht hierher.
+       *
+       * Die Liste zeigt deshalb die ältesten, also die, mit denen man anfängt.
+       * Der Rest steht als Zahl darunter, statt still zu fehlen: eine
+       * abgeschnittene Liste, die so tut, als sei sie vollständig, ist im
+       * Zweifel schlimmer als gar keine.
+       */
+      posten: postenMitRest(offen, (o) => {
+        const p = pruefungen.get(o.id)
+        return {
+          schluessel: o.id,
+          text: o.name,
+          // Was zuletzt bekannt war — die Auskunft, die entscheidet, ob dieser
+          // Gang eine Routine ist oder eine Unbekannte. „Letztes Jahr war der
+          // heil" ist etwas anderes als „den hat noch nie jemand angesehen"
+          // (Konzept §4.1.1).
+          // **`alsBerlinDatum` und nicht `alsDatum`:** `checked_at` ist ein
+          // `timestamptz`, und der Schnitt am ISO-String liefert das UTC-Datum
+          // — wer um 00:30 Berliner Zeit prüft, stünde einen Tag zu früh. Die
+          // Falle ist in diesem Repo schon einmal bezahlt worden
+          // (Fremdprüfung 04.08.2026, an `kontakte.inaktiv_seit`).
+          zusatz: p
+            ? `${typLabel(o.type)} · ${
+                p.status === 'gesperrt' ? 'gesperrt seit' : 'zuletzt'
+              } ${alsBerlinDatum(p.checkedAt)}`
+            : `${typLabel(o.type)} · noch nie geprüft`,
+        }
+      }),
+    })
+  }
+
+  /**
+   * Bekannt gesperrt — der ZUSTAND, unabhängig vom Alter der Prüfung.
+   *
+   * **Eine Sperre altert nicht.** Eine gebrochene Sprosse ist im April immer
+   * noch gebrochen; deshalb steht hier kein Saisonfilter, anders als eine Zeile
+   * darüber.
+   */
+  const gesperrt = wartbare.filter((o) => pruefungen.get(o.id)?.status === 'gesperrt')
+
+  if (gesperrt.length > 0) {
+    bedarf.push({
+      schluessel: 'staende-gesperrt',
+      kopf: `${gesperrt.length} ${
+        gesperrt.length === 1 ? 'Jagdeinrichtung ist' : 'Jagdeinrichtungen sind'
+      } gesperrt`,
+      ziel: `/zentrale/revier?revier=${revier.id}`,
+      // Derselbe Deckel wie oben. Bei Sperren wird er kaum je greifen — aber
+      // eine Liste, die in einem Revier deckelt und im anderen nicht, wäre
+      // schwerer zu lesen als eine, die es immer tut.
+      posten: postenMitRest(gesperrt, (o) => {
+        const p = pruefungen.get(o.id)
+        return {
+          schluessel: o.id,
+          text: o.name,
+          // Die Notiz ist hier die eigentliche Auskunft — was genau kaputt ist.
+          // Migration 066 fragt sie bei einer Sperre ausdrücklich ab, und ohne
+          // sie ist die Zeile nur ein Verbot ohne Grund.
+          zusatz: p
+            ? `seit ${alsBerlinDatum(p.checkedAt)}${p.note ? ` · „${p.note}"` : ''}`
+            : typLabel(o.type),
+        }
+      }),
     })
   }
 

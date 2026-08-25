@@ -4,6 +4,9 @@ import { parsePolygonHex } from '@/lib/geo-utils'
 import { punktAus } from '../karte-geo'
 import type { Punkt } from '../revierkarte-map'
 import { geladen, vollstaendig } from '../laden'
+import { alsPruefungen, ampel, bilanz, type PruefZeile } from '../wartung'
+import { getJagdjahr } from '@/lib/diary/season'
+import type { KontoName } from '@/lib/konto-namen'
 import { istStand } from '../objekte'
 import { Kennzahl } from '../kennzahl'
 import RevierName from '../revier-name'
@@ -12,6 +15,16 @@ import { ausZeilen, type StandgruppeZeile } from './standgruppen'
 import './revier.css'
 
 const zahl = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
+
+/**
+ * Ab wie vielen Zeilen eine ungepagte Antwort als möglicherweise abgeschnitten
+ * gilt — der PostgREST-Default `db-max-rows` (s. `laden.ts`).
+ *
+ * Eine Zahl, keine Messung: sie steht in der Serverkonfiguration, nicht in der
+ * Antwort. Genau deshalb ist `>=` richtig und nicht `>` — bei exakt 1000
+ * Zeilen ist nicht unterscheidbar, ob es zufällig 1000 sind oder mehr.
+ */
+const POSTGREST_GRENZE = 1000
 
 /**
  * Revier — zweiter Bereich der Zentrale (Konzept §1.1), und der letzte der
@@ -106,66 +119,184 @@ export default async function RevierPage({
   const revier = reviere.find((r) => r.id === gewuenscht)
   if (!revier) redirect(`/zentrale/revier?revier=${reviere[0].id}`)
 
-  // `photo_url` statt der Tabelle `map_object_photos`: nachgemessen am
-  // 27.07.2026 trägt jedes Objekt mit Foto auch ein `photo_url` (181 von 181,
-  // keine Lücke). Die 185 Fotozeilen verteilen sich auf dieselben 181 Objekte —
-  // vier haben ein zweites Bild. Eine Galerie einzubetten kostete bei Söder 185
-  // zusätzliche Zeilen pro Seitenaufruf und brächte vier Objekten ein zweites
-  // Foto.
-  // ponytail: Deckenbild statt Galerie. Nachziehen, wenn jemand mehrere Fotos
-  // am Desktop sehen will — Fotos aufnehmen bleibt ohnehin mobil.
-  //
-  // **`count: 'exact'` und `vollstaendig()`, anders als in der Fassung auf der
-  // Übersicht.** Die Abfrage ist ungepaged, und von allen Lesepfaden der
-  // Zentrale ist ausgerechnet diese die mit dem kleinsten Abstand zur
-  // PostgREST-Grenze — wenige Hundert Objekte je Revier (Söder 196, gemessen
-  // 08.08.2026). Eine Abschneidung wäre hier besonders tückisch, weil eine
-  // Karte mit fehlenden Ständen nicht wie ein Fehler aussieht, sondern wie ein
-  // Revier ohne Stände. Der Riegel gehört damit zu C-25, kostet beim Umzug
-  // aber nichts, weil die Abfrage ohnehin neu geschrieben wird.
-  const objekte = vollstaendig<Objekt>(
-    await supabase
+  /**
+   * **Eine Welle statt vier seriellen Rundreisen.**
+   *
+   * Alle vier hängen nur an `revier.id`, das oben bereits feststeht — es gibt
+   * nichts, worauf sie warten müssten. Vorher liefen Objekte und Standgruppen
+   * nacheinander; der Standzustand wäre die dritte Stufe geworden und die
+   * Namensauflösung die vierte. Dasselbe Muster und derselbe Grund wie bei
+   * CP-69 (`jagden/[id]/page.tsx`, 22.08.2026): bei ~250–330 ms Rundreise von
+   * hier aus kostet jede Stufe spürbar, und die Seite lädt bei jedem
+   * `router.refresh()` neu.
+   *
+   * Die Query-Rümpfe sind gegenüber der seriellen Fassung zeichengleich;
+   * geändert hat sich nur, wann jede startet.
+   */
+  const [objekteErgebnis, gruppenErgebnis, pruefErgebnis, namenErgebnis] = await Promise.all([
+    // `photo_url` statt der Tabelle `map_object_photos`: nachgemessen am
+    // 27.07.2026 trägt jedes Objekt mit Foto auch ein `photo_url` (181 von 181,
+    // keine Lücke). Die 185 Fotozeilen verteilen sich auf dieselben 181 Objekte —
+    // vier haben ein zweites Bild. Eine Galerie einzubetten kostete bei Söder 185
+    // zusätzliche Zeilen pro Seitenaufruf und brächte vier Objekten ein zweites
+    // Foto.
+    // ponytail: Deckenbild statt Galerie. Nachziehen, wenn jemand mehrere Fotos
+    // am Desktop sehen will — Fotos aufnehmen bleibt ohnehin mobil.
+    //
+    // **`count: 'exact'` und `vollstaendig()`, anders als in der Fassung auf der
+    // Übersicht.** Die Abfrage ist ungepaged, und von allen Lesepfaden der
+    // Zentrale ist ausgerechnet diese die mit dem kleinsten Abstand zur
+    // PostgREST-Grenze — wenige Hundert Objekte je Revier (Söder 196, gemessen
+    // 08.08.2026). Eine Abschneidung wäre hier besonders tückisch, weil eine
+    // Karte mit fehlenden Ständen nicht wie ein Fehler aussieht, sondern wie ein
+    // Revier ohne Stände. Der Riegel gehört damit zu C-25, kostet beim Umzug
+    // aber nichts, weil die Abfrage ohnehin neu geschrieben wird.
+    supabase
       .from('map_objects')
       .select('id, name, type, position, description, photo_url', { count: 'exact' })
       .eq('district_id', revier.id),
-    'Kartenobjekte'
+    /**
+     * Standgruppen samt Mitgliedern (Migration 112).
+     *
+     * Ein Literal als Select-Zeichenkette, kein zusammengesetzter String:
+     * PostgREST typt den Embed darüber. Dieselbe Auflage wie bei den Treiben.
+     *
+     * `vollstaendig()` aus demselben Grund wie oben — eine Gruppe, die still
+     * fehlt, sieht aus wie eine, die es nie gab.
+     *
+     * **Der Zähler deckt nur die ÄUSSERE Menge, und die erste Fassung dieses
+     * Absatzes behauptete, die eingebetteten Mitglieder träfe der
+     * PostgREST-Default gar nicht** (Fremdprüfung Codex 17.08.2026, Nr. 4,
+     * `[low]`). Das stimmt nicht: die Grenze gilt auf allen Ebenen. Eine Gruppe
+     * mit mehr Mitgliedern als dem Limit lieferte ein gekürztes Array, und
+     * `vollstaendig()` bliebe stumm, weil der äußere Zähler passt.
+     *
+     * **Was die Sache heute hält, ist strukturell und nicht Bestandszufall:** der
+     * Primärschlüssel ist `(gruppe_id, map_object_id)`, eine Gruppe kann also
+     * nicht mehr Mitglieder haben, als das Revier Kartenobjekte hat — Söder 196.
+     * Fällig wird die Paginierung mit dem ersten Revier jenseits von 1000
+     * Objekten, nicht mit der ersten großen Gruppe.
+     *
+     * `.order('name')`: die Tabelle hat kein `sequence` und die Gruppe ist eine
+     * Menge — es gibt keine fachliche Reihenfolge, also die vorhersagbare.
+     */
+    supabase
+      .from('standgruppen')
+      .select('id, name, standgruppen_staende ( map_object_id )', { count: 'exact' })
+      .eq('district_id', revier.id)
+      .order('name'),
+    /**
+     * Der Standzustand — die jüngste Prüfzeile je Kartenobjekt (Migration 117).
+     *
+     * **Die View wird gefragt, nicht die Tabelle.** Sie trägt
+     * `distinct on (map_object_id)` und ist damit für alle drei Clients
+     * dieselbe Wahrheit; das Client-Dedup, das sie ersetzt, wird ab 2000
+     * Historienzeilen still falsch — ein Stand mit alter Sperre erschiene dort
+     * als nie geprüft.
+     *
+     * `district_id` steht in der View, die Objekt-IDs müssen also nicht
+     * hineingereicht werden — eine Abfrage, keine Liste von 196 Kennungen.
+     *
+     * **`geladen` statt `vollstaendig`, anders als bei den Objekten daneben:**
+     * die View gibt höchstens so viele Zeilen wie es Kartenobjekte gibt, und
+     * die tragen mit `vollstaendig` bereits den Riegel gegen eine Abschneidung.
+     * Ein zweiter Zähler auf derselben Obergrenze wäre eine zweite Wahrheit
+     * über dieselbe Menge.
+     */
+    supabase
+      .from('map_object_letzte_pruefung')
+      .select('map_object_id, status, checked_at, note, checked_by')
+      .eq('district_id', revier.id),
+    // konto_namen() statt profiles — s. `src/lib/konto-namen.ts`. Für „von wem
+    // geprüft" im Inspektor. Der Prüfer kann ein Schein-Inhaber sein und der
+    // Leser der Revierbesitzer, ohne dass beide je eine Jagd geteilt haben —
+    // über `profiles` wäre der Name nach Migration 116 still verschwunden
+    // (Fremdprüfung 22.08.2026, F3).
+    supabase.rpc('konto_namen'),
+  ])
+
+  const objekte = vollstaendig<Objekt>(objekteErgebnis, 'Kartenobjekte')
+
+  const gruppen = ausZeilen(vollstaendig<StandgruppeZeile>(gruppenErgebnis, 'Standgruppen'))
+
+  const pruefungen = alsPruefungen(geladen<PruefZeile[]>(pruefErgebnis, 'Standprüfungen'))
+
+  /**
+   * Die Namen der Prüfer.
+   *
+   * **`geladen()` erkennt keine Abschneidung, und das ist ein Befund der
+   * Fremdprüfung** (25.08.2026, `[medium]`): `konto_namen()` ist ungepagt und
+   * nimmt bewusst KEINEN Parameter — eine übergebene Kennung wäre ein Orakel
+   * zum Durchprobieren (dieselbe Entscheidung wie bei `meine_einladungen()`,
+   * Migration 080). Es gibt also keinen gefilterten Weg; PostgREST kappt die
+   * Antwort bei `db-max-rows` still, und danach stünde bei einer vorhandenen
+   * Prüfung „ohne Namen", obwohl der Name abrufbar wäre.
+   *
+   * **Deshalb hier der Deckel-Test statt eines gefilterten Abrufs.** Er wirft,
+   * wie `vollstaendig()` es täte — die Haltung dieses Verzeichnisses ist, dass
+   * eine Seite lieber schweigt, als halb Auskunft zu geben (`laden.ts`).
+   * Bestand am 25.08.2026: **9 Konten.** Der Fall ist damit weit außer
+   * Reichweite; er kostet drei Zeilen und schließt eine Lücke, die sonst erst
+   * auffiele, wenn niemand mehr hersieht.
+   *
+   * **Dieselbe Lücke haben die drei anderen `konto_namen()`-Leser im Repo**
+   * (`jagden/[id]/page.tsx`, `app/app/chat/*`, `app/app/hunt/*`) — sie steht
+   * als CP-71 im Backlog, nicht hier, weil sie nicht zu diesem Diff gehört.
+   */
+  const kontoZeilen = geladen<KontoName[]>(namenErgebnis, 'Kontonamen')
+  if (kontoZeilen.length >= POSTGREST_GRENZE) {
+    throw new Error(
+      `Kontonamen: ${kontoZeilen.length} Zeilen — das ist die PostgREST-Grenze. ` +
+        'Die Antwort ist womöglich abgeschnitten, und Prüfernamen fehlten dann ' +
+        'lautlos. konto_namen() braucht Paginierung (Backlog CP-71).'
+    )
+  }
+  const prueferNamen = new Map(kontoZeilen.map((k) => [k.id, k.display_name]))
+
+  /**
+   * Das laufende Jagdjahr, EINMAL für die ganze Seite abgelesen.
+   *
+   * Zweimal abzulesen wäre die Falle, die die Übersicht schon einmal hatte
+   * (Fremdprüfung 08.08.2026, P8): ein Aufruf über die Grenze am 1. April
+   * bewertete Kachel und Karte gegen verschiedene Saisons.
+   *
+   * **`jetzt` geht zusätzlich in die Auswertung**, weil eine Prüfung nicht in
+   * der Zukunft liegen darf (Fremdprüfung 25.08.2026, `[hoch]` — s.
+   * `inDieserSaison`). Dieselbe Ablesung für beides, aus demselben Grund.
+   */
+  const jetzt = new Date()
+  const jagdjahr = getJagdjahr(jetzt)
+
+  const stand = bilanz(
+    objekte.map((o) => ({ id: o.id, typ: o.type })),
+    pruefungen,
+    jagdjahr,
+    jetzt
   )
 
   /**
-   * Standgruppen samt Mitgliedern (Migration 112).
+   * Die letzte Prüfung eines Objekts in die Form, die Karte und Inspektor
+   * brauchen — Ampel plus die drei Felder der Zeile „Name · Zustand · wann ·
+   * von wem" (Konzept Standzustand §3).
    *
-   * Ein Literal als Select-Zeichenkette, kein zusammengesetzter String:
-   * PostgREST typt den Embed darüber. Dieselbe Auflage wie bei den Treiben.
+   * **Der Name wird HIER aufgelöst und nicht im Client.** Er ist eine
+   * Server-Auskunft: `konto_namen()` liegt in derselben Welle, und der
+   * Inspektor ist eine Client-Komponente, die sonst eine zweite Runde drehen
+   * müsste, um einen Namen zu einer Kennung zu bekommen.
    *
-   * `vollstaendig()` aus demselben Grund wie oben — eine Gruppe, die still
-   * fehlt, sieht aus wie eine, die es nie gab.
-   *
-   * **Der Zähler deckt nur die ÄUSSERE Menge, und die erste Fassung dieses
-   * Absatzes behauptete, die eingebetteten Mitglieder träfe der
-   * PostgREST-Default gar nicht** (Fremdprüfung Codex 17.08.2026, Nr. 4,
-   * `[low]`). Das stimmt nicht: die Grenze gilt auf allen Ebenen. Eine Gruppe
-   * mit mehr Mitgliedern als dem Limit lieferte ein gekürztes Array, und
-   * `vollstaendig()` bliebe stumm, weil der äußere Zähler passt.
-   *
-   * **Was die Sache heute hält, ist strukturell und nicht Bestandszufall:** der
-   * Primärschlüssel ist `(gruppe_id, map_object_id)`, eine Gruppe kann also
-   * nicht mehr Mitglieder haben, als das Revier Kartenobjekte hat — Söder 196.
-   * Fällig wird die Paginierung mit dem ersten Revier jenseits von 1000
-   * Objekten, nicht mit der ersten großen Gruppe.
-   *
-   * `.order('name')`: die Tabelle hat kein `sequence` und die Gruppe ist eine
-   * Menge — es gibt keine fachliche Reihenfolge, also die vorhersagbare.
+   * **`null` heißt „unbekannt", nicht „niemand".** Ein Prüfer, dessen Konto
+   * gelöscht wurde, steht nicht in `konto_namen()`; die Zeile bleibt dann ohne
+   * Namen stehen, statt zu verschwinden — die Prüfung hat stattgefunden.
    */
-  const gruppen = ausZeilen(
-    vollstaendig<StandgruppeZeile>(
-      await supabase
-        .from('standgruppen')
-        .select('id, name, standgruppen_staende ( map_object_id )', { count: 'exact' })
-        .eq('district_id', revier.id)
-        .order('name'),
-      'Standgruppen'
-    )
-  )
+  const pruefungFuer = (objektId: string) => {
+    const p = pruefungen.get(objektId)
+    if (!p) return null
+    return {
+      ...p,
+      ampel: ampel(p, jagdjahr, jetzt),
+      prueferName: p.checkedBy === null ? null : (prueferNamen.get(p.checkedBy) ?? null),
+    }
+  }
 
   const grenze = parsePolygonHex(revier.boundary)
   const punkte = objekte.reduce<Punkt[]>((acc, o) => {
@@ -179,6 +310,7 @@ export default async function RevierPage({
         lng: p.lng,
         beschreibung: o.description,
         fotoUrl: o.photo_url,
+        pruefung: pruefungFuer(o.id),
       })
     return acc
   }, [])
@@ -209,6 +341,36 @@ export default async function RevierPage({
           label="Sitze"
           wert={String(objekte.filter((o) => istStand(o.type)).length)}
           fuss={`von ${objekte.length} ${objekte.length === 1 ? 'Kartenobjekt' : 'Kartenobjekten'}`}
+        />
+        {/**
+         * **Der Standzustand als Bestandsfrage** (Konzept Standzustand §4.2).
+         *
+         * **Hier steht „geprüft", obwohl §3 es für die Zusammenfassung
+         * ausdrücklich ausschließt** — und das ist kein Widerspruch, sondern
+         * der dort benannte Unterschied: die Zusammenfassung beantwortet die
+         * ARBEITSfrage („woran muss ich noch?", deshalb „32 offen"), die Kachel
+         * die BESTANDSfrage („wie weit bin ich?"). Eine Kachel trägt genau eine
+         * Zahl, und für einen Bestand ist das die erledigte, nicht die offene.
+         *
+         * **Die Fußnote nennt die Grundmenge, weil sie eine andere ist als
+         * eine Zeile darüber.** „Sitze" zählt drei Typen (worauf ein Schütze
+         * sitzt), der Zustand sieben (was gepflegt wird — Kirrung, Salzlecke,
+         * Wildacker und Wildkamera zählen mit, s. `wartung.ts`). Ohne die
+         * Fußnote stünden hier zwei Zahlen nebeneinander, die verschieden
+         * zählen, ohne dass es jemand sehen könnte.
+         *
+         * **Und sie nennt das Jagdjahr**, weil die Zahl zum 1. April springt:
+         * ein „ok" vom letzten Herbst zählt danach wieder als offen. Ohne den
+         * Zusatz sähe der Sprung wie ein Datenverlust aus.
+         */}
+        <Kennzahl
+          label="Geprüft"
+          wert={stand.sitze === 0 ? '—' : String(stand.sitze - stand.offen)}
+          fuss={
+            stand.sitze === 0
+              ? 'keine Jagdeinrichtungen im Revier'
+              : `von ${stand.sitze} ${stand.sitze === 1 ? 'Jagdeinrichtung' : 'Jagdeinrichtungen'} · ${jagdjahr.label}`
+          }
         />
       </div>
 

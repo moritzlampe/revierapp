@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Punkt } from './revierkarte-map'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Punkt, PunktPruefung } from './revierkarte-map'
 import Papierkorb from './papierkorb'
 import StorageImg from '@/components/photo/StorageImg'
+import { createClient } from '@/lib/supabase/client'
+import type { KontoName } from '@/lib/konto-namen'
+import { istWartbar, zustandsSatz } from './wartung'
 import {
   OBJEKT_TYPEN,
   filterBaum,
@@ -504,6 +507,231 @@ function Liste({
   )
 }
 
+/** Eine Zeile der Prüfhistorie — die rohe Tabelle, nicht die View aus 117. */
+type HistorieZeile = {
+  id: string
+  status: string
+  checked_at: string
+  note: string | null
+  checked_by: string
+}
+
+/**
+ * Wie viele Prüfungen der Aufklapper zeigt.
+ *
+ * Ein Deckel, weil PostgREST bei 1000 Zeilen ohnehin einen setzt — und ein
+ * stiller ist schlimmer als ein genannter. 50 ist reichlich für ein Bauwerk,
+ * das ein- bis zweimal je Saison angesehen wird; wer mehr braucht, braucht eine
+ * Auswertung und keine Liste.
+ *
+ * ponytail: nach Augenmaß gesetzt. Bestand am 25.08.2026 sind 4 Prüfzeilen im
+ * ganzen Projekt — jede Zahl hier ist geraten, aber der Hinweis darunter macht
+ * das Raten sichtbar statt still.
+ */
+const HISTORIE_MAX = 50
+
+/**
+ * „3. Nov. 2025, 14:12" — Datum plus Uhrzeit, weil an einem Tag zweimal geprüft
+ * werden kann und die Reihenfolge dann sonst unbelegt bliebe.
+ *
+ * **Fest auf Berlin, wie `datumZeit` in `page.tsx` und `alsBerlinDatum` in
+ * `scheine.ts`** (Schlusslesung 25.08.2026, Finding 3 — hier hatte es zuerst
+ * gefehlt). `checked_at` ist ein UTC-`timestamptz`; ohne die Zeitzone liefe die
+ * Anzeige in der des Betrachters, und dieselbe Prüfung stünde in der Agenda auf
+ * einem anderen Tag als im Inspektor. Ein Revier liegt in einer Zeitzone, und
+ * die Frage „war das vor der Drückjagd?" wird in Ortszeit gestellt.
+ */
+const zeitpunkt = new Intl.DateTimeFormat('de-DE', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Europe/Berlin',
+})
+
+/**
+ * Ein Wort je Status für die Historie.
+ *
+ * Kürzer als die Zustandszeile darüber, weil in einer Liste die Spalte den
+ * Zusammenhang trägt — „Gesperrt — nicht besetzen" wäre dort neun Mal
+ * untereinander dieselbe Ermahnung. Unbekannte Werte kommen roh durch, wie bei
+ * `typLabel`: käme ein vierter Status aus einer Migration, soll die Zeile ihn
+ * anzeigen und nicht verschweigen.
+ */
+const STATUS_WORT: Record<string, string> = {
+  ok: 'Geprüft',
+  mangel: 'Mangel',
+  gesperrt: 'Gesperrt',
+}
+
+/**
+ * „3. Nov. 2025, 14:12 von Moritz" — der Zeitteil der Zustandszeile.
+ *
+ * **Der Name fällt weg, statt „von Unbekannt" zu schreiben.** Ein Prüfer,
+ * dessen Konto es nicht mehr gibt, steht nicht in `konto_namen()`; die Prüfung
+ * hat trotzdem stattgefunden, und der Zeitpunkt ist die Auskunft, auf die es
+ * ankommt.
+ */
+function wannUndWer(p: PunktPruefung): string {
+  const wann = zeitpunkt.format(new Date(p.checkedAt))
+  return p.prueferName === null ? wann : `${wann} von ${p.prueferName}`
+}
+
+/**
+ * Wann und in welchem Zustand ein Bauwerk zuletzt gesehen wurde — samt der
+ * Historie dahinter.
+ *
+ * **Das ist der Teil, den nur das Portal kann** (Konzept Standzustand §4.2):
+ * der große Bildschirm trägt eine Liste, das Handy nicht. Die Frage *„wer hat
+ * den Sauberg vor der letzten Drückjagd abgegangen?"* ist die Frage, für die
+ * Migration 066 ausdrücklich ein LOG statt eines Statusfelds gebaut hat — und
+ * sie war bis heute in keinem Client beantwortbar.
+ *
+ * **Die letzte Prüfung lädt nicht, die Historie schon.** Der Zustand kommt mit
+ * dem Punkt vom Server (eine Abfrage für das ganze Revier, die View aus 117);
+ * nur das Aufklappen holt die Vorgeschichte genau dieses Objekts nach. So
+ * steht die Auskunft, auf die es ankommt, sofort da, und die 172 anderen
+ * Historien werden nie geladen.
+ */
+function Standzustand({ objekt }: { objekt: Punkt }) {
+  /** `null` = noch nie geladen. Unterscheidet „leer" von „weiß ich noch nicht". */
+  const [zeilen, setZeilen] = useState<HistorieZeile[] | null>(null)
+  const [namen, setNamen] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [laedt, setLaedt] = useState(false)
+  const [fehler, setFehler] = useState<string | null>(null)
+
+  /**
+   * Generationszähler gegen überholende Antworten — dieselbe Falle wie im
+   * Papierkorb: auf-zu-auf startet zwei Läufe, und ohne ihn könnte der ältere
+   * den jüngeren überschreiben.
+   */
+  const lauf = useRef(0)
+
+  const laden = useCallback(async () => {
+    const meiner = ++lauf.current
+    setLaedt(true)
+    setFehler(null)
+
+    const supabase = createClient()
+    // Beide gleichzeitig: die Namen hängen nicht an den Zeilen, sie werden nur
+    // zusammen gebraucht.
+    const [historie, konten] = await Promise.all([
+      supabase
+        .from('map_object_checks')
+        .select('id, status, checked_at, note, checked_by')
+        .eq('map_object_id', objekt.id)
+        .order('checked_at', { ascending: false })
+        // **Einer mehr als angezeigt wird**, damit „es gibt noch weitere"
+        // beweisbar ist statt geraten. Eine still abgeschnittene Historie sieht
+        // aus wie eine vollständige — dieselbe Bauform, gegen die `vollstaendig()`
+        // in `laden.ts` gebaut ist.
+        .limit(HISTORIE_MAX + 1),
+      // konto_namen() statt profiles — s. `src/lib/konto-namen.ts`. Hier im
+      // Client und nicht als Prop vom Server: der Aufklapper wird selten
+      // geöffnet, und ein Prop müsste durch drei Ebenen (Seite → Arbeitsbereich
+      // → Karte → Inspektor) für einen Fall, den die meisten nie auslösen.
+      supabase.rpc('konto_namen'),
+    ])
+
+    // Ein jüngerer Lauf hat übernommen — dieses Ergebnis ist überholt.
+    if (meiner !== lauf.current) return
+    setLaedt(false)
+
+    if (historie.error) {
+      // **Kein Zurücksetzen der Zeilen.** Eine leere Liste neben „nicht
+      // abrufbar" läse sich wie „nie geprüft" — genau die stille
+      // Falschauskunft, gegen die Migration 066 gebaut wurde.
+      setFehler('Die Prüfhistorie ist nicht abrufbar.')
+      return
+    }
+
+    // Die rohen Zeilen, samt der einen zu viel: ob gekappt wurde, ist damit
+    // beim Rendern ablesbar und muss nicht als zweiter Zustand mitgeführt
+    // werden, der mit dem ersten aus dem Tritt geraten kann.
+    setZeilen((historie.data ?? []) as HistorieZeile[])
+
+    // Fehlen die Namen, bleibt die Historie trotzdem stehen — sie ist ohne
+    // Namen weniger wert, aber nicht falsch. Ein „von Unbekannt" schreibt sie
+    // deshalb nicht (s. `wannUndWer`).
+    if (!konten.error) {
+      setNamen(new Map(((konten.data ?? []) as KontoName[]).map((k) => [k.id, k.display_name])))
+    }
+  }, [objekt.id])
+
+  return (
+    <div className="zentrale-inspektor-zustand">
+      <p className={`zeile${objekt.pruefung ? '' : ' leer'}`}>
+        {zustandsSatz(objekt.pruefung, objekt.pruefung ? wannUndWer(objekt.pruefung) : '')}
+      </p>
+
+      {/* Der Altbestand-Fall: eine Prüfung an einem Typ, der heute nicht mehr
+          gewartet wird. Sie steht da, sie zählt nur in keiner Bilanz mehr —
+          und das gehört gesagt, sonst sucht jemand die Zahl, in der sie
+          fehlt. */}
+      {!istWartbar(objekt.typ) ? (
+        <p className="notiz">
+          Dieser Objekttyp wird nicht mehr geprüft. Der Eintrag bleibt als
+          Auskunft stehen, zählt aber in keiner Übersicht mit.
+        </p>
+      ) : null}
+
+      {/* Die Notiz der letzten Prüfung steht mit, nicht erst in der Historie:
+          bei „Mangel" und „Gesperrt" ist sie die eigentliche Auskunft — was
+          genau kaputt ist. Migration 066 fragt sie ausschließlich in diesen
+          beiden Fällen ab. */}
+      {objekt.pruefung?.note ? <p className="notiz">„{objekt.pruefung.note}&ldquo;</p> : null}
+
+      {/* `<details>` statt eines eigenen Zustands: das Aufklappen kann der
+          Browser samt Tastatur und Screenreader. Dieselbe Bauart wie der
+          Papierkorb und die Kartenlegende.
+
+          **Nur, wenn es überhaupt eine Prüfung gibt.** Ein Aufklapper, der
+          garantiert leer ist, ist eine Einladung, die ins Leere führt. */}
+      {objekt.pruefung ? (
+        <details
+          className="zentrale-inspektor-historie"
+          // Bei jedem Öffnen neu laden, nicht nur beim ersten: die Feld-App
+          // schreibt währenddessen weiter, und ein zweites Öffnen soll den
+          // neueren Stand zeigen. Genau die Begründung des Papierkorbs.
+          // `onToggle` feuert auch beim Zuklappen, daher die Abfrage.
+          onToggle={(e) => {
+            if (e.currentTarget.open) void laden()
+          }}
+        >
+          <summary>Alle Prüfungen</summary>
+
+          {laedt ? <p className="hinweis">Wird geladen …</p> : null}
+          {fehler ? (
+            <p className="fehler" role="alert">
+              {fehler}
+            </p>
+          ) : null}
+
+          {zeilen && zeilen.length > 0 ? (
+            <ul>
+              {zeilen.slice(0, HISTORIE_MAX).map((z) => (
+                <li key={z.id}>
+                  <span className="wann">{zeitpunkt.format(new Date(z.checked_at))}</span>
+                  <span className={`stat ${z.status}`}>{STATUS_WORT[z.status] ?? z.status}</span>
+                  <span className="wer">{namen.get(z.checked_by) ?? '—'}</span>
+                  {z.note ? <span className="note">„{z.note}&ldquo;</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {zeilen && zeilen.length > HISTORIE_MAX ? (
+            <p className="hinweis">
+              Nur die {HISTORIE_MAX} jüngsten Prüfungen. Ältere gibt es, sie stehen hier nicht.
+            </p>
+          ) : null}
+        </details>
+      ) : null}
+    </div>
+  )
+}
+
 function Details({
   objekt,
   aufZurueck,
@@ -736,6 +964,24 @@ function Details({
                 loading="lazy"
               />
             )}
+
+            {/* Der Standzustand steht ÜBER den Koordinaten und unter dem Foto:
+                er ist eine Aussage über das Bauwerk, wie Notiz und Bild — die
+                Koordinaten sind Verwaltung. Bei einem Objekt ohne
+                Wartungszustand (Parkplatz, Notfall-Treffpunkt, Sonstiges)
+                entfällt er, statt „Noch nie geprüft" zu behaupten: ein
+                Steinbruch wird nicht geprüft, und eine Zeile darüber wäre eine
+                Aufgabe, die niemand hat.
+
+                **Es sei denn, es GIBT eine Prüfung — und das ist ein Fix aus
+                der Fremdprüfung** (25.08.2026, `[medium]`). Die Feld-App konnte
+                früher jeden Typ prüfen; der Schnitt auf sieben Arten ist vom
+                22.08.2026. Ein Parkplatz mit einer alten Sperre bekäme auf der
+                Karte weiter seinen roten Ring (die Ebene filtert nicht nach
+                `istWartbar`), und ausgerechnet im Inspektor stünde nichts, was
+                ihn erklärt. Wer die Sperre sieht, muss lesen können, woher sie
+                kommt. */}
+            {istWartbar(objekt.typ) || objekt.pruefung ? <Standzustand objekt={objekt} /> : null}
 
             {/* Beim Verschieben stehen beide Orte da, alt durchgestrichen.
                 Nur den neuen zu zeigen hieße, dass „Abbrechen" ins Dunkle

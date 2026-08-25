@@ -329,6 +329,13 @@ export default async function JagdDetailPage({
         lng: p.lng,
         beschreibung: null,
         fotoUrl: null,
+        // Die Jagdkarte trägt bewusst keinen Standzustand: sie beantwortet „wo
+        // sitzt wer", nicht „was muss ich abgehen" (Konzept Standzustand §4.2,
+        // die Zustandsebene ist der Revierkarte zugeordnet). Die Sperre eines
+        // Standes gehört durchaus auf diese Karte — aber als eigener Schritt,
+        // zusammen mit der Rückfrage beim Einteilen (Backlog CN-81), nicht als
+        // stiller Ring, den niemand bestellt hat.
+        pruefung: null,
       })
     return acc
   }, [])

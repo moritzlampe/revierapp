@@ -17,6 +17,7 @@ import { BKG_TOPPLUS } from '@/lib/map/tiles'
 import BoundaryDrawLayer from '@/components/map/BoundaryDrawLayer'
 import type { DrawPoint } from '@/hooks/useBoundaryEditor'
 import { istStand, type Ort } from './objekte'
+import type { Ampel, Pruefung } from './wartung'
 
 /**
  * Ein Kartenobjekt, so wie der Browser es braucht. Heißt weiter `Punkt`, weil es
@@ -31,6 +32,32 @@ export type Punkt = {
   lng: number
   beschreibung: string | null
   fotoUrl: string | null
+  /**
+   * Die letzte Prüfung dieses Objekts (Migration 117) — `null` heißt „noch nie
+   * geprüft", nicht „heil".
+   *
+   * **Pflichtfeld und nicht optional, obwohl zwei der drei Konstruktionsstellen
+   * hier nur `null` hineinschreiben können.** Ein `?` hätte beide stillschweigend
+   * durchgelassen; so nennt der Compiler jede Stelle, die einen Punkt baut, und
+   * zwingt zu einer Entscheidung. Die Jagd-Detailkarte trägt bewusst `null` —
+   * sie beantwortet „wo sitzt wer", nicht „was muss ich abgehen".
+   */
+  pruefung: PunktPruefung | null
+}
+
+/**
+ * Was Karte und Inspektor über die letzte Prüfung wissen müssen.
+ *
+ * **Die ganze Prüfzeile plus zwei abgeleitete Felder, nicht nur die Ampel.**
+ * Der Inspektor braucht den rohen `status` für die Zustandszeile; ihn aus der
+ * Ampel zurückzurechnen wäre ein Rückweg, den irgendwann jemand falsch geht —
+ * `ok-hohl` und `ok-voll` fielen dabei zusammen, `gesperrt` hat gar keine
+ * Saisonvariante. Die Ampel ist eine ANSICHT des Status, kein Ersatz für ihn.
+ */
+export type PunktPruefung = Pruefung & {
+  ampel: Ampel
+  /** Aufgelöster Name aus `konto_namen()` (115) — `null`, wenn unbekannt. */
+  prueferName: string | null
 }
 
 export type KarteProps = {
@@ -123,6 +150,92 @@ const BRONZE = '#C08E48'
  * ohne die Karte umzufärben.
  */
 const FOREST = '#6E8A52'
+
+/**
+ * `dangerText` aus den Design Locks — die Sperre.
+ *
+ * **Das ist keine neue Ausnahme zu „no red, no alarm", sondern DIESELBE.** Die
+ * Design Locks führen genau eine (29.07.2026, am Gerät abgenommen): das rote
+ * `×` am gesperrten Stand der Revierkarte. Hier steht derselbe Zustand mit
+ * demselben Hexwert auf einer dritten Fläche — die Ausnahme wird übertragen,
+ * nicht erweitert. **Die erste Fassung dieses Kommentars sprach von der
+ * „zweiten Ausnahme" und war damit falsch**; die Locks sagen ausdrücklich
+ * „die erste und bisher einzige".
+ *
+ * Ihr Prüfstein ist nicht die Farbe, sondern die Frage *„behauptet das Signal
+ * mehr, als der Zustand weiß?"* — ein `gesperrt` behauptet exakt, was in der
+ * Zeile steht.
+ */
+const DANGER = '#C96B6B'
+
+/**
+ * Der Zustandsring je Ampelstufe (Konzept Standzustand §4.1.1, §4.2).
+ *
+ * **Zwei Achsen: die Farbe sagt den Zustand, die Füllung den Saisonstand.**
+ * Voll = diese Saison bestätigt, hohl = aus einer früheren. `gesperrt` ist nie
+ * hohl — eine Sperre altert nicht. `offen` steht nicht in der Tabelle und
+ * bekommt deshalb gar keinen Ring: *„ein Grundzustand darf nicht wie ein Mangel
+ * aussehen"* (Design-Lock 07.08.2026).
+ *
+ * **Neben der Farbe trägt das STRICHMUSTER den Zustand, und das ist ein Fix aus
+ * der Fremdprüfung** (25.08.2026, `[medium]`). Die erste Fassung unterschied
+ * die drei Zustände nur durch Farbe plus Strichstärken von 2 / 2,5 / 3,5 px —
+ * bei Rot-Grün-Sehschwäche (etwa jeder zwölfte Mann) sind das drei sehr
+ * ähnliche Ringe, und bei „gesperrt" hat das unmittelbare Sicherheitswirkung.
+ * Jetzt gilt:
+ *
+ *     durchgezogen, dünn     — geprüft, heil
+ *     GESTRICHELT            — Beanstandung
+ *     durchgezogen, DICK     — gesperrt
+ *
+ * Das ist ohne jede Farbe unterscheidbar. Die Feld-App löst dasselbe über
+ * Glyphen (`×` und Punkt); Leaflet kennt nur Kreise, also übernimmt das Muster
+ * die Rolle der Form.
+ *
+ * **Und der Tooltip nennt den Zustand als WORT** — er erscheint beim
+ * Überfahren, ohne dass man das Objekt anwählen muss. Text schlägt jede
+ * Kodierung; das war der zweite Teil desselben Befunds.
+ */
+const ZUSTAND_STIL: Record<
+  Exclude<Ampel, 'offen'>,
+  { farbe: string; weight: number; fuellen: boolean; strich?: string }
+> = {
+  'ok-voll': { farbe: FOREST, weight: 2, fuellen: true },
+  'ok-hohl': { farbe: FOREST, weight: 2, fuellen: false },
+  'mangel-voll': { farbe: BRONZE, weight: 2.5, fuellen: true, strich: '5 4' },
+  'mangel-hohl': { farbe: BRONZE, weight: 2.5, fuellen: false, strich: '5 4' },
+  gesperrt: { farbe: DANGER, weight: 4, fuellen: true },
+}
+
+/**
+ * Der Zustand als Wort — für den Tooltip, der ohne Auswahl erscheint.
+ *
+ * Kürzer als die Zustandszeile des Inspektors: hier steht der Objektname
+ * daneben, und „nicht besetzen" wäre an einem Kartenpunkt eine Ermahnung ohne
+ * Platz. Die vollständige Aussage samt Datum, Prüfer und Notiz steht einen
+ * Klick weiter.
+ */
+const ZUSTAND_WORT: Record<Exclude<Ampel, 'offen'>, string> = {
+  'ok-voll': 'geprüft',
+  'ok-hohl': 'geprüft (frühere Saison)',
+  'mangel-voll': 'Mangel',
+  'mangel-hohl': 'Mangel (frühere Saison)',
+  gesperrt: 'GESPERRT',
+}
+
+/**
+ * Wie weit außen der Zustandsring liegt.
+ *
+ * Die Ebenen sind belegt: Marker 5, Gruppenring 8, Auswahlring 11. 14 ist der
+ * nächste freie Platz nach außen — und der Ring liegt als UNTERSTE Ebene im
+ * Baum, damit sein Hof Gruppe und Auswahl nicht verdeckt.
+ *
+ * ponytail: bei einem Revier, in dem irgendwann alle 173 Jagdeinrichtungen
+ * geprüft sind, wird das dicht. Dann ist ein Filter oder ein eigener Blick
+ * fällig — heute trägt Söder 0 Prüfzeilen und das Testrevier 4, also ist jede
+ * Dichte-Regel geraten statt beobachtet.
+ */
+const ZUSTAND_RADIUS = 14
 
 /**
  * Wie stark alles zurücktritt, was NICHT zur gezeigten Standgruppe gehört.
@@ -896,6 +1009,43 @@ function Objekte({
 
   return (
     <>
+      {/* **Stufe 0: der Standzustand** (Konzept Standzustand §4.2, 25.08.2026).
+          Datengrundlage ist die View `map_object_letzte_pruefung` aus Migration
+          117 — dieselbe Wahrheit, aus der auch die Feld-App ihre Marke zieht.
+
+          **Als UNTERSTE Ebene und nicht anklickbar.** Fill, Rand und Gewicht
+          des Markers sind bereits dreifach belegt (Sitz/kein Sitz,
+          Standgruppe, Auswahl); ein eigener Ring überlagert sich konfliktfrei.
+          Läge er oben, verdeckte sein Hof den Gruppen- und den Auswahlring —
+          und die beantworten die Frage, für die jemand gerade hinsieht.
+
+          **`offen` bekommt gar nichts**, deshalb der Filter statt eines
+          weiteren Eintrags in `ZUSTAND_STIL`: eine Karte ohne einen einzigen
+          Ring heißt „hier ist diese Saison noch nichts passiert", und genau so
+          soll sie am 1. April aussehen. */}
+      {punkte.map((p) => {
+        if (!p.pruefung || p.pruefung.ampel === 'offen') return null
+        const stil = ZUSTAND_STIL[p.pruefung.ampel]
+        return (
+          <CircleMarker
+            key={`zustand-${p.id}`}
+            center={[p.lat, p.lng]}
+            radius={ZUSTAND_RADIUS}
+            interactive={false}
+            pathOptions={{
+              color: stil.farbe,
+              weight: stil.weight,
+              dashArray: stil.strich,
+              fill: stil.fuellen,
+              fillColor: stil.farbe,
+              // Der Hof muss den Marker durchscheinen lassen, dessen
+              // Sitz-/Kein-Sitz-Färbung eine eigene Information trägt.
+              fillOpacity: 0.22,
+            }}
+          />
+        )
+      })}
+
       {punkte.map((p) => {
         /** In der ANGEWÄHLTEN Gruppe — beim Bearbeiten: im Entwurf. */
         const inGruppe = !!gruppe?.staende.has(p.id)
@@ -1005,6 +1155,9 @@ function Objekte({
               className="zentrale-karte-label"
             >
               {p.name}
+              {p.pruefung && p.pruefung.ampel !== 'offen'
+                ? ` · ${ZUSTAND_WORT[p.pruefung.ampel]}`
+                : ''}
             </Tooltip>
           </CircleMarker>
         )

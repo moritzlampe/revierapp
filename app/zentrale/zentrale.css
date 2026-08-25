@@ -21,6 +21,24 @@
   --z-border-strong: #B4AB93;
   --z-on-accent: #FFFFFF;
 
+  /* Der Standzustand als TEXT (Konzept Standzustand §4.1.1).
+
+     **Abgeleitet aus den Design Locks, nicht zeichengleich — und der
+     Unterschied ist gemessen, nicht geschätzt.** Auf der Karte stehen die
+     Lock-Werte selbst (Bronze #C08E48, dangerText #C96B6B, s.
+     `revierkarte-map.tsx`); als Schrift auf dem Inspektor-Grund #FAF7F0
+     erreichen sie nur 2,72 : 1 und 3,38 : 1. Das Arbeitsziel des Projekts sind
+     3 : 1 (Design Locks, Kontur-Absatz), für Fließtext gilt AA mit 4,5 : 1.
+     Die beiden Werte hier erreichen 4,73 : 1 und 4,80 : 1 bei gleichem
+     Farbton. Ein Ring auf der Karte und ein Wort auf Papier sind zwei
+     Probleme; derselbe Hexwert löst nicht beide.
+
+     Der Lock „no red, no alarm" gilt weiter: dies ist DIESELBE Ausnahme, die
+     dort für den gesperrten Stand steht (29.07.2026, am Gerät abgenommen) —
+     dasselbe `gesperrt`, nur auf einer dritten Fläche. Keine neue. */
+  --z-mangel: #946527;
+  --z-gesperrt: #B34D4D;
+
   --z-sidebar: 248px;
   --z-row: 40px;
 
@@ -1292,3 +1310,85 @@ body:has(.zentrale-karte-kasten.kino) {
    das eine ANDERE Datei importiert — dieselbe versteckte Kopplung, die den
    `jagden-chip`-Fehler ausgemacht hat (04.08.2026): sichtbar richtig, solange
    zufaellig das passende CSS im Dokument haengt. */
+
+
+/* ---------------------------------------------------------------------------
+   Standzustand im Objekt-Inspektor (Konzept Standzustand §4.2)
+   --------------------------------------------------------------------------- */
+
+.zentrale-inspektor-zustand { margin: 0 0 12px; }
+
+.zentrale-inspektor-zustand .zeile {
+  margin: 0;
+  font-size: 0.875rem;
+}
+/* „Noch nie geprüft" ist eine Auskunft, keine Warnung — es tritt zurück wie die
+   leere Notiz daneben, statt wie ein Mangel auszusehen. Derselbe Design-Lock,
+   der auf der Karte gar keine Marke setzt. */
+.zentrale-inspektor-zustand .zeile.leer {
+  color: var(--z-text-secondary);
+  font-size: 0.8125rem;
+}
+.zentrale-inspektor-zustand .notiz {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  white-space: pre-wrap; /* Notizen aus der Feld-App tragen Zeilenumbrüche */
+}
+
+.zentrale-inspektor-historie { margin-top: 6px; }
+.zentrale-inspektor-historie > summary {
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  cursor: pointer;
+  padding: 2px 0;
+  list-style-position: outside;
+}
+.zentrale-inspektor-historie > summary:hover { color: var(--z-text-primary); }
+.zentrale-inspektor-historie > summary:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+.zentrale-inspektor-historie ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* Eine Zeile je Prüfung, die Notiz darunter über die ganze Breite: sie ist
+   Freitext und bräche jede Spaltenbreite. */
+.zentrale-inspektor-historie li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-top: 1px solid var(--z-border);
+  font-size: 0.8125rem;
+}
+.zentrale-inspektor-historie li:first-child { border-top: 0; }
+.zentrale-inspektor-historie .wann {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-historie .stat { font-weight: 600; }
+/* Farbe verstärkt, sie trägt nicht allein: das WORT steht daneben, und es ist
+   die Auskunft. Rot-Grün-Sehschwäche betrifft etwa jeden zwölften Mann. */
+.zentrale-inspektor-historie .stat.mangel { color: var(--z-mangel); }
+.zentrale-inspektor-historie .stat.gesperrt { color: var(--z-gesperrt); }
+.zentrale-inspektor-historie .wer {
+  color: var(--z-text-secondary);
+  text-align: right;
+}
+.zentrale-inspektor-historie .note {
+  grid-column: 1 / -1;
+  color: var(--z-text-secondary);
+  white-space: pre-wrap;
+}
+.zentrale-inspektor-historie .hinweis,
+.zentrale-inspektor-historie .fehler {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-historie .fehler { color: var(--z-gesperrt); }
