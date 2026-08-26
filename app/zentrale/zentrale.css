@@ -905,6 +905,16 @@ body:has(.zentrale-karte-kasten.kino) {
   flex: none;
   padding: 10px 12px;
   border-bottom: 1px solid var(--z-border);
+  /* **Der Kopf begrenzt sich selbst und scrollt** (Fremdprüfung 26.08.2026,
+     `[medium]`). Er ist `flex: none` und wuchs bisher unbegrenzt — mit der
+     aufgeklappten Legende, dem Wartungsschalter, vier Stufenzeilen und dem
+     Hinweis reicht das in der EINGEBETTETEN 420-px-Karte über den Rahmen
+     hinaus: dort bleiben nach der 80-px-Leiste rund 340 px, der Rahmen
+     schneidet ab, und ausgerechnet der unten angehängte Wartungsblock läge
+     außerhalb. Nur die Objektliste darunter scrollte, der Kopf nicht.
+     `60%` statt eines festen Werts, damit der Liste immer etwas bleibt. */
+  max-height: 60%;
+  overflow-y: auto;
 }
 .zentrale-inspektor-kopf h3 {
   margin: 0 0 8px;
@@ -1038,6 +1048,71 @@ body:has(.zentrale-karte-kasten.kino) {
   accent-color: var(--z-accent);
   margin: 0;
   flex: none;
+}
+
+/* --- Wartungssicht (Konzept Standzustand §4.2, 26.08.2026) ---------------
+   Sie sitzt unter dem Typfilter und ist durch eine Linie davon abgesetzt —
+   sonst läse sich der Schalter wie eine weitere Objektkategorie.
+
+   ⚠ **Die Linie trennt mehr, als sie aussieht: die beiden Kästchenreihen
+   wirken auf VERSCHIEDENE Flächen.** Der Typfilter darüber filtert allein die
+   Objektliste in dieser Spalte (`nachLegende`), der Zustandsfilter darunter
+   allein die Karte. Hier stand bis zur Schlusslesung am 26.08.2026 das
+   Gegenteil („der Typfilter sagt, WAS die Karte zeigt") — es war nie wahr.
+   Wer die Reihen angleichen will, ändert `versteckt` in
+   `objekt-inspektor.tsx`, nicht diese Datei. */
+.zentrale-wartung {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--z-border);
+}
+/* Die Stufen rücken ein wie die Typzeilen unter ihrer Kategorie: dieselbe
+   Verschachtelung, dieselbe Optik, keine zweite Formensprache. */
+.zentrale-wartung .typ { padding-left: 20px; }
+/* Das `<fieldset>` trägt die Gruppenbeziehung für Vorlesegeräte, soll aber
+   nichts aussehen: der Browser-Default gibt ihm Rahmen, Rand und Innenabstand,
+   und ein zweiter Kasten in einer Spalte, die schon eine Legende ist, wäre
+   genau die zweite Formensprache, die eine Zeile höher vermieden wird. */
+.zentrale-wartung-stufen {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+/* Die Beschriftung ist für Vorlesegeräte da, nicht fürs Auge — sichtbar stünde
+   „Zustand" doppelt neben dem Schalter darüber. `clip-path` statt
+   `display: none`, sonst läse sie niemand vor. */
+.zentrale-wartung-stufen > legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* Ein Hinweis, keine Bedienung — deshalb kleiner und ohne Zeiger. Er steht
+   unter den Kästchen, weil er erklärt, was ihre Zahlen NICHT sagen. */
+.zentrale-wartung-fuss {
+  margin: 6px 0 0 20px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--z-text-secondary);
+}
+/* Die Marke in der zugeklappten Zusammenfassung. Sie trägt Farbe, weil sie
+   einen EINGESCHALTETEN Zustand meldet — anders als die Zahlen daneben, die
+   nur zählen. */
+.zentrale-wartung-an {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--z-on-accent);
+  background: var(--z-accent);
 }
 .zentrale-inspektor-kopf .zurueck {
   font: inherit;

@@ -22,6 +22,8 @@ import {
   type Setzen,
 } from './objekte'
 import ObjektInspektor from './objekt-inspektor'
+import { istWartbar } from '@/lib/revier/wartung'
+import { stufeSichtbar, type ZustandStufe } from './wartungsfilter'
 
 // react-leaflet fasst beim Import `window` an — ssr:false ist Pflicht, und
 // next/dynamic mit ssr:false geht nur aus einer Client-Komponente heraus.
@@ -271,6 +273,39 @@ export default function Revierkarte({
   const aktuellePunkte = ueberlagert(punkte, geschrieben)
 
   /**
+   * Die Wartungssicht (Konzept Standzustand §4.2, Moritz 26.08.2026).
+   *
+   * **Der Zustand liegt HIER und nicht in der Objektspalte**, obwohl der
+   * Schalter dort sitzt — die Karte muss ihn sehen, und die Spalte ist ihr
+   * Geschwister, nicht ihr Elternteil. Dieselbe Bauform wie `setzen` daneben:
+   * bedient wird im Inspektor, gehalten wird hier.
+   *
+   * **Standardmäßig aus, und die Ringe erscheinen erst mit ihm.** Bis zum
+   * 26.08.2026 zeichnete die Karte den Zustand IMMER — das Portal war damit
+   * die Abweichung, nicht der Modus: die Feld-App zeigt ihre Marken ebenfalls
+   * nur im Wartungsmodus (`du/revier/[id].tsx:599`, `wartung && checks &&
+   * !checksFailed`). Wer Objekte verwaltet, sieht jetzt eine ruhige Karte;
+   * wer den Zustand wissen will, schaltet ihn an.
+   *
+   * **Der Modus hält, solange die Seite offen ist** — kein Speicher, keine
+   * Persistenz, dieselbe Regel wie für die Legendenabweichung nativ (§4.1.3).
+   */
+  const [wartung, setWartung] = useState(false)
+
+  /**
+   * Die abgewählten Zustandsstufen. Als Menge des VERSTECKTEN, wie `versteckt`
+   * in der Typ-Legende daneben: leer heißt „alles", und das ist der
+   * Startzustand, ohne ihn aufzählen zu müssen.
+   *
+   * **Wird beim Ausschalten NICHT geleert.** Wer die Sicht kurz verlässt und
+   * zurückkommt, findet seine Eingrenzung wieder — sie zu verwerfen wäre ein
+   * Datenverlust ohne Gegenwert. Sichtbar ist sie ohnehin nur im Modus, also
+   * kann sie außerhalb niemanden verwirren.
+   */
+  const [zustandAus, setZustandAus] = useState<ReadonlySet<ZustandStufe>>(() => new Set())
+
+
+  /**
    * **Beide** Zwischenspeicher leeren, sobald **überhaupt** neue Server-Daten da
    * sind — nicht erst, wenn sie dem entsprechen, was hier geschrieben wurde.
    *
@@ -388,6 +423,102 @@ export default function Revierkarte({
    * liefe in die temporale Totzone.
    */
   const spalteMontiert = reiter !== 'grenze'
+
+  /**
+   * **Wirkt die Wartungssicht gerade — Anzeige UND Filter?**
+   *
+   * `wartung` ist, was der Nutzer eingeschaltet hat; DIES ist, was davon
+   * ankommt. Beide auseinanderlaufen zu lassen war der schwerste Befund der
+   * Fremdprüfung (26.08.2026, zweimal `[medium]`), und zwar in BEIDE
+   * Richtungen: der Filter blieb aktiv, wo die Ringe längst abgetreten waren
+   * (Zeichnen, Setzen), und er blieb aktiv, wo sein Schalter gar nicht mehr
+   * dastand (Standgruppen, Grenze). Der Nutzer bearbeitete eine unvollständige
+   * Karte, ohne den Grund sehen oder abstellen zu können.
+   *
+   * **Die Regel ist: die Sicht wirkt genau dort, wo ihr Schalter erreichbar
+   * ist.** Eine Bedingung, die man an zwei Orten pflegen muss, läuft
+   * auseinander; eine, die an die Erreichbarkeit der Bedienung gebunden ist,
+   * kann es nicht.
+   *
+   * - `spalteMontiert` — im Grenze-Reiter ist die ganze Spalte weg.
+   * - `reiter !== 'standgruppen'` — dort steht `gruppen.spalte(…)` an ihrer
+   *   Stelle. **Der Fall ist der schlimmste, weil `werkzeugOffen` bei laufender
+   *   Bearbeitung die Reiterleiste sperrt:** man käme nicht einmal zurück.
+   *   Und ausgerechnet dort schadet ein Filter am meisten — ein Stand, den die
+   *   Anzeige versteckt, ist einer, den niemand in die Gruppe holen kann.
+   * - `setzen === null` — beim Anlegen und beim Positionieren klickt man in die
+   *   Karte. Wer dabei Objekte ausblendet, versteckt genau die Nachbarschaft,
+   *   an der man sich orientiert.
+   *
+   * **NICHT dabei: `inspektorOffen` und die Einzelauswahl.** Beide nehmen den
+   * Schalter zwar vom Bildschirm, aber nur einen Klick weit — Zuklappen
+   * überlebt die Legende ohnehin bewusst, und aus den Details führt
+   * „← Alle Objekte" zurück. Die Sicht dort abzuschalten ließe die Karte bei
+   * jeder Auswahl umspringen, was schlimmer wäre als der Befund.
+   *
+   * **`zeichner.editMode` fehlt bewusst**, obwohl die Karte ihn bisher selbst
+   * abfragte: Zeichnen gibt es nur im Grenze-Reiter, und den deckt
+   * `spalteMontiert` schon ab. Eine zweite Bedingung für denselben Zustand
+   * wäre eine, die man beim nächsten Umbau getrennt vergisst.
+   *
+   * **`wartbareDa` gehört dazu, und zwar erst seit der Schlusslesung**
+   * (26.08.2026): der Schalter selbst hängt im Inspektor an dieser Bedingung.
+   * Stellt jemand bei eingeschalteter Sicht sein LETZTES wartbares Objekt auf
+   * einen nicht wartbaren Typ um — das `geschrieben`-Overlay wirkt sofort,
+   * ohne Neuladen —, verschwindet der Schalter, und ohne diese Zeile bliebe
+   * die Sicht an, ohne dass es irgendwo einen Ausschalter gäbe. Genau der
+   * Bruch der Regel eine Zeile höher, nur an einer Bedingung, die nicht im
+   * Reiter steht. Die praktische Wirkung ist klein; **eine Regel, die man
+   * aufstellt und dann an einer Stelle nicht einhält, ist trotzdem keine.**
+   */
+  const wartbareDa = aktuellePunkte.some((p) => istWartbar(p.typ))
+  const wartungWirkt =
+    wartung && wartbareDa && spalteMontiert && reiter !== 'standgruppen' && setzen === null
+
+  /**
+   * Was die KARTE zeichnet. Außerhalb der Wartungssicht ist das alles.
+   *
+   * **Bewusst eine zweite Größe neben `aktuellePunkte`, nicht dieselbe.**
+   * `aktuellePunkte` trägt den Bestand und wird für Auswahl, Suche und die
+   * Objektspalte gebraucht; würde der Filter dort hineinschreiben, verlöre ein
+   * abgewähltes Objekt auch seine Zeile in der Liste und seinen Inspektor —
+   * und `find(p => p.id === auswahlId)` liefe ins Leere, während der Nutzer
+   * das Objekt noch offen vor sich hat.
+   *
+   * **Der ausgewählte Punkt bleibt immer stehen**, auch wenn seine Stufe
+   * abgewählt ist. Sonst verschwände genau das Objekt von der Karte, dessen
+   * Details rechts aufgeschlagen sind — und der Ort, an den „Zur Auswahl"
+   * springt, wäre leer. Die Regel ist von den Standgruppen abgeschaut
+   * (`revierkarte-map.tsx:1060`): ein Stand, den die Anzeige versteckt, ist
+   * einer, mit dem niemand mehr arbeiten kann.
+   *
+   * **Ohne Prüfzeile trägt ein Objekt die Ampel `offen`** und fällt damit in
+   * die Stufe „Nie geprüft" — es braucht hier keinen eigenen Zweig.
+   *
+   * **Nicht wartbare Objekte bleiben IMMER stehen**, und das ist die Grenze,
+   * die dem Filter seine Bedeutung gibt: ein Steinbruch, ein Wendeplatz oder
+   * eine Bushaltestelle hat keinen Wartungszustand (`istWartbar` in
+   * `wartung.ts`, an Söder gemessen — von 196 Objekten bleiben 173). Fielen
+   * sie unter „Nie geprüft", nähme eine Zustandsauswahl dem Nutzer seine
+   * Orientierungsmarken weg, während er nach kaputten Ständen sucht. Die
+   * Zählung an den Kästchen zieht dieselbe Grenze.
+   *
+   * **Ohne `useMemo`, und das ist gemessen statt gespart:** `ueberlagert()`
+   * spreizt bei jedem Rendern ein neues Array (`objekte.ts:412`), also wäre
+   * `aktuellePunkte` als Abhängigkeit bei jedem Lauf verschieden — der Memo
+   * liefe trotzdem durch und kostete nur den Vergleich. Ohne Filter kommt
+   * ohnehin dieselbe Referenz zurück wie bisher.
+   */
+  const kartenPunkte =
+    wartungWirkt && zustandAus.size > 0
+      ? aktuellePunkte.filter(
+          (p) =>
+            p.id === auswahlId ||
+            !istWartbar(p.typ) ||
+            stufeSichtbar(p.pruefung?.ampel ?? 'offen', zustandAus),
+        )
+      : aktuellePunkte
+
 
   /**
    * **Ist irgendein Werkzeug offen? Der EINE Riegel, der übrig bleibt.**
@@ -1597,7 +1728,11 @@ export default function Revierkarte({
 
       <Karte
         grenze={aktuelleGrenze}
-        punkte={aktuellePunkte}
+        punkte={kartenPunkte}
+        // **`wartungWirkt`, nicht `wartung`** — dieselbe Größe, die auch den
+        // Punktfilter steuert. Getrennt gepflegt liefen sie auseinander, und
+        // genau das war der schwerste Befund der Fremdprüfung.
+        wartung={wartungWirkt}
         // Im Standgruppen-Reiter gibt es keine Einzelauswahl: der Inspektorring
         // würde neben dem Leuchten der Gruppe eine zweite Bedeutung derselben
         // Form behaupten, und der Klick gehört dort der Mitgliedschaft.
@@ -1779,6 +1914,18 @@ export default function Revierkarte({
               punkte={aktuellePunkte}
               auswahlId={auswahlId}
               aufAuswahl={setAuswahlId}
+              // Die Wartungssicht wird hier bedient und in `revierkarte.tsx`
+              // gehalten — die Karte ist das Geschwister der Spalte, nicht ihr
+              // Kind, und muss den Schalter genauso sehen.
+              wartung={wartung}
+              aufWartung={setWartung}
+              // **Von hier, nicht im Inspektor gerechnet.** Dieselbe Bedingung
+              // trägt oben `wartungWirkt`; zweimal gerechnet könnten Schalter
+              // und Wirkung auseinanderlaufen — derselbe Fehler wie bei den
+              // Ringen, nur eine Ebene tiefer.
+              wartbareDa={wartbareDa}
+              zustandAus={zustandAus}
+              aufZustandAus={setZustandAus}
               aufSpeichern={objektSpeichern}
               aufModus={setObjektBearbeitung}
               suche={suche}

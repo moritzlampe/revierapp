@@ -17,7 +17,7 @@ import { BKG_TOPPLUS } from '@/lib/map/tiles'
 import BoundaryDrawLayer from '@/components/map/BoundaryDrawLayer'
 import type { DrawPoint } from '@/hooks/useBoundaryEditor'
 import { istStand, type Ort } from './objekte'
-import type { Ampel, Pruefung } from '@/lib/revier/wartung'
+import { istWartbar, type Ampel, type Pruefung } from '@/lib/revier/wartung'
 
 /**
  * Ein Kartenobjekt, so wie der Browser es braucht. Heißt weiter `Punkt`, weil es
@@ -952,12 +952,24 @@ function ZuAuswahl({ id, lat, lng }: { id: string | null; lat?: number; lng?: nu
  */
 function Objekte({
   punkte,
+  wartung,
   auswahlId,
   markiert,
   gruppe,
   aufAuswahl,
 }: {
   punkte: Punkt[]
+  /**
+   * Die Wartungssicht. Ohne sie zeichnet die Karte KEINE Zustandsringe — auch
+   * dann nicht, wenn Prüfzeilen vorliegen (Moritz, 26.08.2026).
+   *
+   * **Das ist eine Rücknahme gegenüber dem 25.08.2026**, an dem der Ring hier
+   * eingebaut und dauerhaft gezeigt wurde. Der Grund ist die Deckung mit der
+   * Feld-App: dort hängen die fünf Ampel-Ebenen an `wartung && checks &&
+   * !checksFailed` (`quickhunt-native/src/app/(app)/du/revier/[id].tsx:599`),
+   * erscheinen also nur im Modus. Das Portal war die Abweichung.
+   */
+  wartung: boolean
   auswahlId: string | null
   /**
    * Die Standgruppen des Reviers, wenn ihr Reiter offen ist (18.08.2026).
@@ -1024,6 +1036,21 @@ function Objekte({
           Ring heißt „hier ist diese Saison noch nichts passiert", und genau so
           soll sie am 1. April aussehen. */}
       {punkte.map((p) => {
+        if (!wartung) return null
+        // **`istWartbar` hier, nicht nur im Filter** (Schlusslesung 26.08.2026).
+        // `pruefungFuer` (`revier/page.tsx:281`) hängt die Prüfzeile an JEDES
+        // Objekt, ohne diese Grenze — und Prüfzeilen überleben eine
+        // Umtypisierung. Ein geprüfter Stand, der im Portal auf „Steinbruch"
+        // umgestellt wird, trüge sonst weiter seinen Ring, während `jeStufe`
+        // ihn nicht mitzählt und der Filter ihn immer stehen lässt: Kästchen
+        // „Gesperrt 0", auf der Karte ein roter Ring. **Den Widerspruch gab es
+        // vor diesem Diff nicht** — er entsteht erst, weil daneben gezählt und
+        // gefiltert wird, und muss deshalb hier geschlossen werden.
+        //
+        // Die Prüfzeile selbst bleibt in der Datenbank und in der
+        // Detailansicht; sie serverseitig zu beschneiden nähme einem
+        // umgetypten Stand seine Historie und wäre eine eigene Entscheidung.
+        if (!istWartbar(p.typ)) return null
         if (!p.pruefung || p.pruefung.ampel === 'offen') return null
         const stil = ZUSTAND_STIL[p.pruefung.ampel]
         return (
@@ -1155,7 +1182,11 @@ function Objekte({
               className="zentrale-karte-label"
             >
               {p.name}
-              {p.pruefung && p.pruefung.ampel !== 'offen'
+              {/* **Auch das Wort hängt am Modus**, nicht nur der Ring. Sonst
+                  verriete der Tooltip einen Zustand, für den auf der Karte
+                  keine Marke steht — und „nur in der Wartungssicht" wäre eine
+                  Regel, die für das Auge gilt und für die Maus nicht. */}
+              {wartung && istWartbar(p.typ) && p.pruefung && p.pruefung.ampel !== 'offen'
                 ? ` · ${ZUSTAND_WORT[p.pruefung.ampel]}`
                 : ''}
             </Tooltip>
@@ -1225,6 +1256,7 @@ function Objekte({
 export default function RevierkarteMap({
   grenze,
   punkte,
+  wartung = false,
   zeichnen,
   setzen,
   aufRechteck,
@@ -1234,6 +1266,23 @@ export default function RevierkarteMap({
   aufAuswahl,
   randRechts = 0,
 }: KarteProps & {
+  /**
+   * Wartungssicht: nur damit trägt die Karte Zustandsringe.
+   *
+   * **Optional mit `false` als Vorgabe, nicht Pflicht** — dieselbe Bauform wie
+   * das `wartung`-Prop der geteilten Legende nativ (Konzept §4.1.3): die
+   * Jagd-Detailkarte benutzt dieselbe Komponente und beantwortet „wo sitzt
+   * wer", nicht „was muss ich abgehen". Wer das Prop vergisst, bekommt keinen
+   * Zustand — das ist der laute Ausfall, nicht der stille.
+   *
+   * ⚠ **Die Karte prüft NICHT selbst, ob der Modus gerade passt.** Sie zeichnet
+   * Ringe, wann immer `wartung` wahr ist — auch beim Zeichnen und Setzen. Das
+   * ist Absicht: der Aufrufer filtert mit derselben Größe auch seine Punkte,
+   * und beide Fragen an zwei Orten zu beantworten hieße, sie irgendwann
+   * verschieden zu beantworten (Fremdprüfung 26.08.2026). Wer diese Komponente
+   * neu einbindet, bringt die Bedingung mit.
+   */
+  wartung?: boolean
   /** Standgruppen zum Anzeigen/Bearbeiten, zwei Stufen — s. `Objekte`. */
   gruppe?: {
     alle: ReadonlySet<string>
@@ -1362,6 +1411,15 @@ export default function RevierkarteMap({
           keinen Klick. */}
       <Objekte
         punkte={punkte}
+        // **Ungefiltert durchgereicht, anders als `gruppe` eine Zeile tiefer.**
+        // Hier stand `wartung && !zeichnen && !setzen`; die Bedingung ist zum
+        // Aufrufer gewandert, weil sie dort AUCH den Punktfilter steuern muss.
+        // Zwei Orte für dieselbe Frage sind zwei Orte, an denen sie
+        // auseinanderlaufen kann — und genau das war der Befund
+        // (Fremdprüfung 26.08.2026, `[medium]`): die Ringe traten beim
+        // Zeichnen ab, der Filter blieb, und die Karte zeigte weniger Objekte,
+        // als der Nutzer für möglich hielt.
+        wartung={wartung}
         auswahlId={zeichnen ? null : auswahlId}
         markiert={markiert}
         // Beim Zeichnen und Setzen tritt die Gruppenanzeige ab: dort gehört die

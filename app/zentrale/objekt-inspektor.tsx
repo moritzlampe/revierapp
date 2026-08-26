@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { KontoName } from '@/lib/konto-namen'
 import { istWartbar, zustandsSatz, type PruefStatus } from '@/lib/revier/wartung'
+import { STUFEN, stufeVon, type ZustandStufe } from './wartungsfilter'
 import { schreibe } from './schreiben'
 import {
   OBJEKT_TYPEN,
@@ -47,6 +48,11 @@ export default function ObjektInspektor({
   aufAuswahl,
   aufSpeichern,
   aufModus,
+  wartung,
+  aufWartung,
+  wartbareDa,
+  zustandAus,
+  aufZustandAus,
   suche,
   aufSuchfeldFokus,
   ausgeklappt,
@@ -72,6 +78,30 @@ export default function ObjektInspektor({
    * sichtbaren Komponente, und es sieht aus wie ein Erfolg.
    */
   aufModus: (bearbeitet: boolean) => void
+  /**
+   * Die Wartungssicht (Konzept Standzustand §4.2, Moritz 26.08.2026): bedient
+   * wird sie hier, gehalten in `revierkarte.tsx`.
+   *
+   * **Nicht optional**, obwohl der Schalter tief in der Legende sitzt. Ein `?`
+   * hätte die Möglichkeit offengelassen, den Inspektor ohne Wartungssicht
+   * einzubinden — und dann stünde ein Schalter da, der nichts tut. Es gibt
+   * genau einen Aufrufer; der soll sie mitbringen.
+   */
+  wartung: boolean
+  aufWartung: (an: boolean) => void
+  /**
+   * Gibt es im Revier überhaupt etwas mit Wartungszustand? Nur dann erscheint
+   * der Schalter.
+   *
+   * **Kommt von oben, obwohl der Bestand auch hier vorliegt.** Dieselbe
+   * Bedingung entscheidet dort mit, ob die Sicht WIRKT (`wartungWirkt`);
+   * zweimal gerechnet könnten Schalter und Wirkung auseinanderlaufen, und
+   * genau das war der schwerste Befund an diesem Diff — nur eine Ebene höher.
+   */
+  wartbareDa: boolean
+  /** Abgewählte Zustandsstufen. Leer heißt „alle" — s. `wartungsfilter.ts`. */
+  zustandAus: ReadonlySet<ZustandStufe>
+  aufZustandAus: (aus: ReadonlySet<ZustandStufe>) => void
   /** Der Suchbegriff aus der Knopfleiste über der Karte — dort steht das Feld. */
   suche: string
   /**
@@ -138,7 +168,17 @@ export default function ObjektInspektor({
           aufLoeschen={aufLoeschen}
         />
       ) : (
-        <Liste revierId={revierId} punkte={punkte} aufAuswahl={aufAuswahl} suche={suche} />
+        <Liste
+          revierId={revierId}
+          punkte={punkte}
+          aufAuswahl={aufAuswahl}
+          suche={suche}
+          wartung={wartung}
+          aufWartung={aufWartung}
+          wartbareDa={wartbareDa}
+          zustandAus={zustandAus}
+          aufZustandAus={aufZustandAus}
+        />
       )}
     </aside>
   )
@@ -327,12 +367,23 @@ function Liste({
   punkte,
   aufAuswahl,
   suche,
+  wartung,
+  aufWartung,
+  wartbareDa,
+  zustandAus,
+  aufZustandAus,
 }: {
   revierId: string
   punkte: Punkt[]
   aufAuswahl: (id: string) => void
   /** Kommt von oben: das Feld steht außerhalb der Spalte. */
   suche: string
+  /** Die Wartungssicht — s. die Prop-Beschreibung an `ObjektInspektor`. */
+  wartung: boolean
+  aufWartung: (an: boolean) => void
+  wartbareDa: boolean
+  zustandAus: ReadonlySet<ZustandStufe>
+  aufZustandAus: (aus: ReadonlySet<ZustandStufe>) => void
 }) {
   /**
    * Die abgewählten Typen — dieselbe Bauart wie die Legende der Feld-App.
@@ -376,6 +427,40 @@ function Liste({
     ? punkte.filter((p) => versteckt.has(p.typ) && passtZurSuche(p.name, p.typ, suchbegriff)).length
     : 0
 
+  /**
+   * Wie viele wartbare Objekte je Zustandsstufe — die Zahlen an den Kästchen.
+   *
+   * **Nur wartbare**, und das ist dieselbe Grenze, an der auch der Filter
+   * wirkt: ein Steinbruch oder eine Bushaltestelle hat keinen
+   * Wartungszustand (`istWartbar` in `wartung.ts`, an Söder gemessen — von 196
+   * Objekten bleiben 173). Zählte man alle, stünde bei „Nie geprüft" die Zahl
+   * der Orientierungsmarken mit drin und die Stufe verlöre ihre Aussage.
+   *
+   * **Über den ganzen Bestand, nicht über `nachLegende`** — genau wie die
+   * Zahlen an den Typ-Kästchen darüber. Die Legende sagt, was es GIBT; würde
+   * sie sich selbst mitzählen, änderten sich beim Abwählen eines Typs die
+   * Zahlen der anderen Achse, und niemand wüsste warum.
+   *
+   * **Ohne `useMemo`**, anders als die drei Ableitungen darüber: `punkte` ist
+   * die durchgereichte Ausgabe von `ueberlagert()` und bei jedem Rendern ein
+   * neues Array — die Abhängigkeit wäre nie gleich, der Memo liefe immer neu
+   * und kostete nur den Vergleich. Es ist eine Schleife über 196 Objekte.
+   */
+  const jeStufe = new Map<ZustandStufe, number>(STUFEN.map((s) => [s.wert, 0]))
+  for (const p of punkte) {
+    if (!istWartbar(p.typ)) continue
+    const stufe = stufeVon(p.pruefung?.ampel ?? 'offen')
+    jeStufe.set(stufe, (jeStufe.get(stufe) ?? 0) + 1)
+  }
+
+  // `wartbareDa` kommt als Prop von `revierkarte.tsx` — s. dort. Es entscheidet
+  // hier über den Schalter und dort über die Wirkung; getrennt gerechnet liefen
+  // beide auseinander. **Es ist zugleich der Grund, warum die Legende weiter
+  // unten auch bei nur EINEM Objekttyp erscheint:** ein Revier mit
+  // ausschließlich Hochsitzen hat eine Kategorie und käme sonst nie an den
+  // Schalter — dieselbe Falle, die Codex am 28.07.2026 an `baum.length > 1`
+  // zweimal gefunden hat.
+
   return (
     <>
       <div className="zentrale-inspektor-kopf">
@@ -400,7 +485,7 @@ function Liste({
             Weg, es wieder einzuschalten. Deshalb zählt sie Typen, nicht
             Kategorien — und sie bleibt in jedem Fall stehen, solange etwas
             versteckt ist. */}
-        {(typenGesamt > 1 || versteckt.size > 0) && (
+        {(typenGesamt > 1 || versteckt.size > 0 || wartbareDa) && (
           <details className="zentrale-inspektor-legende">
             {/* Zugeklappt der Normalfall: die Legende ist ein Werkzeug, das man
                 holt, einstellt und weglegt — nicht etwas, das dauerhaft die
@@ -423,6 +508,21 @@ function Liste({
                     {nachLegende.length} / {punkte.length}
                   </span>
                 </>
+              )}
+              {/* **Die Wartungssicht gehört in die Zusammenfassung**, aus
+                  demselben Grund wie der Typfilter: zugeklappt ist die Legende
+                  der Normalfall, und ein eingeschalteter Modus, den man nur an
+                  den Ringen auf der Karte erkennt, ist einer, den man nicht
+                  wieder findet. Die Ringe sagen, DASS etwas an ist; sie sagen
+                  nicht, wo man es ausschaltet. */}
+              {/* **`wartbareDa` gehört dazu** (Delta-Durchgang 26.08.2026): im
+                  Randfall — letztes wartbares Objekt umtypisiert, während die
+                  Sicht an war — stünde die Marke sonst in der zugeklappten
+                  Zusammenfassung, während Schalter, Ringe und Wirkung längst
+                  weg sind. Ohne Funktionsschaden, aber eine Anzeige, die etwas
+                  meldet, das es nicht mehr gibt, ist eine falsche Auskunft. */}
+              {wartung && wartbareDa && (
+                <span className="zentrale-wartung-an">Wartungssicht</span>
               )}
             </summary>
 
@@ -463,6 +563,101 @@ function Liste({
                 </div>
               )
             })}
+
+            {/**
+             * **Die Wartungssicht — ganz unten, abgesetzt, standardmäßig aus**
+             * (Konzept Standzustand §4.1.3, dort für die Feld-App entschieden;
+             * hier dieselbe Stelle, damit niemand zwei Orte lernen muss). Die
+             * Legende ist ohnehin der Ort, an dem man entscheidet, was die
+             * Karte zeigt.
+             *
+             * **Sie schreibt NICHT in `versteckt` hinein**, obwohl sie neben
+             * dem Typfilter steht. Täte sie es, wäre die Typauswahl beim
+             * Ausschalten zerstört, und man müsste denselben Zustand zweimal
+             * führen (§4.1.3, dieselbe Falle wie nativ).
+             *
+             * ⚠ **Die beiden Kästchenreihen wirken auf VERSCHIEDENE Flächen,
+             * und das sieht man ihnen nicht an.** `versteckt` filtert allein
+             * `nachLegende`, also die Liste in dieser Spalte — es gibt keinen
+             * Kanal von dort zur Karte. Der Zustandsfilter filtert allein die
+             * Karte (`kartenPunkte` in `revierkarte.tsx`). Die Schnittmenge
+             * „nur Kanzeln UND nur gesperrte" ist auf keiner der beiden Flächen
+             * herstellbar: die Karte zeigt gesperrte JEDES Typs, die Liste
+             * Kanzeln in JEDEM Zustand.
+             *
+             * **Hier stand bis zur Schlusslesung am 26.08.2026 genau diese
+             * Schnittmenge als Versprechen** — sie war zu keinem Zeitpunkt
+             * wahr. Dieselbe Bauform wie die 119-Falle: eine Zeile, die nie
+             * gestimmt hat, sieht nicht danach aus.
+             *
+             * **Ob die Karte den Typfilter bekommen soll, ist offen und eine
+             * Produktentscheidung** (in der Feld-App filtert dieselbe Legende
+             * die Karte). Bis dahin ist die gleiche Optik beider Reihen ein
+             * Versprechen, das die eine Reihe nicht hält.
+             */}
+            {wartbareDa && (
+              <div className="zentrale-wartung">
+                <label className="kat">
+                  <input
+                    type="checkbox"
+                    checked={wartung}
+                    onChange={(e) => aufWartung(e.currentTarget.checked)}
+                  />
+                  <span className="nam">Wartungssicht</span>
+                </label>
+
+                {/* Die Stufen erscheinen NUR im Modus. Ein Zustandsfilter über
+                    einer Karte, die keinen Zustand zeigt, wäre ein Regler ohne
+                    Anzeige — man sähe die Wirkung erst, wenn Objekte
+                    verschwinden, und wüsste nicht, warum. */}
+                {/* **Ein `<fieldset>` mit `<legend>`, kein neutrales `<div>`**
+                    (Fremdprüfung 26.08.2026, `[medium]`). Die vier Kästchen
+                    sind einzeln bedienbar, aber ohne Gruppe liest ein
+                    Screenreader „Heil", „Mangel", „Gesperrt" als vier isolierte
+                    Schalter vor — die gemeinsame Achse fehlt, und der
+                    Kästchentext „Wartungssicht" darüber beschriftet sie
+                    programmatisch nicht. `title` stellt keine Beziehung her.
+
+                    Die Legende ist visuell verborgen statt weggelassen: sichtbar
+                    stünde „Zustand" doppelt neben dem Schalter, der schon
+                    dasteht. */}
+                {wartung ? (
+                  <fieldset className="zentrale-wartung-stufen">
+                    <legend>Zustand — was die Karte zeigt</legend>
+                    {STUFEN.map((stufe) => {
+                      const anzahl = jeStufe.get(stufe.wert) ?? 0
+                      return (
+                        <label key={stufe.wert} className="typ" title={stufe.titel}>
+                          <input
+                            type="checkbox"
+                            checked={!zustandAus.has(stufe.wert)}
+                            onChange={() => {
+                              const naechste = new Set(zustandAus)
+                              if (naechste.has(stufe.wert)) naechste.delete(stufe.wert)
+                              else naechste.add(stufe.wert)
+                              aufZustandAus(naechste)
+                            }}
+                          />
+                          <span className="nam">{stufe.label}</span>
+                          <span className="zahl">{anzahl}</span>
+                        </label>
+                      )
+                    })}
+                    {/* **Was die Zahlen NICHT sind.** Sie zählen wartbare
+                        Objekte je Zustand; die Kachel „Geprüft" auf der
+                        Revierseite zählt, was diese Saison angesehen wurde —
+                        ein frisch gemeldeter Mangel steht dort unter
+                        „geprüft" und hier unter „Mangel". Ohne diesen Satz
+                        stünden zwei Zahlen nebeneinander, die verschieden
+                        zählen, ohne dass es jemand sehen könnte. */}
+                    <p className="zentrale-wartung-fuss">
+                      Ob eine Prüfung aus dieser Saison stammt, sagt die Füllung
+                      des Rings auf der Karte.
+                    </p>
+                  </fieldset>
+                ) : null}
+              </div>
+            )}
           </details>
         )}
       </div>
