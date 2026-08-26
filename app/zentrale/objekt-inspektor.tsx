@@ -618,6 +618,27 @@ function heuteBerlin(): string {
  */
 function zeitpunktAus(tag: string, versatzMs: number): Date | null {
   if (tag === heuteBerlin()) return new Date()
+  return rueckdatierterZeitpunkt(tag, versatzMs)
+}
+
+/**
+ * Mittag Berlin eines VERGANGENEN Tages, plus Versatz.
+ *
+ * **Herausgelöst am 26.08.2026** (Fremdprüfung E2/E6, `[mittel]`), damit der
+ * Speicherpfad die Heute-Frage **genau einmal** stellen kann. `zeitpunktAus()`
+ * beantwortet sie intern noch einmal; solange beide Antworten in denselben Wert
+ * mündeten, war das harmlos. Seit CN-85 entscheidet sie aber, ob `checked_at`
+ * überhaupt mitgeht — und **zwei getrennte Uhrablesungen können über Mitternacht
+ * auseinanderfallen**: `istHeute` noch wahr, `zeitpunktAus()` schon im
+ * Rückdatierungszweig. Dann verwirft der Spread einen korrekt berechneten
+ * Zeitpunkt, und die Datenbank schreibt den NEUEN Tag in ein Log, aus dem
+ * niemand ihn wieder herausbekommt.
+ *
+ * **Der alte Code hatte diesen Fall richtig**, ohne es zu wissen: er schrieb
+ * einfach, was `zeitpunktAus()` lieferte. Die Verschlechterung kam mit CN-85 —
+ * ein Fix, der einen Randfall aufreißt, den er nicht angefasst hat.
+ */
+function rueckdatierterZeitpunkt(tag: string, versatzMs: number): Date | null {
 
   // **`null` statt eines Ersatzzeitpunkts, und das ist ein Fix aus der
   // Fremdprüfung** (25.08.2026, `[hoch]`). Die erste Fassung gab bei einem
@@ -787,6 +808,22 @@ function Pruefen({ objekt }: { objekt: Punkt }) {
    * Feld leer oder kaputt ist. Versatz 0, weil der Render nichts verbrauchen
    * darf; der Wert, der wirklich geschrieben wird, entsteht im Klick.
    */
+  /**
+   * Der Vergleichswert für die „wird überholt"-Vorschau.
+   *
+   * ⚠ **Im Heute-Fall ist das die PC-Uhr, gespeichert wird seit CN-85 aber die
+   * Serveruhr** (Fremdprüfung 26.08.2026, E4 `[niedrig]`). Bei genau der
+   * Uhrabweichung, gegen die CN-85 gebaut ist, kann die Vorschau daher
+   * danebenliegen — die Warnung erscheint, obwohl der Eintrag durchkommt, oder
+   * sie bleibt aus, obwohl er von einer zukunftsdatierten Zeile überholt wird.
+   *
+   * **Bewusst nicht behoben.** Die einzige ehrliche Abhilfe wäre, die
+   * Serverzeit zu holen — ein Rundgang zur Datenbank bei jedem Tastendruck im
+   * Datumsfeld, für eine Vorschau. Die Warnung ist eine Wahrscheinlichkeits-
+   * aussage und war nie mehr; ihre Richtung stimmt auch bei einer um Sekunden
+   * abweichenden Uhr. **Der harte Riegel sitzt ohnehin woanders:** die
+   * Zukunftsgrenze im Handler, und dauerhaft dann in Migration 119.
+   */
   const zeitpunkt = zeitpunktAus(tag, 0)
   /** Ein Tag in der Zukunft. `max` am Feld hält das nicht dicht (s. `speichern`). */
   const inDerZukunft = tag > heuteBerlin()
@@ -829,8 +866,47 @@ function Pruefen({ objekt }: { objekt: Punkt }) {
      *   schriebe eine halbe Stunde alte Zeit — die Feld-App schreibt die
      *   Klick-Zeit.
      */
-    const wann = zeitpunktAus(tag, naechsterVersatz())
-    if (wann === null) {
+    /**
+     * **Ob der Prüftag heute ist, entscheidet, WER die Uhr stellt** (CN-85).
+     * Heute: die Datenbank (`default now()`). Rückdatiert: dieser Client, und
+     * dann bewusst — s. den Insert unten.
+     *
+     * ⚠ **Die Frage wird GENAU EINMAL gestellt** (Fremdprüfung 26.08.2026,
+     * E2/E6). Zwei getrennte Ablesungen — hier und noch einmal in
+     * `zeitpunktAus()` — können über Mitternacht auseinanderfallen: die eine
+     * sagt „heute", die andere rechnet schon den Vortag. Dann verwirft der
+     * Spread unten einen korrekt berechneten Zeitpunkt, und die Datenbank
+     * schreibt den NEUEN Tag. In einem Log ohne DELETE-Policy ist das eine
+     * dauerhaft falsch datierte Zeile.
+     *
+     * Deshalb ruft der Speicherpfad `rueckdatierterZeitpunkt()` direkt und
+     * nicht `zeitpunktAus()`. Der Render darf weiter letztere nehmen — dort
+     * hängt nichts davon ab.
+     *
+     * ⚠ **Ein Restfall bleibt, und er gehört benannt** (Schlusslesung
+     * 26.08.2026, T2 `[niedrig]`): geschlossen ist das Rennen zwischen den
+     * beiden CLIENT-Ablesungen, nicht das zwischen Klick und Server. Wer um
+     * 23:59:59 auf „Eintragen" drückt und dessen `auth.getUser()` zwei
+     * Sekunden braucht, bekommt vom `default now()` den **neuen** Tag — er
+     * hatte den alten im Feld. **Der alte Code hatte genau diesen Fall
+     * richtig**, weil er die PC-Uhr im Klick festhielt.
+     *
+     * **Trotzdem keine Abhilfe, und zwar bewusst:** die einzige wäre, die
+     * Serverzeit vorab zu holen — derselbe Rundgang, der schon bei der
+     * Vorschau (E4) gegen sich entschieden hat. Der Schaden ist ein um
+     * Sekunden verschobener Kalendertag, kein Sicherheitsproblem: der Wert
+     * liegt nie in der Zukunft, 119 kann ihn nie treffen, und keine Sperre
+     * wird dadurch versteckt — die Zeile ist tatsächlich die jüngste.
+     */
+    const istHeute = tag === heuteBerlin()
+    /**
+     * Der Versatz wird nur im Rückdatierungsfall gebraucht — er trennt zwei
+     * Nachträge für denselben Tag. **Im Heute-Fall bleibt der Zähler
+     * unangetastet**, statt verbraucht zu werden (Fremdprüfung E5: er
+     * wickelt bei 60 um, und jeder unnötige Verbrauch zieht das vor).
+     */
+    const wann = istHeute ? null : rueckdatierterZeitpunkt(tag, naechsterVersatz())
+    if (!istHeute && wann === null) {
       setFehler('Kein Prüftag gewählt. Bitte ein Datum eintragen.')
       return
     }
@@ -882,7 +958,33 @@ function Pruefen({ objekt }: { objekt: Punkt }) {
           .insert({
             map_object_id: objekt.id,
             checked_by: sitzung.user.id,
-            checked_at: wann.toISOString(),
+            /**
+             * **Für „heute" wird `checked_at` GAR NICHT geschickt** — dann
+             * setzt die Tabelle ihren `default now()`, und das ist die
+             * Serveruhr (CN-85, 26.08.2026).
+             *
+             * Bis hierher schickte das Portal auch im heutigen Fall die
+             * **PC-Uhr** mit. Das war schon für sich schlechter — eine falsch
+             * gestellte Arbeitsplatzuhr schrieb ihren Irrtum dauerhaft in ein
+             * Log ohne DELETE-Policy —, **und es ist die Vorbedingung für
+             * Migration 119**: die lehnt jedes `checked_at > now()` ohne
+             * Toleranz ab. Eine um Sekunden vorgehende PC-Uhr hätte danach
+             * jede legitime Meldung von hier mit `23514` scheitern lassen.
+             *
+             * **Toleranz null ist dort richtig und nicht verhandelbar** (die
+             * Begründung steht im Kopf der Migration): eine Viertelstunde
+             * genügt, um jede `gesperrt`-Zeile zu verstecken, die in diesem
+             * Fenster mit Serverzeit geschrieben wird — und das heilt nicht
+             * nach Ablauf der Viertelstunde, weil gespeicherte Zeitstempel
+             * sich nicht ändern.
+             *
+             * **Die Rückdatierung bleibt unverändert.** Dort ist der Wert
+             * Mittag Berlin eines vergangenen Tages und liegt per Konstruktion
+             * in der Vergangenheit; 119 kann ihn nie treffen. Genau dafür ist
+             * das Datumsfeld gebaut — der PC ist der Ort, an dem man
+             * nachträglich sauber macht.
+             */
+            ...(wann === null ? {} : { checked_at: wann.toISOString() }),
             status,
             note: notizPflicht ? notiz.trim() : null,
           })
