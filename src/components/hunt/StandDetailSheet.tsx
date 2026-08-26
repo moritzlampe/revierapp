@@ -306,6 +306,38 @@ export default function StandDetailSheet({
           )}
         </div>
 
+        {/* --- Standzustand ---
+
+            **Er steht über den Jagdleiter-Aktionen: Aussage vor Verwaltung.**
+
+            ⚠ **Bis zum 26.08.2026 stand er ganz unten, und das war falsch
+            abgeschrieben.** Die Rangfolge stammt aus der Feld-App — *„während
+            einer Jagd ist ‚ich bin da' die Handlung, die Prüfung die
+            Nebensache"* — und dort trägt sie, weil unter der Primär-Aktion
+            kaum etwas folgt. **Hier schiebt der Jagdleiter-Block darunter
+            (Umbesetzen · Position wechseln · Bearbeiten · Löschen) den Zustand
+            aus dem ersten Bild.** Moritz am Gerät: *„den Reiter ‚Mangel
+            melden' finde ich in der PWA gar nicht"* — und nach dem Hinweis:
+            *„finde ich jetzt, war beim Scrollen."*
+
+            **Ein Jagdleiter hätte ihn nie ohne Scrollen gesehen, ein Schütze
+            immer** — der Unterschied hing an vier Knöpfen, die mit dem Zustand
+            nichts zu tun haben. Die Rangfolge gegenüber der PRIMÄR-Aktion
+            („Chat mit …" / „Schütze zuweisen") bleibt unangetastet; verschoben
+            wird nur gegenüber der Verwaltungsliste.
+
+            **Dass eine SPERRE nicht untergeht, hängt weiterhin nicht an dieser
+            Stelle**, sondern am Einteilen-Sheet: dort steht sie über den
+            Schützen, bevor jemand zuweist (`MapContent.tsx`,
+            `StandAssignSheet`). Ein Zustand, der nur im Detail-Sheet steht,
+            wäre eine Auskunft für den, der ohnehin schon hinsieht. */}
+        {zustand && (
+          <>
+            <div style={{ margin: '0.75rem 1rem 0', borderTop: '1px solid var(--border)' }} />
+            <StandZustand {...zustand} />
+          </>
+        )}
+
         {/* --- Jagdleiter-Aktionen --- */}
         {isJagdleiter && (
           <div style={{
@@ -424,27 +456,6 @@ export default function StandDetailSheet({
           </div>
         )}
 
-        {/* --- Standzustand ---
-
-            **Er steht UNTEN, und das ist eine übernommene Rangfolge, keine
-            Platzfrage.** Die Feld-App begründet sie an derselben Stelle:
-            *„während einer Jagd ist ‚ich bin da' die Handlung, die Prüfung die
-            Nebensache. Vor der Jagd — wenn der Bezug gar nicht angeboten wird —
-            rückt sie von selbst nach oben."* Auf der Revierkarte ist es
-            umgekehrt, dort tippt man einen Stand an, um ihn anzusehen; deshalb
-            sitzt der Block im mobilen Revier-Editor direkt unter dem Namen.
-
-            **Dass eine SPERRE trotzdem nicht untergeht, hängt nicht an dieser
-            Stelle**, sondern am Einteilen-Sheet: dort steht sie über den
-            Schützen, bevor jemand zuweist (`MapContent.tsx`, `StandAssignSheet`).
-            Ein Zustand, der nur im Detail-Sheet steht, wäre eine Auskunft für
-            den, der ohnehin schon hinsieht. */}
-        {zustand && (
-          <>
-            <div style={{ margin: '0.75rem 1rem 0', borderTop: '1px solid var(--border)' }} />
-            <StandZustand {...zustand} />
-          </>
-        )}
       </div>
 
       {/* Bestätigungsdialog: Stand löschen */}
