@@ -72,17 +72,41 @@ const knopfStil: React.CSSProperties = {
 export function zustandsZeile(
   pruefung: Pruefung | null,
   prueferName: string | null,
-  { pruefFehler = false, laedt = false }: { pruefFehler?: boolean; laedt?: boolean } = {},
+  {
+    pruefFehler = false,
+    laedt = false,
+    frischLaedt = false,
+  }: { pruefFehler?: boolean; laedt?: boolean; frischLaedt?: boolean } = {},
 ): string {
-  if (pruefFehler) return 'Prüfstand nicht abrufbar'
   /**
-   * **`laedt` gilt nur, wenn NICHTS bekannt ist** (Fremdprüfung 26.08.2026,
-   * A5 `[mittel]`). Vorher stand es vor `zustandsSatz()` und überstimmte damit
-   * auch eine bekannte Sperre: bei jedem Nachladen wäre die
-   * Sicherheitsauskunft für die Dauer der Abfrage verschwunden. Eine bekannte
-   * Prüfung ist die beste verfügbare Auskunft, auch während eine frischere
-   * unterwegs ist.
+   * **Es sind ZWEI Arten von „lädt", und sie verlangen Gegenteiliges** —
+   * abgestimmt mit dem nativen Strang am 26.08.2026, nachdem beide Seiten
+   * denselben Fall mit umgekehrtem Vorzeichen entschieden hatten.
+   *
+   * - **`laedt` — die Liste des ganzen Reviers wird geholt.** Ein bekannter
+   *   Wert bleibt gültig und wird gezeigt; ihn durch „wird geladen" zu
+   *   ersetzen ließe die Sicherheitsauskunft bei jedem Hintergrund-Lauf
+   *   verschwinden (Fremdprüfung, A5 `[mittel]`).
+   * - **`frischLaedt` — GENAU DIESER Stand wird gerade neu gelesen**, weil sein
+   *   Sheet aufgeht. Hier ist der bekannte Wert womöglich **veraltet**: seit
+   *   der Voll-Ladung kann ihn ein anderes Gerät gesperrt haben, und das ist
+   *   der Grund, warum überhaupt frisch gelesen wird (B9). Er überstimmt
+   *   deshalb alles.
+   *
+   * Der native Strang hat denselben Schnitt und den älteren Beleg dafür: sein
+   * Sheet verwirft die gemerkte Antwort beim Öffnen ausdrücklich
+   * (`hunt/[id]/index.tsx`, Codex-Befund 29.07.2026) — *„wurde derselbe Stand
+   * zwischenzeitlich anderswo gesperrt, stünde sonst bis zum Ende des Fetches
+   * noch sein altes ‚ok' da."* Weil er ausschließlich je Sheet lädt, kennt er
+   * die erste Art gar nicht; hier gibt es beide, also müssen sie
+   * auseinandergehalten werden.
+   *
+   * **Ein fehlender Wert ist besser als ein falscher — aber ein bekannter ist
+   * besser als gar keiner, solange er nicht in Frage steht.** Genau diese
+   * Grenze ziehen die zwei Namen.
    */
+  if (frischLaedt) return 'Prüfstand wird geladen …'
+  if (pruefFehler) return 'Prüfstand nicht abrufbar'
   if (laedt && pruefung === null) return 'Prüfstand wird geladen …'
   const zeit = pruefung ? zeitpunkt.format(new Date(pruefung.checkedAt)) : ''
   const wann = prueferName === null ? zeit : `${zeit} von ${prueferName}`
@@ -141,6 +165,12 @@ export type StandZustandProps = {
    * übernommen.
    */
   laedt?: boolean
+  /**
+   * **Dieser eine Stand wird gerade frisch gelesen** — s. `zustandsZeile()`.
+   * Überstimmt einen bekannten Wert, weil der seit der letzten Voll-Ladung
+   * veraltet sein kann; genau dagegen wird ja neu gelesen.
+   */
+  frischLaedt?: boolean
   prueferName: string | null
   wartbar: boolean
   onCheck: (status: PruefStatus, note: string | null) => Promise<boolean>
@@ -150,6 +180,7 @@ export function StandZustand({
   pruefung,
   pruefFehler,
   laedt = false,
+  frischLaedt = false,
   prueferName,
   wartbar,
   onCheck,
@@ -179,7 +210,7 @@ export function StandZustand({
    */
   if (!wartbar && !pruefung) return null
 
-  const satz = zustandsZeile(pruefung, prueferName, { pruefFehler, laedt })
+  const satz = zustandsZeile(pruefung, prueferName, { pruefFehler, laedt, frischLaedt })
 
   /**
    * Melden — und `laeuft` in JEDEM Ausgang zurücksetzen.
@@ -222,9 +253,9 @@ export function StandZustand({
         style={{
           margin: 0,
           fontSize: '0.875rem',
-          fontWeight: pruefFehler || (laedt && !pruefung) ? 400 : 600,
+          fontWeight: pruefFehler || frischLaedt || (laedt && !pruefung) ? 400 : 600,
           lineHeight: 1.4,
-          color: pruefFehler || (laedt && !pruefung) ? 'var(--text-3)' : 'var(--text)',
+          color: pruefFehler || frischLaedt || (laedt && !pruefung) ? 'var(--text-3)' : 'var(--text)',
         }}
       >
         {satz}
@@ -239,7 +270,7 @@ export function StandZustand({
           durchgereicht. Ohne diese Bedingung stünde „Prüfstand nicht
           abrufbar" und DARUNTER eine Notiz — die Zeile behauptet Unwissen,
           die Notiz behauptet Wissen. Wer nichts weiß, sagt nichts. */}
-      {!pruefFehler && pruefung?.note && (
+      {!pruefFehler && !frischLaedt && pruefung?.note && (
         <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-2)', lineHeight: 1.5 }}>
           „{pruefung.note}“
         </p>
@@ -275,7 +306,7 @@ export function StandZustand({
                   melden" ist eine Aussage über den bekannten Zustand. Wer
                   gerade „nicht abrufbar" gemeldet hat, darf sie nicht
                   treffen. */}
-              {!pruefFehler && pruefung?.status === 'gesperrt' && art === 'gesperrt'
+              {!pruefFehler && !frischLaedt && pruefung?.status === 'gesperrt' && art === 'gesperrt'
                 ? 'Weiter gesperrt melden'
                 : SCHADEN_TEXT[art].knopf}
             </button>

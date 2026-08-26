@@ -1464,12 +1464,17 @@ export default function MapContent({
     return {
       pruefung,
       pruefFehler: standFehler(stand.id),
-      // **Das Nachlesen dieses Standes zählt auch hier als „lädt"**
-      // (Schlusslesung 26.08.2026, F3). Ohne den zweiten Teil stünde während
-      // des Nachlesens „Noch nie geprüft" — der Ladevorgang läse sich als
-      // gültige Auskunft (S4), und wer daraufhin selbst `ok` einträgt,
-      // überschriebe eine gerade eintreffende fremde Sperre.
-      laedt: pruefLaedt || nachladeOid === stand.id,
+      /**
+       * **Zwei Arten von „lädt", getrennt gehalten** (Schlusslesung F3,
+       * geschärft in der Abstimmung mit dem nativen Strang am 26.08.2026).
+       * `laedt` ist die Voll-Ladung im Hintergrund — ein bekannter Wert bleibt
+       * dabei stehen. `frischLaedt` ist das Nachlesen GENAU DIESES Standes:
+       * dort ist der bekannte Wert womöglich veraltet, und ein veralteter
+       * Sicherheitszustand ist schlechter als ein fehlender. Die Begründung
+       * steht ausgeschrieben in `zustandsZeile()`.
+       */
+      laedt: pruefLaedt,
+      frischLaedt: nachladeOid === stand.id,
       prueferName: pruefung?.checkedBy ? (pruefstand.namen[pruefung.checkedBy] ?? null) : null,
       wartbar: istWartbar(stand.type),
       onCheck: (status, note) => handleCheck(stand.id, status, note),
