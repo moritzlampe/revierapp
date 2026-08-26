@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { StandData } from './MapContent'
 import type { HuntParticipantInfo, SeatAssignmentData } from './MapView'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { StandZustand, type StandZustandProps } from '@/components/revier/StandZustand'
 import { Star, UsersThree, Dog } from '@phosphor-icons/react'
 
 // --- Types ---
@@ -23,6 +24,21 @@ export interface StandDetailSheetProps {
   onMovePosition: (stand: StandData) => void
   onOpenChat: (userId: string) => void
   onRenamed: (standId: string, newName: string) => void
+  /**
+   * Der Standzustand — anzeigen und eintragen (Konzept Standzustand §2.2).
+   *
+   * **Als EIN Bündel und nicht als sechs Einzel-Props**, damit die Fassung
+   * dieses Sheets nicht von der des mobilen Revier-Editors abdriften kann: der
+   * Typ gehört der Komponente, die ihn rendert.
+   *
+   * **`null` heißt: an diesem Stand gibt es nichts zu prüfen.** Das ist genau
+   * ein Fall, der Adhoc-Stand — er ist eine Zeile in
+   * `hunt_seat_assignments` und kein `map_objects`-Eintrag; ein Prüflog ohne
+   * Kartenobjekt kann es nicht geben (`map_object_checks.map_object_id` ist
+   * NOT NULL mit Fremdschlüssel). Er verschwindet mit der Jagd, ein
+   * Wartungszustand wäre an ihm sinnlos.
+   */
+  zustand: StandZustandProps | null
 }
 
 // --- Hilfsfunktionen ---
@@ -51,6 +67,7 @@ export default function StandDetailSheet({
   onMovePosition,
   onOpenChat,
   onRenamed,
+  zustand,
 }: StandDetailSheetProps) {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -130,7 +147,15 @@ export default function StandDetailSheet({
       {/* Sheet */}
       <div
         className="map-object-sheet"
-        style={{ maxHeight: '50vh', paddingBottom: '1rem' }}
+        /**
+         * **70dvh statt der früheren 50vh.** Der Zustandsblock unten kann zu
+         * einem Textfeld mit drei Knöpfen aufklappen; bei 50vh stünde der
+         * Melden-Knopf im Zweifel unter der Kante. `dvh` und nicht `vh`, weil
+         * die Adressleiste mobiler Browser die Höhe während des Scrollens
+         * ändert. Gescrollt wird ohnehin (`overflow-y: auto` an
+         * `.map-object-sheet`).
+         */
+        style={{ maxHeight: '70dvh', paddingBottom: '1rem' }}
       >
         <div className="sheet-handle" />
 
@@ -397,6 +422,28 @@ export default function StandDetailSheet({
               </button>
             )}
           </div>
+        )}
+
+        {/* --- Standzustand ---
+
+            **Er steht UNTEN, und das ist eine übernommene Rangfolge, keine
+            Platzfrage.** Die Feld-App begründet sie an derselben Stelle:
+            *„während einer Jagd ist ‚ich bin da' die Handlung, die Prüfung die
+            Nebensache. Vor der Jagd — wenn der Bezug gar nicht angeboten wird —
+            rückt sie von selbst nach oben."* Auf der Revierkarte ist es
+            umgekehrt, dort tippt man einen Stand an, um ihn anzusehen; deshalb
+            sitzt der Block im mobilen Revier-Editor direkt unter dem Namen.
+
+            **Dass eine SPERRE trotzdem nicht untergeht, hängt nicht an dieser
+            Stelle**, sondern am Einteilen-Sheet: dort steht sie über den
+            Schützen, bevor jemand zuweist (`MapContent.tsx`, `StandAssignSheet`).
+            Ein Zustand, der nur im Detail-Sheet steht, wäre eine Auskunft für
+            den, der ohnehin schon hinsieht. */}
+        {zustand && (
+          <>
+            <div style={{ margin: '0.75rem 1rem 0', borderTop: '1px solid var(--border)' }} />
+            <StandZustand {...zustand} />
+          </>
         )}
       </div>
 

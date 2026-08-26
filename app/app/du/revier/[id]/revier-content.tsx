@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import { Crosshair, CircleNotch } from '@phosphor-icons/react'
 import { parsePolygonHex } from '@/lib/geo-utils'
 import { createClient } from '@/lib/supabase/client'
+import { schreibePruefung } from '@/lib/revier/pruefstand'
 import { waitForAccurateGpsFix } from '@/lib/geo/wait-for-gps-fix'
 import type { MapObject, ObjektType } from '@/lib/types/revier'
 import { parsePointHex } from '@/lib/geo-utils'
@@ -162,7 +163,7 @@ export default function RevierContent({
   objects: initialObjects,
   userId,
   pruefZeilen: initialPruefZeilen,
-  pruefFehler,
+  pruefFehler: initialPruefFehler,
   prueferNamen,
   jetztIso,
 }: Props) {
@@ -214,6 +215,52 @@ export default function RevierContent({
    * bereits sicher.
    */
   const [pruefZeilen, setPruefZeilen] = useState<PruefZeile[]>(initialPruefZeilen)
+
+  /**
+   * Der Fehlerzustand des Prüfstands — **im State und nicht mehr nur in der
+   * Prop** (Fremdprüfung 26.08.2026, A1 `[hoch]`).
+   *
+   * Der Server liefert ihn beim Aufbau; dazu kommt seit heute ein zweiter
+   * Anlass: **schlägt das Nachlesen nach einem Schreibvorgang fehl, steht die
+   * eigene Zeile zwar, aber ob sie die jüngste ist, weiß niemand.**
+   * `maybeSingle()` meldet solche Fehler im Feld `error` statt das Promise
+   * abzulehnen — der `catch` deckte sie also nie. „Geprüft" über einer
+   * fremden, frischeren Sperre ist genau die Auskunft, die kosten kann.
+   *
+   * **Nur in eine Richtung**: einmal unsicher, bleibt unsicher, bis die Seite
+   * neu lädt. Ein Zurücknehmen behauptete eine Frische, die niemand gemessen
+   * hat.
+   */
+  /**
+   * Der Fehlerzustand des Prüfstands, wie ihn der Server beim Aufbau gemeldet
+   * hat — **eine Ableitung der Prop, kein State.** Er gilt für die ganze
+   * Seite, weil er von der einen Abfrage stammt, die alle Zeilen holt.
+   */
+  const pruefFehler = initialPruefFehler
+
+  /**
+   * Stände, deren Prüfstand nach dem eigenen Schreiben nicht nachgelesen werden
+   * konnte — **je Stand und nicht für die ganze Seite** (Fremdprüfung
+   * 26.08.2026 A1, Zuschnitt aus der Schlusslesung F2).
+   *
+   * `maybeSingle()` meldet einen PostgREST-Fehler im Feld `error` statt das
+   * Promise abzulehnen; das Nachlesen war deshalb bei Serverfehlern
+   * wirkungslos, und „Geprüft" könnte über einer fremden, frischeren Sperre
+   * stehen.
+   *
+   * **Die erste Fassung hob dafür `pruefFehler` global an, und das war zu
+   * grob:** ein einziges gescheitertes Nachlesen ließ die Zusammenfassung im
+   * Kopf verschwinden und stellte JEDES Objekt-Sheet auf „Prüfstand nicht
+   * abrufbar" — obwohl über die anderen Stände nichts Neues bekannt geworden
+   * war. Die Unsicherheit betrifft genau den Stand, an dem geschrieben wurde:
+   * seine Zeile steht, aber ob sie die jüngste ist, weiß niemand.
+   *
+   * **Nur in eine Richtung, und hier zu Recht:** ein Stand, dessen Nachlesen
+   * scheiterte, wird in dieser Sitzung nicht wieder sicher — es gibt auf
+   * dieser Seite keinen zweiten Leseweg, der ihn freisprechen könnte. Die
+   * Jagdkarte hat einen (`ladePruefungFuer`) und nimmt ihn deshalb zurück.
+   */
+  const [pruefUnsicher, setPruefUnsicher] = useState<ReadonlySet<string>>(new Set())
 
   /**
    * Der Zeitpunkt, gegen den Saison und Zukunftsgrenze rechnen.
@@ -715,93 +762,49 @@ export default function RevierContent({
    * deuten kann („irgendwas war an Stand 14")."* Die Feld-App schreibt den Satz
    * hin und erzwingt ihn nicht; dann ist sie die Stelle, die nachzieht.
    * **Der Riegel steht hier und nicht nur im Sheet** — ein Gate, das allein in
-   * der Anzeige sitzt, ist keines (S2).
+   * der Anzeige sitzt, ist keines (S2). Seit dem 26.08.2026 steht er sogar eine
+   * Ebene tiefer, in `schreibePruefung()`: dort erbt ihn auch die Jagdkarte,
+   * ohne ihn zu kennen.
+   *
+   * **Der Schreibweg selbst liegt seit dem 26.08.2026 in
+   * `src/lib/revier/pruefstand.ts`** und wird mit dem Stand-Detail-Sheet der
+   * Jagdkarte geteilt. Was hier bleibt, ist die Folge FÜR DIESE SEITE: der
+   * Doppelklick-Riegel, der Zustand der Zeilen und der Bezugszeitpunkt. Die
+   * vier teuer erkauften Details des Schreibens — `.select()`, der Riegel gegen
+   * eine Zeile ohne Zeitstempel, das Nachlesen der View und das `catch` darum —
+   * stehen dort und sind damit nicht mehr an diesen einen Aufrufer gebunden.
    *
    * Gibt `true` zurück, wenn die Zeile wirklich liegt.
    */
   const handleCheck = useCallback(
     async (objektId: string, status: PruefStatus, note: string | null): Promise<boolean> => {
-      const notiz = note?.trim() ? note.trim() : null
-      if (status !== 'ok' && notiz === null) {
-        showToast('Bitte kurz beschreiben, was los ist.')
-        return false
-      }
       if (pruefLaeuft.current.has(objektId)) return false
       pruefLaeuft.current.add(objektId)
       try {
-        const supabase = createClient()
-        const antwort = await supabase
-          .from('map_object_checks')
-          .insert({ map_object_id: objektId, checked_by: userId, status, note: notiz })
-          // `.select()` ist Pflicht: ohne sie ist `data` immer `null`, und ein
-          // von RLS auf 0 Zeilen zusammengestrichener Insert sähe aus wie ein
-          // Erfolg (S1, `writeProblem` oben).
-          .select('map_object_id, status, checked_at, note, checked_by')
-
-        const problem = writeProblem(antwort)
-        if (problem) {
-          console.error('Prüfung fehlgeschlagen:', problem)
-          showToast('Prüfung konnte nicht gespeichert werden.')
+        const ergebnis = await schreibePruefung(objektId, userId, status, note)
+        if (!ergebnis.ok) {
+          showToast(
+            ergebnis.grund === 'notiz-fehlt'
+              ? 'Bitte kurz beschreiben, was los ist.'
+              : 'Prüfung konnte nicht gespeichert werden.',
+          )
           return false
-        }
-
-        const geschriebene = (antwort.data as PruefZeile[])[0]
-        /**
-         * **Eine Zeile ohne `checked_at` ist ein Schreibfehler, kein Erfolg**
-         * (Fremdprüfung 25.08.2026, A8). Der Fall kann nicht eintreten — die
-         * Spalte ist NOT NULL mit Default `now()` —, aber der Typ lässt ihn zu
-         * (eine View kennt keine NOT-NULL-Zusage). Ohne diesen Zweig wanderte
-         * die Zeile in den Zustand, `alsPruefungen()` verwürfe sie dort still,
-         * und der Stand stünde unmittelbar nach einer gelungenen Meldung wieder
-         * auf „Noch nie geprüft".
-         */
-        if (!geschriebene?.checked_at) {
-          console.error('Prüfung ohne Zeitstempel zurückgekommen:', geschriebene)
-          showToast('Prüfung konnte nicht gespeichert werden.')
-          return false
-        }
-
-        /**
-         * Was jetzt in der View steht — **nachgelesen, nicht angenommen**
-         * (Fremdprüfung 25.08.2026, A6 `[high]`, Begründung an `pruefZeilen`).
-         *
-         * Eine Zeile, gefiltert auf dieses eine Objekt. Schlägt der Nachlesen
-         * fehl, gilt die eben geschriebene Zeile — sie ist die beste bekannte
-         * Auskunft und in aller Regel auch die richtige. **Ein Fehlschlag hier
-         * macht die Meldung nicht ungültig:** sie liegt bereits, und genau
-         * deshalb steht dieser Aufruf hinter dem `writeProblem`-Tor und nicht
-         * davor.
-         */
-        let zeile = geschriebene
-        try {
-          const nachgelesen = await supabase
-            .from('map_object_letzte_pruefung')
-            .select('map_object_id, status, checked_at, note, checked_by')
-            .eq('map_object_id', objektId)
-            .maybeSingle()
-          if (nachgelesen.data) zeile = nachgelesen.data as PruefZeile
-        } catch (e) {
-          // **Der `catch` ist lasttragend und kein Zierat.** Ohne ihn risse ein
-          // Netzabbruch beim Nachlesen die ganze `handleCheck` mit — und
-          // meldete einen Fehlschlag für eine Prüfung, die längst in der
-          // Datenbank steht. Der Melder tippt sie dann ein zweites Mal, und in
-          // einem Log ohne DELETE-Policy stehen danach zwei Zeilen (CP-74).
-          // **Der Fehler wäre also schlimmer als das Problem, gegen das das
-          // Nachlesen gebaut ist.** Selbst gefunden beim Gegenlesen des
-          // A6-Fixes, nach dem letzten Prüflauf.
-          console.warn('Prüfstand konnte nach dem Schreiben nicht nachgelesen werden:', e)
         }
 
         setPruefZeilen((vorher) => [
           ...vorher.filter((z) => z.map_object_id !== objektId),
-          zeile,
+          ergebnis.zeile,
         ])
+        // s. `pruefUnsicher` oben — das Nachlesen ist nicht durchgekommen.
+        if (ergebnis.standUnsicher) {
+          setPruefUnsicher((vorher) => new Set(vorher).add(objektId))
+        }
         // Der Bezugszeitpunkt rückt vor, sonst liest der Zukunfts-Riegel den
         // eigenen Eintrag als noch nicht geschehen (s. `setJetzt` oben).
-        // **`geschriebene` und nicht `zeile`:** gewinnt beim Nachlesen ein
+        // **`geschriebenAm` und nicht die Zeile:** gewinnt beim Nachlesen ein
         // fremder, noch jüngerer Eintrag, ist der eigene trotzdem der Beleg
         // dafür, dass die Uhr mindestens bis hierher gelaufen ist.
-        const geschrieben = new Date(geschriebene.checked_at)
+        const geschrieben = new Date(ergebnis.geschriebenAm)
         setJetzt((bisher) => (geschrieben > bisher ? geschrieben : bisher))
 
         showToast(status === 'gesperrt' ? 'Gesperrt ✓' : 'Eingetragen ✓')
@@ -1276,7 +1279,7 @@ export default function RevierContent({
             onDelete={handleDetailDelete}
             onUpdate={handleDetailUpdate}
             pruefung={offenePruefung}
-            pruefFehler={pruefFehler}
+            pruefFehler={pruefFehler || pruefUnsicher.has(creation.object.id)}
             // `null` heißt „unbekannt", nicht „niemand": ein Prüfer, dessen
             // Konto gelöscht wurde, steht nicht mehr in `konto_namen()` — die
             // Prüfung hat trotzdem stattgefunden.

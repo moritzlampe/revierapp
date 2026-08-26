@@ -26,6 +26,11 @@ import { buildPinSvg, getPinVariant, isAssignableStand, type PinSize } from '@/l
 import { buildInitials, formatDistanceLabel } from '@/lib/markers/marker-labels'
 import { WildartPicker } from '@/components/erlegung/WildartPicker'
 import { getAvatarColor } from '@/lib/avatar-color'
+import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
+import { showToast } from '@/lib/erlegung/toast'
+import { zustandsZeile, type StandZustandProps } from '@/components/revier/StandZustand'
+import { alsPruefungen, istWartbar, type Pruefung, type PruefStatus } from '@/lib/revier/wartung'
+import { ladePruefstand, ladePruefungFuer, schreibePruefung, PRUEFSTAND_LEER, type Pruefstand } from '@/lib/revier/pruefstand'
 import { Star, Crosshair, UsersThree, Dog } from '@phosphor-icons/react'
 
 // Inline-SVG-Markup fuer Leaflet-divIcon HTML (React-Komponenten koennen
@@ -612,7 +617,7 @@ function FreePositionMarker({ position, userName, avatarColor }: FreePositionDat
 // --- Schnellzuweisung Sheet (Tap auf Stand → Jäger-Liste) ---
 // Umbesetzen-Fix: UPDATE user_id statt DELETE+INSERT — alter Stand bleibt erhalten
 
-function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, stands, onAssign, onClose, onEdit, showSkip }: {
+function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, stands, onAssign, onClose, onEdit, showSkip, pruefBefund }: {
   stand: StandData
   huntParticipants: HuntParticipantInfo[]
   seatAssignments: SeatAssignmentData[]
@@ -622,8 +627,57 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
   onClose: () => void
   onEdit: (stand: StandData) => void
   showSkip?: boolean
+  /**
+   * Der Prüfstand dieses Standes — **optional, weil dieses Sheet auch
+   * Adhoc-Sitze besetzt.** Die haben kein Kartenobjekt, also nie eine Prüfung
+   * und nie eine Sperre; dort bleibt alles wie bisher.
+   *
+   * Die Regeln darunter sind aus der Feld-App übernommen
+   * (`quickhunt-native/src/components/hunt/StandAssignSheet.tsx`, Entscheidungen
+   * Moritz vom 29.07.2026) und nicht neu erfunden — dieselbe Frage, dieselbe
+   * Antwort in beiden Clients.
+   */
+  pruefBefund?: {
+    pruefung: Pruefung | null
+    prueferName: string | null
+    laedt: boolean
+    fehler: boolean
+    entsperrBusy: boolean
+    onEntsperren: () => void
+  }
 }) {
   const [saving, setSaving] = useState(false)
+  const confirm = useConfirmSheet()
+
+  /**
+   * **Gesperrt heißt: die Namen sind tot, bis jemand die Sperre bewusst
+   * aufhebt.** Kein „trotzdem einteilen" — der häufige Fall ist die VERGESSENE
+   * Sperre (Mangel behoben, Eintrag nie nachgezogen), und ein Umgehungsweg
+   * würde genau den konservieren, statt ihn aufzuräumen (Moritz, 29.07.2026,
+   * für die Feld-App entschieden).
+   *
+   * **`fehler` steht bewusst NICHT in dieser Bedingung.** Eine gelesene
+   * Sperrzeile ist echt, auch wenn die Antwort daneben gekappt wurde — der
+   * Deckel nimmt Zeilen weg, er erfindet keine. Die schwächere Auskunft im
+   * Detail-Sheet („nicht abrufbar") ist die vorsichtigere; hier zählt die
+   * strengere.
+   */
+  const sperre = pruefBefund?.pruefung?.status === 'gesperrt' ? pruefBefund.pruefung : null
+
+  /**
+   * **Während die Prüfung lädt, wird nicht eingeteilt** — sonst entscheidet die
+   * Netzgeschwindigkeit darüber, ob eine Sperre gesehen wird oder nicht.
+   */
+  const wartet = pruefBefund?.laedt === true
+  /**
+   * Ob DIESE Zeile tot ist. Die Zeile des bereits Eingeteilten bleibt bei
+   * Sperre und Warten bedienbar — ihr Tipp nimmt ihn herunter, und das ist die
+   * sperrenkonforme Handlung (Schlusslesung 26.08.2026, F1). `saving` bindet
+   * sie trotzdem.
+   */
+  const zeilenBlockiert = (istEingeteilt: boolean) =>
+    saving || (!istEingeteilt && (sperre !== null || wartet))
+
   const [confirmData, setConfirmData] = useState<{ userId: string; userName: string; oldStandName: string } | null>(null)
 
   // Zuordnung: welcher User ist wo zugewiesen?
@@ -650,10 +704,38 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
   )
 
   async function handleAssign(userId: string, confirmed = false) {
+    /**
+     * **Das Gate steht HIER und nicht nur am ersten Klick** (Fremdprüfung
+     * 26.08.2026, B3 `[hoch]`, S2).
+     *
+     * Der Umbesetzen-Dialog ruft `handleAssign(userId, true)` direkt auf und
+     * prüfte vorher nur `saving`. Kippt der Prüfstand zwischen dem Namensklick
+     * und der Bestätigung — und seit dem Nachlesen beim Öffnen kann er das —,
+     * lief die Zuweisung an der Sperre vorbei. **Ein Riegel, der nur am
+     * Einstieg sitzt, ist kein Riegel**; das ist wörtlich S2 und in diesem
+     * Repo mehrfach bezahlt.
+     */
+    const entfernt = currentAssignee?.user_id === userId
+    /**
+     * **Das Entfernen steht VOR dem Gate, und das ist der Punkt** (Schlusslesung
+     * 26.08.2026, F1): jemanden von einem gesperrten Stand herunterzunehmen ist
+     * genau die Handlung, zu der eine Sperre auffordert. Die erste Fassung
+     * blockierte sie mit — dann blieben dem Jagdleiter nur das Entsperren (eine
+     * `ok`-Aussage, die er womöglich nicht treffen will und die dauerhaft im Log
+     * steht) oder der Umweg über das Sheet eines anderen Standes.
+     *
+     * Die Feld-App hat es von Anfang an so: ihr „Zuweisung entfernen" steht
+     * außerhalb von `rowsBlocked`. Die Verschärfung war ein Versehen beim
+     * Abschreiben, kein Entwurf.
+     */
+    if (!entfernt && (sperre || wartet)) {
+      setConfirmData(null)
+      return
+    }
     const existingUserAssignment = seatAssignments.find(a => a.user_id === userId)
 
     // Toggle: User ist bereits auf DIESEM Stand → entfernen (UPDATE user_id = NULL)
-    if (currentAssignee?.user_id === userId) {
+    if (entfernt && currentAssignee) {
       setSaving(true)
       const supabase = createClient()
       await supabase.from('hunt_seat_assignments').update({ user_id: null }).eq('id', currentAssignee.id)
@@ -747,6 +829,33 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
     onClose()
   }
 
+  /**
+   * „Nicht abrufbar" blockiert NICHT, aber es fragt einmal nach (Feld-App,
+   * Entscheidung Moritz 29.07.2026).
+   *
+   * Blockieren wäre die scheinbar sichere Wahl und die falsche: der Ladefehler
+   * ist im Wald der Normalfall, und ein Funkloch dürfte nicht das Einteilen
+   * unmöglich machen — dann wäre die App genau dort tot, wo sie gebraucht wird.
+   * Durchwinken ist es aber auch nicht: unter dem Fehler KANN eine Sperre
+   * liegen. Also die einzige ehrliche Variante — sagen, dass wir es nicht
+   * wissen, und die Entscheidung bewusst treffen lassen.
+   */
+  async function assignGeprueft(userId: string) {
+    // Entfernen ist nie die riskante Handlung — es fragt niemand, ob man
+    // jemanden von einem womöglich gesperrten Stand herunternehmen darf.
+    if (pruefBefund?.fehler && currentAssignee?.user_id !== userId) {
+      const ok = await confirm({
+        title: 'Prüfstand nicht abrufbar',
+        description:
+          'Ob dieser Stand gesperrt ist, lässt sich gerade nicht feststellen. Trotzdem einteilen?',
+        confirmLabel: 'Einteilen',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
+    }
+    await handleAssign(userId)
+  }
+
   const pName = (p: HuntParticipantInfo) => p.profiles?.display_name || p.guest_name || 'Unbekannt'
 
   return (
@@ -762,6 +871,67 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
             </span>
           )}
         </div>
+        {/* Der Prüfstand steht ÜBER den Namen, und das ist der ganze Zweck der
+            Stelle: eine Sperre, die man erst im Detail-Sheet fände, käme für
+            den, der gerade einteilt, zu spät. */}
+        {sperre && pruefBefund && (
+          <div style={{
+            margin: '0.75rem 1rem 0',
+            padding: '0.625rem 0.75rem',
+            borderRadius: 'var(--radius)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border)',
+            display: 'grid',
+            gap: '0.375rem',
+          }}>
+            <p style={{ margin: 0, fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text)', lineHeight: 1.4 }}>
+              {zustandsZeile(sperre, pruefBefund.prueferName)}
+            </p>
+            {sperre.note && (
+              <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-2)', lineHeight: 1.5 }}>
+                „{sperre.note}“
+              </p>
+            )}
+            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-3)' }}>
+              Zum Einteilen muss die Sperre aufgehoben werden.
+            </p>
+            <button
+              type="button"
+              onClick={pruefBefund.onEntsperren}
+              disabled={pruefBefund.entsperrBusy}
+              style={{
+                padding: '0.5rem 0.75rem',
+                borderRadius: 'var(--radius)',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                cursor: pruefBefund.entsperrBusy ? 'default' : 'pointer',
+                opacity: pruefBefund.entsperrBusy ? 0.5 : 1,
+                minHeight: '2.75rem',
+              }}
+            >
+              {pruefBefund.entsperrBusy ? 'Wird eingetragen …' : 'Entsperren'}
+            </button>
+          </div>
+        )}
+
+        {/* „Nicht abrufbar" ist keine Sperre und darf keine sein — aber es darf
+            auch nicht schweigen, sonst liest sich ein Ladefehler als „frei".
+            Die Liste bleibt bedienbar, die Zeile sagt bloß, dass wir es nicht
+            wissen; die Rückfrage kommt beim Antippen.
+
+            **Und das Warten sagt es ebenfalls.** In der Feld-App blockierte
+            `waiting` die Namen zuerst ohne ein Wort dazu — im Funkloch stand da
+            eine tote Liste ohne jeden Grund (Moritz am Gerät, 29.07.2026). Ein
+            Block ohne Begründung liest sich als Defekt. */}
+        {!sperre && pruefBefund && (pruefBefund.fehler || pruefBefund.laedt) && (
+          <p style={{ margin: '0.75rem 1rem 0', fontSize: '0.8125rem', color: 'var(--text-3)' }}>
+            {zustandsZeile(null, null, { pruefFehler: pruefBefund.fehler, laedt: pruefBefund.laedt })}
+          </p>
+        )}
+
         <div style={{ padding: '0 1rem', maxHeight: '40vh', overflowY: 'auto' }}>
           {huntParticipants.filter(p => p.user_id).map(p => {
             const assignment = userAssignments.get(p.user_id!)
@@ -771,13 +941,32 @@ function StandAssignSheet({ stand, huntParticipants, seatAssignments, huntId, st
             return (
               <button
                 key={p.id}
-                onClick={() => !saving && p.user_id && handleAssign(p.user_id)}
-                disabled={saving}
+                // Der bereits Zugewiesene bleibt antippbar, auch wenn der Stand
+                // gesperrt ist — sein Tipp NIMMT ihn herunter (s. `entfernt` in
+                // `handleAssign`).
+                //
+                // **`saving` bleibt für ALLE bindend** (Delta-Durchgang
+                // 26.08.2026, Finding 2): die Ausnahme gilt der Sperre und dem
+                // Warten, nicht einem laufenden Schreibvorgang. Sonst wäre die
+                // eine Zeile, die man doppelt antippen kann, ausgerechnet die,
+                // die gerade schreibt.
+                onClick={() => { if (!zeilenBlockiert(isOnThisStand) && p.user_id) void assignGeprueft(p.user_id) }}
+                disabled={zeilenBlockiert(isOnThisStand)}
                 className="w-full flex items-center gap-3 text-left"
                 style={{
                   padding: '0.75rem 0',
                   borderBottom: '1px solid var(--border-light)',
-                  opacity: isAssignedElsewhere ? 0.5 : 1,
+                  /**
+                   * **Die Dämpfung sitzt an der ZEILE, nicht am Container**
+                   * (Delta-Durchgang 26.08.2026, Finding 4). Vorher dimmte der
+                   * Container bei einer Sperre alles auf 0.4 — auch die eine
+                   * Zeile, die F1 gerade bedienbar gehalten hat. Ein Knopf, der
+                   * ausgegraut aussieht, wird nicht angetippt; der Sinn von F1
+                   * wäre unsichtbar geblieben.
+                   */
+                  opacity: zeilenBlockiert(isOnThisStand) && !saving
+                    ? 0.4
+                    : isAssignedElsewhere ? 0.5 : 1,
                   background: isOnThisStand ? 'rgba(107,159,58,0.08)' : 'transparent',
                 }}
               >
@@ -1015,6 +1204,293 @@ export default function MapContent({
 
   // Stand-Detail-Sheet (neuer einheitlicher Tap-Flow)
   const [detailStand, setDetailStand] = useState<StandData | null>(null)
+
+  /**
+   * ============ Standzustand (Konzept Standzustand §2.2) ============
+   *
+   * **Warum der Prüfstand hier liegt und nicht in `app/app/hunt/[id]/page.tsx`.**
+   * Beide Sheets, die ihn brauchen, gehören dieser Datei: das Detail-Sheet
+   * zeigt und erfasst, das Einteilen-Sheet warnt. Eine Ladung in der Seite
+   * müsste durch `MapView` hindurchgereicht werden, das damit nichts zu tun
+   * hat — vier Props durch zwei Ebenen, damit zwei Geschwister sich einigen.
+   *
+   * **Das ganze Revier auf einmal und nicht je angetipptem Stand.** Die
+   * Feld-App lädt einzeln (`fetchLastCheck(oid)`), weil sie ohnehin je Sheet
+   * nachlädt; hier ist die Karte schon offen und die Warnung im
+   * Einteilen-Sheet braucht den Zustand, BEVOR jemand tippt. Eine Abfrage
+   * (Söder: 196 Objekte, 0 Prüfzeilen) gegen eine je Tipp — und die eine
+   * kommt an, bevor sie gebraucht wird.
+   */
+  const [pruefstand, setPruefstand] = useState<Pruefstand>(PRUEFSTAND_LEER)
+  const [pruefLaedt, setPruefLaedt] = useState(false)
+  /**
+   * **Welcher Stand gerade entsperrt wird — als ID, nicht als Ja/Nein**
+   * (Fremdprüfung 26.08.2026, B5 `[mittel]`). Ein globales Flag zeigte „Wird
+   * eingetragen …" auch an einem ANDEREN gesperrten Stand und machte ihn
+   * unbedienbar, solange irgendwo eine Anfrage lief.
+   */
+  const [entsperrOid, setEntsperrOid] = useState<string | null>(null)
+  /**
+   * Doppelklick-Riegel, **synchron als Ref und nicht als State** (S5): ein
+   * State wäre erst im nächsten Rendern sichtbar, und zwei Tipps in
+   * derselben Runde erzeugten zwei Zeilen in einem Log ohne DELETE-Policy.
+   */
+  const pruefLaeuft = useRef<Set<string>>(new Set())
+  const confirmSheet = useConfirmSheet()
+
+  useEffect(() => {
+    if (!districtId) {
+      setPruefstand(PRUEFSTAND_LEER)
+      setStandFrische(new Map())
+      setPruefLaedt(false)
+      return
+    }
+    /**
+     * **Der alte Stand wird verworfen, bevor der neue kommt.** Sonst zeigte
+     * ein Revierwechsel für die Dauer der Abfrage die Prüfzeilen des VORIGEN
+     * Reviers — Zeilen, die es hier nicht gibt, an Ständen, die zufällig
+     * dieselbe Anzeige treffen. Lieber „wird geladen" als fremde Wahrheit.
+     */
+    setPruefstand(PRUEFSTAND_LEER)
+    setStandFrische(new Map())
+    setPruefLaedt(true)
+    // **`abgemeldet` entwertet die fliegende Antwort** (S7): wer die Karte
+    // schließt, während die Abfrage läuft, bekommt sonst ein `setState` auf
+    // eine Komponente, die es nicht mehr gibt.
+    let abgemeldet = false
+    void ladePruefstand(districtId, currentUserId ?? null)
+      .then((stand) => { if (!abgemeldet) setPruefstand(stand) })
+      .catch((e) => {
+        console.error('Prüfstand konnte nicht geladen werden:', e)
+        // **Ein Fehler wird als Fehler geführt, nicht als leerer Bestand.**
+        // Sonst stünde an jedem Stand „Noch nie geprüft" — eine Sperre also
+        // als Schweigen, und das ist der Fehler, gegen den die ganze
+        // Unterscheidung gebaut ist.
+        if (!abgemeldet) setPruefstand({ zeilen: [], fehler: true, namen: {} })
+      })
+      .finally(() => { if (!abgemeldet) setPruefLaedt(false) })
+    return () => { abgemeldet = true }
+  }, [districtId, currentUserId])
+
+  const pruefungen = useMemo(() => alsPruefungen(pruefstand.zeilen), [pruefstand.zeilen])
+
+  /**
+   * **Der offene Stand wird frisch gelesen, bevor jemand handelt**
+   * (Fremdprüfung 26.08.2026, B9 `[hoch]` — aus dem OFFENEN Fokuspunkt, und
+   * der schwerste Befund dieser Kette).
+   *
+   * Ohne das läuft der Prüfstand genau einmal, beim Aufbau der Karte. **Eine
+   * Sperre, die jemand anderes während der Jagd meldet, bliebe für diese
+   * Sitzung unsichtbar** — und darauf stützt der Jagdleiter seine Einteilung.
+   * Dieselbe Antwort gibt die Feld-App: sie lädt beim Öffnen des Sheets, nicht
+   * beim Aufbau der Karte.
+   *
+   * **Das Einteilen-Sheet hat Vorrang vor dem Detail-Sheet**, weil dort
+   * gehandelt wird — die Liste bleibt gesperrt, bis die Antwort da ist
+   * (`pruefBefundFuer`), sonst entschiede die Netzgeschwindigkeit darüber, ob
+   * eine Sperre gesehen wird.
+   */
+  const offeneOid =
+    assignStand && assignStand.type !== 'adhoc'
+      ? assignStand.id
+      : detailStand && detailStand.type !== 'adhoc'
+        ? detailStand.id
+        : null
+  const [nachladeOid, setNachladeOid] = useState<string | null>(null)
+  /**
+   * **Was wir über EINEN Stand wissen, seit wir ihn einzeln gelesen haben**
+   * (Schlusslesung 26.08.2026, F2).
+   *
+   * `pruefstand.fehler` gilt für die ganze Karte und wird nur hochgesetzt, nie
+   * zurück. Das ist in der sicheren Richtung — aber es entwertete die eigene
+   * Rückfrage: nach einem einzigen Funkloch beim Kartenaufbau fragte JEDER
+   * Namensklick der Sitzung „Trotzdem einteilen?", auch am Stand, dessen
+   * frisches Nachlesen soeben gelungen war. **Eine Warnung, die auch bei
+   * gesichertem Wissen kommt, wird zur Gewohnheit — und verliert ihren Wert
+   * genau dann, wenn sie stimmt.**
+   *
+   * Die Feld-App hat das Problem nie gehabt: ihr Fehlerzustand ist
+   * standbezogen und wird beim Öffnen des Sheets frisch bestimmt. Diese Map
+   * holt das nach — `'ok'` heißt „für diesen Stand gemessen", `'fehler'` heißt
+   * „für diesen Stand versucht und gescheitert", und wo nichts steht, gilt
+   * weiter die Auskunft der Voll-Ladung.
+   */
+  const [standFrische, setStandFrische] = useState<ReadonlyMap<string, 'ok' | 'fehler'>>(new Map())
+
+  useEffect(() => {
+    if (!offeneOid) return
+    let abgemeldet = false
+    setNachladeOid(offeneOid)
+    void ladePruefungFuer(offeneOid)
+      .then(({ zeile, fehler }) => {
+        if (abgemeldet) return
+        // **Das Ergebnis gilt für DIESEN Stand** und nicht für die Karte — s.
+        // `standFrische`. Der globale `fehler` bleibt, was die Voll-Ladung
+        // ergeben hat; er wird hier weder hoch- noch zurückgesetzt.
+        setStandFrische((vorher) => new Map(vorher).set(offeneOid, fehler ? 'fehler' : 'ok'))
+        if (zeile) {
+          setPruefstand((vorher) => ({
+            ...vorher,
+            zeilen: [...vorher.zeilen.filter((z) => z.map_object_id !== offeneOid), zeile],
+          }))
+        }
+      })
+      /**
+       * **Nur den EIGENEN Marker löschen** — und das ist die Korrektur einer
+       * Korrektur (Delta-Durchgang 26.08.2026, Finding 1 `[mittel]`).
+       *
+       * Die Schlusslesung hatte das `if (!abgemeldet)` hier als Leser-Falle
+       * gemeldet: wer das Sheet schließt, während die Antwort fliegt, lässt
+       * `nachladeOid` auf dem alten Wert stehen. Ein unbewachtes `null` war
+       * die naheliegende Antwort und **riss das Tor auf, das B9 gerade
+       * geschlossen hatte**: Sheet A öffnen, schließen, Sheet B öffnen — und
+       * As späte Antwort setzt den Marker auf `null`, WÄHREND Bs Anfrage noch
+       * fliegt. Die Namensliste entsperrt sich, bevor Bs frischer Prüfstand da
+       * ist, und wieder entscheidet die Netzgeschwindigkeit, ob eine Sperre
+       * gesehen wird.
+       *
+       * Das funktionale Update kann beides: es räumt den Marker auf, wenn er
+       * noch der eigene ist, und lässt einen fremden stehen.
+       */
+      .finally(() => setNachladeOid((laufend) => (laufend === offeneOid ? null : laufend)))
+    return () => { abgemeldet = true }
+  }, [offeneOid])
+
+  /**
+   * Eine Prüfung eintragen. Der Schreibweg selbst liegt in
+   * `src/lib/revier/pruefstand.ts` und wird mit dem mobilen Revier-Editor
+   * geteilt — samt Notiz-Pflicht, `.select()`, dem Nachlesen der View und dem
+   * `catch` darum.
+   *
+   * **Was bei einem Ladefehler passiert und was nicht:** die Zeile landet im
+   * Zustand, aber `pruefstand.fehler` bleibt stehen — die Zustandszeile sagt
+   * weiter „nicht abrufbar", die Rückmeldung trägt der Toast. Dasselbe
+   * Verhalten wie im mobilen Revier-Editor; wer davorsteht, kann melden, und
+   * sein Eintrag überholt ohnehin alles Ältere.
+   */
+  const handleCheck = useCallback(
+    async (objektId: string, status: PruefStatus, note: string | null): Promise<boolean> => {
+      if (!currentUserId) {
+        showToast('Nicht angemeldet — Prüfung nicht möglich.', 'warning')
+        return false
+      }
+      if (pruefLaeuft.current.has(objektId)) return false
+      pruefLaeuft.current.add(objektId)
+      try {
+        const ergebnis = await schreibePruefung(objektId, currentUserId, status, note)
+        if (!ergebnis.ok) {
+          showToast(
+            ergebnis.grund === 'notiz-fehlt'
+              ? 'Bitte kurz beschreiben, was los ist.'
+              : 'Prüfung konnte nicht gespeichert werden.',
+            'warning',
+          )
+          return false
+        }
+        /**
+         * **Konnte nach dem Schreiben nicht nachgelesen werden? Dann gilt der
+         * Prüfstand DIESES Standes als nicht abrufbar** (Fremdprüfung
+         * 26.08.2026, A1 `[hoch]`; standbezogen seit der Schlusslesung, F2).
+         * Die eigene Zeile steht, aber ob sie die jüngste ist, weiß niemand —
+         * und „Geprüft" über einer fremden, frischeren Sperre ist genau die
+         * Auskunft, die kosten kann. Die Zeile wandert trotzdem in den
+         * Zustand: sie ist wahr, nur womöglich nicht die letzte.
+         */
+        setStandFrische((vorher) =>
+          new Map(vorher).set(objektId, ergebnis.standUnsicher ? 'fehler' : 'ok'),
+        )
+        setPruefstand((vorher) => ({
+          ...vorher,
+          zeilen: [...vorher.zeilen.filter((z) => z.map_object_id !== objektId), ergebnis.zeile],
+        }))
+        showToast(status === 'gesperrt' ? 'Gesperrt ✓' : 'Eingetragen ✓')
+        return true
+      } finally {
+        pruefLaeuft.current.delete(objektId)
+      }
+    },
+    [currentUserId],
+  )
+
+  /**
+   * Eine Sperre aufheben — **mit Rückfrage, weil es eine Aussage über die
+   * Sicherheit eines Standes ist** und mit dem eigenen Namen im Log steht.
+   * Wortlaut aus der Feld-App übernommen.
+   */
+  const handleEntsperren = useCallback(
+    async (objektId: string) => {
+      const ok = await confirmSheet({
+        title: 'Sperre aufheben',
+        description:
+          'Ist der Stand geprüft und wieder sicher zu besetzen? Das wird mit deinem Namen eingetragen.',
+        confirmLabel: 'Entsperren',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
+      setEntsperrOid(objektId)
+      try {
+        await handleCheck(objektId, 'ok', null)
+      } finally {
+        setEntsperrOid(null)
+      }
+    },
+    [confirmSheet, handleCheck],
+  )
+
+  /**
+   * Das Bündel für das Detail-Sheet — `null` heißt „an diesem Stand gibt es
+   * nichts zu prüfen", und das ist genau der Adhoc-Stand: er ist eine Zeile in
+   * `hunt_seat_assignments`, kein Kartenobjekt.
+   *
+   * **Bewusst KEIN `useCallback`** (Ponytail 26.08.2026): beide Funktionen
+   * werden im JSX direkt aufgerufen, ihre Identität liest niemand als
+   * Abhängigkeit. Ein Memo hätte nur ein Dep-Array beigesteuert, das
+   * auseinanderlaufen kann.
+   */
+  /**
+   * Was über EINEN Stand bekannt ist: das einzeln Gemessene schlägt die
+   * Auskunft der Voll-Ladung, in beide Richtungen (Schlusslesung 26.08.2026,
+   * F2).
+   */
+  const standFehler = (oid: string): boolean => {
+    const frisch = standFrische.get(oid)
+    if (frisch) return frisch === 'fehler'
+    return pruefstand.fehler
+  }
+
+  const zustandFuer = (stand: StandData): StandZustandProps | null => {
+    if (stand.type === 'adhoc') return null
+    const pruefung = pruefungen.get(stand.id) ?? null
+    return {
+      pruefung,
+      pruefFehler: standFehler(stand.id),
+      // **Das Nachlesen dieses Standes zählt auch hier als „lädt"**
+      // (Schlusslesung 26.08.2026, F3). Ohne den zweiten Teil stünde während
+      // des Nachlesens „Noch nie geprüft" — der Ladevorgang läse sich als
+      // gültige Auskunft (S4), und wer daraufhin selbst `ok` einträgt,
+      // überschriebe eine gerade eintreffende fremde Sperre.
+      laedt: pruefLaedt || nachladeOid === stand.id,
+      prueferName: pruefung?.checkedBy ? (pruefstand.namen[pruefung.checkedBy] ?? null) : null,
+      wartbar: istWartbar(stand.type),
+      onCheck: (status, note) => handleCheck(stand.id, status, note),
+    }
+  }
+
+  /** Dasselbe für das Einteilen-Sheet — dort ohne Erfassung, dafür mit Riegel. */
+  const pruefBefundFuer = (stand: StandData) => {
+    if (stand.type === 'adhoc') return undefined
+    const pruefung = pruefungen.get(stand.id) ?? null
+    return {
+      pruefung,
+      prueferName: pruefung?.checkedBy ? (pruefstand.namen[pruefung.checkedBy] ?? null) : null,
+      // Das Nachlesen dieses Standes zählt als „lädt" — und blockiert damit
+      // die Namensliste, bis feststeht, was gilt (B9).
+      laedt: pruefLaedt || nachladeOid === stand.id,
+      fehler: standFehler(stand.id),
+      entsperrBusy: entsperrOid === stand.id,
+      onEntsperren: () => void handleEntsperren(stand.id),
+    }
+  }
 
   // Per-Marker Move-Mode (nur Jagdleiter)
   const [movingStandId, setMovingStandId] = useState<string | null>(null)
@@ -1847,7 +2323,22 @@ export default function MapContent({
       {/* === Stand-Detail-Sheet (neuer einheitlicher Tap-Flow) === */}
       {detailStand && huntParticipants && huntId && seatAssignments && currentUserId && (
         <StandDetailSheet
+          /**
+           * **Ein eigener `key` je Stand** (Fremdprüfung 26.08.2026, B6
+           * `[hoch]`). Ohne ihn tauscht React bei einem Standwechsel nur die
+           * Props und behält den inneren Zustand von `StandZustand` — die halb
+           * getippte Mangel-Notiz von Stand A landete dann in Bs Log, das
+           * keine DELETE-Policy hat.
+           *
+           * Der Weg dorthin ist heute schwer zu treffen (das Overlay deckt die
+           * Karte ab), aber genau so stand es im Portal am 25.08.2026, und dort
+           * war die Entscheidung dieselbe: bei einem Append-only-Log ist eine
+           * Zeile der billigere Tausch als eine Annahme über eine Bedingung in
+           * einer anderen Datei.
+           */
+          key={detailStand.id}
           stand={detailStand}
+          zustand={zustandFuer(detailStand)}
           huntId={huntId}
           isJagdleiter={!!isJagdleiter}
           currentUserId={currentUserId}
@@ -1903,6 +2394,7 @@ export default function MapContent({
       {assignStand && huntParticipants && huntId && seatAssignments && (
         <StandAssignSheet
           stand={assignStand}
+          pruefBefund={pruefBefundFuer(assignStand)}
           huntParticipants={huntParticipants}
           seatAssignments={seatAssignments}
           huntId={huntId}
