@@ -232,25 +232,60 @@ export default function HuntPage() {
   }, [geoState.position, geoState.accuracy, geoState.isLocked, myParticipantId, myParticipation?.status, hunt?.id, supabase])
 
   const loadMapObjects = useCallback(async (districtId: string) => {
-    const { data: mapObjects } = await supabase
+    const { data: mapObjects, error } = await supabase
       .from('map_objects')
       .select('id, name, type, position, description')
       .eq('district_id', districtId)
 
-    if (mapObjects) {
-      const parsed: StandData[] = []
-      for (const obj of mapObjects) {
-        const pos = parsePointHex(obj.position as string)
-        if (pos) parsed.push({
-          id: obj.id,
-          name: obj.name,
-          type: obj.type,
-          position: pos,
-          description: (obj as Record<string, unknown>).description as string | null,
-        })
-      }
-      setStands(parsed)
+    /**
+     * **Der Fehler wurde bis zum 26.08.2026 gar nicht gelesen** — hier stand
+     * `const { data: mapObjects } = …`, ohne `error`. Schlug die Anfrage fehl,
+     * blieb die Karte still leer: kein Hinweis, keine Meldung, und niemand
+     * konnte unterscheiden, ob ein Revier keine Stände hat oder ob die Anfrage
+     * gescheitert ist (S1/S4).
+     *
+     * **Das ist kein theoretischer Mangel.** Am 26.08.2026 fehlten in der
+     * Jagdkarte alle 32 Objekte von Testrevier L7 — die Ursache lag beim
+     * Parser, aber ohne diese Zeile war vom Bildschirm aus nicht einmal zu
+     * sagen, ob überhaupt Daten ankamen. Die Diagnose kostete darum den Umweg
+     * über eine zweite Seite. Moritz' erste Deutung war die naheliegende und
+     * falsche: *„vielleicht gibt es ja gar keine."*
+     *
+     * **Der bestehende Zustand bleibt stehen**, statt geleert zu werden: beim
+     * Nachladen ist der alte Stand die bessere Auskunft als ein erfundener
+     * leerer — dieselbe Entscheidung wie bei den Teilnehmern in `loadHunt`.
+     */
+    if (error) {
+      console.warn('[loadMapObjects] map_objects-Query fehlgeschlagen:', error)
+      return
     }
+    if (!mapObjects) return
+
+    const parsed: StandData[] = []
+    let ohnePosition = 0
+    for (const obj of mapObjects) {
+      const pos = parsePointHex(obj.position)
+      if (!pos) { ohnePosition++; continue }
+      parsed.push({
+        id: obj.id,
+        name: obj.name,
+        type: obj.type,
+        position: pos,
+        description: (obj as Record<string, unknown>).description as string | null,
+      })
+    }
+    /**
+     * **Ein Objekt ohne lesbare Position ist eine Auffälligkeit, kein
+     * Normalfall** — `position` ist NOT NULL. Genau diese Zahl wäre am
+     * 26.08.2026 die Antwort gewesen: 32 geladen, 32 verworfen.
+     */
+    if (ohnePosition > 0) {
+      console.warn(
+        `[loadMapObjects] ${ohnePosition} von ${mapObjects.length} Objekten ohne lesbare Position — ` +
+          'geparst wird jetzt Hex UND GeoJSON, s. parsePointHex.',
+      )
+    }
+    setStands(parsed)
   }, [supabase])
 
   const loadDistrictData = useCallback(async (districtId: string) => {

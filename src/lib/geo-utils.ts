@@ -54,23 +54,84 @@ function toRad(deg: number): number {
  * PostGIS hex-encoded EWKB Point → { lat, lng }
  * Format: byteOrder(1) + type(4) + [srid(4)] + x(8) + y(8)
  */
-export function parsePointHex(hex: string): { lat: number; lng: number } | null {
+export function parsePointHex(input: unknown): { lat: number; lng: number } | null {
+  /**
+   * **PostgREST liefert geometry-Spalten als GeoJSON-Objekt** — derselbe Zweig
+   * wie in `parsePolygonHex`, und er hat hier bis zum 26.08.2026 gefehlt.
+   *
+   * **Was das gekostet hat, ist gemessen und nicht geschätzt:** die Jagdkarte
+   * zeigte für Testrevier L7 **keinen einzigen** der 32 Kartenobjekte — die
+   * Reviergrenze daneben schon, weil `parsePolygonHex` den Zweig hat. Moritz
+   * am Gerät: *„vll gibt es ja gar keine."* Genau davor warnt der Dateikopf von
+   * `app/zentrale/karte-geo.ts`: *„Zwei Fassungen, die sich im Fallback
+   * unterscheiden, lassen auf einer der beiden Karten lautlos Punkte fehlen —
+   * das sieht nicht wie ein Fehler aus, sondern wie ein Revier ohne Stände."*
+   *
+   * **Der alte Wächter fing den Fall nicht, er verdeckte ihn:** bei einem
+   * Objekt ist `hex.length` `undefined`, und `undefined < 42` ist `false` — der
+   * frühe Ausstieg griff also NICHT. Eine Zeile später warf `hex.substring`,
+   * der `catch` schluckte den Fehler, und heraus kam `null`. **Ein
+   * Typfehler, der sich als „kein Punkt vorhanden" ausgibt.** Das `as string`
+   * an der Aufrufstelle (`app/app/hunt/[id]/page.tsx`) hat TypeScript die
+   * falsche Annahme durchgehen lassen.
+   *
+   * **Sechs Aufrufer hatten sich je einen eigenen Vorfilter gebaut**
+   * (`punktAus`, `parseObjectPosition`, `RevierMap`, `map-context`,
+   * `diary/geo`, `hunt/create`), zwei nicht: die Jagdkarte und der
+   * Positions-Snapshot in `useHuntPositions`. Die Fallunterscheidung gehört an
+   * DIESE Stelle, dann kann sie kein Aufrufer mehr vergessen. Die vorhandenen
+   * Vorfilter bleiben unverändert gültig — sie reichen einen String durch, und
+   * genau den nimmt der Hex-Pfad unten.
+   */
+  if (input && typeof input === 'object' && 'type' in input && 'coordinates' in input) {
+    const geo = input as { type: string; coordinates: number[] }
+    if (geo.type === 'Point' && Array.isArray(geo.coordinates) && geo.coordinates.length >= 2) {
+      const [lng, lat] = geo.coordinates
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+      return { lat, lng }
+    }
+    return null
+  }
+
+  const hex = typeof input === 'string' ? input : null
   if (!hex || hex.length < 42) return null
 
   try {
-    const isLE = hex.substring(0, 2) === '01'
+    /**
+     * **Byte-Order, Geometrietyp, Länge und Endlichkeit werden geprüft** —
+     * alle vier fehlten bis zum 26.08.2026 (Fremdprüfung C6/C7 `[mittel]`).
+     *
+     * Was ohne sie durchkam, ist nicht theoretisch: **ein LineString wurde als
+     * Punkt nahe 0/0 gelesen**, abgeschnittenes EWKB zu einer erfundenen
+     * Koordinate aufgefüllt, und ein kodiertes `NaN` kam als gültiges
+     * `{ lat, lng }` zurück. Der Aufrufer kann das nicht mehr erkennen — für
+     * ihn ist ein zurückgegebenes Objekt eine Position. **Ein Marker im
+     * Nirgendwo ist schlimmer als ein fehlender**, weil er wie Wissen aussieht.
+     */
+    const order = hex.substring(0, 2)
+    if (order !== '01' && order !== '00') return null
+    const isLE = order === '01'
 
     // Type (4 Bytes) — prüfe ob SRID-Flag gesetzt
     const typeHex = hex.substring(2, 10)
     const typeInt = isLE
       ? parseInt(typeHex.match(/../g)!.reverse().join(''), 16)
       : parseInt(typeHex, 16)
+    if (!Number.isFinite(typeInt)) return null
+
+    // Die oberen Bits tragen Z/M/SRID-Flags; unten steht der Basistyp.
+    // 1 = Point. Alles andere ist kein Punkt, auch wenn Bytes dastehen.
+    if ((typeInt & 0x1fffffff) !== 1) return null
 
     const hasSRID = (typeInt & 0x20000000) !== 0
     const offset = hasSRID ? 18 : 10
+    // Ohne diese Prüfung liest `substring` über das Ende hinaus und
+    // `hexToFloat64` füllt still auf — aus zu wenig Bytes wird eine Koordinate.
+    if (hex.length < offset + 32) return null
 
     const x = hexToFloat64(hex.substring(offset, offset + 16), isLE)
     const y = hexToFloat64(hex.substring(offset + 16, offset + 32), isLE)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null
 
     return { lat: y, lng: x } // PostGIS: x = longitude, y = latitude
   } catch {
