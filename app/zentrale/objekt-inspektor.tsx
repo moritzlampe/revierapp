@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import type { Punkt, PunktPruefung } from './revierkarte-map'
 import Papierkorb from './papierkorb'
 import StorageImg from '@/components/photo/StorageImg'
@@ -790,10 +790,58 @@ function wannUndWer(p: PunktPruefung): string {
  * Donnerstag in ein Protokoll, das die Frage „wer war vor der Drückjagd oben"
  * beantworten soll. **Der PC ist der Ort, an dem man nachträglich sauber
  * macht; ohne Datumsfeld wäre er der Ort, an dem man das Protokoll verdirbt.**
+ *
+ * **`aufEingetragen` ist der Riegel gegen die zweite Zeile** (CP-82).
+ *
+ * Der Schreibpfad hier und die Historie in `Standzustand` sind zwei getrennte
+ * Ladewege auf dieselbe Tabelle. Die Historie hängt an `onToggle` des
+ * `<details>` — und das feuert nicht, wenn der Aufklapper beim Speichern schon
+ * offen STAND. Wer also mit offener Historie eintrug, sah seine eigene Zeile
+ * nicht erscheinen: keine Meldung, kein Fehler, nichts. In einem Log ohne
+ * DELETE-Policy ist das die Einladung, es noch einmal zu versuchen.
  */
-function Pruefen({ objekt }: { objekt: Punkt }) {
+function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: () => void }) {
   const router = useRouter()
   const [offen, setOffen] = useState(false)
+  /**
+   * Die Rückmeldung nach einem gelungenen Eintrag — sie bleibt stehen, bis
+   * jemand das Formular wieder öffnet.
+   *
+   * **Kein Timer, der sie wegräumt.** Eine wahre Aussage muss nicht verfallen,
+   * und ein Timeout wäre ein zweiter Zustand mit eigener Lebensdauer für einen
+   * Satz, der niemanden stört. Ein layoutweiter Toast wäre der andere Weg — er
+   * ist im Portal ein eigener Vorgang (s. `revier-name.tsx`), und diese
+   * Meldung soll dort stehen, wo die Handlung war.
+   */
+  const [erfolg, setErfolg] = useState(false)
+  /**
+   * **`router.refresh()` ist nicht abwartbar, `startTransition` macht ihn
+   * sichtbar** — dasselbe Muster wie in `revier-name.tsx:233`.
+   *
+   * **Warum der Zustand hier NICHT lokal gesetzt wird, anders als in
+   * `src/lib/revier/pruefstand.ts`:** weil er ein Server-Prop ist, das vier
+   * Ebenen höher entsteht (`revierkarte.tsx`, Overlay `geschrieben` +
+   * `ueberlagert()`). Ihn hier lokal zu setzen hiesse, diesen Mechanismus zu
+   * doppeln oder zu durchtunneln — und er trägt bereits Name, Typ, Notiz,
+   * Position, Anlegen und Löschen.
+   *
+   * ⚠ **Ein zweites Argument stand hier und ist halb falsch** (Schlusslesung
+   * 26.08.2026, F3): *„der `prueferName` ist eine Server-Auskunft, die der
+   * Client nicht hat."* Die PWA widerlegt es selbst — `ladePruefstand()` nimmt
+   * `eigeneId` entgegen, **weil man den eigenen Namen kennt**, und
+   * `konto_namen()` ist auch von hier per RPC rufbar. Es bliebe eine Abfrage,
+   * kein Hindernis. **Die Entscheidung hängt allein an der Prop-Kette oben**,
+   * und sie soll nicht an einem Nebensatz hängen, den der nächste Leser
+   * widerlegen kann.
+   *
+   * Ohne das war der Zustand nach dem Eintragen genau das, was die Abnahme am
+   * 26.08.2026 vorfand: Formular zu, Anzeige unverändert, kein Hinweis, dass
+   * überhaupt noch etwas läuft. Die Zustandszeile oben ist ein Server-Prop; sie
+   * kann erst stimmen, wenn die Server-Komponente nachgezogen hat, und wie
+   * lange das dauert, wusste bisher niemand — **jetzt steht es auf dem Schirm
+   * statt in einer Vermutung.**
+   */
+  const [refreshLaeuft, startRefresh] = useTransition()
   const [status, setStatus] = useState<PruefStatus>('ok')
   const [notiz, setNotiz] = useState('')
   const [tag, setTag] = useState(() => heuteBerlin())
@@ -996,9 +1044,14 @@ function Pruefen({ objekt }: { objekt: Punkt }) {
       setNotiz('')
       setStatus('ok')
       setTag(heuteBerlin())
+      setErfolg(true)
+      // Die Historie liegt in der Geschwisterkomponente und lädt sonst nur beim
+      // Aufklappen — bei einem Aufklapper, der schon offen ist, also nie.
+      aufEingetragen()
       // Der Zustand ist ein Server-Prop — ohne Refresh stünde oben weiter die
-      // alte Zeile, obwohl die neue geschrieben ist.
-      router.refresh()
+      // alte Zeile, obwohl die neue geschrieben ist. **Im Transition, damit die
+      // Wartezeit eine Anzeige hat** statt als „nichts passiert" zu erscheinen.
+      startRefresh(() => router.refresh())
     } catch (e) {
       setFehler(e instanceof Error ? e.message : 'Die Prüfung konnte nicht gespeichert werden.')
     } finally {
@@ -1010,9 +1063,65 @@ function Pruefen({ objekt }: { objekt: Punkt }) {
   if (!offen) {
     return (
       <div className="zentrale-inspektor-pruefen">
-        <button type="button" className="oeffnen" onClick={() => setOffen(true)}>
+        <button
+          type="button"
+          className="oeffnen"
+          onClick={() => {
+            // Die alte Rückmeldung geht mit dem Öffnen weg: sie gälte sonst
+            // scheinbar für den Eintrag, der gerade erst getippt wird.
+            setErfolg(false)
+            setOffen(true)
+          }}
+        >
           Prüfung eintragen
         </button>
+      {/* **Die Rückmeldung nennt beides getrennt: was steht, und was noch
+          läuft.** „Eingetragen" ist ab dem gelungenen Insert wahr und bleibt
+          es; die Anzeige oben hinkt bis zum Server-Stand hinterher. Beides in
+          einen Satz zu ziehen hieße, die Wahrheit an die Ladezeit zu binden.
+
+          ⚠ **Diese Live-Region wird beim Erfolg NEU eingefügt, und manche
+          Vorlesegeräte lassen so eine stumm** (Schlusslesung 26.08.2026, F1 —
+          **der Befund steht als CP-83 im Backlog und ist NICHT behoben**).
+
+          **Hier stand kurzzeitig ein Fix, der keiner war**, und wie er
+          scheiterte, gehört in die Akte: das `<p>` wurde dauerhaft gerendert
+          und nur sein Text gewechselt — nur eben **innerhalb des
+          `if (!offen)`-Zweigs.** Der Erfolg entsteht aus `setOffen(false)`
+          plus `setErfolg(true)` im selben Batch; React wechselt dabei den
+          ganzen Zweig und mountet das `<p>` **mitsamt Text** neu. Genau der
+          Fall, den der Fix schließen sollte. Gefunden vom Delta-Durchgang,
+          nachdem zwei Prüfläufe ihn durchgewinkt hatten.
+
+          > **Der Kommentar behauptete „steht IMMER da", während drei Zeilen
+          > weiter oben `if (!offen)` stand.** Eine falsche „ist gelöst"-Notiz
+          > an einem Barrierefreiheits-Fix ist teurer als ein offener Befund:
+          > sie hält den nächsten Leser davon ab hinzusehen.
+
+          **Was wirklich hülfe, und warum es hier nicht steht:** eine
+          dauerhaft im DOM stehende, visuell versteckte Live-Region ausserhalb
+          beider Renderzweige, getrennt von der sichtbaren Meldung. Das Repo
+          hat dafür keine `sr-only`-Konvention (nachgesehen: keine in
+          `zentrale.css` und `globals.css`), es wären also zwei Elemente, eine
+          neue Klasse und ein Umbau der Komponentenstruktur — **Fläche, die
+          kein Prüfer gesehen hat, für einen Fix, den niemand am Gerät
+          nachmessen kann.** Der ehrliche Zwischenstand ist der offene Befund.
+
+          **`aria-hidden` wäre hier falsch** — eine Live-Region, die versteckt
+          ist, wenn die Änderung eintrifft, sagt nichts an.
+
+          **F2 der Schlusslesung ist bewusst verworfen:** nach einem
+          RÜCKDATIERTEN Eintrag verspricht „die Ansicht wird aktualisiert …"
+          scheinbar eine Änderung oben, die ausbleibt. Der Satz stimmt
+          trotzdem — die Ansicht WIRD aktualisiert, die Historie bekommt eine
+          Zeile —, und dass der Zustand oben stehen bleibt, sagt die Warnung im
+          Formular bereits vorher. Den Ladehinweis im Überholt-Fall wegzulassen
+          hieße, einen Vorgang zu verstecken, den es gibt. */}
+        {erfolg ? (
+          <p className="erledigt" role="status">
+            Eingetragen ✓{refreshLaeuft ? ' — die Ansicht wird aktualisiert …' : ''}
+          </p>
+        ) : null}
       </div>
     )
   }
@@ -1153,6 +1262,17 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
    */
   const lauf = useRef(0)
 
+  /**
+   * Das `<details>`-Element selbst — **`open` im DOM ist die Wahrheit, nicht
+   * ein zweiter Zustand daneben.**
+   *
+   * Genau dafür steht hier ein `<details>` und kein eigener State (s. Kommentar
+   * am Element): das Auf- und Zuklappen kann der Browser. Ein `historieOffen`
+   * im React-Zustand wäre eine zweite Buchführung über dieselbe Sache — und die
+   * ist in diesem Repo schon zweimal aus dem Tritt geraten.
+   */
+  const historieRef = useRef<HTMLDetailsElement>(null)
+
   const laden = useCallback(async () => {
     const meiner = ++lauf.current
     setLaedt(true)
@@ -1213,6 +1333,28 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
     }
   }, [objekt.id])
 
+  /**
+   * Nach einem gelungenen Eintrag: die Historie nachziehen — **aber nur, wenn
+   * sie überhaupt aufgeklappt ist** (CP-82).
+   *
+   * Ist sie zu, wird beim nächsten Öffnen ohnehin frisch geladen; ein Lauf auf
+   * Vorrat wäre eine Abfrage für eine Liste, die niemand ansieht. Ist sie
+   * offen, feuert `onToggle` nicht — der Aufklapper hat sich ja nicht bewegt —,
+   * und **genau in diesem Fall sah der Melder seine eigene Zeile nicht
+   * erscheinen.**
+   *
+   * `laden()` trägt den Generationszähler schon; ein Lauf, der einen
+   * fliegenden überholt, ist damit gedeckt.
+   *
+   * **Kein `useCallback`** (Ponytail-Lesung): `Pruefen` ist nicht memoisiert,
+   * die stabile Identität liest also niemand — sie kostete nur ein Dep-Array,
+   * das driften kann. Derselbe Befund wie am 26.08.2026 an zwei anderen
+   * Stellen dieser Sitzung.
+   */
+  const nachEintrag = () => {
+    if (historieRef.current?.open) void laden()
+  }
+
   return (
     <div className="zentrale-inspektor-zustand">
       <p className={`zeile${objekt.pruefung ? '' : ' leer'}`}>
@@ -1246,7 +1388,7 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
           Lesen bleibt, Schreiben nicht. Wer einen Parkplatz künftig doch
           prüfen will, ändert `WARTBAR` — an einer Stelle, für alle drei
           Ansichten. */}
-      {istWartbar(objekt.typ) ? <Pruefen objekt={objekt} /> : null}
+      {istWartbar(objekt.typ) ? <Pruefen objekt={objekt} aufEingetragen={nachEintrag} /> : null}
 
       {/* `<details>` statt eines eigenen Zustands: das Aufklappen kann der
           Browser samt Tastatur und Screenreader. Dieselbe Bauart wie der
@@ -1256,6 +1398,7 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
           garantiert leer ist, ist eine Einladung, die ins Leere führt. */}
       {objekt.pruefung ? (
         <details
+          ref={historieRef}
           className="zentrale-inspektor-historie"
           // Bei jedem Öffnen neu laden, nicht nur beim ersten: die Feld-App
           // schreibt währenddessen weiter, und ein zweites Öffnen soll den

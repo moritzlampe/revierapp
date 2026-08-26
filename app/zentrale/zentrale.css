@@ -1496,6 +1496,26 @@ body:has(.zentrale-karte-kasten.kino) {
   font-size: 0.8125rem;
   color: var(--z-gesperrt);
 }
+/* Die Rueckmeldung nach einem gelungenen Eintrag (CP-82) — eigene Regel, weil
+   `.hinweis` fuer die Zeilen IM Formular geschrieben ist: dort sitzt der
+   Container auf `display: flex` mit `gap: 12px`, der Abstand kommt vom Gap.
+   Der Ruhezustand hat kein Flex, und mit `margin: 0` klebte die Meldung am
+   Knopf.
+
+   **Primaere Textfarbe, nicht die gedaempfte.** Der einzige Zweck dieser Zeile
+   ist, einen ZWEITEN Eintrag in ein Log ohne DELETE-Policy zu verhindern; eine
+   Meldung, die man uebersieht, tut das nicht.
+
+   **Und bewusst KEIN Gruen.** Der Token-Satz kennt `--z-mangel` und
+   `--z-gesperrt`, aber kein `--z-ok` — die Historie faerbt `ok` gar nicht, mit
+   Begruendung (s. `.stat.mangel` oben): das WORT traegt die Auskunft, nicht die
+   Farbe. Eine gruene Erfolgsmeldung waere hier die einzige Stelle im Portal,
+   die es anders haelt. */
+.zentrale-inspektor-pruefen .erledigt {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: var(--z-text-primary);
+}
 
 .zentrale-inspektor-pruefen .knoepfe { display: flex; gap: 8px; }
 .zentrale-inspektor-pruefen .knoepfe button {
