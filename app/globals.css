@@ -744,6 +744,14 @@ button:active {
 
 /* Tooltip-Chip ueber dem Pin */
 .stand-tooltip.leaflet-tooltip {
+  /* Ein sehr langer Ad-hoc-Name legte sich sonst über Nachbarstände: Leaflet
+     kennt keine Kollisionsvermeidung (Fremdprüfung 26.08.2026, D3). Gekappt
+     wird die ANZEIGE, nie der gespeicherte Wert — stilles Abschneiden beim
+     Speichern ist in diesem Repo zweimal bezahlt worden (CP-65, CP-68). */
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   background: rgba(20, 20, 20, 0.78);
   color: #FFFFFF;
   border: none;

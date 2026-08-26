@@ -23,7 +23,7 @@ import GpsStatusBadge from './GpsStatusBadge'
 import CompassToggleButton from '@/components/map/CompassToggleButton'
 import { useCompassHeading, getCompassEnabled, setCompassEnabled } from '@/hooks/useCompassHeading'
 import { buildPinSvg, getPinVariant, isAssignableStand, type PinSize } from '@/lib/markers/pin-svg'
-import { buildInitials, formatDistanceLabel } from '@/lib/markers/marker-labels'
+import { formatDistanceLabel } from '@/lib/markers/marker-labels'
 import { WildartPicker } from '@/components/erlegung/WildartPicker'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
@@ -32,6 +32,16 @@ import { zustandsZeile, type StandZustandProps } from '@/components/revier/Stand
 import { alsPruefungen, istWartbar, type Pruefung, type PruefStatus } from '@/lib/revier/wartung'
 import { ladePruefstand, ladePruefungFuer, schreibePruefung, PRUEFSTAND_LEER, type Pruefstand } from '@/lib/revier/pruefstand'
 import { Star, Crosshair, UsersThree, Dog } from '@phosphor-icons/react'
+
+/**
+ * Ab wann eine Standmarke ihren Namen trägt, und ab wann zusätzlich Schütze und
+ * Entfernung. Benannt und beieinander, weil es Kalibrierknöpfe sind: die
+ * Feld-App nennt dieselben Größen `LABEL_MIN_ZOOM` (13) und
+ * `LABEL_DETAIL_ZOOM` (16). **Hier steht die erste höher**, weil Leaflet
+ * überlappende Beschriftungen nicht wegfallen lässt — s. `tooltipContent`.
+ */
+const LABEL_ZOOM = 14
+const LABEL_DETAIL_ZOOM = 16
 
 // Inline-SVG-Markup fuer Leaflet-divIcon HTML (React-Komponenten koennen
 // dort nicht gerendert werden). Pfade aus Phosphor 2.1 (Star fill, Dog regular).
@@ -518,22 +528,75 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
       html: `<div style="position:relative;width:1.75rem;height:2.25rem;display:flex;align-items:flex-end;justify-content:center">${svgHtml}</div>`,
       iconSize: [28, 36],
       iconAnchor: [14, 36],
+      /**
+       * **Ohne diesen Anker säße die Beschriftung AUF dem Pin**
+       * (Fremdprüfung 26.08.2026, D5 — aus dem offenen Fokuspunkt). Der
+       * besetzte Zweig trägt ihn seit jeher; der unbesetzte brauchte ihn nie,
+       * weil leere Stände bis heute gar keine Beschriftung bekamen. Genau das
+       * ändert dieser Diff — und damit wird der fehlende Anker erstmals
+       * sichtbar, ausgerechnet im Regelfall „viele leere Stände".
+       *
+       * −36 statt −40: dieses Icon ist vier Pixel niedriger als das besetzte.
+       */
+      tooltipAnchor: [0, -36],
     })
   }, [stand.type, stand.id, occupied, isMoving, pinSize])
 
-  // Zoom-abhaengige Beschriftung (nur fuer besetzte Staende)
+  /**
+   * Zoom-abhängige Beschriftung — **der Standname zuerst, das Übrige darunter.**
+   *
+   * **Der Aufbau ist von der Feld-App übernommen** (`layer-styles.ts`,
+   * `MAP_LABEL_LAYOUT`): eine Marke trägt ab einer Zoomstufe ihren Namen und ab
+   * einer höheren zusätzlich eine Detailzeile aus Schütze und Entfernung. Dass
+   * beide Fassungen aus DERSELBEN Marke kommen, ist dort ausdrücklich
+   * begründet — zwei Ebenen hätten zwei Kollisionsboxen, und dann stünde
+   * „Heinrich · 120 m" ohne den Stand darüber.
+   *
+   * ⚠ **Hier ging der Standname am 09.04.2026 verloren** (`e5271eb`,
+   * „zoom-tiered marker labels with initials and distance"). Davor stand an
+   * dieser Stelle `const tooltipText = assignedTo || stand.name` — jeder Stand
+   * trug eine Beschriftung, notfalls die eigene. Die Zoomstufen waren der Sinn
+   * jener Änderung und bleiben; **dass leere Stände seither GAR NICHTS mehr
+   * tragen, war kein Entwurf, sondern ein Nebeneffekt.** Aufgefallen ist es
+   * erst am 26.08.2026, als Moritz eine Jagd vorbereiten wollte und fünfzehn
+   * gleich aussehende Pins ohne Namen vorfand.
+   *
+   * **Die Initialen-Stufe entfällt dabei ersatzlos.** Sie war die Antwort auf
+   * „der volle Name ist bei Zoom 14 zu lang" — der Standname ist genauso kurz
+   * und beantwortet die Frage, die man auf einer leeren Karte stellt („welcher
+   * Stand ist das?"). Wer wo sitzt, steht eine Stufe später vollständig da.
+   *
+   * ⚠ **Leaflet kennt kein `text-optional`.** Die Feld-App lässt bei
+   * Platzmangel einzelne Beschriftungen still weg und behält die Marke; hier
+   * überlappen sie stattdessen. **Die beiden Schwellen sind deshalb ein
+   * Kalibrierknopf und keine gesetzte Größe** — bei Testrevier L7 stehen neun
+   * Stände auf 300 m (~35 m Abstand), das ist dichter als jede echte
+   * Standreihe. Wird es zu voll, gehen die Zahlen hoch, nicht die Beschriftung
+   * weg.
+   */
   const tooltipContent = useMemo(() => {
-    if (!occupied || !assignedTo) return null
-    if (zoom < 14) return null
-    if (zoom < 16) return { name: buildInitials(assignedTo), distance: null }
-    // Zoom >= 16: voller Name + optional Distanz
-    let dist: string | null = null
+    if (zoom < LABEL_ZOOM) return null
+    /**
+     * **Ein namenloser Stand bekommt keine leere Blase** (Fremdprüfung
+     * 26.08.2026, D3). `stand.name` kommt bei Adhoc-Sitzen aus `seat_name` und
+     * kann leer sein; ein leerer Tooltip wäre ein Kasten ohne Aussage, der die
+     * Karte belegt und nichts löst.
+     */
+    const name = stand.name?.trim() || null
+    if (zoom < LABEL_DETAIL_ZOOM) return name ? { name, detail: null } : null
+
+    // Ab der Detailstufe: wer sitzt hier, und wie weit ist es.
+    const teile: string[] = []
+    if (occupied && assignedTo) teile.push(assignedTo)
     if (userLat != null && userLng != null) {
-      const m = distanceInMeters(userLat, userLng, stand.position.lat, stand.position.lng)
-      dist = formatDistanceLabel(m)
+      teile.push(formatDistanceLabel(distanceInMeters(userLat, userLng, stand.position.lat, stand.position.lng)))
     }
-    return { name: assignedTo, distance: dist }
-  }, [occupied, assignedTo, zoom, userLat, userLng, stand.position.lat, stand.position.lng])
+    const detail = teile.length > 0 ? teile.join(' · ') : null
+    // Ohne Namen trägt die Detailzeile allein — sonst stünde „Heinrich · 320m"
+    // gar nicht da, obwohl die Auskunft vollständig ist.
+    if (!name) return detail ? { name: detail, detail: null } : null
+    return { name, detail }
+  }, [stand.name, occupied, assignedTo, zoom, userLat, userLng, stand.position.lat, stand.position.lng])
 
   return (
     <Marker
@@ -551,8 +614,8 @@ function StandMarker({ stand, zoom, onEdit, onTap, assignedTo, isMoving, movingA
       {tooltipContent && (
         <Tooltip direction="top" offset={[0, 0]} permanent className="stand-tooltip">
           <span>{tooltipContent.name}</span>
-          {tooltipContent.distance && (
-            <span className="stand-tooltip-distance">{tooltipContent.distance}</span>
+          {tooltipContent.detail && (
+            <span className="stand-tooltip-distance">{tooltipContent.detail}</span>
           )}
         </Tooltip>
       )}
