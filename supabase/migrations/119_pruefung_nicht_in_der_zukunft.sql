@@ -6,9 +6,35 @@
 -- `map_object_letzte_pruefung` (117) nimmt je Objekt die JÜNGSTE Zeile.
 --
 -- **Ein `ok` mit Zukunftsdatum ist damit dauerhaft Sieger und macht jede
--- spätere Sperre unsichtbar.** Das ist die Lüge, gegen die 066 gebaut wurde,
--- nur eine Ebene tiefer: der Stand zeigt „geprüft, alles heil", während die
--- Sperre darunter liegt und nie wieder nach oben kommt.
+-- spätere Sperre unsichtbar.** Der Stand zeigt „geprüft, alles heil", während
+-- die Sperre darunter liegt und nie wieder nach oben kommt.
+--
+--
+-- WOGEGEN 119 NICHT HILFT — UND DAS GEHÖRT IN DIESE DATEI, NICHT NUR IN DIE
+-- BEGRÜNDUNG
+--
+-- Hier stand: „das ist die Lüge, gegen die 066 gebaut wurde". **Der Satz ist
+-- eine Nummer zu groß, und die Schlusslesung vom 26.08.2026 hat darauf
+-- bestanden, dass die Einschränkung in den `.sql`-TEXT wandert** — er ist
+-- das, was im Migrationskatalog und im Repo überdauert; eine Begründungsdatei
+-- daneben liest nicht jeder.
+--
+-- Gemessen am 26.08.2026 lautet die INSERT-Policy dieser Tabelle:
+--
+--     checked_by = auth.uid()
+--     AND EXISTS (SELECT 1 FROM map_objects o WHERE o.id = ...map_object_id)
+--
+-- Der `EXISTS` prüft nur die EXISTENZ des Objekts — den Zugriffsfilter
+-- liefert allein die RLS von `map_objects` im Subquery. **Wer ein
+-- Kartenobjekt lesen darf, darf eine Prüfung dazu schreiben**, und damit
+-- fällt eine fremde Sperre auch mit einem ganz gewöhnlichen `ok` mit
+-- Serverzeit — ohne jeden Zeitstempel-Trick. Im Portal-Track als **CP-80**
+-- geführt, Nachbarschaft von CN-81.
+--
+-- **119 schließt also nur die DAUERHAFTE, nicht heilende Variante.** Ein
+-- Zukunftsdatum gewinnt für immer; ein `ok` mit Serverzeit nur bis zur
+-- nächsten Meldung. Das ist den Trigger wert — aber wer 119 und CP-80
+-- nebeneinander liest, darf nicht glauben, diese Datei decke beides ab.
 --
 --
 -- WARUM DIE CLIENT-RIEGEL NICHT GENÜGEN — UND DAS IST DIE EIGENTLICHE
@@ -40,19 +66,29 @@
 --   * **Feld-App: setzt NICHT.** `insertCheck` (`src/lib/data/checks.ts`)
 --     lässt die Spalte ausdrücklich weg, mit schriftlicher Begründung.
 --   * **PWA: setzt NICHT.**
---   * **Portal: setzt DOCH** — `app/zentrale/objekt-inspektor.tsx:885`
---     schickt `checked_at: wann.toISOString()`, und für den heutigen Tag
---     entsteht `wann` aus `new Date()`. **Das ist die PC-Uhr.**
+--   * **Portal: setzte DOCH** — `app/zentrale/objekt-inspektor.tsx:885`
+--     schickte `checked_at: wann.toISOString()`, und für den heutigen Tag
+--     entstand `wann` aus `new Date()`. **Das war die PC-Uhr.**
+--     ✅ **Erledigt am 26.08.2026** (CN-85, Commit `63d20c6`, deployt): der
+--     Nachtragsweg schickt `checked_at` nur noch bei ECHTER Rückdatierung,
+--     für „heute" greift `default now()`. Ein Wert aus diesem Pfad kann den
+--     Trigger per Konstruktion nie treffen.
 --
 -- **Wie der Irrtum entstand, gehört dazu:** ich hatte per `grep` gesucht und
 -- „nichts gefunden" als „gibt es nicht" gelesen. Der Portal-Pfad kam am
 -- selben Tag aus dem Nachbarstrang dazu. Ein `grep`, der nichts findet,
 -- belegt, dass das Muster nichts fand — nicht die Abwesenheit der Sache.
 --
--- **Folge, und sie ist die wichtigste Zeile dieser Datei:** eine vorgehende
+-- **Folge, und sie war die wichtigste Zeile dieser Datei:** eine vorgehende
 -- PC-Uhr lässt einen legitimen Portal-Eintrag am Trigger scheitern. Solange
--- das Portal die Client-Uhr schickt, steht „melden wird nie verhindert"
+-- ein Client die eigene Uhr schickt, steht „melden wird nie verhindert"
 -- gegen diesen Riegel — und die Regel gewinnt.
+--
+-- **Für das Portal ist das seit dem 26.08.2026 erledigt. Für die Feld-App
+-- kommt es mit CN-88 zurück** — dort löst es Weg 1 im Client (s. „DIE FORM
+-- DER GRENZE"). Der Satz bleibt also stehen, weil er die Regel benennt, an
+-- der sich JEDER künftige Schreibpfad messen lassen muss, nicht bloß den
+-- einen erledigten Fall.
 --
 --
 -- WARUM DIE TOLERANZ AUF NULL STEHT — UND WAS DAS ERZWINGT
@@ -71,14 +107,20 @@
 --
 -- Also keine Toleranz: `new.checked_at > now()` wird abgelehnt.
 --
--- ⚠ **DAMIT DARF DIESE MIGRATION ERST NACH DEM PORTAL APPLIZIERT WERDEN.**
+-- ⚠ **DAMIT DURFTE DIESE MIGRATION ERST NACH DEM PORTAL APPLIZIERT WERDEN.**
 -- Ohne Toleranz scheitert jede Portal-Meldung, deren PC-Uhr auch nur
--- Sekunden vorgeht. Die Reihenfolge ist zwingend:
+-- Sekunden vorgeht. Die Reihenfolge war zwingend — **und ist am 26.08.2026
+-- vollständig durchlaufen:**
 --
---   1. Portal stellt den heutigen Fall auf `default now()` um
---      (`objekt-inspektor.tsx`, Zeile 885 — **fremder Track, R1**)
---   2. Portal ist deployt
---   3. DANN diese Migration
+--   1. ✅ Portal stellt den heutigen Fall auf `default now()` um
+--      (`objekt-inspektor.tsx` — **fremder Track, R1**, vom PWA-Strang
+--      erledigt)
+--   2. ✅ Portal ist deployt — Commit `63d20c6`, Coolify `finished`
+--   3. ✅ DANN diese Migration — hier stehen wir
+--
+-- **Wer diesen Absatz liest, ohne die Häkchen zu beachten, hält eine
+-- erledigte Blockade für offen.** Deshalb stehen sie da und nicht nur in der
+-- Begründungsdatei.
 --
 -- Dieselbe Bauform wie 115 → 116: eine Reihenfolge, die nur in einem
 -- Kommentar steht, ist keine. Deshalb steht sie hier UND in der
@@ -110,8 +152,19 @@
 --     ausdrücklich offen** — „gestern abgegangen, heute eingetragen" ist im
 --     Kopf von 117 als legitim benannt, und ein Prüfeintrag mit altem Datum
 --     verdrängt in der View ohnehin nichts Jüngeres.
---   * **Keine Toleranz** (s. oben). Der legitime Weg schickt gar keinen
---     Zeitstempel; wer einen schickt, bekommt die Servergrenze.
+--   * **Keine Toleranz** (s. oben). Wer einen Zeitstempel schickt, bekommt
+--     die Servergrenze.
+--     ⚠ **Hier stand „der legitime Weg schickt gar keinen Zeitstempel" —
+--     das war zum Zeitpunkt der Fremdprüfung wahr und ist es seit CN-88
+--     nicht mehr** (Schlusslesung 26.08.2026, B2). Die Feld-App schickt
+--     künftig den MELDEZEITPUNKT aus der Geräteuhr, damit eine Revierrunde
+--     im Funkloch nicht mit lauter identischen Uhrzeiten in der Historie
+--     steht. Der Riegel dagegen sitzt im Client (Weg 1, entschieden von
+--     Moritz am 26.08.2026): den Zeitstempel nur mitschicken, wenn der
+--     Eintrag tatsächlich gewartet hat, und bei `23514` **einmal ohne ihn
+--     wiederholen** — die Meldung geht dann durch und verliert nur die
+--     genaue Uhrzeit. **Melden wird nie verhindert, auch nicht von diesem
+--     Trigger.**
 --   * **INSERT UND UPDATE.** `map_object_checks` hat heute weder UPDATE- noch
 --     DELETE-Policy — der UPDATE-Zweig ist also unerreichbar. Er steht
 --     trotzdem da: kommt je eine Policy, gilt der Riegel ohne dass jemand
@@ -119,6 +172,24 @@
 --   * **Für JEDE Prüfung, nicht nur `ok`.** Auch ein zukunftsdatiertes
 --     `gesperrt` ist Unsinn — es hinge in der Jagdjahr-Rechnung im falschen
 --     Jahr.
+--
+--
+-- ⚠ EINE AUFLAGE AN JEDEN KÜNFTIGEN TRIGGER DIESER TABELLE
+--
+-- Heute ist `trg_map_object_checks_zeitpunkt` der EINZIGE Trigger auf
+-- `map_object_checks` (gegen `pg_trigger` verifiziert, 26.08.2026).
+-- **BEFORE-Trigger feuern ALPHABETISCH** — die Falle aus 096, hier vorwärts
+-- gedacht (Schlusslesung 26.08.2026, T10).
+--
+-- Kommt je ein zweiter BEFORE-Trigger, der `checked_at` SETZT statt es nur zu
+-- prüfen — genau das wäre „Weg 2" mit `checked_at = least(reported_at,
+-- clock_timestamp())` —, und sortiert sein Name alphabetisch NACH
+-- `trg_map_object_checks_zeitpunkt`, dann **validiert 119 einen Wert, der
+-- danach ersetzt wird**: der Riegel prüft etwas, das gar nicht gespeichert
+-- wird. Er sähe weiterhin aus wie ein Riegel.
+--
+-- Wer so etwas baut, sortiert den Namen VOR `…_zeitpunkt` ein oder ersetzt
+-- 119 gleich mit.
 --
 --
 -- WARUM DIE FUNKTION KEIN `security definer` IST
