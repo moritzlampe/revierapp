@@ -1,4 +1,4 @@
-/* --- Dokumentation → Strecke je Jagdjahr (A-C4, Migration 110) ------------
+/* --- Dokumentation → beide Reiter (A-C4 und A-C10, Migration 110) ---------
  *
  * Ruhig und tabellarisch wie die Chronik im Gäste-Inspektor: das ist ein
  * Streckenbuch, kein Dashboard. Keine Balken, keine Flächen, keine Farbskala,
@@ -9,7 +9,17 @@
  * Entscheidung (Moritz, 07.08.2026): 33 lückenlose Saisons sind eine echte
  * Zeitreihe, und das Konzept nennt diesen Screen ausdrücklich „Strecke je
  * Jagdjahr (Kurve)". Sie bleibt eine einzige Akzentlinie ohne Füllung,
- * Gitternetz oder Punktbeschriftung. Das Kurvenwerk mit mehreren Reihen kommt
+ * Gitternetz oder Punktbeschriftung.
+ *
+ * ⚠ **Der folgende Satz war bis zum 27.08.2026 wahr und ist es seither nicht
+ * mehr — durch den Diff, der ihn stehen liess** (Schlusslesung 27.08.2026).
+ * Die Statistikseite ist gebaut, ihr Kurvenwerk steht in DIESER Datei, und es
+ * hat trotzdem keine zweite Farbe bekommen: vier Reihen stehen als getrennte
+ * Blätter untereinander, jede in `--z-accent`. Der Satz bleibt als Beleg
+ * stehen, weil seine Vorhersage („mehrere Reihen brauchen eine
+ * Farbentscheidung") sich nicht bewahrheitet hat.
+ *
+ * Der historische Wortlaut: Das Kurvenwerk mit mehreren Reihen kommt
  * auf die geplante Statistikseite, nicht hierher.
  *
  * **Farben ausschliesslich über die `--z-*`-Token.** Auf `--z-bg-elevated`
@@ -130,12 +140,31 @@
   font-variant-numeric: tabular-nums;
   font-size: 0.8125rem;
 }
-.dok-buch th.dok-zahl {
+/* ⚠ **Die Selektorliste ist der eigentliche Riegel, nicht die Regel.** Sie
+   stand bis zum 27.08.2026 nur als `.dok-buch …` da — und die zwei Tabellen
+   der Statistikseite haben dasselbe Markup übernommen und den Fix NICHT
+   geerbt: ihre Spaltenköpfe standen linksbündig über rechtsbündigen Zahlen,
+   der Fehler, den Q5 einen Tag nach dem Bau des Streckenbuchs geschlossen
+   hatte (Schlusslesung 27.08.2026, F1).
+   **Wer das Markup kopiert, kopiert die Lücke mit** — dieselbe Bauform, gegen
+   die diese Datei an mehreren Stellen schreibt. Eine neue Tabelle auf dieser
+   Seite gehört deshalb hier eingetragen, nicht mit eigenen Regeln versehen. */
+.dok-buch th.dok-zahl,
+.dok-rang th.dok-zahl,
+.dok-jahre th.dok-zahl {
   text-align: right;
 }
-.dok-buch thead th.dok-zahl {
+.dok-buch thead th.dok-zahl,
+.dok-rang thead th.dok-zahl,
+.dok-jahre thead th.dok-zahl {
   font-family: inherit;
   font-size: 0.6875rem;
+}
+/* Die Rangnummer trägt dieselbe Spezifitätsfalle: (0,1,0) gegen
+   `.zentrale-tabelle th` (0,2,0). Sie sitzt nur an `td`, aber der
+   Spaltenkopf `#` ist ein `th`. */
+.dok-rang th.dok-rang-nr {
+  text-align: right;
 }
 .dok-summe {
   border-left: 1px solid var(--z-border);
@@ -169,8 +198,27 @@
   color: var(--z-text-secondary);
 }
 
+/* Die Fusszeile ist eine Summenzeile, keine Datenzeile — und sie muss in
+   JEDER Tabelle dieser Seite so aussehen (Schlusslesung 27.08.2026, F1).
+
+   ⚠ **Die `th[scope='row']`-Selektoren sind Pflicht, nicht Gründlichkeit.**
+   Hier stand zuerst nur `… tfoot th` (0,1,2) — und `.dok-rang th[scope='row']`
+   bzw. `.dok-jahre th[scope='row']` sind mit (0,2,1) spezifischer. Das
+   „Gesamt" im Fuss stand damit weiter in `font-weight: 400` und
+   Sekundärfarbe, also genau in dem Zustand, den der Kommentar an dieser
+   Stelle für abgestellt erklärte (Delta-Durchgang 27.08.2026).
+   **`.dok-buch` ist nicht betroffen, und genau deshalb fiel es nicht auf:**
+   dessen `th[scope='row']`-Regel setzt kein `font-weight`. Wer die Bauform
+   von dort kopiert, kopiert einen Fix, der am Original nie gebraucht wurde —
+   dieselbe Falle wie bei Q5 eine Regel weiter oben, nur andersherum. */
 .dok-buch tfoot td,
-.dok-buch tfoot th {
+.dok-buch tfoot th,
+.dok-rang tfoot td,
+.dok-rang tfoot th,
+.dok-rang tfoot th[scope='row'],
+.dok-jahre tfoot td,
+.dok-jahre tfoot th,
+.dok-jahre tfoot th[scope='row'] {
   border-top: 1px solid var(--z-border-strong);
   border-bottom: 0;
   font-weight: 600;
@@ -187,4 +235,234 @@
   font-size: 0.75rem;
   color: var(--z-text-secondary);
   white-space: normal;
+}
+
+/* --- Die Reiterleiste ---------------------------------------------------- */
+
+/* Links, keine Knöpfe: die Unterebene steht in der Adresse (Konzept §2.4).
+   Die Optik ist die der Kartenreiter (`.zentrale-karte-reiter`), ohne deren
+   absolute Lage — hier liegt nichts darunter, das sie überdecken müsste.
+
+   `margin-bottom` ersetzt die Unterzeile, die vorher hier stand
+   („Aufzeichnungen dieses Reviers"): zwei Reiter sagen dasselbe konkreter. */
+.dok-reiter {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 20px;
+  padding: 3px;
+  border-bottom: 1px solid var(--z-border);
+}
+.dok-reiter a {
+  font-size: 0.9375rem;
+  padding: 6px 14px;
+  color: var(--z-text-secondary);
+  text-decoration: none;
+  border-radius: 6px 6px 0 0;
+}
+.dok-reiter a:hover:not(.aktiv) {
+  background: var(--z-bg-sunken);
+  color: var(--z-text-primary);
+}
+/* Der aktive Reiter ist gefüllt UND fett — ein Gewichtsunterschied allein
+   trennt zwei Wörter nebeneinander zu leise (dieselbe Begründung wie an der
+   Kartenleiste). */
+.dok-reiter a.aktiv {
+  color: var(--z-text-primary);
+  background: var(--z-bg-elevated);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--z-border);
+}
+.dok-reiter a:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 2px;
+}
+
+/* --- Die Quellenzeile ---------------------------------------------------- */
+
+/* Steht unter jeder Blocküberschrift und nennt, woher die Zahlen kommen und
+   was sie NICHT sagen. Sie ist der sichtbare Teil des Doppelzähl-Riegels:
+   drei Blöcke aus drei Projektionen, deren Summen nicht addierbar sind. */
+.dok-quelle {
+  margin: -6px 0 16px;
+  max-width: 72ch;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--z-text-secondary);
+}
+
+/* --- Die Größenklassen über der Rangliste -------------------------------- */
+
+.dok-klassen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.dok-klassen li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.dok-klassen-zahl {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--z-text-primary);
+}
+/* Die Farbe kommt von `.dok-klassen li`; hier nimmt nur die Deckkraft zurück
+   (Designsystem §11.1: Zurücknahme über Deckkraft, nicht über eine schwächere
+   Farbe). */
+.dok-klassen-summe {
+  opacity: 0.8;
+}
+
+/* --- Die Rangliste ------------------------------------------------------- */
+
+.dok-rang th[scope='row'] {
+  font-weight: 400;
+  text-align: left;
+  white-space: normal; /* Papiernamen sind lang: „…, Jagdherr seit 1993" */
+  min-width: 22ch;
+}
+.dok-rang-nr {
+  width: 3.5ch;
+  text-align: right;
+  color: var(--z-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+/* Die Sammelzeilen des Papiers (Hunde, Fallwild, Treiber) stehen mit in der
+   Liste, weil sie zur Revierstrecke gehören — aber sie sind keine Personen.
+   Zurückgenommen über Deckkraft, nicht über eine schwächere Farbe: §11.1 des
+   Designsystems, dieselbe Regel wie beim Verzicht auf eine dritte Textebene. */
+.dok-rang tr.dok-kollektiv th[scope='row'] {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+/* --- Ein Personen-Blatt -------------------------------------------------- */
+
+/* Small Multiples: vier Blätter untereinander, jedes mit eigener Skala. Die
+   Personen unterscheidet ihre Überschrift und der Abstand, keine Farbe —
+   das Portal hat genau eine Akzentfarbe, und die beiden anderen Töne tragen
+   Bedeutung (Wartungszustand, Nachsuche). */
+.dok-blatt {
+  margin: 0 0 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--z-border);
+}
+.dok-blatt:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+.dok-blatt h3 {
+  margin: 0 0 4px;
+  font-size: 1.0625rem;
+}
+.dok-kurve-klein svg {
+  height: 110px;
+}
+
+/* --- Eine zu dünne Reihe: Ereignisse statt Kurve ------------------------- */
+
+/* Fünf belegte Jahre in vierzehn: eine Linie behauptete dort einen Verlauf,
+   über den die Chronik nichts sagt. Die Jahre stehen dann einzeln. */
+.dok-ereignisse {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  list-style: none;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+}
+/* Ereignis- und Registerzeilen sind dieselbe Zeile; sie unterscheiden sich
+   allein darin, wo die Trennlinie sitzt (Ponytail 27.08.2026). */
+.dok-ereignisse li,
+.dok-register li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 0.875rem;
+}
+.dok-ereignisse li + li {
+  border-top: 1px solid var(--z-border);
+}
+.dok-ereignis-jahr {
+  min-width: 7ch;
+  font-variant-numeric: tabular-nums;
+  color: var(--z-text-secondary);
+}
+.dok-ereignis-zahl,
+.dok-register-zahl {
+  min-width: 3ch;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.dok-ereignis-arten {
+  color: var(--z-text-secondary);
+}
+
+/* --- Register (Arten, Orte) ---------------------------------------------- */
+
+.dok-register-paar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.dok-register h4 {
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--z-text-secondary);
+}
+.dok-register ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dok-register li {
+  border-bottom: 1px solid var(--z-border);
+}
+.dok-register-name {
+  flex: 1;
+  min-width: 0;
+}
+.dok-register-anteil {
+  min-width: 5ch;
+  text-align: right;
+  color: var(--z-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ein einzelnes Jahr zwischen zwei Lücken: kein Strich, ein Punkt. Gezeichnet
+   als Nullsegment mit runder Kappe — ein `<circle>` bekäme durch
+   `preserveAspectRatio="none"` ein horizontal gestrecktes Oval, die
+   Strichstärke bleibt mit `non-scaling-stroke` dagegen rund.
+   `stroke-linecap: round` steht bereits an `.dok-kurve polyline`; hier zählt
+   allein die Stärke, sie IST der Durchmesser des Punktes. */
+.dok-kurve polyline.dok-punkt {
+  stroke-width: 5;
+}
+
+/* --- Die Jahrestabelle --------------------------------------------------- */
+
+/* Die Kurve ist die Anschauung, diese Tabelle die Auskunft — dieselbe
+   Rollenteilung wie beim Streckenbuch darüber. Sie steht deshalb UNTER den
+   Blättern: sie belegt, was die Kurven zeigen. */
+.dok-jahre {
+  margin-top: 20px;
+}
+.dok-jahre th[scope='row'] {
+  font-weight: 400;
+  white-space: nowrap;
+  color: var(--z-text-secondary);
 }

@@ -1,17 +1,24 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { geladen, vollstaendig } from '../laden'
+import { Reiter } from './reiter'
 import { alsSaison, kurve, streckenbuch, TERMINE, type Jagdzeile } from './strecke'
 import './dokumentation.css'
 
 /**
  * Dokumentation — vierter Bereich der Zentrale (Konzept §1.1).
  *
- * **Heute trägt er genau eine Aufzeichnung: die historische Strecke je
- * Jagdjahr** (A-C4, Quelle `historische_jagden_soeder` aus Migration 110). Die
- * beiden anderen Unterebenen des Konzepts — Abschussplan und Beobachtungen —
- * fehlen sichtbar statt deaktiviert dazustehen, dieselbe Haltung wie beim
- * fehlenden Bereich „Drückjagd" (§1.1).
+ * **Dieser Reiter trägt die historische Strecke je Jagdjahr** (A-C4, Quelle
+ * `historische_jagden_soeder` aus Migration 110). Seit dem 27.08.2026 steht
+ * daneben der Reiter *Statistik* (A-C10) mit den drei übrigen Projektionen aus
+ * 110 — er ist bewusst eine eigene Seite und keine weitere Überschrift hier:
+ * jede Quelle bekommt ihre eigene, weil eine Summe über zwei von ihnen falsch
+ * ist.
+ *
+ * Die beiden anderen Unterebenen des Konzepts — Abschussplan und
+ * Beobachtungen — fehlen weiterhin sichtbar statt deaktiviert dazustehen,
+ * dieselbe Haltung wie beim fehlenden Bereich „Drückjagd" (§1.1). Sie stehen
+ * deshalb auch NICHT als toter Reiter in der Leiste.
  *
  * **Dies ist NICHT die „Strecke zeilenweise" aus Phase 5.** §4.2 verlangt für
  * die Live-Strecke ausdrücklich Einzelzeilen statt Aggregate, weil ein Aggregat
@@ -123,7 +130,7 @@ export default async function DokumentationPage({
         <span className="zentrale-revier-name">{revier.name}</span>
       </p>
       <h1>Dokumentation</h1>
-      <p className="zentrale-sub">Aufzeichnungen dieses Reviers</p>
+      <Reiter aktiv="strecke" revier={revier.id} />
 
       <div className="zentrale-block">
         <h2>Strecke je Jagdjahr</h2>
