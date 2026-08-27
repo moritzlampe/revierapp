@@ -2109,12 +2109,37 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
                   {fotos.get(z.id)?.length ? (
                     <span className="bilder">
                       {fotos.get(z.id)!.map((f) => (
-                        <StorageImg
-                          key={f.id}
-                          src={f.url}
-                          alt={fotoAlt(z.status, zeitpunkt.format(new Date(z.checked_at)))}
-                          loading="lazy"
-                        />
+                        /**
+                         * **Die Kachel ist der Platzhalter** (CP-86,
+                         * Entscheidung Moritz 27.08.2026).
+                         *
+                         * `StorageImg` rendert **nichts**, solange es die URL
+                         * nicht signiert hat — mit Absicht: „ein `<img>` ohne
+                         * `src` feuert weder `onLoad` noch `onError`, und
+                         * Aufrufer zeigen so ihren eigenen Platzhalter
+                         * weiter". Genau das tut dieser Wrapper. Ohne ihn war
+                         * die Lücke im Layout nicht von „es gibt kein Bild"
+                         * zu unterscheiden, und bei einem gerade selbst
+                         * hochgeladenen Bild war das die falsche Auskunft.
+                         *
+                         * **Kein Zustand, kein `onLoad`**, anders als in
+                         * `PhotoThumbnail`: das Bild deckt den Hintergrund
+                         * einfach ab, sobald es da ist. Ein `loaded`-State
+                         * wäre eine zweite Buchführung über etwas, das das
+                         * Layout schon weiß.
+                         *
+                         * **Und `StorageImg` bleibt unangetastet** — es liegt
+                         * unter `src/` und gehört keinem Track (R1). Ein
+                         * Platzhalter dort träfe jedes Bild beider Clients;
+                         * hier ist es eine Zeile CSS.
+                         */
+                        <span className="kachel" key={f.id}>
+                          <StorageImg
+                            src={f.url}
+                            alt={fotoAlt(z.status, zeitpunkt.format(new Date(z.checked_at)))}
+                            loading="lazy"
+                          />
+                        </span>
                       ))}
                     </span>
                   ) : null}

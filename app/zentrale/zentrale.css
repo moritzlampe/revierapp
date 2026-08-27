@@ -1503,12 +1503,34 @@ body:has(.zentrale-karte-kasten.kino) {
   gap: 6px;
   margin-top: 4px;
 }
-.zentrale-inspektor-historie .bilder img {
+/* **Die Kachel trägt die Größe, nicht das Bild** (CP-86). Sie steht auch da,
+   solange `StorageImg` noch signiert und deshalb nichts rendert — ohne sie
+   sah ein ladendes Bild aus wie ein fehlendes, und das ist bei einem gerade
+   selbst hochgeladenen die falsche Auskunft.
+
+   Der gedämpfte Grund ist der Platzhalter; das Bild legt sich darüber, sobald
+   es da ist. Kein Zustand nötig. */
+.zentrale-inspektor-historie .bilder .kachel {
+  display: block;
   width: 88px;
   height: 88px;
-  object-fit: cover;
   border-radius: 3px;
   border: 1px solid var(--z-border);
+  background: var(--z-bg-sunken);
+  overflow: hidden;
+  flex: none;
+}
+/* ⚠ **Diese Regel setzt die `.kachel` voraus** (Schlusslesung 27.08.2026,
+   offener Punkt): `100%` meint die Kachel, nicht den Flex-Container. Ein
+   künftiges nacktes `<img>` direkt in `.bilder` würde damit nicht 88 px breit,
+   sondern **containerbreit** — die Kopplung steht hier, weil sie sonst
+   nirgends steht. Wer ein Bild ohne Wrapper einhängt, gibt ihm eine eigene
+   Größe. */
+.zentrale-inspektor-historie .bilder img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   /* **Kein `cursor: zoom-in`, und das ist eine Korrektur an mir selbst.**
      Er stand hier zuerst, mit der Begründung „der Browser kann Bild in neuem
      Tab öffnen". Kann er — aber nur per Rechtsklick. Ein Zeiger, der
