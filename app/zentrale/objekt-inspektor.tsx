@@ -10,6 +10,10 @@ import type { KontoName } from '@/lib/konto-namen'
 import { istWartbar, zustandsSatz, type PruefStatus } from '@/lib/revier/wartung'
 import { STUFEN, stufeVon, type ZustandStufe } from './wartungsfilter'
 import { schreibe } from './schreiben'
+import { POSTGREST_LIMIT } from './laden'
+import { FOTO_ART, eintragSatz, fotoAlt, fotoUntauglich, nachPruefung } from './pruef-fotos'
+import PhotoCapture from '@/components/photo/PhotoCapture'
+import { uploadPhoto } from '@/lib/photos/upload'
 import {
   OBJEKT_TYPEN,
   filterBaum,
@@ -904,6 +908,22 @@ type HistorieZeile = {
 }
 
 /**
+ * Ein Schadensfoto, so weit die Historie es braucht (Migration 118).
+ *
+ * `url` ist die gespeicherte Public-URL — für die Anzeige tot, seit die
+ * Buckets auf `public: false` stehen, aber genau das, was `StorageImg`
+ * entgegennimmt und vor dem Rendern signiert. `storage_path` wird hier NICHT
+ * gelesen: der Portal-Weg hat keinen Löschpfad (s. §Nicht-Umfang), und eine
+ * Spalte zu holen, die niemand benutzt, ist eine Zusage an den nächsten Leser,
+ * die keiner einlöst.
+ */
+type SchadensFoto = {
+  id: string
+  url: string
+  check_id: string | null
+}
+
+/**
  * Wie viele Prüfungen der Aufklapper zeigt.
  *
  * Ein Deckel, weil PostgREST bei 1000 Zeilen ohnehin einen setzt — und ein
@@ -1043,6 +1063,63 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
 
+  /**
+   * Das gewählte Schadensbild — **gewählt, noch nicht hochgeladen** (118).
+   *
+   * Die Trennung ist die eigentliche Bauform, und sie stammt vom nativen Weg
+   * (`SchadenFormular.tsx`, `check-outbox.ts`): das Bild wird vor allem
+   * Netzverkehr ausgesucht und liegt bereit, hochgeladen wird es erst, wenn
+   * die Prüfzeile steht. Vorher gibt es keine `check_id`, an die es gehören
+   * könnte.
+   *
+   * **Es ist ein Angebot, keine Pflicht** — Moritz am 22.08.2026: „eine
+   * Meldung, die am Upload hängenbleibt, ist schlechter als eine ohne Bild."
+   * Deshalb hängt kein einziger Riegel des Formulars am Bild.
+   */
+  const [bild, setBild] = useState<File | null>(null)
+  /** Der Grund, warum eine gewählte Datei nicht taugt (Format, Größe). */
+  const [bildFehler, setBildFehler] = useState<string | null>(null)
+  /**
+   * Wie der letzte Eintrag mit seinem Bild ausging. Steuert allein die
+   * Rückmeldung — der Eintrag selbst gilt in allen drei Fällen.
+   */
+  const [bildAusgang, setBildAusgang] = useState<'keins' | 'da' | 'fehlt'>('keins')
+
+  /**
+   * Vorschau der gewählten Datei. **Ein Bild wählt man mit den Augen** — ein
+   * Dateiname wie „IMG_4711.jpg" sagt nicht, ob es der richtige Stand ist.
+   *
+   * `createObjectURL` muss widerrufen werden, sonst hält der Browser die Datei
+   * bis zum Verlassen der Seite im Speicher. Der Effekt räumt bei jedem
+   * Wechsel und beim Unmount auf; `StorageImg` reicht `blob:`-Quellen
+   * unverändert durch (s. Kommentar dort), die Vorschau geht also durch
+   * dieselbe Komponente wie die Bilder aus dem Bucket.
+   *
+   * ⚠ **Hier stand kurzzeitig ein `useMemo`, und das war falsch** — erst
+   * vorgeschlagen von der Ponytail-Lesung (ein Zustand weniger, kein
+   * Flackern), dann von der Fremdprüfung widerlegt (27.08.2026, A-P5):
+   * **`createObjectURL` ist ein Seiteneffekt, und `useMemo` gibt keine
+   * Zusage, dass sein Ergebnis je verwendet wird.** Verwirft React einen
+   * Render — im StrictMode der Entwicklung bei jedem zweiten, unter
+   * Concurrent Rendering jederzeit —, ist die URL erzeugt, aber kein Effekt
+   * läuft, der sie widerruft. Das Leck wächst mit jeder Auswahl.
+   *
+   * Der Preis der richtigen Fassung ist ein einzelner Render, in dem `bild`
+   * schon steht und `vorschau` noch `null` ist. Das Bild erscheint einen
+   * Frame später; ein Speicherleck bliebe für immer. **Effekte gehören in
+   * Effekte, auch wenn es eine Zeile mehr kostet.**
+   */
+  const [vorschau, setVorschau] = useState<string | null>(null)
+  useEffect(() => {
+    if (!bild) {
+      setVorschau(null)
+      return
+    }
+    const url = URL.createObjectURL(bild)
+    setVorschau(url)
+    return () => URL.revokeObjectURL(url)
+  }, [bild])
+
   const notizPflicht = status !== 'ok'
   const notizFehlt = notizPflicht && notiz.trim() === ''
 
@@ -1165,9 +1242,18 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
      * Prüfung bliebe bis zu diesem Zukunftstag unsichtbar.** Löschen geht
      * nicht, die Tabelle hat keine DELETE-Policy.
      *
-     * Der dauerhafte Riegel gehört in die Datenbank (CN-80), damit er für alle
-     * drei Clients gilt. Bis dahin ist dies die einzige Stelle, an der er
-     * überhaupt existiert.
+     * ⚠ **Der Satz „bis dahin ist dies die einzige Stelle" stand hier bis zum
+     * 27.08.2026 und war seit dem 26.08. falsch** (Schlusslesung, F5,
+     * `[niedrig]`, außerhalb des eigentlichen Diffs gefunden): **Migration
+     * 119 IST appliziert** (`trg_map_object_checks_zeitpunkt`, BEFORE INSERT
+     * OR UPDATE, Toleranz null). CN-80 ist geschlossen; der Riegel gilt für
+     * alle drei Clients.
+     *
+     * Diese Prüfung hier bleibt trotzdem, und zwar als das, was sie ist:
+     * **die freundliche Fassung.** Sie sagt einen Satz, statt den Nutzer in
+     * einen `23514` laufen zu lassen. Drei Absätze weiter unten steht die
+     * korrekte 119-Erklärung — dieselbe Datei trug also gleichzeitig die
+     * richtige und die überholte Auskunft.
      */
     if (inDerZukunft) {
       setFehler('Eine Prüfung kann nicht in der Zukunft liegen.')
@@ -1195,7 +1281,7 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
         return
       }
 
-      await schreibe('Die Prüfung', () =>
+      const zeile = await schreibe<{ id: string }>('Die Prüfung', () =>
         createClient()
           .from('map_object_checks')
           .insert({
@@ -1232,13 +1318,74 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
             note: notizPflicht ? notiz.trim() : null,
           })
           // `.select()` ist Pflicht, sonst meldet ein RLS-Fehlschlag Erfolg
-          // mit null Zeilen (S1, s. `schreiben.ts`).
+          // mit null Zeilen (S1, s. `schreiben.ts`). **Kein `.single()`:**
+          // `schreibe()` nimmt die Listenform entgegen und prüft selbst auf
+          // genau eine Zeile — mit `.single()` käme ein Objekt an, wo ein
+          // Array erwartet wird.
           .select('id')
       )
+
+      /**
+       * **Ab hier gilt die Prüfung.** Was jetzt noch schiefgeht, betrifft das
+       * Bild — und `map_object_checks` hat keine DELETE-Policy (066,
+       * append-only): ein Rückzieher ist nicht bloß unerwünscht, er ist
+       * unmöglich. Deshalb steht kein `throw` mehr zwischen hier und der
+       * Erfolgsmeldung; der Bildfehler wird AUSGEWIESEN, nicht geworfen.
+       *
+       * Dieselbe Reihenfolge wie nativ (`check-outbox.ts:999`): „Prüfzeile
+       * schreiben → checkId festhalten → Bild hochladen". Dort steht dahinter
+       * eine Outbox für den schlechten Empfang im Wald; hier am Schreibtisch
+       * genügt die ehrliche Meldung, weil der Nutzer das Bild noch hat und es
+       * erneut wählen kann.
+       */
+      let ausgang: 'keins' | 'da' | 'fehlt' = 'keins'
+      if (bild) {
+        try {
+          const { url, path } = await uploadPhoto({
+            file: bild,
+            userId: sitzung.user.id,
+            entityType: FOTO_ART,
+            entityId: objekt.id,
+          })
+          await schreibe('Das Schadensbild', () =>
+            createClient()
+              .from('map_object_photos')
+              .insert({
+                map_object_id: objekt.id,
+                check_id: zeile.id,
+                url,
+                storage_path: path,
+                uploaded_by: sitzung.user.id,
+              })
+              // Auch hier Pflicht: ohne `.select()` meldete ein von RLS
+              // gefilterter Insert Erfolg bei null Zeilen — und das Bild wäre
+              // als Datei im Bucket, ohne Zeile, die es findet.
+              .select('id'),
+          )
+          ausgang = 'da'
+        } catch {
+          /**
+           * **Die Datei bleibt bewusst liegen, wenn der Upload glückte und
+           * erst der Insert scheiterte.** Ein `storage.remove()` an dieser
+           * Stelle wäre genau dann falsch, wenn der Insert serverseitig
+           * gelang und nur die Antwort verlorenging — dann löschte das
+           * Aufräumen die Datei zu einer Zeile, die es gibt. Wörtlich die
+           * Begründung aus dem nativen Weg (`objekt-fotos.ts:211-218`).
+           *
+           * Der Preis ist eine mögliche Waise im Bucket. 083 nennt 11
+           * gemessene; sie kosten Speicher und sonst nichts.
+           */
+          ausgang = 'fehlt'
+        }
+      }
+
       setOffen(false)
       setNotiz('')
       setStatus('ok')
       setTag(heuteBerlin())
+      setBild(null)
+      setBildFehler(null)
+      setBildAusgang(ausgang)
       setErfolg(true)
       // Die Historie liegt in der Geschwisterkomponente und lädt sonst nur beim
       // Aufklappen — bei einem Aufklapper, der schon offen ist, also nie.
@@ -1313,8 +1460,20 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
           Formular bereits vorher. Den Ladehinweis im Überholt-Fall wegzulassen
           hieße, einen Vorgang zu verstecken, den es gibt. */}
         {erfolg ? (
-          <p className="erledigt" role="status">
-            Eingetragen ✓{refreshLaeuft ? ' — die Ansicht wird aktualisiert …' : ''}
+          /**
+           * **`eintragSatz` trennt, was steht, von dem, was fehlt.** Die
+           * Prüfzeile ist geschrieben, bevor ein Byte Bild hochgeht; scheitert
+           * der Upload danach, gilt die Meldung trotzdem — und
+           * `map_object_checks` hat keine DELETE-Policy, ein Rückzieher ist
+           * nicht möglich. Ein gemeinsames „Eingetragen ✓" wäre dann ein
+           * Fehler, der sich als gültige Auskunft liest (S4).
+           *
+           * **Die Klasse wechselt mit**, sonst steht die schlechte Nachricht
+           * in derselben grünen Zeile wie die gute.
+           */
+          <p className={bildAusgang === 'fehlt' ? 'erledigt teils' : 'erledigt'} role="status">
+            {eintragSatz(bildAusgang)}
+            {refreshLaeuft ? ' — die Ansicht wird aktualisiert …' : ''}
           </p>
         ) : null}
       </div>
@@ -1371,9 +1530,10 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
         <span>Geprüft am</span>
         {/* `max` auf heute: eine Prüfung, die noch nicht stattgefunden hat,
             gibt es nicht. Der Browser hält das Feld allein nicht dicht — der
-            Riegel dagegen gehört in die Datenbank (CN-80), und bis dahin liest
-            das Portal ein Zukunftsdatum ohnehin als „nicht geprüft"
-            (s. `inDieserSaison`). */}
+            harte Riegel steht seit dem 26.08.2026 in der Datenbank
+            (Migration 119, CN-80 geschlossen). Hier stand „gehört in die
+            Datenbank … und bis dahin"; das war einen Tag später überholt
+            (Schlusslesung 27.08.2026, F5). */}
         <input
           type="date"
           value={tag}
@@ -1389,6 +1549,96 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
           Vorbelegt auf heute. Wer vorgestern oben war, stellt es zurück.
         </span>
       </label>
+
+      {/**
+        * **Das Bild — angeboten, nie verlangt.** Es steht NACH dem Datum und
+        * VOR den Knöpfen: zuletzt in der Reihe der Angaben, nicht zwischen
+        * Zustand und Notiz, die zusammengehören.
+        *
+        * **Kein Riegel hängt daran.** Weder sperrt ein fehlendes Bild das
+        * Eintragen, noch verlangt „Gesperrt" eines. Moritz am 22.08.2026:
+        * „eine Meldung, die am Upload hängenbleibt, ist schlechter als eine
+        * ohne Bild" — am Schreibtisch ist der Empfang besser als im Wald, aber
+        * die Regel hängt nicht am Empfang, sondern daran, dass eine Meldung,
+        * die nicht zustande kommt, niemandem hilft.
+        *
+        * `mode="choose"` statt `"camera"`: am PC gibt es keine Rückkamera,
+        * die Auswahl kommt aus Dateien oder — bei angeschlossenem iPhone —
+        * aus der Mediathek. `quality="documentation"` ist dasselbe Preset wie
+        * im mobilen Revier-Editor (2000 px, 1,2 MB), damit ein Bild vom
+        * Schreibtisch nicht anders aussieht als eines aus dem Wald.
+        */}
+      <div className="pruef-bild">
+        <span className="beschriftung">Bild (freiwillig)</span>
+
+        {bild && vorschau ? (
+          <div className="gewaehlt">
+            <StorageImg src={vorschau} alt={`Gewähltes Bild: ${bild.name}`} />
+            <button
+              type="button"
+              className="ab"
+              disabled={laeuft}
+              onClick={() => {
+                setBild(null)
+                setBildFehler(null)
+              }}
+            >
+              Bild entfernen
+            </button>
+          </div>
+        ) : (
+          <PhotoCapture
+            quality="documentation"
+            mode="choose"
+            disabled={laeuft}
+            onCapture={(datei) => {
+              /**
+               * **Die Bucket-Grenzen werden HIER geprüft, nicht erst beim
+               * Hochladen** (`fotoUntauglich`). `PhotoCapture` wandelt zwar
+               * nach JPEG und drückt auf 1,2 MB — aber das ist die Zusage
+               * einer anderen Komponente, keine Prüfung. Ohne sie käme die
+               * Absage des Storage als roher SDK-Fehlertext, und zwar erst
+               * nach dem Eintragen, wenn die Prüfzeile schon steht.
+               */
+              const grund = fotoUntauglich(datei)
+              setBildFehler(grund)
+              setBild(grund ? null : datei)
+            }}
+            onError={(e) => setBildFehler(e.message)}
+          >
+            {/**
+              * **Ein echtes `<button>`, kein `<span>`** (Schlusslesung
+              * 27.08.2026, F7, `[mittel]`): `PhotoCapture` packt einen
+              * Custom-Trigger in ein `<div onClick>` **ohne `tabIndex`, ohne
+              * Rolle, ohne Tastatur-Handler** (`PhotoCapture.tsx:150`) — mit
+              * einem `<span>` darin war die Bildwahl per Tastatur schlicht
+              * **nicht erreichbar.**
+              *
+              * Die Wurzel liegt in der fremden Datei (R1, nicht angefasst),
+              * die Heilung geht trotzdem hier: ein Button ist von sich aus
+              * fokussierbar, und sein Enter-/Leertasten-Klick ist ein echtes
+              * Click-Ereignis, das zum `onClick` des Wrappers hochblubbert.
+              *
+              * ⚠ **Was damit NICHT geheilt ist:** `PhotoCapture` zeigt seinen
+              * `verarbeitet`-Zustand (Umwandlung und Verkleinerung, bei einem
+              * großen Bild spürbar) nur am eigenen Default-Knopf. Bei einem
+              * Custom-Trigger verpuffen Klicks in dieser Zeit stumm — sie
+              * schaden nichts, aber es fehlt die Rückmeldung. Ohne einen
+              * Callback aus der fremden Komponente ist das von hier nicht
+              * behebbar; benannt statt verschwiegen.
+              */}
+            <button type="button" className="waehlen" disabled={laeuft}>
+              Bild auswählen …
+            </button>
+          </PhotoCapture>
+        )}
+
+        {bildFehler && (
+          <p className="fehler" role="alert">
+            {bildFehler}
+          </p>
+        )}
+      </div>
 
       {wirdUeberholt && (
         <p className="hinweis warnung">
@@ -1418,6 +1668,11 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
             setNotiz('')
             setStatus('ok')
             setTag(heuteBerlin())
+            // Das Bild gehört zum Entwurf und geht mit ihm weg. Bliebe es
+            // stehen, hinge es beim nächsten Öffnen an einer ganz anderen
+            // Meldung — und niemand rechnet damit.
+            setBild(null)
+            setBildFehler(null)
           }}
         >
           Abbrechen
@@ -1447,6 +1702,22 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
   /** `null` = noch nie geladen. Unterscheidet „leer" von „weiß ich noch nicht". */
   const [zeilen, setZeilen] = useState<HistorieZeile[] | null>(null)
   const [namen, setNamen] = useState<ReadonlyMap<string, string>>(() => new Map())
+  /**
+   * Die Schadensbilder je Prüfung (118). **Getrennt vom Fehlerzustand der
+   * Historie, und das ist Absicht:** eine leere Map heißt „zu dieser Prüfung
+   * gibt es kein Bild", eine Störung heißt „ob es eines gibt, weiß ich
+   * nicht". Beides in einen Zustand zu ziehen machte aus einem Ladefehler
+   * eine gültige Auskunft — der S4-Fall, gegen den auch der Kommentar an
+   * `historie.error` weiter unten steht.
+   */
+  const [fotos, setFotos] = useState<ReadonlyMap<string, SchadensFoto[]>>(() => new Map())
+  /**
+   * Was mit den Bildern schiefging — **eine Dreiheit statt zweier Flaggen**
+   * (Fremdprüfung 27.08.2026, B-P4 brachte den zweiten Fall hinzu). Der Abruf
+   * kann scheitern ODER abgeschnitten sein; beides gleichzeitig zu behaupten
+   * wäre unmöglich, und zwei Booleans ließen genau das zu.
+   */
+  const [fotosStoerung, setFotosStoerung] = useState<'keine' | 'fehler' | 'gekappt'>('keine')
   const [laedt, setLaedt] = useState(false)
   const [fehler, setFehler] = useState<string | null>(null)
 
@@ -1476,7 +1747,7 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
     const supabase = createClient()
     // Beide gleichzeitig: die Namen hängen nicht an den Zeilen, sie werden nur
     // zusammen gebraucht.
-    const [historie, konten] = await Promise.all([
+    const [historie, konten, bilder] = await Promise.all([
       supabase
         .from('map_object_checks')
         .select('id, status, checked_at, note, checked_by')
@@ -1501,11 +1772,64 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
       // geöffnet, und ein Prop müsste durch drei Ebenen (Seite → Arbeitsbereich
       // → Karte → Inspektor) für einen Fall, den die meisten nie auslösen.
       supabase.rpc('konto_namen'),
+      /**
+       * Die Schadensbilder des Objekts — **eine Abfrage für alle Prüfungen,
+       * nicht eine je Zeile.** Die Historie zeigt bis zu 50 Einträge; je Zeile
+       * eine Rundreise wäre für eine Tabelle mit derzeit 189 Zeilen insgesamt
+       * absurd. Zugeordnet wird danach über `check_id` (`nachPruefung`).
+       *
+       * **`not('check_id', 'is', null)` gehört in die Abfrage und nicht in den
+       * Client:** ohne den Filter kämen die 185 Objektfotos der PWA mit, die
+       * hier niemand braucht — bei Söder wären das 181 Zeilen zusätzlich pro
+       * Aufklappen, für null Anzeige.
+       *
+       * Ungepagt und bewusst ohne `limit`: die Zahl der Bilder je EINEM Objekt
+       * ist klein (heute größter Wert: 2). Sollte je ein Objekt Hunderte
+       * tragen, greift der PostgREST-Default von 1000 — dann fehlten Bilder,
+       * ohne dass es auffiele. Das ist derselbe Vorbehalt wie an den übrigen
+       * ungepagten Lesepfaden des Portals (CP-71, CP-72) und hier der mit
+       * Abstand kleinste Abstand-zur-Grenze.
+       */
+      supabase
+        .from('map_object_photos')
+        .select('id, url, check_id')
+        .eq('map_object_id', objekt.id)
+        .not('check_id', 'is', null)
+        .order('created_at', { ascending: false }),
     ])
 
     // Ein jüngerer Lauf hat übernommen — dieses Ergebnis ist überholt.
     if (meiner !== lauf.current) return
     setLaedt(false)
+
+    /**
+     * **Der Bildfehler wird VOR dem frühen Rücksprung gesetzt**
+     * (Fremdprüfung 27.08.2026, B-P1). Vorher stand er unten: scheiterten
+     * Historie UND Bilder gemeinsam, kehrte `laden()` zurück, bevor
+     * die Störung je gesetzt wurde — und weil die alten Zeilen stehen
+     * bleiben (s. gleich darunter), sah der Bildfehler dann aus wie „zu
+     * diesen Prüfungen gab es kein Bild". Genau der Fall, gegen den dieser
+     * Zustand überhaupt existiert.
+     */
+    setFotosStoerung(
+      bilder.error
+        ? 'fehler'
+        : /**
+           * **Abgeschnitten erkennt man nur an der Zahl selbst.** PostgREST
+           * liefert ohne `limit` höchstens 1000 Zeilen und sagt nicht, dass
+           * es mehr gäbe — dieselbe Prüfung wie im zweiten Zweig von
+           * `vollstaendig()` (`laden.ts`), hier ohne `throw`: die Historie
+           * soll stehen bleiben, sie ist ja in Ordnung.
+           *
+           * Praktisch unerreichbar (heute höchstens zwei Bilder je Objekt),
+           * aber ein Abschneiden, das niemand meldet, sieht aus wie ein
+           * vollständiger Bestand — und das ist die Klasse Fehler, gegen die
+           * dieses Repo an einem Dutzend Stellen Riegel hat.
+           */
+          (bilder.data?.length ?? 0) >= POSTGREST_LIMIT
+          ? 'gekappt'
+          : 'keine',
+    )
 
     if (historie.error) {
       // **Kein Zurücksetzen der Zeilen.** Eine leere Liste neben „nicht
@@ -1525,6 +1849,23 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
     // deshalb nicht (s. `wannUndWer`).
     if (!konten.error) {
       setNamen(new Map(((konten.data ?? []) as KontoName[]).map((k) => [k.id, k.display_name])))
+    }
+
+    /**
+     * **Ein Ladefehler bei den Bildern darf nicht wie „keine Bilder"
+     * aussehen.** Die Historie steht auch ohne sie — sie ist ohne Bild
+     * weniger wert, aber nicht falsch, dieselbe Abwägung wie bei den Namen
+     * darüber. Der Unterschied: ein fehlender Name ist sichtbar („—"), ein
+     * fehlendes Bild ist nichts, und nichts sieht aus wie „gab es nicht".
+     *
+     * Deshalb zwei getrennte Setzer: die Map wird bei Erfolg ersetzt, der
+     * Fehler steht schon oben (B-P1). **`setFotos` NICHT im Fehlerfall
+     * zurücksetzen** — beim zweiten Öffnen stünden sonst erst Bilder da und
+     * verschwänden dann, ohne dass sich etwas geändert hätte. Was der
+     * Hinweis unter der Liste dann sagt, hängt genau daran (s. dort).
+     */
+    if (!bilder.error) {
+      setFotos(nachPruefung((bilder.data ?? []) as SchadensFoto[]))
     }
   }, [objekt.id])
 
@@ -1620,9 +1961,65 @@ function Standzustand({ objekt }: { objekt: Punkt }) {
                   <span className={`stat ${z.status}`}>{STATUS_WORT[z.status] ?? z.status}</span>
                   <span className="wer">{namen.get(z.checked_by) ?? '—'}</span>
                   {z.note ? <span className="note">„{z.note}&ldquo;</span> : null}
+
+                  {/* **Die Schadensbilder dieser Prüfung** (Migration 118).
+                      Sie stehen an der ZEILE, nicht in der Objektgalerie —
+                      genau die Unterscheidung, die 118 in der Datenbank zieht:
+                      ein Bild ohne `check_id` zeigt, wie der Stand aussieht,
+                      eines mit `check_id` zeigt, was an ihm kaputt war.
+                      Nach dem dritten Eintrag wäre die gemeinsame Reihe sonst
+                      ein Haufen Bilder mit Datum.
+
+                      `grid-column: 1 / -1` wie bei der Notiz: beides ist
+                      breiter als jede Spalte. */}
+                  {fotos.get(z.id)?.length ? (
+                    <span className="bilder">
+                      {fotos.get(z.id)!.map((f) => (
+                        <StorageImg
+                          key={f.id}
+                          src={f.url}
+                          alt={fotoAlt(z.status, zeitpunkt.format(new Date(z.checked_at)))}
+                          loading="lazy"
+                        />
+                      ))}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>
+          ) : null}
+
+          {/* **Bilder nicht abrufbar — EINMAL, nicht je Zeile.**
+              Hier stand der Hinweis zuerst in jeder Zeile, mit der Begründung,
+              der Leser wolle wissen, ob zu DIESER Prüfung ein Bild fehle.
+              **Das war falsch, und zwar nachweislich:** die Bilder kommen aus
+              EINER Abfrage über alle Prüfungen des Objekts. Scheitert sie,
+              fehlen sie überall gleichermaßen — der Fehler ist per
+              Konstruktion nicht zeilenspezifisch, und bei 50 Einträgen stünde
+              derselbe rote Satz fünfzigmal da.
+
+              Ein Kommentar, der eine Zuordnung behauptet, die es nicht gibt —
+              dieselbe Bauform wie die zwei Kommentare vom 26.08.2026, gefunden
+              von der Ponytail-Lesung statt von einem Prüfer.
+
+              Was bleibt, ist der Grund für den Hinweis überhaupt: ohne ihn
+              läse sich die bildlose Historie als „es gab nie ein Bild".
+
+              ⚠ **Der Satz unterscheidet zwei Lagen** (Fremdprüfung
+              27.08.2026, B-P2): stehen aus einem früheren Lauf noch Bilder
+              da, ist „ob es welche gibt, ist nicht feststellbar" schlicht
+              falsch — man SIEHT welche. Dann ist die Auskunft „diese sind
+              womöglich veraltet". Nur wenn gar keine da sind, ist die Frage
+              wirklich offen. Ein Satz für beide Lagen widerspräche in der
+              einen dem, was daneben auf dem Schirm steht. */}
+          {fotosStoerung !== 'keine' ? (
+            <p className="bilder-fehlt" role="status">
+              {fotosStoerung === 'gekappt'
+                ? 'Es gibt mehr Schadensbilder, als hier gezeigt werden können.'
+                : fotos.size > 0
+                  ? 'Die Schadensbilder konnten nicht aktualisiert werden — die gezeigten stammen vom letzten gelungenen Abruf.'
+                  : 'Schadensbilder sind nicht abrufbar — ob es welche gibt, ist gerade nicht feststellbar.'}
+            </p>
           ) : null}
 
           {zeilen && zeilen.length > HISTORIE_MAX ? (

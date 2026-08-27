@@ -1460,6 +1460,49 @@ body:has(.zentrale-karte-kasten.kino) {
   color: var(--z-text-secondary);
   white-space: pre-wrap;
 }
+/* Die Schadensbilder einer Prüfung (Migration 118). Über die ganze Breite wie
+   die Notiz — beides ist breiter als jede Spalte.
+
+   Nebeneinander mit Umbruch statt untereinander: es sind heute ein bis zwei
+   Bilder je Prüfung, und eine Spalte aus Einzelbildern schöbe die nächste
+   Prüfzeile weit nach unten. `object-fit: cover` auf festem Quadrat, damit
+   Hoch- und Querformat dieselbe Zeile halten — sonst springt die Höhe der
+   Liste mit jedem Bild. */
+.zentrale-inspektor-historie .bilder {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.zentrale-inspektor-historie .bilder img {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid var(--z-border);
+  /* **Kein `cursor: zoom-in`, und das ist eine Korrektur an mir selbst.**
+     Er stand hier zuerst, mit der Begründung „der Browser kann Bild in neuem
+     Tab öffnen". Kann er — aber nur per Rechtsklick. Ein Zeiger, der
+     Vergrößern verspricht, während der Linksklick nichts tut, ist genau die
+     Sorte Zusage, die den nächsten Leser in die Irre führt (dieselbe Bauform
+     wie die zwei falschen Kommentare vom 26.08.2026).
+
+     Eine Lightbox gäbe es zu bauen — das Portal hat keine, mobil schon
+     (`ObjektDetailSheet`) —, aber `StorageImg` reicht die signierte URL nicht
+     nach außen, es wäre also erst ein zweiter Signierweg nötig. Fläche, die
+     niemand bestellt hat. Steht als offener Punkt in der Übergabe. */
+}
+/* Kein Bild und „Bild nicht abrufbar" sind verschiedene Dinge. Die Zeile ist
+   deshalb sichtbar ausgezeichnet und nicht bloß grau wie eine Notiz.
+
+   Sie steht EINMAL unter der Liste, nicht in jeder Zeile: die Bilder kommen
+   aus einer Abfrage, ein Fehler trifft also alle Prüfungen gleich. */
+.zentrale-inspektor-historie .bilder-fehlt {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  color: var(--z-mangel);
+}
 .zentrale-inspektor-historie .hinweis,
 .zentrale-inspektor-historie .fehler {
   margin: 6px 0 0;
@@ -1590,6 +1633,68 @@ body:has(.zentrale-karte-kasten.kino) {
   margin: 8px 0 0;
   font-size: 0.8125rem;
   color: var(--z-text-primary);
+}
+/* Der Teilerfolg: Prüfung steht, Bild fehlt. Er darf NICHT wie die volle
+   Erfolgsmeldung aussehen — sonst liest man über den zweiten Halbsatz hinweg,
+   und genau der ist die Auskunft. */
+.zentrale-inspektor-pruefen .erledigt.teils { color: var(--z-mangel); }
+
+/* Die Bildwahl im Prüfformular (Migration 118).
+
+   Der Block sitzt in der Reihe der Angaben und trägt dieselbe Beschriftung
+   wie die `<label>` darüber — er ist nur kein `<label>`, weil `PhotoCapture`
+   seinen eigenen versteckten `<input type="file">` mitbringt und ein
+   umschließendes Label dessen Klick doppelt auslöste. */
+.zentrale-inspektor-pruefen .pruef-bild {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.zentrale-inspektor-pruefen .pruef-bild > .beschriftung {
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+/* Der Trigger von PhotoCapture. **Ein echtes `<button>`, und das ist kein
+   Stil, sondern der Tastaturweg**: die Komponente packt einen Custom-Trigger
+   in ein `<div onClick>` ohne tabIndex und ohne Key-Handler — ein `<span>`
+   darin wäre nur mit der Maus erreichbar (Schlusslesung 27.08.2026, F7). */
+.zentrale-inspektor-pruefen .pruef-bild .waehlen {
+  display: inline-block;
+  align-self: flex-start;
+  background: none;
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--z-border);
+  border-radius: 3px;
+  font-size: 0.8125rem;
+  color: var(--z-text-primary);
+  cursor: pointer;
+}
+.zentrale-inspektor-pruefen .pruef-bild .waehlen:hover:not(:disabled) {
+  border-color: var(--z-text-secondary);
+}
+/* Gesperrt sieht gesperrt aus. Fehlte, bis der Delta-Durchgang es fand
+   (27.08.2026, D3): waehrend des Speicherns blieben Zeiger und Hover-Rahmen,
+   der Knopf sah bedienbar aus und war es nicht. Das `<span>` vorher signalisierte
+   es auch nie — ein Knopf weckt aber die Erwartung, dass er es tut. */
+.zentrale-inspektor-pruefen .pruef-bild .waehlen:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.zentrale-inspektor-pruefen .pruef-bild .gewaehlt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* Dieselbe Kachelgröße wie in der Historie darunter: das gewählte Bild soll
+   aussehen wie das, was daraus wird. */
+.zentrale-inspektor-pruefen .pruef-bild .gewaehlt img {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid var(--z-border);
 }
 
 .zentrale-inspektor-pruefen .knoepfe { display: flex; gap: 8px; }
