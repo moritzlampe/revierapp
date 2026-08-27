@@ -11,7 +11,14 @@ import { istWartbar, zustandsSatz, type PruefStatus } from '@/lib/revier/wartung
 import { STUFEN, stufeVon, type ZustandStufe } from './wartungsfilter'
 import { schreibe } from './schreiben'
 import { POSTGREST_LIMIT } from './laden'
-import { FOTO_ART, eintragSatz, fotoAlt, fotoUntauglich, nachPruefung } from './pruef-fotos'
+import {
+  FOTO_ART,
+  bildWahlFehler,
+  eintragSatz,
+  fotoAlt,
+  fotoUntauglich,
+  nachPruefung,
+} from './pruef-fotos'
 import PhotoCapture from '@/components/photo/PhotoCapture'
 import { uploadPhoto } from '@/lib/photos/upload'
 import {
@@ -1604,7 +1611,14 @@ function Pruefen({ objekt, aufEingetragen }: { objekt: Punkt; aufEingetragen: ()
               setBildFehler(grund)
               setBild(grund ? null : datei)
             }}
-            onError={(e) => setBildFehler(e.message)}
+            onError={(e) => {
+              // **Nicht `e.message` durchreichen** — das ist der englische
+              // Text der Bildbibliothek (Browser-Prüfung 27.08.2026, Punkt 8).
+              // Das Original in die Konsole, die deutsche Fassung vor den
+              // Nutzer.
+              console.warn('[Bildwahl] PhotoCapture warf', e)
+              setBildFehler(bildWahlFehler(e.message))
+            }}
           >
             {/**
               * **Ein echtes `<button>`, kein `<span>`** (Schlusslesung

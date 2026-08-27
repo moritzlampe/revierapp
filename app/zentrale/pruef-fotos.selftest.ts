@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict'
 import {
   FOTO_ART,
+  bildWahlFehler,
   FOTO_MAX_BYTES,
   FOTO_MIME,
   eintragSatz,
@@ -54,6 +55,30 @@ assert.match(
   /JPEG, PNG oder WebP/,
   'Bei zwei Maengeln gewinnt der, den der Nutzer beheben kann',
 )
+
+// --- Was PhotoCapture wirft, in Deutsch ---
+//
+// **Der Text ist GEMESSEN, nicht geraten** (Browser-Pruefung 27.08.2026,
+// Punkt 8): eine Textdatei erzeugte woertlich „The file given is not an image"
+// aus `browser-image-compression`, und der `onError`-Zweig setzte ihn
+// unveraendert vor den Nutzer.
+assert.match(bildWahlFehler('The file given is not an image'), /kein Bild/)
+assert.match(bildWahlFehler('The file given is not an image'), /JPEG, PNG und WebP/)
+
+// Gross-/Kleinschreibung darf nicht entscheiden — die Bibliothek verspricht
+// ihren Wortlaut nirgends.
+assert.match(bildWahlFehler('THE FILE GIVEN IS NOT AN IMAGE'), /kein Bild/)
+
+// **Ein unbekannter Fehler bekommt einen ALLGEMEINEN deutschen Satz, nie den
+// Originaltext.** Sonst waere die Uebersetzung nur fuer den einen bekannten
+// Fall gebaut und der naechste englische Satz stuende wieder da.
+const unbekannt = bildWahlFehler('heic2any: unexpected EOF at chunk 3')
+assert.equal(/heic2any/.test(unbekannt), false, 'Kein Originaltext vor dem Nutzer')
+assert.equal(/EOF/.test(unbekannt), false)
+assert.match(unbekannt, /nicht vorbereitet werden/)
+
+// Auch der leere Fall faellt auf die allgemeine Fassung, nicht auf nichts.
+assert.match(bildWahlFehler(''), /nicht vorbereitet werden/)
 
 // --- Zuordnung Foto → Pruefung ---
 const fotos = [

@@ -84,6 +84,36 @@ export function fotoUntauglich(datei: { size: number; type: string }): string | 
   return null
 }
 
+/**
+ * Was `PhotoCapture` wirft, in verständliches Deutsch.
+ *
+ * **Der Anlass ist gemessen** (Browser-Prüfung 27.08.2026, Punkt 8): eine
+ * Textdatei im Dateidialog erzeugte die Meldung **„The file given is not an
+ * image"** — wörtlich durchgereicht aus `browser-image-compression`, mitten in
+ * einer sonst durchgehend deutschen Oberfläche. Der `onError`-Zweig setzte
+ * blind `e.message`.
+ *
+ * **Warum `fotoUntauglich()` das nicht abfängt:** die Bibliothek wirft, BEVOR
+ * `onCapture` je feuert. Meine Prüfung sitzt hinter einer Tür, durch die diese
+ * Datei nie kommt. Zwei Wege, zwei Meldungen — und nur einer war übersetzt.
+ *
+ * **Praktisch selten und trotzdem falsch:** der Dateidialog filtert bereits
+ * (`accept="image/*,.heic,.heif"`), es trifft nur, wer auf „Alle Dateien"
+ * umschaltet. Ein englischer Satz aus einer fremden Bibliothek ist deshalb
+ * kein Ausfall, aber er ist die Stelle, an der die Oberfläche aufhört, die
+ * eigene zu sein.
+ *
+ * Unbekannte Fehler bekommen einen allgemeinen Satz statt des Originaltexts:
+ * die Bibliothek verspricht nirgends deutsche oder auch nur stabile
+ * Meldungen. Der Originaltext gehört in die Konsole, nicht vor den Nutzer.
+ */
+export function bildWahlFehler(rohMeldung: string): string {
+  if (/not an image/i.test(rohMeldung)) {
+    return 'Diese Datei ist kein Bild. Erlaubt sind JPEG, PNG und WebP.'
+  }
+  return 'Das Bild konnte nicht vorbereitet werden. Bitte ein anderes wählen.'
+}
+
 /* ── Zuordnung Foto → Prüfung ───────────────────────────────────────────── */
 
 /**
