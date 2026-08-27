@@ -1,6 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 import type { Punkt, PunktPruefung } from './revierkarte-map'
 import Papierkorb from './papierkorb'
 import StorageImg from '@/components/photo/StorageImg'
@@ -64,6 +73,10 @@ export default function ObjektInspektor({
   wartbareDa,
   zustandAus,
   aufZustandAus,
+  versteckt,
+  aufVersteckt,
+  ausgeblendet,
+  aufFilterLoesen,
   suche,
   aufSuchfeldFokus,
   ausgeklappt,
@@ -112,7 +125,52 @@ export default function ObjektInspektor({
   wartbareDa: boolean
   /** Abgewählte Zustandsstufen. Leer heißt „alle" — s. `wartungsfilter.ts`. */
   zustandAus: ReadonlySet<ZustandStufe>
-  aufZustandAus: (aus: ReadonlySet<ZustandStufe>) => void
+  aufZustandAus: Dispatch<SetStateAction<ReadonlySet<ZustandStufe>>>
+  /**
+   * Abgewählte Objektarten. Leer heißt „alle".
+   *
+   * **Liegt seit dem 27.08.2026 in `revierkarte.tsx`, nicht mehr hier**
+   * (CP-84): vorher war es ein lokaler Zustand von `Liste`, und deshalb
+   * filterte die Typ-Legende allein die Liste in der Spalte, während die
+   * Zustands-Kästchen direkt darunter die Karte filterten. Zwei gleich
+   * aussehende Reihen, zwei verschiedene Flächen.
+   */
+  versteckt: ReadonlySet<string>
+  /**
+   * **Als `Dispatch<SetStateAction<…>>` und nicht als `(menge) => void`**, und
+   * das ist Absicht: die Legende ruft ihn in der Updater-Form
+   * (`aufVersteckt((v) => toggleTyp(v, …))`). Die direkte Form läse `versteckt`
+   * aus dem Render, in dem der Klick entstand — zwei Klicks im selben Batch
+   * überschrieben einander. Praktisch kaum erreichbar, aber der Umbau von
+   * CP-84 soll das Verhalten nicht ändern, sondern nur den Ort des Zustands.
+   *
+   * **`aufZustandAus` trägt seit dem 27.08.2026 dieselbe Form**, und zwar
+   * genau deshalb: eine Begründung, die für die eine Achse gilt und für die
+   * Nachbarachse danebensteht, ohne angewandt zu werden, ist keine
+   * Begründung mehr (Schlusslesung, offener Punkt).
+   */
+  aufVersteckt: Dispatch<SetStateAction<ReadonlySet<string>>>
+  /**
+   * Wie viele Objekte gerade nicht auf der Karte stehen, weil ein Filter
+   * greift — die Zahl für die Hinweiszeile der Detailansicht (CP-85).
+   *
+   * **Von der Karte gerechnet, nicht hier**, aus demselben Grund wie
+   * `wartbareDa`: dieselbe Bedingung an zwei Orten läuft auseinander.
+   */
+  ausgeblendet: number
+  /**
+   * Alle WIRKENDEN Filter aufheben — von der Karte gebaut, nicht hier
+   * (Fremdprüfung 27.08.2026, D-P4).
+   *
+   * **Der Unterschied ist nicht kosmetisch:** hier wäre nur bekannt, welche
+   * Mengen gefüllt sind, nicht welche davon gerade WIRKEN. Ein gespeicherter
+   * Zustandsfilter bei ausgeschalteter Wartungssicht trägt nichts zur
+   * angezeigten Zahl bei — ihn mitzuleeren nähme dem Nutzer eine Eingrenzung
+   * weg, die er gar nicht sieht und beim nächsten Einschalten wiederfinden
+   * will. `zustandAus` wird beim Ausschalten aus genau diesem Grund bewusst
+   * nicht geleert.
+   */
+  aufFilterLoesen: () => void
   /** Der Suchbegriff aus der Knopfleiste über der Karte — dort steht das Feld. */
   suche: string
   /**
@@ -162,6 +220,8 @@ export default function ObjektInspektor({
           // die beim Revierwechsel schon einmal zugeschlagen hat.
           key={gewaehlt.id}
           objekt={gewaehlt}
+          ausgeblendet={ausgeblendet}
+          aufFilterLoesen={aufFilterLoesen}
           aufZurueck={() => {
             aufSuchfeldFokus()
             aufAuswahl(null)
@@ -189,6 +249,8 @@ export default function ObjektInspektor({
           wartbareDa={wartbareDa}
           zustandAus={zustandAus}
           aufZustandAus={aufZustandAus}
+          versteckt={versteckt}
+          aufVersteckt={aufVersteckt}
         />
       )}
     </aside>
@@ -383,6 +445,8 @@ function Liste({
   wartbareDa,
   zustandAus,
   aufZustandAus,
+  versteckt,
+  aufVersteckt,
 }: {
   revierId: string
   punkte: Punkt[]
@@ -394,7 +458,10 @@ function Liste({
   aufWartung: (an: boolean) => void
   wartbareDa: boolean
   zustandAus: ReadonlySet<ZustandStufe>
-  aufZustandAus: (aus: ReadonlySet<ZustandStufe>) => void
+  aufZustandAus: Dispatch<SetStateAction<ReadonlySet<ZustandStufe>>>
+  /** Abgewählte Objektarten — kommt von oben, s. `ObjektInspektor` (CP-84). */
+  versteckt: ReadonlySet<string>
+  aufVersteckt: Dispatch<SetStateAction<ReadonlySet<string>>>
 }) {
   /**
    * Die abgewählten Typen — dieselbe Bauart wie die Legende der Feld-App.
@@ -409,8 +476,13 @@ function Liste({
    * **was es überhaupt gibt** — bei Söders 196 Objekten ist das der eigentliche
    * Gewinn, nicht das Filtern. Und anders als eine Einfachauswahl kann sie
    * „Stände und Wildkameras, sonst nichts".
+   *
+   * ⚠ **Der Zustand stand bis zum 27.08.2026 HIER und ist jetzt ein Prop**
+   * (CP-84). Genau daran lag es, dass die Kästchen nur die Liste filterten:
+   * ein lokaler Zustand hat keinen Weg zur Karte. Der Kommentar über
+   * `nachLegende` sagte das auch so — er beschrieb kein Versehen, sondern die
+   * Bauform, und die war die Ursache.
    */
-  const [versteckt, setVersteckt] = useState<ReadonlySet<string>>(() => new Set())
 
   const baum = useMemo(() => filterBaum(punkte.map((p) => p.typ)), [punkte])
   const typenGesamt = baum.reduce((s, k) => s + k.eintraege.length, 0)
@@ -506,7 +578,24 @@ function Liste({
             {/* Gemessen an dem, was die Legende WIRKLICH wegblendet, nicht an
                 `versteckt.size`: ein abgewählter Typ, den es im Bestand nicht
                 mehr gibt, hätte sonst dauerhaft „Auswahl 196 / 196" erzeugt.
-                Und ohne die Suche, die eine eigene Frage stellt. */}
+                Und ohne die Suche, die eine eigene Frage stellt.
+
+                ⚠ **Die Zahl misst allein die TYPachse** (Schlusslesung
+                27.08.2026, Punkt 4, `[niedrig]`). Seit CP-84 filtern beide
+                Reihen die Karte — wirkt zusätzlich der Zustandsfilter, zeigt
+                die Karte weniger Objekte als hier steht.
+
+                **Bewusst nicht zusammengezählt**, und zwar aus demselben
+                Grund, aus dem die Kachel „Geprüft" und der Filter „Heil"
+                verschiedene Wörter tragen: diese Zeile beschreibt, was die
+                LEGENDE eingrenzt, und die Legende ist die Typachse. Eine Zahl,
+                die zwei Achsen mischt, wäre an einem aufklappbaren Kopf nicht
+                mehr erklärbar — und die Zustandskästchen tragen ihre eigenen
+                Zahlen zwei Zeilen tiefer.
+
+                **Wer die Kartensumme sucht, findet sie in der Detailansicht**
+                („N Objekte sind ausgeblendet", CP-85); beide können nie
+                gleichzeitig auf dem Schirm stehen. */}
             <summary>
               {nachLegende.length === punkte.length ? (
                 <>
@@ -550,7 +639,7 @@ function Liste({
                       ref={(el) => {
                         if (el) el.indeterminate = halb
                       }}
-                      onChange={() => setVersteckt((v) => toggleKategorie(v, werte))}
+                      onChange={() => aufVersteckt((v) => toggleKategorie(v, werte))}
                     />
                     <span className="nam">{k.label}</span>
                     <span className="zahl">{k.anzahl}</span>
@@ -565,7 +654,7 @@ function Liste({
                         <input
                           type="checkbox"
                           checked={!versteckt.has(e.wert)}
-                          onChange={() => setVersteckt((v) => toggleTyp(v, e.wert))}
+                          onChange={() => aufVersteckt((v) => toggleTyp(v, e.wert))}
                         />
                         <span className="nam">{e.label}</span>
                         <span className="zahl">{e.anzahl}</span>
@@ -587,24 +676,32 @@ function Liste({
              * Ausschalten zerstört, und man müsste denselben Zustand zweimal
              * führen (§4.1.3, dieselbe Falle wie nativ).
              *
-             * ⚠ **Die beiden Kästchenreihen wirken auf VERSCHIEDENE Flächen,
-             * und das sieht man ihnen nicht an.** `versteckt` filtert allein
-             * `nachLegende`, also die Liste in dieser Spalte — es gibt keinen
-             * Kanal von dort zur Karte. Der Zustandsfilter filtert allein die
-             * Karte (`kartenPunkte` in `revierkarte.tsx`). Die Schnittmenge
-             * „nur Kanzeln UND nur gesperrte" ist auf keiner der beiden Flächen
-             * herstellbar: die Karte zeigt gesperrte JEDES Typs, die Liste
-             * Kanzeln in JEDEM Zustand.
+             * **Beide Kästchenreihen filtern seit dem 27.08.2026 die KARTE**
+             * (CP-84, Entscheidung Moritz). Die Schnittmenge „nur Kanzeln UND
+             * nur gesperrte" ist damit herstellbar, und die gleiche Optik
+             * beider Reihen hält, was sie verspricht.
              *
-             * **Hier stand bis zur Schlusslesung am 26.08.2026 genau diese
-             * Schnittmenge als Versprechen** — sie war zu keinem Zeitpunkt
-             * wahr. Dieselbe Bauform wie die 119-Falle: eine Zeile, die nie
-             * gestimmt hat, sieht nicht danach aus.
+             * Der Typfilter wirkt zusätzlich weiter auf die Liste in dieser
+             * Spalte (`nachLegende`) — beide Flächen, dieselbe Menge. Der
+             * Zustandsfilter filtert weiterhin nur die Karte: eine Liste, die
+             * beim Einschalten der Wartungssicht zusammenschrumpft, wäre eine
+             * Überraschung, die niemand bestellt hat.
              *
-             * **Ob die Karte den Typfilter bekommen soll, ist offen und eine
-             * Produktentscheidung** (in der Feld-App filtert dieselbe Legende
-             * die Karte). Bis dahin ist die gleiche Optik beider Reihen ein
-             * Versprechen, das die eine Reihe nicht hält.
+             * ⚠ **Die Geschichte dieses Absatzes gehört dazu, weil sie
+             * dreimal dieselbe Bauform zeigt.** Bis zum 26.08.2026 stand hier
+             * die Schnittmenge als Versprechen — sie war nie wahr, gefunden
+             * von der Schlusslesung. Danach stand hier ihre Korrektur: „es
+             * gibt keinen Kanal zur Karte, ob sie einen bekommt, ist offen".
+             * **Auch die ist seit dem 27.08. falsch** — sie beschrieb einen
+             * Zustand, den derselbe Autor am Tag darauf verändert hat;
+             * gefunden von der Fremdprüfung (Lauf D, Punkt 9).
+             *
+             * **Die Lehre ist nicht „besser kommentieren".** Ein Kommentar,
+             * der den Zustand einer ANDEREN Datei beschreibt, veraltet, sobald
+             * jemand dort etwas ändert — und niemand sucht ihn dann. Was hier
+             * steht, sollte deshalb die Absicht dieser Zeilen erklären, nicht
+             * den Stand des Nachbarn. Der Satz über den Zustandsfilter oben
+             * ist genau deshalb kurz.
              */}
             {wartbareDa && (
               <div className="zentrale-wartung">
@@ -642,12 +739,35 @@ function Liste({
                           <input
                             type="checkbox"
                             checked={!zustandAus.has(stufe.wert)}
-                            onChange={() => {
-                              const naechste = new Set(zustandAus)
-                              if (naechste.has(stufe.wert)) naechste.delete(stufe.wert)
-                              else naechste.add(stufe.wert)
-                              aufZustandAus(naechste)
-                            }}
+                            /**
+                             * **Updater-Form, seit dem 27.08.2026** — vorher
+                             * las diese Stelle `zustandAus` aus dem Render,
+                             * in dem der Klick entstand (Schlusslesung, Punkt
+                             * 9, der OFFENE).
+                             *
+                             * **Der Anlass ist nicht die Race, sondern der
+                             * Widerspruch:** derselbe Diff dokumentiert eine
+                             * Zeile weiter oben an `aufVersteckt` genau diese
+                             * Form als Gefahr — und ließ sie an der
+                             * Nachbarachse stehen. Eine Begründung, die man
+                             * für die eine Hälfte aufschreibt und für die
+                             * andere nicht anwendet, ist beim nächsten Leser
+                             * keine Begründung mehr, sondern eine
+                             * Ungereimtheit, die er auflösen muss.
+                             *
+                             * Praktisch kaum erreichbar (zwei Klicks im
+                             * selben Batch), vorbestehend seit dem
+                             * 26.08.2026, und trotzdem billiger zu beheben
+                             * als zu erklären.
+                             */
+                            onChange={() =>
+                              aufZustandAus((v) => {
+                                const naechste = new Set(v)
+                                if (naechste.has(stufe.wert)) naechste.delete(stufe.wert)
+                                else naechste.add(stufe.wert)
+                                return naechste
+                              })
+                            }
                           />
                           <span className="nam">{stufe.label}</span>
                           <span className="zahl">{anzahl}</span>
@@ -2057,6 +2177,8 @@ function Details({
   aufPositionSpeichern,
   aufSetzAbbrechen,
   aufLoeschen,
+  ausgeblendet,
+  aufFilterLoesen,
 }: {
   objekt: Punkt
   aufZurueck: () => void
@@ -2068,6 +2190,17 @@ function Details({
   aufPositionSpeichern: () => Promise<void>
   aufSetzAbbrechen: () => void
   aufLoeschen: (id: string) => Promise<void>
+  /**
+   * Wie viele Objekte der Filter gerade von der Karte nimmt (CP-85).
+   *
+   * **Warum die Zahl überhaupt hierher muss:** diese Ansicht ERSETZT die
+   * Legende samt ihrer Kästchen (`gewaehlt ? <Details…> : <Liste…>`). Wer ein
+   * Objekt anklickt, sieht die Karte weiter gefiltert, aber nichts mehr, was
+   * das erklärt — und der Weg zurück („← Alle Objekte") kostet die Auswahl.
+   */
+  ausgeblendet: number
+  /** Alle Filter aufheben, ohne die Auswahl zu verlieren (CP-85). */
+  aufFilterLoesen: () => void
 }) {
   const [bearbeiten, setBearbeiten] = useState(false)
   const [loeschFrage, setLoeschFrage] = useState(false)
@@ -2250,6 +2383,68 @@ function Details({
           ← Alle Objekte
         </button>
       </div>
+
+      {/**
+        * **Die Karte ist gefiltert, und hier steht das Einzige, was das noch
+        * sagt** (CP-85, Entscheidung Moritz 27.08.2026).
+        *
+        * Diese Ansicht ersetzt die Legende samt ihrer Kästchen. Bis hierher
+        * hieß das: man filtert auf „nur Gesperrte", klickt einen an — und die
+        * Karte zeigt weiter nur drei Objekte, ohne dass irgendetwas erklärt,
+        * warum. Der Weg zurück brächte die Kästchen wieder, kostete aber die
+        * Auswahl.
+        *
+        * **Bewusst NICHT gemacht: den Filter beim Auswählen automatisch
+        * aufheben.** Dann spränge die Karte bei jedem Klick um, und man
+        * verlöre die Eingrenzung, die man sich gerade zurechtgelegt hat — die
+        * Karte umspringen zu lassen war schon bei `wartungWirkt` das
+        * schlechtere Geschäft.
+        *
+        * Der Knopf löst BEIDE Achsen (Typ und Zustand), weil die Zeile beide
+        * zusammenzählt: eine Zahl, die zwei Ursachen hat, braucht einen
+        * Ausgang, der beide trifft.
+        */}
+      {ausgeblendet > 0 ? (
+        <p className="zentrale-inspektor-gefiltert">
+          <span>
+            {ausgeblendet === 1
+              ? 'Ein Objekt ist auf der Karte ausgeblendet.'
+              : `${ausgeblendet} Objekte sind auf der Karte ausgeblendet.`}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              aufFilterLoesen()
+              /**
+               * **Den Fokus mitnehmen, bevor der Knopf verschwindet**
+               * (Schlusslesung 27.08.2026, Punkt 8, `[mittel]`).
+               *
+               * Mit `ausgeblendet → 0` unmountet die ganze Zeile samt des
+               * Knopfes, auf dem der Fokus gerade steht — er fiele auf den
+               * Seitenanfang zurück, und wer mit der Tastatur arbeitet,
+               * beginnt von vorn. Genau die Klasse Fehler, die dieses Projekt
+               * sonst ausdrücklich behandelt (`aufSuchfeldFokus` beim Weg aus
+               * den Details, `behaltenRef` in der Liste).
+               *
+               * Der Objektname ist das richtige Ziel: er trägt bereits
+               * `tabIndex={-1}` und ist der Kopf genau der Ansicht, in der man
+               * bleibt. Derselbe Anker, den das Öffnen der Details benutzt.
+               *
+               * **Dass er beim Klick immer im DOM steht, ist nachgesehen und
+               * nicht angenommen:** im Bearbeiten-Modus gibt es kein `<h3>`,
+               * aber dort meldet `aufModus` (oben) `objektBearbeitung` nach
+               * oben, `legendeBedienbar` wird falsch, kein Filter wirkt und
+               * `ausgeblendet` ist 0 — diese Zeile ist dann gar nicht
+               * gerendert. **Der Fix auf Fremdprüfungs-Befund C2 macht diesen
+               * hier sicher**, ohne dass das jemand geplant hätte.
+               */
+              kopfRef.current?.focus()
+            }}
+          >
+            Alle zeigen
+          </button>
+        </p>
+      ) : null}
 
       <div className="zentrale-inspektor-koerper">
         {bearbeiten ? (

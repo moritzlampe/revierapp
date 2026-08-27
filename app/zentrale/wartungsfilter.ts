@@ -111,3 +111,48 @@ export const STUFEN: readonly { wert: ZustandStufe; label: string; titel: string
 export function stufeSichtbar(ampel: Ampel, abgewaehlt: ReadonlySet<ZustandStufe>): boolean {
   return !abgewaehlt.has(stufeVon(ampel))
 }
+
+/**
+ * Bleibt dieses Objekt auf der Karte stehen? — **beide Filterachsen in einer
+ * Entscheidung** (CP-84, 27.08.2026).
+ *
+ * **Warum das eine eigene Funktion ist und nicht inline in der Karte bleibt:
+ * der Fehler ist beim Bauen passiert.** In der ersten Fassung schlug die
+ * Ausnahme des Zustandsfilters (`!istWartbar` — Orientierungsmarken bleiben
+ * stehen) auf den Typfilter durch. Damit wäre ein abgewählter Parkplatz
+ * sichtbar geblieben, obwohl der Nutzer ihn gerade abgewählt hatte: die
+ * Ausnahme des einen Filters hätte den anderen aufgehoben.
+ *
+ * Vier Regeln, und ihre REIHENFOLGE ist der ganze Inhalt:
+ *
+ * 1. **Die Auswahl gewinnt über alles.** Ein angeklicktes Objekt bleibt
+ *    sichtbar, egal welcher Filter es träfe — sonst verschwände unter der
+ *    geöffneten Detailansicht der Punkt, den sie beschreibt.
+ * 2. **Der Typfilter gilt ohne Ausnahme.** Wer eine Art abwählt, will sie weg
+ *    haben; eine Rückausnahme wäre das Gegenteil des Klicks.
+ * 3. **Der Zustandsfilter überspringt nicht wartbare Objekte.** Eine
+ *    Bushaltestelle hat keinen Wartungszustand, und wer nach kaputten Ständen
+ *    sucht, soll nicht seine Orientierungsmarken verlieren.
+ * 4. Sonst entscheidet die Stufe.
+ *
+ * **Beide `…Filtert`-Flaggen kommen von der Karte**, nicht aus dieser Datei:
+ * sie tragen die Erreichbarkeit der Bedienung (`legendeBedienbar`), und die
+ * kennt nur die Karte. Dieselbe Trennung wie bei `wartbareDa`.
+ */
+export function kartePunktSichtbar(
+  punkt: { id: string; typ: string; ampel: Ampel },
+  opts: {
+    auswahlId: string | null
+    typFiltert: boolean
+    versteckt: ReadonlySet<string>
+    zustandFiltert: boolean
+    zustandAus: ReadonlySet<ZustandStufe>
+    istWartbar: (typ: string) => boolean
+  },
+): boolean {
+  if (punkt.id === opts.auswahlId) return true
+  if (opts.typFiltert && opts.versteckt.has(punkt.typ)) return false
+  if (!opts.zustandFiltert) return true
+  if (!opts.istWartbar(punkt.typ)) return true
+  return stufeSichtbar(punkt.ampel, opts.zustandAus)
+}

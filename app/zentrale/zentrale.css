@@ -1411,6 +1411,34 @@ body:has(.zentrale-karte-kasten.kino) {
   white-space: pre-wrap; /* Notizen aus der Feld-App tragen Zeilenumbrüche */
 }
 
+/* „Die Karte ist gefiltert" in der Detailansicht (CP-85). Sie steht direkt
+   unter dem Zurück-Knopf, also an der Stelle, an der sonst die Legende wäre —
+   dort sucht der Blick die Erklärung. Gedämpft, nicht alarmierend: es ist
+   kein Fehler, sondern ein Zustand, den der Nutzer selbst hergestellt hat. */
+.zentrale-inspektor-gefiltert {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  background: var(--z-bg-sunken);
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+}
+.zentrale-inspektor-gefiltert > button {
+  flex: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--z-text-primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.zentrale-inspektor-gefiltert > button:hover { color: var(--z-accent); }
+
 .zentrale-inspektor-historie { margin-top: 6px; }
 .zentrale-inspektor-historie > summary {
   font-size: 0.8125rem;

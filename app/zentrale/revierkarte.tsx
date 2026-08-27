@@ -23,7 +23,7 @@ import {
 } from './objekte'
 import ObjektInspektor from './objekt-inspektor'
 import { istWartbar } from '@/lib/revier/wartung'
-import { stufeSichtbar, type ZustandStufe } from './wartungsfilter'
+import { kartePunktSichtbar, type ZustandStufe } from './wartungsfilter'
 
 // react-leaflet fasst beim Import `window` an — ssr:false ist Pflicht, und
 // next/dynamic mit ssr:false geht nur aus einer Client-Komponente heraus.
@@ -304,6 +304,29 @@ export default function Revierkarte({
    */
   const [zustandAus, setZustandAus] = useState<ReadonlySet<ZustandStufe>>(() => new Set())
 
+  /**
+   * Die abgewählten OBJEKTARTEN — **seit dem 27.08.2026 hier oben statt in der
+   * Spalte, und das ist der ganze Punkt von CP-84** (Entscheidung Moritz).
+   *
+   * Vorher lebte dieser Zustand lokal in `Liste` und kam nie hier an. Folge:
+   * die Typ-Kästchen der Legende filterten allein die Liste in der Spalte,
+   * während die Zustands-Kästchen direkt darunter die Karte filterten — **zwei
+   * gleich aussehende Reihen, die auf verschiedene Flächen wirkten.** Die
+   * Feld-App macht es seit jeher andersherum: dort filtert dieselbe Legende
+   * die Karte (`du/revier/[id].tsx`, `hiddenTypes`).
+   *
+   * **Kein neuer Mechanismus, sondern derselbe wie eine Zeile höher.** Der
+   * Zustand wandert exakt den Weg, den `zustandAus` schon geht — Karte →
+   * `ObjektInspektor` → `Liste`. Eine zweite Achse an derselben Kette.
+   *
+   * ⚠ **Der Preis, benannt:** wer eine Art abwählt, verliert sie auch als
+   * Orientierungsmarke auf der Karte. Beim Zustandsfilter gibt es dagegen eine
+   * Ausnahme (`!istWartbar`), hier wäre sie sinnlos — dort sind die Marken
+   * genau das, was man abwählt. Wer den Parkplatz sucht, darf ihn nicht
+   * abgewählt haben.
+   */
+  const [versteckt, setVersteckt] = useState<ReadonlySet<string>>(() => new Set())
+
 
   /**
    * **Beide** Zwischenspeicher leeren, sobald **überhaupt** neue Server-Daten da
@@ -472,8 +495,39 @@ export default function Revierkarte({
    * aufstellt und dann an einer Stelle nicht einhält, ist trotzdem keine.**
    */
   const wartbareDa = aktuellePunkte.some((p) => istWartbar(p.typ))
-  const wartungWirkt =
-    wartung && wartbareDa && spalteMontiert && reiter !== 'standgruppen' && setzen === null
+
+  /**
+   * **Ist die Legende überhaupt bedienbar?** Der gemeinsame Nenner beider
+   * Filterachsen — seit CP-84 gibt es zwei, und die Regel oben gilt für beide.
+   *
+   * **Herausgezogen am 27.08.2026, und zwar aus einem Fehler in genau diesem
+   * Diff:** der frisch auf die Karte gelegte Typfilter wirkte zunächst
+   * überall, auch im Standgruppen- und im Grenze-Reiter und im Setzmodus.
+   * Damit hätte er exakt den schwersten Befund vom 26.08. wiederholt — nur an
+   * der anderen Achse. *Ein Stand, den die Anzeige versteckt, ist einer, den
+   * niemand in die Gruppe holen kann*, und das gilt unabhängig davon, ob ihn
+   * ein Zustand oder ein Typ ausblendet.
+   *
+   * **Die Lehre, die daraus folgt und die teurer ist als der Fehler:** eine
+   * Regel, die als EINE Bedingung an EINER Achse formuliert ist, wandert nicht
+   * von selbst mit, wenn eine zweite Achse dazukommt. Sie muss den gemeinsamen
+   * Teil tragen — sonst ist die Regel beim nächsten Zuwachs wieder nur eine
+   * Absichtserklärung.
+   *
+   * ⚠ **`!objektBearbeitung` kam erst durch die Fremdprüfung dazu**
+   * (27.08.2026, Lauf C Punkt 2, `[mittel]`) — und es fehlte auch der Fassung
+   * vom 26.08., trug also schon vorher für die Wartungssicht allein.
+   * Während ein Objekt bearbeitet wird, sperrt `werkzeugOffen` die
+   * Reiterleiste; die Spalte zeigt Felder statt Liste, die Legende ist weg.
+   * **Und anders als bei der Einzelauswahl ist sie nicht einen Klick
+   * entfernt: der einzige Weg zurück verwirft den Entwurf.** Genau die
+   * Abgrenzung, mit der `inspektorOffen` und die Einzelauswahl ausgeschlossen
+   * wurden — sie trifft hier nicht zu.
+   */
+  const legendeBedienbar =
+    spalteMontiert && reiter !== 'standgruppen' && setzen === null && !objektBearbeitung
+
+  const wartungWirkt = wartung && wartbareDa && legendeBedienbar
 
   /**
    * Was die KARTE zeichnet. Außerhalb der Wartungssicht ist das alles.
@@ -495,13 +549,38 @@ export default function Revierkarte({
    * **Ohne Prüfzeile trägt ein Objekt die Ampel `offen`** und fällt damit in
    * die Stufe „Nie geprüft" — es braucht hier keinen eigenen Zweig.
    *
-   * **Nicht wartbare Objekte bleiben IMMER stehen**, und das ist die Grenze,
-   * die dem Filter seine Bedeutung gibt: ein Steinbruch, ein Wendeplatz oder
-   * eine Bushaltestelle hat keinen Wartungszustand (`istWartbar` in
-   * `wartung.ts`, an Söder gemessen — von 196 Objekten bleiben 173). Fielen
-   * sie unter „Nie geprüft", nähme eine Zustandsauswahl dem Nutzer seine
-   * Orientierungsmarken weg, während er nach kaputten Ständen sucht. Die
-   * Zählung an den Kästchen zieht dieselbe Grenze.
+   * **Nicht wartbare Objekte bleiben vom ZUSTANDSfilter unberührt**, und das
+   * ist die Grenze, die ihm seine Bedeutung gibt: ein Steinbruch, ein
+   * Wendeplatz oder eine Bushaltestelle hat keinen Wartungszustand
+   * (`istWartbar` in `wartung.ts`, an Söder gemessen — von 196 Objekten
+   * bleiben 173). Fielen sie unter „Nie geprüft", nähme eine Zustandsauswahl
+   * dem Nutzer seine Orientierungsmarken weg, während er nach kaputten
+   * Ständen sucht. Die Zählung an den Kästchen zieht dieselbe Grenze.
+   *
+   * ⚠ **Hier stand „bleiben IMMER stehen", und seit CP-84 ist das falsch**
+   * (Schlusslesung 27.08.2026, Punkt 6): ein abgewählter Parkplatz
+   * verschwindet sehr wohl — der TYPfilter kennt diese Ausnahme nicht.
+   * **Der Satz ist am Satz korrigiert und nicht durch einen Zusatz
+   * widerrufen**, denn genau das war der Befund: darunter stand ein zweiter
+   * Block, der ihn aufhob, während der erste weiter als Sachaussage dastand.
+   * Wer von oben liest, glaubt dem ersten.
+   */
+  /**
+   * **Zwei Achsen, ein Filter, und die Reihenfolge der Ausnahmen ist der
+   * ganze Inhalt** (CP-84, 27.08.2026).
+   *
+   * - Die **Auswahl** gewinnt über alles. Ein angeklicktes Objekt bleibt
+   *   sichtbar, egal welcher Filter es träfe — sonst verschwände unter der
+   *   geöffneten Detailansicht der Punkt, den sie beschreibt.
+   * - Der **Typfilter** hängt nicht an der Wartungssicht — er beantwortet
+   *   „was zeigt die Karte", und die Frage stellt sich unabhängig vom Zustand.
+   *   Er hängt aber sehr wohl an `legendeBedienbar`: auch seine Kästchen sind
+   *   im Standgruppen- und Grenze-Reiter und im Setzmodus nicht erreichbar.
+   * - Der **Zustandsfilter** wirkt nur, wenn die Sicht wirkt (`wartungWirkt`)
+   *   — sein Schalter ist sonst nicht erreichbar.
+   * - `!istWartbar` ist die Ausnahme allein des ZUSTANDSfilters. Sie darf
+   *   nicht auf den Typfilter durchschlagen: dort wäre sie das Gegenteil
+   *   dessen, was der Nutzer gerade angeklickt hat.
    *
    * **Ohne `useMemo`, und das ist gemessen statt gespart:** `ueberlagert()`
    * spreizt bei jedem Rendern ein neues Array (`objekte.ts:412`), also wäre
@@ -509,15 +588,49 @@ export default function Revierkarte({
    * liefe trotzdem durch und kostete nur den Vergleich. Ohne Filter kommt
    * ohnehin dieselbe Referenz zurück wie bisher.
    */
+  const zustandFiltert = wartungWirkt && zustandAus.size > 0
+  const typFiltert = legendeBedienbar && versteckt.size > 0
+
   const kartenPunkte =
-    wartungWirkt && zustandAus.size > 0
-      ? aktuellePunkte.filter(
-          (p) =>
-            p.id === auswahlId ||
-            !istWartbar(p.typ) ||
-            stufeSichtbar(p.pruefung?.ampel ?? 'offen', zustandAus),
+    zustandFiltert || typFiltert
+      ? aktuellePunkte.filter((p) =>
+          kartePunktSichtbar(
+            { id: p.id, typ: p.typ, ampel: p.pruefung?.ampel ?? 'offen' },
+            { auswahlId, typFiltert, versteckt, zustandFiltert, zustandAus, istWartbar },
+          ),
         )
       : aktuellePunkte
+
+  /**
+   * Wie viele Objekte der Filter gerade von der Karte nimmt — **die Zahl, die
+   * CP-85 überhaupt beantwortbar macht.** Sie geht in die Detailansicht, wo
+   * die Legende samt Kästchen nicht mehr steht (s. `ObjektInspektor`).
+   *
+   * Gegen `aktuellePunkte` gerechnet, nicht gegen den Bestand: gemeint ist
+   * „was fehlt gegenüber dem, was jetzt da wäre".
+   */
+  const ausgeblendet = aktuellePunkte.length - kartenPunkte.length
+
+  /**
+   * Alle WIRKENDEN Filter aufheben — für den Knopf „Alle zeigen" in der
+   * Detailansicht (CP-85).
+   *
+   * **Hier gebaut und nicht im Inspektor** (Fremdprüfung 27.08.2026, D-P4):
+   * nur an dieser Stelle ist bekannt, welche Achse gerade WIRKT. Der Knopf
+   * leerte vorher beide Mengen bedingungslos — und nahm damit einen
+   * gespeicherten Zustandsfilter mit, der bei ausgeschalteter Wartungssicht
+   * gar nichts ausblendet. Der Nutzer hätte eine Eingrenzung verloren, die er
+   * nicht sieht und beim nächsten Einschalten wiederfinden will; `zustandAus`
+   * wird beim Ausschalten aus genau diesem Grund bewusst nicht geleert.
+   *
+   * **Die Auswahl bleibt unangetastet.** Sie ist der Grund, warum es diesen
+   * Knopf überhaupt gibt: „← Alle Objekte" bringt die Kästchen zurück, kostet
+   * aber das ausgewählte Objekt.
+   */
+  const filterLoesen = () => {
+    if (typFiltert) setVersteckt(new Set())
+    if (zustandFiltert) setZustandAus(new Set())
+  }
 
 
   /**
@@ -1925,6 +2038,16 @@ export default function Revierkarte({
               // Ringen, nur eine Ebene tiefer.
               wartbareDa={wartbareDa}
               zustandAus={zustandAus}
+              // CP-84: der Typfilter liegt jetzt hier oben, damit er die Karte
+              // erreicht — bis zum 27.08.2026 lebte er in der Spalte und
+              // filterte nur ihre Liste.
+              versteckt={versteckt}
+              aufVersteckt={setVersteckt}
+              // CP-85: in der Detailansicht steht die Legende nicht mehr, also
+              // auch keine Kästchen. Diese Zahl ist das Einzige, woran man dort
+              // noch erkennt, dass die Karte gefiltert ist.
+              ausgeblendet={ausgeblendet}
+              aufFilterLoesen={filterLoesen}
               aufZustandAus={setZustandAus}
               aufSpeichern={objektSpeichern}
               aufModus={setObjektBearbeitung}
