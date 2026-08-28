@@ -443,6 +443,117 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* --- Aufklappbare Registerzeilen ----------------------------------------- */
+
+/* Jede Zeile EINES KLAPPBAREN Registers bekommt links denselben Platz, auch
+   die ohne Aufklapper. Sonst rückten die Namen gegeneinander ein, je nachdem
+   ob eine Zeile mehr als eine Gegenzeile hat — eine Liste, die aus
+   Datenzufall zittert.
+
+   ⚠ **Die Einschränkung auf `.dok-register-klappbar` ist der Fix zu einem
+   Befund** (Fremdprüfung 28.08.2026, B7): ohne sie rückte die Regel auch die
+   Register der Personen-Blätter ein, die gar keinen Aufklapper haben können —
+   eine unbestellte Änderung an bereits geprüfter Anzeige. **Dieselbe Klasse,
+   die an dieser Seite am 27.08.2026 siebenmal zuschlug**, diesmal in die
+   andere Richtung: nicht eine Lücke daneben offen gelassen, sondern eine
+   Wirkung nebenan mitgenommen.
+
+   ⚠ **`> ul > li` und nicht ` li` — das ist der Unterschied zwischen einer
+   Regel und einem Zufall** (Schlusslesung 28.08.2026). Als Nachfahren-Selektor
+   traf sie AUCH die verschachtelten Zeilen der Aufschlüsselung und rückte sie
+   um 1rem ein. Dass sie es nicht taten, gewann `.dok-register
+   .dok-aufschluss li` allein durch seine spätere Position im Blatt — beide
+   sind (0,2,1). Ein Einschub oder ein Umsortieren hätte es lautlos gedreht,
+   und der Kommentar dort behauptete ausgerechnet Reihenfolgen-Unabhängigkeit.
+   Der Kind-Selektor macht die Frage gegenstandslos, statt sie zu gewinnen.
+
+   (0,2,2) — schlägt `.dok-register li` (0,1,1) unabhängig von der
+   Reihenfolge im Blatt, und die Aufschlüsselung erreicht er gar nicht erst. */
+.dok-register.dok-register-klappbar > ul > li {
+  position: relative;
+  padding-left: 1rem;
+}
+
+/* ⚠ `.dok-register li` ist (0,1,1); eine Klasse allein ist (0,1,0) und käme
+   NICHT gegen das `display: flex` an. Der Elementname MUSS mit in den
+   Selektor. Genau diese Falle hat am 27.08.2026 zweimal zugeschlagen
+   (F1 und Delta 2), beide Male mit einem Kommentar daneben, der das
+   Gegenteil behauptete. */
+/* Nur die vertikalen Abstände weg — das linke Padding kommt aus der Regel
+   darüber, und beide Selektoren sind (0,2,1). Verschiedene Eigenschaften,
+   also kein Wettstreit: die Kurzform `padding: 0 0 0 1rem` wäre einer
+   gewesen, und wer gewinnt, hinge dann an der Reihenfolge. */
+.dok-register li.dok-register-auf {
+  display: block;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+/* `gap` und `padding` stehen hier BEWUSST in px und nicht in rem, entgegen
+   der Repo-Regel: sie spiegeln `.dok-ereignisse li, .dok-register li` Wert
+   für Wert. Eine aufklappbare und eine gewöhnliche Zeile stehen in DERSELBEN
+   Liste untereinander — schriebe man die eine in rem und die andere in px,
+   liefen sie genau dann auseinander, wenn der Leser seine Schriftgröße
+   ändert, also im einzigen Fall, für den es rem überhaupt gibt.
+   Die eigenständigen Masse dieses Abschnitts sind in rem (Fremdprüfung
+   28.08.2026, B12). */
+.dok-register summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.dok-register summary::-webkit-details-marker {
+  display: none;
+}
+/* Der Indikator sitzt in dem Platz, den jede Zeile ohnehin frei hält. Ein
+   schlichter Winkel, keine Farbe, keine Fläche — er dreht sich beim Öffnen. */
+.dok-register summary::before {
+  content: '›';
+  position: absolute;
+  left: 0.125rem;
+  color: var(--z-text-secondary);
+  transition: transform 120ms ease;
+}
+.dok-register details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+/* Die Aufschlüsselung: Einzug und eine ruhige Linie, kein Kasten, keine
+   Fläche, keine zweite Farbe — räumlich unterschieden, wie der Design-Lock
+   für Diagramme es für Reihen vorgibt. */
+.dok-register .dok-aufschluss {
+  margin: 0 0 0.375rem;
+  padding: 0.125rem 0 0.125rem 0.75rem;
+  border-left: 1px solid var(--z-border);
+  list-style: none;
+}
+/* (0,2,1) — schlägt `.dok-register li` (0,1,1) unabhängig von der
+   Reihenfolge im Blatt. Eine Regel, die nur gewinnt, weil sie weiter unten
+   steht, ist beim nächsten Einschub keine mehr.
+
+   Genau das war hier bis zum 28.08.2026 der Fall, gegen die Klappbar-Regel
+   oben: gleiche Spezifität, und nur die Position entschied. Sie trägt jetzt
+   einen Kind-Selektor und reicht nicht mehr hierher. */
+.dok-register .dok-aufschluss li {
+  padding: 0.25rem 0;
+  border-bottom: 0;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+.dok-register .dok-aufschluss .dok-register-zahl {
+  color: var(--z-text-primary);
+}
+
+/* Die einzige Gegenzeile steht ohne Klick da — sie kostet keine Interaktion
+   und lässt die Zeile trotzdem vollständig sein. */
+.dok-register-einzig {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--z-text-secondary);
+}
+
 /* Ein einzelnes Jahr zwischen zwei Lücken: kein Strich, ein Punkt. Gezeichnet
    als Nullsegment mit runder Kappe — ein `<circle>` bekäme durch
    `preserveAspectRatio="none"` ein horizontal gestrecktes Oval, die

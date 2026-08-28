@@ -87,6 +87,23 @@ export type Chronikzeile = {
 export type Art = { art: string; anzahl: number }
 
 /**
+ * Ein Registereintrag samt seiner **Gegenachse** — die Ortsangaben zu einer
+ * Art, die Arten zu einer Ortsangabe.
+ *
+ * Erweitert `Art`, statt es zu ersetzen: die Register der Blätter und der
+ * Rangliste haben keine Gegenachse und sollen keine bekommen. `Register`
+ * nimmt deshalb weiterhin `Art[]` und klappt nur auf, wo `gegen` da ist.
+ *
+ * **`gegen` summiert immer auf `anzahl`.** Das ist die einzige Beziehung, die
+ * zwischen Kopfzeile und Aufschlüsselung gilt, und der Selbsttest prüft sie
+ * für beide Richtungen. Ein Prozentwert steht im Aufklapper deshalb NICHT:
+ * sein Nenner wäre erklärungsbedürftig (Anteil am Journal oder an der Art?),
+ * und zwei Bezugsgrössen nebeneinander sind genau der Fehler, gegen den diese
+ * Seite gebaut ist.
+ */
+export type Aufschluss = Art & { gegen: Art[] }
+
+/**
  * Addiert eine Menge auf die Art in der Liste — oder legt sie an.
  *
  * Stand viermal als „finden, sonst anhängen" in dieser Datei (Ponytail
@@ -99,6 +116,19 @@ function addiere(liste: Art[], art: string, anzahl: number): void {
   const vorher = liste.find((a) => a.art === art)
   if (vorher) vorher.anzahl += anzahl
   else liste.push({ art, anzahl })
+}
+
+/** `addiere()` eine Ebene tiefer: in die Liste zu einem Schlüssel, die es
+ *  noch nicht geben muss. */
+function addiereIn(
+  map: Map<string, Art[]>,
+  schluessel: string,
+  art: string,
+  anzahl: number,
+): void {
+  const liste = map.get(schluessel)
+  if (liste) addiere(liste, art, anzahl)
+  else map.set(schluessel, [{ art, anzahl }])
 }
 
 /** Wie eine Zeile ohne Artangabe in den Registern und Spalten heisst. */
@@ -197,13 +227,28 @@ function besserName(alt: string, neu: string): string {
  */
 export const OHNE_NAMEN = 'Ohne Namensangabe'
 
-/** Absteigend nach Gesamtstrecke, bei Gleichstand alphabetisch nach dem
- *  Papiernamen. Stand zweimal wörtlich da (Ponytail 27.08.2026). */
+/**
+ * Absteigend nach Gesamtstrecke, bei Gleichstand alphabetisch nach dem
+ * Papiernamen. Stand zweimal wörtlich da (Ponytail 27.08.2026).
+ *
+ * **Das dritte Kriterium ist am 28.08.2026 nachgetragen worden, und der Grund
+ * ist die Klasse, nicht die Stelle** (Schlusslesung): die Lücke wurde an
+ * `nachMenge` gefunden, gilt hier aber wortgleich — `localeCompare(…, 'de')`
+ * meldet zwei verschiedene Unicode-Schreibweisen desselben Namens als GLEICH,
+ * und dann entschiede die Lieferreihenfolge von PostgREST, welche Zeile oben
+ * steht. **Wer einen Befund wörtlich behebt, schliesst die genannte Lücke,
+ * nicht ihre Klasse** — an dieser Seite ist genau das am 27.08.2026 siebenmal
+ * passiert.
+ */
 function nachStrecke(
   a: { gesamt: number; papiername: string },
   b: { gesamt: number; papiername: string },
 ): number {
-  return b.gesamt - a.gesamt || a.papiername.localeCompare(b.papiername, 'de')
+  return (
+    b.gesamt - a.gesamt ||
+    a.papiername.localeCompare(b.papiername, 'de') ||
+    (a.papiername < b.papiername ? -1 : a.papiername > b.papiername ? 1 : 0)
+  )
 }
 
 export type Rangliste = {
@@ -558,10 +603,11 @@ export type Journal = {
   bisJahr: number
   starkJahr: number
   starkSumme: number
-  arten: Art[]
-  /** Orte absteigend nach Menge — **einschliesslich** des Sammeltopfs für
-   *  Zeilen ohne Ortsangabe. */
-  orte: Art[]
+  /** Arten absteigend nach Menge, je mit ihren Ortsangaben. */
+  arten: Aufschluss[]
+  /** Ortsangaben absteigend nach Menge, je mit ihren Arten —
+   *  **einschliesslich** des Sammeltopfs für Zeilen ohne Ortsangabe. */
+  orte: Aufschluss[]
   /**
    * Wie viele davon **benannte** Orte sind.
    *
@@ -610,6 +656,12 @@ export function journal(zeilen: readonly Journalzeile[]): Journal | null {
   const jeJahr = new Map<number, Jahreswert>()
   const jeArt = new Map<string, number>()
   const jeOrt = new Map<string, number>()
+  // Die beiden Gegenachsen: zu jeder Art ihre Ortsangaben, zu jeder
+  // Ortsangabe ihre Arten. Beide entstehen aus DENSELBEN Zeilen wie die
+  // Register darüber — deshalb summiert jede Gegenachse auf ihre Kopfzahl,
+  // und deshalb braucht es dafür keine zweite Abfrage.
+  const orteJeArt = new Map<string, Art[]>()
+  const artenJeOrt = new Map<string, Art[]>()
   let gesamt = 0
 
   for (const z of zeilen) {
@@ -632,6 +684,16 @@ export function journal(zeilen: readonly Journalzeile[]): Journal | null {
     const ort = (z.ort_text ?? '').trim() || OHNE_ORT
     jeOrt.set(ort, (jeOrt.get(ort) ?? 0) + z.anzahl)
     gesamt += z.anzahl
+
+    // Die Gegenachsen. **`art` kann hier `null` sein, `ort` nie** — `artVon`
+    // gibt `null` zurück, wenn `art_text` selbst `null` ist, und eine solche
+    // Zeile gehört in keine Artenrechnung. In der Aufschlüsselung EINER
+    // Ortsangabe muss sie trotzdem auftauchen, sonst summierte die Liste im
+    // Aufklapper stiller als ihre eigene Kopfzeile — der Fall, gegen den die
+    // ganze Seite gebaut ist. Sie bekommt deshalb denselben Sammeltopf, den
+    // ein leerer Artentext ohnehin bekäme.
+    if (art) addiereIn(orteJeArt, art, ort, z.anzahl)
+    addiereIn(artenJeOrt, ort, art ?? OHNE_ART, z.anzahl)
   }
 
   if (jeJahr.size === 0) return null
@@ -655,16 +717,52 @@ export function journal(zeilen: readonly Journalzeile[]): Journal | null {
     bisJahr: jahre[jahre.length - 1].jahr,
     starkJahr,
     starkSumme,
-    arten: [...jeArt].map(([art, anzahl]) => ({ art, anzahl })).sort(nachMenge),
-    orte: [...jeOrt].map(([art, anzahl]) => ({ art, anzahl })).sort(nachMenge),
+    arten: aufgeschluesselt(jeArt, orteJeArt),
+    orte: aufgeschluesselt(jeOrt, artenJeOrt),
     orteBenannt: [...jeOrt.keys()].filter((o) => o !== OHNE_ORT).length,
   }
 }
 
-/** Absteigend nach Menge, bei Gleichstand alphabetisch — sonst kippt eine
- *  Liste zwischen zwei Lesungen ohne Änderung. */
+/**
+ * Absteigend nach Menge, bei Gleichstand alphabetisch — sonst kippt eine
+ * Liste zwischen zwei Lesungen ohne Änderung.
+ *
+ * **Das dritte Kriterium ist der eigentliche Riegel** (Fremdprüfung
+ * 28.08.2026): `localeCompare(…, 'de')` gibt für VERSCHIEDENE, aber deutsch
+ * kollationsgleiche Zeichenketten `0` zurück — zwei Unicode-Schreibweisen
+ * desselben Umlauts etwa. Dann entschiede die Einfügereihenfolge, und die ist
+ * die Reihenfolge, in der PostgREST die Zeilen liefert: nicht zugesichert.
+ * Der binäre Vergleich am Ende macht die Ordnung total.
+ *
+ * Dieselbe Klasse wie das zweite Sortierkriterium in Migration 117 — dort
+ * `id` neben `checked_at`, aus genau demselben Grund.
+ */
 function nachMenge(a: Art, b: Art): number {
-  return b.anzahl - a.anzahl || a.art.localeCompare(b.art, 'de')
+  return (
+    b.anzahl - a.anzahl ||
+    a.art.localeCompare(b.art, 'de') ||
+    (a.art < b.art ? -1 : a.art > b.art ? 1 : 0)
+  )
+}
+
+/**
+ * Kopfzahlen und Gegenachse zu einer Liste verbinden, beide Ebenen sortiert.
+ *
+ * **Die Gegenachse wird NICHT aus der Kopf-Map abgeleitet, sondern getrennt
+ * gezählt** — beide entstehen in derselben Schleife aus derselben Zeile. Wer
+ * sie hier nachrechnete, hätte eine zweite Wahrheit über dieselben Daten.
+ */
+function aufgeschluesselt(
+  kopf: Map<string, number>,
+  gegen: Map<string, Art[]>,
+): Aufschluss[] {
+  return [...kopf]
+    .map(([art, anzahl]) => ({
+      art,
+      anzahl,
+      gegen: (gegen.get(art) ?? []).sort(nachMenge),
+    }))
+    .sort(nachMenge)
 }
 
 /**

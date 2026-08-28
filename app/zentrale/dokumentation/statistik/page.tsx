@@ -13,6 +13,7 @@ import {
   OHNE_NAMEN,
   rangliste,
   verteilung,
+  type Art,
   type Blatt,
   type Chronikzeile,
   type Journalzeile,
@@ -325,10 +326,12 @@ export default async function StatistikPage({
           <h2>Das Journal</h2>
           <p className="dok-quelle">
             <strong>Auch diese Aufzeichnung hängt an dir, nicht an diesem Revier.</strong>{' '}
-            Sie ist tagesgenau geführt und reicht über {buch.orteBenannt} Orte —
-            die meisten davon sind keine Reviere dieser Datenbank. Was hier für
+            Sie ist tagesgenau geführt und reicht über {buch.orteBenannt}{' '}
+            Ortsangaben — die meisten davon sind keine Reviere dieser Datenbank. Was hier für
             dieses Revier steht, steht oben in der Rangliste noch einmal:
-            dieselben Stücke, andere Sicht.
+            dieselben Stücke, andere Sicht. <strong>Ortsangaben bleiben in der
+            Schreibweise des Journals getrennt</strong> — derselbe Ort kann
+            deshalb zweimal auftauchen.
           </p>
 
           <p className="dok-meta">
@@ -348,8 +351,27 @@ export default async function StatistikPage({
           />
 
           <div className="dok-register-paar">
-            <Register titel="Nach Art" eintraege={buch.arten} gesamt={buch.gesamt} />
-            <Register titel="Nach Ort" eintraege={buch.orte} gesamt={buch.gesamt} />
+            <Register
+              titel="Nach Art"
+              eintraege={buch.arten}
+              gesamt={buch.gesamt}
+              gruppe="journal-art"
+            />
+            {/* **„Nach Ortsangabe", nicht „Nach Ort"** — der Unterschied wird
+                durch das Aufklappen erst scharf. Ein anklickbarer Eintrag
+                wirkt wie eine verlässliche Entität; „Arten in Honingham
+                Thorpe" klingt nach einer Aussage über den Ort, ist aber eine
+                über EINE SCHREIBWEISE. Derselbe Ort steht hier zweimal
+                (278 gegen 62 Stück, CP-88), weil `ort_text` wortgetreu das
+                Papier trägt. Die Oberfläche darf das weder heimlich
+                zusammenlegen noch geografische Genauigkeit behaupten, die die
+                Quelle nicht hat (Codex-Designlauf 28.08.2026). */}
+            <Register
+              titel="Nach Ortsangabe"
+              eintraege={buch.orte}
+              gesamt={buch.gesamt}
+              gruppe="journal-ort"
+            />
           </div>
 
           <Jahrestabelle reihen={[buch]} spalten={['Stück']} />
@@ -360,7 +382,7 @@ export default async function StatistikPage({
           <div className="zentrale-note">
             <p style={{ margin: 0 }}>
               <strong>Auch diese Reihe vergleicht keine gleichbleibende Fläche.</strong>{' '}
-              Sie folgt einem Menschen über {buch.orteBenannt} Orte und{' '}
+              Sie folgt einem Menschen über {buch.orteBenannt} Ortsangaben und{' '}
               {buch.bisJahr - buch.vonJahr + 1} Jahre. Was sie zeigt, ist,
               wo und wann jemand unterwegs war — nicht, wie viel Wild es gab.
             </p>
@@ -581,36 +603,105 @@ function Jahrestabelle({
   )
 }
 
-/** Eine nüchterne Liste Art/Ort mit Menge und Anteil. */
+/**
+ * Eine nüchterne Liste Art/Ortsangabe mit Menge und Anteil — aufklappbar,
+ * wo es etwas aufzuklappen gibt.
+ *
+ * **Der Aufklapper ist natives `<details>`, kein Client-State und kein
+ * URL-Parameter.** Die Seite bleibt damit eine Server Component und die
+ * Interaktion funktioniert ohne JavaScript. Ein Adress-Parameter wäre die
+ * konzeptreine Lesart von „eine Unterebene gehört in die Adresse" (Konzept
+ * §2.4) — aber das Aufklappen wechselt weder Quelle noch Zeitraum noch
+ * Ansicht, es legt nur frei, was zu genau dieser Zeile gehört. Und jeder
+ * Klick wäre ein Server-Roundtrip auf einer Seite, die 1188 Zeilen lädt.
+ *
+ * **`gruppe` macht die Aufklapper eines Registers gegenseitig exklusiv** —
+ * natives HTML, ohne eine Zeile Skript. Die beiden Register bekommen
+ * VERSCHIEDENE Gruppen, und das ist eine Entscheidung: sie stehen
+ * nebeneinander, um zwei Blickwinkel gleichzeitig zu halten. Eine gemeinsame
+ * Gruppe nähme genau den Vergleich weg, für den es zwei Register gibt.
+ *
+ * **Zeilen mit nur EINER Gegenzeile bekommen keinen Aufklapper**, sondern die
+ * Antwort direkt in der Zeile. Gemessen am 28.08.2026: das betrifft 29 von 56
+ * Ortsangaben und 8 von 25 Arten. Ein Klick, der eine einzige Zeile mit
+ * derselben Zahl aufdeckt, ist ein leeres Versprechen — und eine Liste, in der
+ * die Hälfte der Zeilen nicht reagiert, wäre schlimmer als gar kein Klick.
+ */
 function Register({
   titel,
   eintraege,
   gesamt,
+  gruppe,
 }: {
   titel: string
-  eintraege: readonly { art: string; anzahl: number }[]
+  eintraege: readonly { art: string; anzahl: number; gegen?: readonly Art[] }[]
   gesamt: number
+  /** Ohne sie kein Aufklappen — die Register der Blätter haben keine
+   *  Gegenachse und sollen keine bekommen. */
+  gruppe?: string
 }) {
   if (eintraege.length === 0) return null
   return (
-    <div className="dok-register">
+    <div className={gruppe ? 'dok-register dok-register-klappbar' : 'dok-register'}>
       <h4>{titel}</h4>
       <ul>
-        {eintraege.map((e) => (
-          <li key={e.art}>
-            <span className="dok-register-name">{artAusgeschrieben(e.art)}</span>
-            <span className="dok-register-zahl">{ZAHL.format(e.anzahl)}</span>
-            {/* Der Anteil ist gerundet und steht deshalb ohne Nachkommastelle:
-                eine Prozentzahl mit Komma behauptet eine Genauigkeit, die eine
-                Papierchronik nicht hat.
+        {eintraege.map((e) => {
+          const gegen = gruppe ? (e.gegen ?? []) : []
+          // Die Kopfzeile ist in beiden Zweigen dieselbe. Sie EINMAL zu bauen
+          // ist nicht nur kürzer — zweimal geschrieben driftet sie beim
+          // nächsten Eingriff auseinander, und genau diese Klasse hat an
+          // dieser Seite am 27.08.2026 siebenmal zugeschlagen (Ponytail
+          // 28.08.2026).
+          const kopf = (
+            <>
+              <span className="dok-register-name">
+                {artAusgeschrieben(e.art)}
+                {/* Die einzige Gegenzeile steht ohne Klick da — 29 von 56
+                    Ortsangaben haben nur eine (gemessen 28.08.2026). Ein
+                    Aufklapper, der eine Zeile mit derselben Zahl aufdeckt,
+                    ist ein leeres Versprechen. */}
+                {gegen.length === 1 && (
+                  <span className="dok-register-einzig">
+                    {artAusgeschrieben(gegen[0].art)}
+                  </span>
+                )}
+              </span>
+              <span className="dok-register-zahl">{ZAHL.format(e.anzahl)}</span>
+              {/* Der Anteil ist gerundet und steht deshalb ohne Nachkommastelle:
+                  eine Prozentzahl mit Komma behauptet eine Genauigkeit, die eine
+                  Papierchronik nicht hat.
 
-                **Unter einem halben Prozent steht „< 1 %", nicht „0 %"**
-                (Schlusslesung 27.08.2026): im Journal erreichen das 56 Orte mit
-                echten Daten, und eine 0 neben einer sichtbaren Menge liest sich
-                wie ein Rechenfehler. */}
-            <span className="dok-register-anteil">{anteil(e.anzahl, gesamt)}</span>
-          </li>
-        ))}
+                  **Unter einem halben Prozent steht „< 1 %", nicht „0 %"**
+                  (Schlusslesung 27.08.2026): im Journal erreichen das 56 Orte mit
+                  echten Daten, und eine 0 neben einer sichtbaren Menge liest sich
+                  wie ein Rechenfehler. */}
+              <span className="dok-register-anteil">{anteil(e.anzahl, gesamt)}</span>
+            </>
+          )
+          if (gegen.length < 2) return <li key={e.art}>{kopf}</li>
+          return (
+            <li key={e.art} className="dok-register-auf">
+              <details name={gruppe}>
+                <summary>{kopf}</summary>
+                {/* Im Aufklapper stehen NUR Stückzahlen, kein Prozentwert.
+                    Sein Nenner wäre erklärungsbedürftig — Anteil am Journal
+                    oder an dieser Zeile? Zwei Bezugsgrössen nebeneinander
+                    sind genau der Fehler, gegen den diese Seite gebaut ist.
+                    Was hier gilt, ist eine einzige Beziehung, und sie ist
+                    nachprüfbar: diese Zahlen summieren auf die Zahl darüber
+                    (Selbsttest, beide Richtungen). */}
+                <ul className="dok-aufschluss">
+                  {gegen.map((g) => (
+                    <li key={g.art}>
+                      <span className="dok-register-name">{artAusgeschrieben(g.art)}</span>
+                      <span className="dok-register-zahl">{ZAHL.format(g.anzahl)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

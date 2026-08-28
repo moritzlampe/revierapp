@@ -585,6 +585,166 @@ assert.equal(
   'Ohne Sammeltopf sind beide Zahlen gleich',
 )
 
+// --- Die Gegenachse der Register (CP-90) -----------------------------------
+//
+// Die Aufschlüsselung entsteht aus DENSELBEN Zeilen wie die Register darüber.
+// Daraus folgt die einzige Beziehung, die zwischen Kopfzeile und Aufklapper
+// gilt — und weil die Seite im Aufklapper bewusst KEINEN Prozentwert zeigt,
+// ist sie auch die einzige, die ein Leser nachrechnen kann.
+
+const KREUZ = journal([
+  { erlegt_am: '2020-10-01', ort_text: 'Söder', art_text: 'Sau', anzahl: 5 },
+  { erlegt_am: '2020-10-02', ort_text: 'Söder', art_text: 'Fasan', anzahl: 3 },
+  { erlegt_am: '2020-10-03', ort_text: 'Fernost', art_text: 'Sau', anzahl: 7 },
+  { erlegt_am: '2020-10-04', ort_text: 'Fernost', art_text: 'Fasan', anzahl: 3 },
+  { erlegt_am: '2020-10-05', ort_text: 'Klein', art_text: 'Sau', anzahl: 1 },
+])!
+
+// Die Kernzusicherung, für JEDEN Eintrag beider Register.
+for (const e of [...KREUZ.arten, ...KREUZ.orte]) {
+  assert.equal(
+    e.gegen.reduce((n, g) => n + g.anzahl, 0),
+    e.anzahl,
+    `Die Aufschlüsselung von „${e.art}" summiert auf ihre eigene Kopfzahl`,
+  )
+}
+
+assert.deepEqual(
+  KREUZ.arten.map((a) => [a.art, a.anzahl, a.gegen.map((g) => [g.art, g.anzahl])]),
+  [
+    ['Sau', 13, [['Fernost', 7], ['Söder', 5], ['Klein', 1]]],
+    ['Fasan', 6, [['Fernost', 3], ['Söder', 3]]],
+  ],
+  'Zu jeder Art ihre Ortsangaben, absteigend nach Menge — bei Gleichstand alphabetisch',
+)
+
+assert.deepEqual(
+  KREUZ.orte.find((o) => o.art === 'Söder')!.gegen.map((g) => [g.art, g.anzahl]),
+  [['Sau', 5], ['Fasan', 3]],
+  'Zu jeder Ortsangabe ihre Arten, absteigend nach Menge',
+)
+
+// Eine Ortsangabe mit nur EINER Art bekommt in der Seite keinen Aufklapper,
+// sondern die Antwort in der Zeile. Die Unterscheidung hängt allein an dieser
+// Länge — gemessen betrifft sie 29 von 56 Ortsangaben.
+assert.equal(
+  KREUZ.orte.find((o) => o.art === 'Klein')!.gegen.length,
+  1,
+  'Eine Ortsangabe mit einer einzigen Art hat genau eine Gegenzeile',
+)
+
+// ⚠ Der Fall, an dem die Kernzusicherung bricht, wenn man ihn übersieht:
+// `artVon()` gibt bei `art_text = null` bewusst `null` zurück — eine solche
+// Zeile gehört in keine Artenrechnung. In der Aufschlüsselung EINER
+// Ortsangabe muss sie trotzdem auftauchen, sonst summierte der Aufklapper
+// stiller als seine eigene Kopfzeile. Genau das prüft dieser Block; ein
+// `if (art)` an dieser Stelle macht ihn rot.
+const OHNE = journal([
+  { erlegt_am: '2020-10-01', ort_text: 'Söder', art_text: 'Sau', anzahl: 4 },
+  { erlegt_am: '2020-10-02', ort_text: 'Söder', art_text: null, anzahl: 6 },
+])!
+const soeder = OHNE.orte.find((o) => o.art === 'Söder')!
+assert.equal(soeder.anzahl, 10, 'Die Zeile ohne Artangabe zählt in die Ortsangabe')
+assert.equal(
+  soeder.gegen.reduce((n, g) => n + g.anzahl, 0),
+  10,
+  'Und sie zählt genauso in deren Aufschlüsselung — sonst fehlten dort 6 Stück',
+)
+assert.deepEqual(
+  soeder.gegen.map((g) => [g.art, g.anzahl]),
+  [[OHNE_ART, 6], ['Sau', 4]],
+  'Sie bekommt denselben Sammeltopf, den ein leerer Artentext bekäme',
+)
+assert.deepEqual(
+  OHNE.arten.map((a) => a.art),
+  ['Sau'],
+  'Im Arten-Register selbst taucht sie NICHT auf — dort gilt `artVon()` unverändert',
+)
+
+// ⚠ Die Gegenrichtung desselben Falls, und sie fehlte (Fremdprüfung
+// 28.08.2026, A7): oben stand nur Ort→Art. Eine Sabotage
+// `if (art && ort !== OHNE_ORT)` an `orteJeArt` wäre grün geblieben, weil
+// keine Fixture eine Art an einem Ort OHNE Ortstext kannte. **Die Zusicherung
+// „für JEDEN Eintrag beider Register" prüfte nur, was die Fixtures hergaben** —
+// dieselbe Klasse wie die Sabotage vom 27.08.2026, die grün blieb, weil die
+// Fixture den Fall nicht hatte, den ihr Kommentar behauptete.
+const ARTLOS = journal([
+  { erlegt_am: '2020-10-01', ort_text: 'Söder', art_text: 'Sau', anzahl: 2 },
+  { erlegt_am: '2020-10-02', ort_text: '  ', art_text: 'Sau', anzahl: 9 },
+])!
+const sau = ARTLOS.arten.find((a) => a.art === 'Sau')!
+assert.equal(sau.anzahl, 11, 'Die Art zählt beide Zeilen, auch die ohne Ortstext')
+assert.deepEqual(
+  sau.gegen.map((g) => [g.art, g.anzahl]),
+  [[OHNE_ORT, 9], ['Söder', 2]],
+  'Und ihre Aufschlüsselung führt den Sammeltopf als eigene Zeile — sonst fehlten dort 9 Stück',
+)
+assert.equal(
+  sau.gegen.reduce((n, g) => n + g.anzahl, 0),
+  sau.anzahl,
+  'Auch in dieser Richtung summiert die Aufschlüsselung auf ihre Kopfzahl',
+)
+
+// `gegen` einer Ortsangabe ohne Ortstext: der Sammeltopf trägt seine
+// Aufschlüsselung wie jede andere Zeile.
+const TOPF = journal([
+  { erlegt_am: '2020-10-01', ort_text: '   ', art_text: 'Sau', anzahl: 2 },
+])!
+assert.deepEqual(
+  TOPF.orte.map((o) => [o.art, o.gegen.map((g) => g.art)]),
+  [[OHNE_ORT, ['Sau']]],
+  'Auch der Sammeltopf ohne Ortsangabe klappt auf seine Arten auf',
+)
+
+// Die Ordnung muss TOTAL sein, sonst entscheidet die Einfügereihenfolge —
+// und die ist die Lieferreihenfolge von PostgREST, also nicht zugesichert.
+// Der Fall ist nicht konstruiert: dieselbe Ortsangabe in zwei
+// Unicode-Schreibweisen (NFC gegen NFD) ist für `localeCompare(…, 'de')`
+// GLEICH (Rückgabe 0), für `===` aber verschieden. Ohne drittes Kriterium
+// kippte die Reihenfolge zwischen zwei Lesungen ohne jede Änderung.
+const NFC = 'S\u00f6der'
+const NFD = 'So\u0308der'
+assert.notEqual(NFC, NFD, 'Zwei Schreibweisen, ein Wort')
+assert.equal(NFC.localeCompare(NFD, 'de'), 0, 'Für die deutsche Kollation sind sie gleich')
+
+// ⚠ Die Reihenfolge der Fixture ist der ganze Test: NFC steht ZUERST, die
+// erwartete Ordnung ist NFD zuerst. `Array.sort` ist seit ES2019 stabil —
+// ohne drittes Kriterium bliebe also die Einfügereihenfolge stehen und der
+// Test wäre grün, ohne die Regel zu prüfen. Genau so ist er beim ersten
+// Versuch gebaut worden; die Sabotage hat es gezeigt, nicht das Nachdenken.
+const KOLLATION = journal([
+  { erlegt_am: '2020-10-01', ort_text: NFC, art_text: 'Sau', anzahl: 3 },
+  { erlegt_am: '2020-10-02', ort_text: NFD, art_text: 'Sau', anzahl: 3 },
+])!
+// NFD zuerst: das dritte Zeichen ist dort `o` (U+006F), in NFC `ö` (U+00F6).
+// Die beiden Erwartungen sehen im Fehlerbericht IDENTISCH aus — sie
+// unterscheiden sich nur in der Normalisierung. Wer hier eine Meldung liest,
+// darf nicht glauben, zwei gleiche Werte seien ungleich.
+assert.deepEqual(
+  KOLLATION.orte.map((o) => o.art),
+  [NFD, NFC],
+  'Bei gleicher Menge UND gleicher Kollation entscheidet der binäre Vergleich, nicht der Zufall',
+)
+assert.deepEqual(
+  KOLLATION.arten[0].gegen.map((g) => g.art),
+  [NFD, NFC],
+  'Dieselbe totale Ordnung gilt in der Gegenachse',
+)
+
+// Dieselbe Regel an der Rangliste — sie wurde an `nachMenge` gefunden und
+// gilt an `nachStrecke` wortgleich. NFC steht in der Fixture zuerst, erwartet
+// wird NFD zuerst: ohne drittes Kriterium bliebe die Einfügereihenfolge
+// stehen und dieser Test wäre grün, ohne etwas zu prüfen.
+const RANG_KOLLATION = rangliste([
+  { kontakt_id: null, erleger_name: NFC, art_text: 'Sauen', jagdjahr: null, anzahl: 4 },
+  { kontakt_id: null, erleger_name: NFD, art_text: 'Sauen', jagdjahr: null, anzahl: 4 },
+])
+assert.deepEqual(
+  RANG_KOLLATION.zeilen.map((z) => z.papiername),
+  [NFD, NFC],
+  'Auch die Rangliste hat bei gleicher Strecke und gleicher Kollation eine totale Ordnung',
+)
+
 // --- `anteil()` ------------------------------------------------------------
 //
 // Steht in `statistik.ts` statt in der Seite, damit genau diese Zeilen
