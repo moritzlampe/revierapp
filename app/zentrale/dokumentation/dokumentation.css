@@ -227,10 +227,20 @@
 }
 
 /* Die Legende sitzt UNTER der Tabelle: sie erklärt ein Zeichen, das man erst
-   sieht, wenn man liest. */
+   sieht, wenn man liest.
+
+   **`max-width` in `ch` und nicht in px** (CP-93, Browser-Test 28.08.2026):
+   ohne sie lief die längste Legende über die vollen 1124 px, während jeder
+   andere Erklärtext derselben Seite bei 636 px umbrach — zwei Texte gleicher
+   Funktion mit doppelt so langen Zeilen. `72ch` ist dasselbe Maß, das
+   `.dok-quelle` trägt; weil `ch` mit der Schriftgröße rechnet, ergibt es hier
+   (0.75rem) eine schmalere Spalte als dort (0.875rem). **Das ist die
+   Absicht:** gleich viele Zeichen je Zeile ist das lesbare Maß, nicht gleich
+   viele Pixel. */
 .dok-legende {
   caption-side: bottom;
   text-align: left;
+  max-width: 72ch;
   padding: 10px 14px 0;
   font-size: 0.75rem;
   color: var(--z-text-secondary);
@@ -373,14 +383,24 @@
 /* --- Eine zu dünne Reihe: Ereignisse statt Kurve ------------------------- */
 
 /* Fünf belegte Jahre in vierzehn: eine Linie behauptete dort einen Verlauf,
-   über den die Chronik nichts sagt. Die Jahre stehen dann einzeln. */
-.dok-ereignisse {
-  margin: 0 0 12px;
+   über den die Chronik nichts sagt. Die Jahre stehen dann einzeln.
+
+   **Der Kasten sitzt an der FIGUR, nicht an der Liste** (CP-94,
+   28.08.2026) — dieselbe Bauform wie `.dok-kurve`, und aus demselben Grund:
+   die Fusszeile gehört INS Blatt, nicht darunter. Trüge die Liste den
+   Kasten, endete er über der Zeile, die erklärt, warum hier keine Kurve
+   steht. Die Werte sind wortgleich von `.dok-kurve` übernommen, damit die
+   vier Blätter untereinander eine Reihe bleiben. */
+.dok-ereignisse-figur {
+  margin: 0 0 20px;
   padding: 12px 16px;
-  list-style: none;
   background: var(--z-bg-elevated);
   border: 1px solid var(--z-border);
   border-radius: 10px;
+}
+.dok-ereignisse {
+  margin: 0;
+  list-style: none;
 }
 /* Ereignis- und Registerzeilen sind dieselbe Zeile; sie unterscheiden sich
    allein darin, wo die Trennlinie sitzt (Ponytail 27.08.2026). */
@@ -408,6 +428,13 @@
   font-variant-numeric: tabular-nums;
 }
 .dok-ereignis-arten {
+  color: var(--z-text-secondary);
+}
+
+.dok-ereignis-grund {
+  margin-top: 8px;
+  max-width: 72ch;
+  font-size: 0.75rem;
   color: var(--z-text-secondary);
 }
 

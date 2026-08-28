@@ -455,18 +455,60 @@ function Jahreskurve({ reihe, beschreibung }: { reihe: Reihe; beschreibung: stri
   if (!kurve) {
     // Zu dünn für eine Linie: die Jahre einzeln, damit sichtbar bleibt, dass
     // es Ereignisse sind und kein Verlauf.
+    //
+    // **Die Fusszeile ist der Grund, warum das hier eine `figure` ist**
+    // (CP-94, Browser-Test 28.08.2026): die drei Blätter mit Kurve tragen
+    // eine, dieses trug keine — und zusammen mit der identisch aufgebauten
+    // Kopfzeile erzeugte der fehlende Abschluss kurz die Erwartung einer
+    // Kurve, die nicht kommt. **Der Kasten sah dadurch aus wie einer, der
+    // nicht fertig geladen hat**, obwohl das Register die Entscheidung IST.
+    // Ein Diagramm, das absichtlich fehlt, muss das sagen; sonst ist es von
+    // einem, das versehentlich fehlt, nicht zu unterscheiden.
     return (
-      <ul className="dok-ereignisse">
-        {reihe.jahre.map((j) => (
-          <li key={j.jahr}>
-            <span className="dok-ereignis-jahr">{alsSaison(j.jahr)}</span>
-            <span className="dok-ereignis-zahl">{j.summe}</span>
-            <span className="dok-ereignis-arten">
-              {j.arten.map((a) => `${a.anzahl}× ${a.art}`).join(' · ')}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <figure className="dok-ereignisse-figur">
+        <ul className="dok-ereignisse">
+          {reihe.jahre.map((j) => (
+            <li key={j.jahr}>
+              <span className="dok-ereignis-jahr">{alsSaison(j.jahr)}</span>
+              <span className="dok-ereignis-zahl">{j.summe}</span>
+              <span className="dok-ereignis-arten">
+                {j.arten.map((a) => `${a.anzahl}× ${a.art}`).join(' · ')}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {/* Die Zahlen stehen hier statt eines festen Satzes, weil sie den
+            Grund BELEGEN statt ihn zu behaupten — und weil sie sich mit der
+            Reihe ändern, wenn eine andere einmal unter die Schwelle fällt.
+
+            ⚠ **Zwei Sätze, weil `blattkurve()` aus ZWEI Gründen `null` gibt**
+            (Fremdprüfung 28.08.2026): zu wenige belegte Jahre gemessen an der
+            Spanne — ODER kein Lauf von mindestens zwei aufeinanderfolgenden
+            Jahren. Eine Reihe mit einem EINZIGEN belegten Jahr fällt in den
+            zweiten Fall und hat dabei gar keine Lücke. Der erste Satz hätte
+            ihr „zu lückenhaft" bescheinigt und dazu „1 belegte Jagdjahre"
+            gesagt — **ein Grund, den es nicht gibt, in falschem Numerus.**
+
+            **Warum „zu lückenhaft" für alle übrigen Fälle stimmt:** ab zwei
+            belegten Jahren OHNE Lücke liegen sie zwangsläufig nebeneinander,
+            bilden also einen Lauf von zwei Punkten — und dann entsteht die
+            Kurve. Wer hier landet und mehr als ein Jahr hat, HAT eine Lücke. */}
+        <figcaption className="dok-ereignis-grund">
+          {reihe.jahre.length === 1 ? (
+            <>
+              Ein einziges belegtes Jagdjahr — eine Linie braucht mindestens
+              zwei, die aufeinanderfolgen.
+            </>
+          ) : (
+            <>
+              {reihe.jahre.length} belegte Jagdjahre in{' '}
+              {reihe.bisJahr - reihe.vonJahr + 1} — zu lückenhaft für eine
+              Linie: sie behauptete einen Verlauf zwischen Jahren, über die die
+              Chronik nichts sagt.
+            </>
+          )}
+        </figcaption>
+      </figure>
     )
   }
 

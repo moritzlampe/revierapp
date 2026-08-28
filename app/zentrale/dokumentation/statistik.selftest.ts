@@ -342,6 +342,12 @@ assert.equal(
   null,
   'Ein einzelnes Jahr ergibt keine Linie — beide Kriterien werden gebraucht',
 )
+// ⚠ **An genau dieser Unterscheidung hängt seit dem 28.08.2026 auch der TEXT
+// unter dem Register** (CP-94): diese Reihe hat keine Lücke, sie hat nur zu
+// wenig. Die Fusszeile in `page.tsx` sagt ihr deshalb etwas anderes als einer
+// lückenhaften. Der Satz selbst ist von hier aus nicht prüfbar — er steht in
+// der Seite —, aber die Bedingung, an der er hängt, ist es: `jahre.length`.
+assert.equal(einJahr.jahre.length, 1, 'Und sie hat genau ein belegtes Jahr, nicht mehrere mit Lücken')
 
 // Eine Zeile ohne Jagdjahr gehört nicht in `familie_jahr` (CHECK NOT NULL) und
 // darf kein Blatt erzeugen, falls sie doch je auftaucht.
