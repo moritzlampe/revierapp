@@ -523,9 +523,24 @@
 /* Die Aufschlüsselung: Einzug und eine ruhige Linie, kein Kasten, keine
    Fläche, keine zweite Farbe — räumlich unterschieden, wie der Design-Lock
    für Diagramme es für Reihen vorgibt. */
+/* ⚠ Das `padding-right` ist der Grund, warum diese Regel an der **Liste**
+   sitzt und nicht an ihren Zeilen (Browser-Test 28.08.2026, gemessen):
+   die Unterzeilen tragen nur Name und Stückzahl, die Hauptzeile zusätzlich
+   den Anteil. Ohne Ausgleich rutscht die Stückzahl der Unterzeile bis unter
+   die PROZENTSPALTE der Zeile darüber — „165" stand unter „30 %".
+
+   **In einer Chronik, deren ganzer Riegel lautet, dass keine zwei
+   Bezugsgrössen nebeneinander stehen dürfen, ist eine Stückzahl in der
+   Prozentspalte keine Geschmacksfrage.** Der Aufklapper zeigt bewusst keinen
+   Anteil — dann darf er auch nicht so aussehen, als zeigte er einen.
+
+   `5ch + 10px` ist die Breite der Anteilspalte (`min-width: 5ch`) plus der
+   `gap` der Zeile. **`ch` gilt hier im 0.875rem-Kontext der Liste**, nicht im
+   kleineren der Zeilen darin — deshalb sitzt es an der `ul`. Stünde es an
+   den `li`, rechnete es mit deren 0.8125rem und träfe daneben. */
 .dok-register .dok-aufschluss {
   margin: 0 0 0.375rem;
-  padding: 0.125rem 0 0.125rem 0.75rem;
+  padding: 0.125rem calc(5ch + 10px) 0.125rem 0.75rem;
   border-left: 1px solid var(--z-border);
   list-style: none;
 }
