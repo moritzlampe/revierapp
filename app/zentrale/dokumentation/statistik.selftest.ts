@@ -575,8 +575,8 @@ assert.ok(
 // --- Der Sammeltopf ist KEIN Ort ------------------------------------------
 //
 // `orte.length` wäre hier 2, und die Seite nennt diese Zahl zweimal in Prosa
-// („reicht über N Orte"). Ein einziger Eintrag ohne Ortsangabe machte aus 56
-// Orten 57 (Delta-Durchgang 27.08.2026).
+// („reicht über N Orte"). Ein einziger Eintrag ohne Ortsangabe machte aus 53
+// Orten 54 (Delta-Durchgang 27.08.2026, Zahl nach CP-88 04.09.2026).
 
 assert.equal(JOURNAL_LEER.orte.length, 2, 'Das Register zeigt beide Töpfe')
 assert.equal(
@@ -632,7 +632,8 @@ assert.deepEqual(
 
 // Eine Ortsangabe mit nur EINER Art bekommt in der Seite keinen Aufklapper,
 // sondern die Antwort in der Zeile. Die Unterscheidung hängt allein an dieser
-// Länge — gemessen betrifft sie 29 von 56 Ortsangaben.
+// Länge — gemessen betrifft sie 28 von 53 Ortsangaben (nach CP-88,
+// 04.09.2026; davor 29 von 56).
 assert.equal(
   KREUZ.orte.find((o) => o.art === 'Klein')!.gegen.length,
   1,

@@ -41,7 +41,10 @@ import '../dokumentation.css'
  *
  * Und das ist keine Nachlässigkeit, sondern die Bauform der Quellen:
  * `familie_jahr` hat `district_id` per CHECK auf NULL („alle Reviere"), und
- * bei `journal_msl` sind 54 der 56 Orte gar keine Reviere dieser Datenbank.
+ * bei `journal_msl` sind 52 der 53 Orte gar keine Reviere dieser Datenbank.
+ * (Bis zum 04.09.2026 stand hier „54 der 56" — die 56 hat CP-88 auf 53
+ * gesenkt, und die 54 stimmte nie: gemessen trägt genau EIN Ort ein
+ * `district_id`, nämlich Söder.)
  * Ein `.eq('district_id', …)` gäbe dort **null Zeilen**, nicht eine gefilterte
  * Auswahl.
  *
@@ -121,7 +124,7 @@ export default async function StatistikPage({
   // **Nur die Rangliste wird auf das Revier eingeschränkt.** Bei den beiden
   // anderen Quellen wäre dieselbe Bedingung kein Filter, sondern ein Riegel:
   // `familie_jahr` hat `district_id` per CHECK auf NULL, und im Journal
-  // liegen 54 der 56 Orte ausserhalb dieser Datenbank. Siehe Kopf.
+  // liegen 52 der 53 Orte ausserhalb dieser Datenbank. Siehe Kopf.
   //
   // `count: 'exact'` und `vollstaendig()` sind der Riegel gegen eine stille
   // Abschneidung — eine zu kleine Zahl in einem Streckenbuch liest sich wie
@@ -361,11 +364,15 @@ export default async function StatistikPage({
                 durch das Aufklappen erst scharf. Ein anklickbarer Eintrag
                 wirkt wie eine verlässliche Entität; „Arten in Honingham
                 Thorpe" klingt nach einer Aussage über den Ort, ist aber eine
-                über EINE SCHREIBWEISE. Derselbe Ort steht hier zweimal
-                (278 gegen 62 Stück, CP-88), weil `ort_text` wortgetreu das
-                Papier trägt. Die Oberfläche darf das weder heimlich
-                zusammenlegen noch geografische Genauigkeit behaupten, die die
-                Quelle nicht hat (Codex-Designlauf 28.08.2026). */}
+                über EINE SCHREIBWEISE, weil `ort_text` wortgetreu das Papier
+                trägt. Die Oberfläche darf das weder heimlich zusammenlegen
+                noch geografische Genauigkeit behaupten, die die Quelle nicht
+                hat (Codex-Designlauf 28.08.2026).
+                **Das Beispiel war bis zum 04.09.2026 die doppelte Schreibweise
+                aus CP-88 — die ist mit der Korrektur weg, der Grund nicht:**
+                unter den 53 Ortsangaben ist keine zweimal geschrieben, aber
+                mehrere meinen dieselbe Gegend verschieden genau (`Polen`,
+                `Czarne, Polen`, `Warcino, Polen`, `Polanow`). */}
             <Register
               titel="Nach Ortsangabe"
               eintraege={buch.orte}
@@ -664,9 +671,10 @@ function Jahrestabelle({
  * Gruppe nähme genau den Vergleich weg, für den es zwei Register gibt.
  *
  * **Zeilen mit nur EINER Gegenzeile bekommen keinen Aufklapper**, sondern die
- * Antwort direkt in der Zeile. Gemessen am 28.08.2026: das betrifft 29 von 56
- * Ortsangaben und 8 von 25 Arten. Ein Klick, der eine einzige Zeile mit
- * derselben Zahl aufdeckt, ist ein leeres Versprechen — und eine Liste, in der
+ * Antwort direkt in der Zeile. Gemessen am 04.09.2026 nach CP-88: das betrifft
+ * 28 von 53 Ortsangaben und 8 von 25 Arten (vor CP-88: 29 von 56). Ein Klick,
+ * der eine einzige Zeile mit derselben Zahl aufdeckt, ist ein leeres
+ * Versprechen — und eine Liste, in der
  * die Hälfte der Zeilen nicht reagiert, wäre schlimmer als gar kein Klick.
  */
 function Register({
@@ -698,8 +706,8 @@ function Register({
             <>
               <span className="dok-register-name">
                 {artAusgeschrieben(e.art)}
-                {/* Die einzige Gegenzeile steht ohne Klick da — 29 von 56
-                    Ortsangaben haben nur eine (gemessen 28.08.2026). Ein
+                {/* Die einzige Gegenzeile steht ohne Klick da — 28 von 53
+                    Ortsangaben haben nur eine (gemessen 04.09.2026). Ein
                     Aufklapper, der eine Zeile mit derselben Zahl aufdeckt,
                     ist ein leeres Versprechen. */}
                 {gegen.length === 1 && (
@@ -714,7 +722,7 @@ function Register({
                   Papierchronik nicht hat.
 
                   **Unter einem halben Prozent steht „< 1 %", nicht „0 %"**
-                  (Schlusslesung 27.08.2026): im Journal erreichen das 56 Orte mit
+                  (Schlusslesung 27.08.2026): im Journal erreichen das 53 Orte mit
                   echten Daten, und eine 0 neben einer sichtbaren Menge liest sich
                   wie ein Rechenfehler. */}
               <span className="dok-register-anteil">{anteil(e.anzahl, gesamt)}</span>

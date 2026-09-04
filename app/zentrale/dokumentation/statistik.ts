@@ -583,7 +583,7 @@ export function blattkurve(
 /**
  * Eine Journalzeile. Anders als die drei anderen Projektionen trägt sie ein
  * **Datum statt eines Jagdjahrs** (`jagdjahr` ist dort per CHECK NULL) und
- * einen Ort, der meistens kein Revier dieser Datenbank ist — 54 der 56 Orte
+ * einen Ort, der meistens kein Revier dieser Datenbank ist — 52 der 53 Orte
  * liegen ausserhalb, `district_id` ist dann NULL und `ort_text` trägt die
  * Bezeichnung des Papiers.
  */
@@ -613,7 +613,7 @@ export type Journal = {
    *
    * `orte.length` ist es NICHT: der Sammeltopf `OHNE_ORT` steht dort mit
    * drin, und die Seite nennt die Zahl zweimal in Prosa („reicht über N
-   * Orte"). Ein einziger Eintrag ohne Ortsangabe machte aus 56 Orten 57, und
+   * Orte"). Ein einziger Eintrag ohne Ortsangabe machte aus 53 Orten 54, und
    * „Ohne Ortsangabe" ist keiner (Delta-Durchgang 27.08.2026).
    *
    * **Der Fix, der den Topf einführte, hat genau diese Zahl übersehen** —
@@ -769,7 +769,7 @@ function aufgeschluesselt(
  * Der Anteil als ganze Prozentzahl — **aber nie als „0 %" neben einer
  * vorhandenen Menge.**
  *
- * Im Journal (1394 Stück auf 56 Orte) erreichen das die Orte mit sechs oder
+ * Im Journal (1394 Stück auf 53 Orte) erreichen das die Orte mit sechs oder
  * weniger Stücken, also viele — und eine 0 neben einer sichtbaren Zahl liest
  * sich wie ein Rechenfehler (Schlusslesung 27.08.2026).
  *
