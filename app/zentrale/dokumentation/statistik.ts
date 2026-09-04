@@ -20,22 +20,53 @@
  * hier eine Funktion schreibt, die zwei Listen entgegennimmt und eine Zahl
  * zurückgibt, hat den Fehler schon gebaut.
  *
- * ## Angezeigt wird der PAPIERNAME, nicht der Name des Kontakts
+ * ## Rangliste: PAPIERNAME. Familienblätter: ADRESSBUCHNAME
  *
- * Das ist gemessen entschieden, nicht aus Bequemlichkeit: **fünf
- * Kontakt-Anzeigenamen kommen mehrfach vor**, weil dieselbe Familie über
- * Generationen jagt — einer davon zweimal mit zusammen 177 Stück, ein weiterer
- * dreimal. Aus `kontakte.vorname` und `.nachname` gebaut stünden dort zwei
- * gleichnamige Zeilen untereinander, und niemand könnte sagen, warum.
+ * **Geändert am 04.09.2026** (Moritz: „der normale name: Moritz Lampe; Donata
+ * Lampe"). Vorher stand hier immer der Papiername, und die Begründung dafür
+ * war richtig — sie ist unten erhalten, weil sie die Hälfte der heutigen Regel
+ * trägt.
+ *
+ * **Warum überhaupt geändert:** die vier Familienblätter tragen als Papiernamen
+ * nackte Kürzel — `JHL` (1368 Stück), `MSL` (460), `NNL` (40), `DL` (7). Dort
+ * ist das Adressbuch eindeutig besser.
+ *
+ * **Warum die RANGLISTE trotzdem beim Papier bleibt:** eine Umstellung änderte
+ * dort **58 von 213** Beschriftungen und führte dabei Fehler ein —
+ * `Dr. Ralf Paeschke` würde zu `Ralf Dr. Paeschke`, `Heinrich Clemens` zu
+ * `Clemens Heinrich`, und `Carli sen. Graf v. Hardenberg` verlöre sein „sen.".
+ * Genau EINE Person hat dort zwei Papiernamen (ein Paar-Kontakt); das
+ * Kürzel-Problem gibt es in der Rangliste also gar nicht.
+ *
+ * ⚠ **Die erste Fassung stellte BEIDE Ansichten um**, weil die Messung über
+ * alle vier Quellen aggregiert war und deshalb „fünf Personen mit zwei
+ * Papiernamen" ergab. Je Ansicht gezählt sind es eine und keine. **Eine
+ * Aggregation über die falsche Achse liest sich wie eine Messung.**
+ *
+ * **Warum nicht durchgehend:** ⚠ **NEUN Personen teilen sich VIER
+ * Adressbuchnamen** — `Theo Ludewig` dreimal, `Albrecht v. Alvensleben`,
+ * `Ludolf v. Veltheim` und `Philipp Graf v. Hardenberg` je zweimal, weil
+ * dieselbe Familie über Generationen jagt. Aus `kontakte.vorname` und
+ * `.nachname` gebaut stünden dort gleichnamige Zeilen untereinander, und
+ * niemand könnte sagen, warum. Deshalb gilt die Eindeutigkeitsschranke auch
+ * dort, wo das Adressbuch gewinnt.
  *
  * **Das Papier unterscheidet sie sehr wohl** — durch einen Ortszusatz („…,
  * Club" gegen „…, Lev."), eine Generationenangabe („Albrecht jun./Alfons …")
  * oder eine Amtszeit („Jagdherr seit 1993"). Über alle 214 Papiernamen zeigt
- * **keiner** auf zwei Kontakte. Der Papiername ist also der eindeutige, und er
- * ist zugleich der gegen das Blatt prüfbare — dieselbe Begründung, die 110 für
- * `art_text` gibt („wortgetreu und absichtlich nicht normalisiert"). Der Preis
- * ist ein gelegentlich sperriger Eintrag; er ist billiger als eine Zeile, die
- * die falsche Person meint.
+ * **keiner** auf zwei Kontakte. Der Papiername ist also der eindeutige, der
+ * Adressbuchname der lesbarere. Die Regel nimmt von jedem, was er kann:
+ * **Papier in der Rangliste; im Familienblatt Adressbuch, wo eindeutig, sonst
+ * Papier.**
+ *
+ * Der Papiername bleibt zudem der gegen das Blatt prüfbare — dieselbe
+ * Begründung, die 110 für `art_text` gibt („wortgetreu und absichtlich nicht
+ * normalisiert"). In der Datenbank wird nichts umgeschrieben; das hier ist
+ * eine Beschriftung, keine Korrektur.
+ *
+ * ⚠ Die frühere Fassung dieses Absatzes sprach von **fünf** mehrfach
+ * vorkommenden Adressbuchnamen. Nachgemessen am 04.09.2026 sind es **vier**
+ * (neun Personen). Die Aussage stimmte, die Zahl nicht.
  *
  * ## Warum der Gruppierungsschlüssel trotzdem der Kontakt ist
  *
@@ -81,6 +112,25 @@ export type Chronikzeile = {
   art_text: string | null
   jagdjahr: number | null
   anzahl: number
+  /**
+   * Der Kontakt hinter `kontakt_id`, von PostgREST mitgeliefert
+   * (`select=…,kontakte(vorname,nachname)`) — **die Beziehung ist an der VIEW
+   * bekannt, nicht nur an der Tabelle**, nachgemessen am 04.09.2026: ein Embed
+   * auf eine Tabelle ohne Fremdschlüssel antwortet `PGRST200`, dieser hier
+   * kommt bis zur Rechteprüfung durch.
+   *
+   * `null`, wo keine `kontakt_id` steht (9 rohe Zeilen, 6 Gruppen — beide
+   * Zahlen stimmen, sie zählen Verschiedenes) — und
+   * `null` auch, wo der Kontakt hinter RLS liegt — DAS ist der erreichbare
+   * Fall. Ein Kontakt mit leerem Namen ist es nicht: der CHECK
+   * `kontakt_braucht_namen` (085) verbietet ihn. `adressbuchname()` fängt
+   * trotzdem beides, weil ein Riegel, der auf einem CHECK anderswo beruht,
+   * mit ihm fällt.
+   */
+  kontakte?:
+    | { vorname: string | null; nachname: string | null }
+    | { vorname: string | null; nachname: string | null }[]
+    | null
 }
 
 /** Eine Art mit ihrer Summe. */
@@ -163,8 +213,17 @@ function artVon(art_text: string | null): string | null {
 export type Rangzeile = {
   /** `kontakt_id`, ersatzweise `name:<Papiername>` — s. Kopf. */
   schluessel: string
-  /** Der Name des Papiers. Bleibt die Anzeige, wenn kein Kontakt dahinter steht. */
-  papiername: string
+  /**
+   * **In der Rangliste immer der Name des PAPIERS** — `rangliste()` ruft
+   * `anzeigenamen(…, 'papier')`. Der Adressbuchname gilt nur in den
+   * Familienblättern (`Blatt.anzeigename`); die Begründung steht bei
+   * `anzeigenamen()`.
+   *
+   * Das Feld hiess bis zum 04.09.2026 `papiername`. Umbenannt, weil das
+   * Schwesterfeld in `Blatt` dieselbe Rolle mit anderer Herkunft füllt — ein
+   * Name, der die Herkunft behauptet, wäre an einer der beiden Stellen falsch.
+   */
+  anzeigename: string
   kontaktId: string | null
   arten: Art[]
   gesamt: number
@@ -185,7 +244,109 @@ export type Rangzeile = {
  * nicht ihre Klasse.** Der Fix bestand ursprünglich aus vier Zeilen in einer
  * von zwei Funktionen. Jetzt gibt es die Regel einmal.
  */
-type Identitaet = { schluessel: string; papiername: string }
+type Identitaet = { schluessel: string; papiername: string; adressbuch: string }
+
+/**
+ * Der Name aus dem Adressbuch, oder `''` wenn keiner da ist.
+ *
+ * Beide Teile werden einzeln getrimmt, damit ein Eintrag mit leerem Vornamen
+ * nicht mit einem führenden Leerzeichen anfängt.
+ */
+function adressbuchname(z: Chronikzeile): string {
+  // **Objekt ODER Array**, und das ist kein Schnörkel: bei einer
+  // Many-to-One-Beziehung liefert PostgREST ein Objekt, bei einer, die es
+  // anders auflöst, ein einelementiges Array. Der Rückfallweg ist STILL — bei
+  // falschem Shape sähe die Seite exakt aus wie vorher (Kürzel), und niemand
+  // würde etwas merken (Schlusslesung 04.09.2026, „nicht entscheidbar" Nr. 1:
+  // ohne JWT ist der Shape nicht messbar). Beide Formen zu nehmen kostet eine
+  // Zeile und macht die Frage gegenstandslos.
+  const k = Array.isArray(z.kontakte) ? z.kontakte[0] : z.kontakte
+  if (!k) return ''
+  // Die Reihenfolge `map(trim)` VOR `filter(Boolean)` ist Pflicht: umgekehrt
+  // überlebt ein Feld aus lauter Leerraum den Filter und erzeugt ein
+  // führendes Leerzeichen (Schlusslesung 04.09.2026, F7 — die Sabotage dazu
+  // lief zunächst grün).
+  return [k.vorname ?? '', k.nachname ?? ''].map((t) => t.trim()).filter(Boolean).join(' ')
+}
+
+/**
+ * Je Schlüssel der Name, der auf dem Blatt steht.
+ *
+ * **Die beiden Ansichten wählen verschieden, und das ist gemessen entschieden**
+ * (Moritz, 04.09.2026):
+ *
+ * - **`'adressbuch'` — die Familienblätter.** Dort stehen VIER Personen, und
+ *   ihre Papiernamen sind nackte Kürzel: `JHL` (1368 Stück), `MSL` (460),
+ *   `NNL` (40), `DL` (7). Der Adressbuchname ist dort eindeutig besser, und
+ *   er ist es auch buchstäblich — keine zwei der vier teilen sich einen.
+ * - **`'papier'` — die Rangliste.** Dort stehen 213 historische Personen, und
+ *   das Papier ist die präzisere Quelle. Eine Umstellung änderte **58 von 213**
+ *   Beschriftungen und führte dabei Fehler ein: `Dr. Ralf Paeschke` würde zu
+ *   `Ralf Dr. Paeschke`, `Heinrich Clemens` zu `Clemens Heinrich`, und
+ *   `Carli sen. Graf v. Hardenberg` verlöre sein „sen.". Genau EINE Person
+ *   hat dort zwei Papiernamen (ein Paar-Kontakt), das Kürzel-Problem gibt es
+ *   also nicht.
+ *
+ * ⚠ **Die erste Fassung dieser Änderung stellte BEIDE um**, weil die Messung
+ * über alle vier Quellen aggregiert war und deshalb „fünf Personen mit zwei
+ * Papiernamen" ergab. Je Ansicht gezählt sind es eine (Rangliste) und keine
+ * (Familienblätter) — die Kürzel sitzen woanders, nämlich im Papiernamen
+ * selbst. **Eine Aggregation über die falsche Achse liest sich wie eine
+ * Messung.**
+ *
+ * **Die Eindeutigkeitsschranke gilt in beiden Fällen** (Fremdprüfung
+ * 04.09.2026, Punkt 9): NEUN Personen teilen sich VIER Adressbuchnamen —
+ * `Theo Ludewig` dreimal, `Albrecht v. Alvensleben`, `Ludolf v. Veltheim` und
+ * `Philipp Graf v. Hardenberg` je zweimal. Nur das Papier trennt sie („sen." /
+ * „jun." / „Link" / „Destedt" / „, Club" / „, Lev."). Über alle 214
+ * Papiernamen zeigt **keiner** auf zwei Kontakte. Heute greift die Schranke in
+ * den Familienblättern nicht — sie steht für den Tag, an dem sie wachsen.
+ *
+ * Die Rechnung ist von alldem unberührt: gruppiert wird über `schluessel`, nie
+ * über einen Namen. Hier geht es allein um die Beschriftung.
+ *
+ * **Die Funktion muss die GANZE Menge sehen** — Eindeutigkeit ist keine
+ * Eigenschaft einer Zeile. Deshalb steht sie hier und nicht in `identitaet()`,
+ * und deshalb rufen `rangliste()` und `blaetter()` dieselbe: EINE Regel mit
+ * einem Parameter, nicht zwei Fassungen (Fremdprüfung 27.08.2026, A10).
+ */
+export function anzeigenamen(
+  zeilen: readonly Chronikzeile[],
+  regel: 'papier' | 'adressbuch',
+): Map<string, string> {
+  const papier = new Map<string, string>()
+  const adress = new Map<string, string>()
+
+  for (const z of zeilen) {
+    const { schluessel, papiername, adressbuch } = identitaet(z)
+    papier.set(schluessel, besserName(papier.get(schluessel) ?? '', papiername))
+    if (adressbuch) adress.set(schluessel, adressbuch)
+  }
+
+  // **Gezählt wird über die ETIKETTEN, die am Ende dastehen — nicht über die
+  // Adressbuchnamen allein** (Schlusslesung 04.09.2026, F5). Der Unterschied
+  // ist real: ein Adressbuchname kann mit dem PAPIERnamen einer anderen Person
+  // zusammenfallen, etwa wenn eine Zeile ohne `kontakt_id` importiert wurde
+  // oder ein Kontakt hinter RLS liegt. Über die Eingabe gezählt wäre er
+  // „eindeutig" und stünde trotzdem zweimal auf dem Blatt. In 20 000
+  // Zufallseingaben trat der Fall 2 681-mal auf; in der Produktion heute
+  // null-mal — `familie_jahr` hat keine kontaktlose Zeile.
+  const kandidat = new Map<string, string>()
+  for (const [schluessel, papiername] of papier) {
+    const a = regel === 'adressbuch' ? adress.get(schluessel) : undefined
+    kandidat.set(schluessel, a || papiername)
+  }
+
+  const wieOft = new Map<string, number>()
+  for (const etikett of kandidat.values()) wieOft.set(etikett, (wieOft.get(etikett) ?? 0) + 1)
+
+  const aus = new Map<string, string>()
+  for (const [schluessel, papiername] of papier) {
+    const e = kandidat.get(schluessel)!
+    aus.set(schluessel, wieOft.get(e) === 1 ? e : papiername)
+  }
+  return aus
+}
 
 function identitaet(z: Chronikzeile): Identitaet {
   const papiername = (z.erleger_name ?? '').trim()
@@ -198,11 +359,26 @@ function identitaet(z: Chronikzeile): Identitaet {
     // eine sichtbare Beschriftung.
     schluessel: z.kontakt_id ?? `name:${papiername}`,
     papiername,
+    adressbuch: adressbuchname(z),
   }
 }
 
 /**
- * Der bessere von zwei Papiernamen desselben Schlüssels.
+ * Der bessere von zwei Anzeigenamen desselben Schlüssels.
+ *
+ * **Sie ist NICHT nur ein Rückfallweg** (die frühere Fassung dieses Absatzes
+ * behauptete das und beschrieb einen Zwischenstand — Schlusslesung 04.09.2026,
+ * F3). Wo sie greift:
+ * - **In der Rangliste ist sie DIE Regel** — 213 von 217 Zeilen der Seite.
+ *   `anzeigenamen(…, 'papier')` sammelt die Papiernamen genau hierüber, und
+ *   sie entscheidet den einen Kontakt mit zwei Papiernamen (das Möller-Paar).
+ * - **In den Familienblättern**, wenn kein Adressbuchname da ist (Kontakt
+ *   hinter RLS, `kontakte: null`) **oder wenn die Eindeutigkeitsschranke
+ *   zuschlägt** — dann steht das Papier, und dieses hier wählt es aus.
+ *
+ * `identitaet()` liefert übrigens keinen fertigen Anzeigenamen mehr, sondern
+ * `papiername` und `adressbuch` getrennt; zusammengeführt wird in
+ * `anzeigenamen()`.
  *
  * Alphabetisch der erste — irgendeine Regel MUSS es geben, sonst hängt die
  * Anzeige an der Lieferreihenfolge. **Ein leerer Name verliert dabei immer**,
@@ -241,13 +417,20 @@ export const OHNE_NAMEN = 'Ohne Namensangabe'
  * passiert.
  */
 function nachStrecke(
-  a: { gesamt: number; papiername: string },
-  b: { gesamt: number; papiername: string },
+  a: { gesamt: number; anzeigename: string; schluessel: string },
+  b: { gesamt: number; anzeigename: string; schluessel: string },
 ): number {
   return (
     b.gesamt - a.gesamt ||
-    a.papiername.localeCompare(b.papiername, 'de') ||
-    (a.papiername < b.papiername ? -1 : a.papiername > b.papiername ? 1 : 0)
+    a.anzeigename.localeCompare(b.anzeigename, 'de') ||
+    (a.anzeigename < b.anzeigename ? -1 : a.anzeigename > b.anzeigename ? 1 : 0) ||
+    // **Vierter Schritt, seit 04.09.2026** (Fremdprüfung, Punkt 4): zwei
+    // PERSONEN können jetzt denselben Anzeigenamen tragen — nämlich dann,
+    // wenn auch ihre Papiernamen gleich wären. Ohne diesen Schritt wäre die
+    // Ordnung bei gleicher Strecke nicht mehr total, und die Tabelle kippte
+    // zwischen zwei Lesungen ohne Änderung. `schluessel` ist eindeutig, also
+    // endet die Kette hier immer.
+    (a.schluessel < b.schluessel ? -1 : a.schluessel > b.schluessel ? 1 : 0)
   )
 }
 
@@ -283,17 +466,18 @@ export type Rangliste = {
 export function rangliste(zeilen: readonly Chronikzeile[]): Rangliste {
   const je = new Map<string, Rangzeile>()
   const artenGesehen = new Map<string, number>()
+  // Die Rangliste bleibt beim Papier — s. `anzeigenamen()`.
+  const namen = anzeigenamen(zeilen, 'papier')
 
   for (const z of zeilen) {
-    const { schluessel, papiername } = identitaet(z)
+    const { schluessel } = identitaet(z)
     const zeile = je.get(schluessel) ?? {
       schluessel,
-      papiername,
+      anzeigename: namen.get(schluessel) ?? '',
       kontaktId: z.kontakt_id,
       arten: [],
       gesamt: 0,
     }
-    zeile.papiername = besserName(zeile.papiername, papiername)
     const art = artVon(z.art_text)
     if (art) {
       addiere(zeile.arten, art, z.anzahl)
@@ -357,7 +541,7 @@ export type Jahreswert = { jahr: number; summe: number; arten: Art[] }
 
 export type Blatt = {
   schluessel: string
-  papiername: string
+  anzeigename: string
   kontaktId: string | null
   /** Chronologisch aufsteigend, nur belegte Jahre. */
   jahre: Jahreswert[]
@@ -385,18 +569,22 @@ export type Blatt = {
 export function blaetter(zeilen: readonly Chronikzeile[]): Blatt[] {
   const je = new Map<string, { blatt: Blatt; jahre: Map<number, Jahreswert> }>()
 
+  // Die Familienblätter zeigen den Adressbuchnamen — dieselbe Funktion wie
+  // die Rangliste, anderer Parameter (s. `anzeigenamen()`).
+  const namen = anzeigenamen(zeilen, 'adressbuch')
+
   for (const z of zeilen) {
     // `jagdjahr` ist in `familie_jahr` per CHECK NOT NULL. Die Bedingung ist
     // der Typ-Riegel, nicht eine vermutete Lücke.
     if (z.jagdjahr == null) continue
-    const { schluessel, papiername } = identitaet(z)
+    const { schluessel } = identitaet(z)
 
     const eintrag =
       je.get(schluessel) ??
       {
         blatt: {
           schluessel,
-          papiername,
+          anzeigename: namen.get(schluessel) ?? '',
           kontaktId: z.kontakt_id,
           jahre: [],
           gesamt: 0,
@@ -408,10 +596,6 @@ export function blaetter(zeilen: readonly Chronikzeile[]): Blatt[] {
         },
         jahre: new Map<number, Jahreswert>(),
       }
-    // Dieselbe Regel wie in `rangliste()` — und zwar aus derselben Funktion,
-    // nicht als zweite Fassung daneben (Fremdprüfung 27.08.2026, A10).
-    eintrag.blatt.papiername = besserName(eintrag.blatt.papiername, papiername)
-
     const jahr = eintrag.jahre.get(z.jagdjahr) ?? { jahr: z.jagdjahr, summe: 0, arten: [] }
     jahr.summe += z.anzahl
     const art = artVon(z.art_text)

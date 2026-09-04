@@ -53,6 +53,17 @@ function r(
   return { kontakt_id, erleger_name, art_text, jagdjahr: null, anzahl }
 }
 
+/** Wie `r()`, aber mit dem Kontakt aus dem Adressbuch (PostgREST-Embed). */
+function rk(
+  kontakt_id: string | null,
+  erleger_name: string,
+  art_text: string,
+  anzahl: number,
+  kontakte: { vorname: string | null; nachname: string | null } | null,
+): Chronikzeile {
+  return { ...r(kontakt_id, erleger_name, art_text, anzahl), kontakte }
+}
+
 function f(
   kontakt_id: string | null,
   erleger_name: string,
@@ -61,6 +72,18 @@ function f(
   anzahl: number,
 ): Chronikzeile {
   return { kontakt_id, erleger_name, art_text, jagdjahr, anzahl }
+}
+
+/** Wie `f()`, aber mit dem Kontakt aus dem Adressbuch. */
+function fk(
+  kontakt_id: string | null,
+  erleger_name: string,
+  jagdjahr: number,
+  art_text: string,
+  anzahl: number,
+  kontakte: { vorname: string | null; nachname: string | null } | null,
+): Chronikzeile {
+  return { ...f(kontakt_id, erleger_name, jagdjahr, art_text, anzahl), kontakte }
 }
 
 // --- Rangliste -------------------------------------------------------------
@@ -103,8 +126,8 @@ const liste = rangliste(RANG)
 
 assert.equal(liste.zeilen.length, 7, 'Vier Personen und drei Kollektivzeilen bleiben sieben Zeilen')
 
-const club = liste.zeilen.find((z) => z.papiername === 'Person B, Club')!
-const lev = liste.zeilen.find((z) => z.papiername === 'Person B, Lev.')!
+const club = liste.zeilen.find((z) => z.anzeigename === 'Person B, Club')!
+const lev = liste.zeilen.find((z) => z.anzeigename === 'Person B, Lev.')!
 assert.equal(club.gesamt, 166, 'Die ältere Generation behält ihre eigene Strecke')
 assert.equal(lev.gesamt, 11, 'Die jüngere bekommt nicht die Strecke der älteren')
 
@@ -114,12 +137,12 @@ const beideNamen = liste.zeilen.filter((z) => z.kontaktId === 'k4')
 assert.equal(beideNamen.length, 1, 'Ein Kontakt mit zwei Papiernamen ergibt EINE Zeile')
 assert.equal(beideNamen[0].gesamt, 3, 'Ihre beiden Papiernamen zählen zusammen')
 assert.equal(
-  beideNamen[0].papiername,
+  beideNamen[0].anzeigename,
   'Person C geb. Vorher',
   'Der alphabetisch erste Papiername gewinnt — sonst hinge die Anzeige an der Lieferreihenfolge',
 )
 assert.equal(
-  rangliste([...RANG].reverse()).zeilen.find((z) => z.kontaktId === 'k4')!.papiername,
+  rangliste([...RANG].reverse()).zeilen.find((z) => z.kontaktId === 'k4')!.anzeigename,
   'Person C geb. Vorher',
   'SABOTAGE-BELEG: umgekehrt eingelesen kommt derselbe Name heraus',
 )
@@ -138,7 +161,7 @@ const NAMENLOS = rangliste([
   r(null, '   ', 'D&R&F', 3),
 ])
 assert.equal(NAMENLOS.gesamt, 10, 'Die namenlosen Zeilen fehlen der Gesamtstrecke NICHT')
-const namenlos = NAMENLOS.zeilen.filter((z) => z.papiername === '')
+const namenlos = NAMENLOS.zeilen.filter((z) => z.anzeigename === '')
 assert.equal(namenlos.length, 1, 'Leerer Name und blosser Leerraum sind dieselbe Zeile')
 assert.equal(namenlos[0].gesamt, 5, 'Ihre beiden Zeilen zählen zusammen')
 
@@ -147,14 +170,213 @@ assert.equal(namenlos[0].gesamt, 5, 'Ihre beiden Zeilen zählen zusammen')
 // blosser `localeCompare` hätte den leeren Initialwert nie ersetzt.
 const ZUERST_LEER = [r('km', '', 'Sauen', 1), r('km', 'Person M', 'Sauen', 1)]
 assert.equal(
-  rangliste(ZUERST_LEER).zeilen[0].papiername,
+  rangliste(ZUERST_LEER).zeilen[0].anzeigename,
   'Person M',
   'Der gültige Name gewinnt gegen den leeren, auch wenn der leere zuerst kommt',
 )
 assert.equal(
-  rangliste([...ZUERST_LEER].reverse()).zeilen[0].papiername,
+  rangliste([...ZUERST_LEER].reverse()).zeilen[0].anzeigename,
   'Person M',
   'SABOTAGE-BELEG: und ebenso in der umgekehrten Reihenfolge',
+)
+
+// --- Wo der Adressbuchname gilt und wo nicht (CP-91, Moritz 04.09.2026) ----
+//
+// **Die Ansichten wählen verschieden, und beide Hälften sind gemessen:**
+// Die FAMILIENBLÄTTER zeigen vier Personen, deren Papiername ein nacktes
+// Kürzel ist (`JHL`, `MSL`, `NNL`, `DL`). Die RANGLISTE zeigt 213 historische
+// Personen; dort ist das Papier präziser, und eine Umstellung änderte 58
+// Beschriftungen samt Fehlern (`Dr. Ralf Paeschke` → `Ralf Dr. Paeschke`).
+//
+// ⚠ **Die Fixture-Reihenfolge ist Teil des Tests** (Lehre vom 28.08.2026):
+// jeder Fall läuft zusätzlich umgekehrt eingelesen.
+
+const KUERZEL_R = [
+  rk('k9', 'DL', 'Sauen', 4, { vorname: 'Donata', nachname: 'Lampe' }),
+  rk('k9', 'Donata Lampe', 'Sauen', 3, { vorname: 'Donata', nachname: 'Lampe' }),
+]
+assert.equal(
+  rangliste(KUERZEL_R).zeilen[0].anzeigename,
+  'DL',
+  'Die RANGLISTE bleibt beim Papier — auch wenn ein Adressbuchname da wäre',
+)
+assert.equal(
+  rangliste([...KUERZEL_R].reverse()).zeilen[0].anzeigename,
+  'DL',
+  'SABOTAGE-BELEG: und ebenso umgekehrt eingelesen',
+)
+assert.equal(rangliste(KUERZEL_R).zeilen[0].gesamt, 7, 'Beide Papiernamen zählen zusammen')
+
+// Ohne Kontakt bleibt das Papier ohnehin stehen.
+assert.equal(
+  rangliste([rk(null, 'Hunde', 'Sauen', 54, null)]).zeilen[0].anzeigename,
+  'Hunde',
+  'Ohne Kontakt bleibt der Papiername die Anzeige',
+)
+
+// Die Ordnung bleibt TOTAL, auch wenn zwei Personen gleich heissen und gleich
+// viel erlegt haben (Fremdprüfung 04.09.2026, Punkt 4). Im Bestand kann das
+// nicht vorkommen — kein Papiername zeigt auf zwei Kontakte, gemessen —, aber
+// die Ordnung darf nicht davon abhängen, dass eine Messung so bleibt.
+const GLEICH_UND_GLEICH = [
+  rk('z1', 'Derselbe Name', 'Sauen', 5, null),
+  rk('z2', 'Derselbe Name', 'Sauen', 5, null),
+]
+assert.deepEqual(
+  rangliste(GLEICH_UND_GLEICH).zeilen.map((z) => z.schluessel),
+  rangliste([...GLEICH_UND_GLEICH].reverse()).zeilen.map((z) => z.schluessel),
+  'Gleiche Strecke UND gleicher Name: die Reihenfolge hängt nicht an der Lieferung',
+)
+
+// --- Die Familienblätter zeigen den Adressbuchnamen ------------------------
+//
+// **Diese Zusicherung fehlte zuerst, und die Fremdprüfung hat es gesehen**
+// (04.09.2026, Punkt 7): `blaetter()` hätte die Regel ignorieren können, und
+// alle Tests wären grün geblieben.
+
+const KUERZEL_B = [
+  fk('b1', 'DL', 2020, 'Sauen', 4, { vorname: 'Donata', nachname: 'Lampe' }),
+  fk('b1', 'DL', 2021, 'Sauen', 3, { vorname: 'Donata', nachname: 'Lampe' }),
+]
+assert.equal(
+  blaetter(KUERZEL_B)[0].anzeigename,
+  'Donata Lampe',
+  'Das Familienblatt zeigt den Adressbuchnamen statt des Kürzels',
+)
+assert.equal(
+  blaetter([...KUERZEL_B].reverse())[0].anzeigename,
+  'Donata Lampe',
+  'SABOTAGE-BELEG: und ebenso umgekehrt eingelesen',
+)
+
+// Vor- und Nachname werden EINZELN getrimmt.
+//
+// ⚠ **Der erste Anlauf dieser Zusicherung prüfte nichts** (gefunden per
+// Sabotage, 04.09.2026): mit `vorname: null` liefert auch ein gemeinsames
+// `join(' ').trim()` das richtige Ergebnis. Erst wenn BEIDE Teile Leerraum
+// tragen, unterscheiden sich die Bauformen — dann entstünde `Jörg   Möller`.
+assert.equal(
+  blaetter([fk('b2', 'X', 2020, 'Sauen', 1, { vorname: ' Jörg ', nachname: ' Möller ' })])[0]
+    .anzeigename,
+  'Jörg Möller',
+  'Beide Teile werden einzeln getrimmt — kein doppelter Leerraum in der Mitte',
+)
+assert.equal(
+  blaetter([fk('b3', 'Papier', 2020, 'Sauen', 1, { vorname: null, nachname: ' Möller ' })])[0]
+    .anzeigename,
+  'Möller',
+  'Fehlender Vorname erzeugt keinen führenden Leerraum',
+)
+
+// Ein Kontakt ohne brauchbaren Namen fällt auf das Papier zurück; dann greift
+// wieder `besserName()`, und zwar in beiden Reihenfolgen.
+const LEERER_KONTAKT = [
+  fk('b4', 'Zweiter Papiername', 2020, 'Sauen', 1, { vorname: '  ', nachname: null }),
+  fk('b4', 'Erster Papiername', 2021, 'Sauen', 1, { vorname: '  ', nachname: null }),
+]
+assert.equal(
+  blaetter(LEERER_KONTAKT)[0].anzeigename,
+  'Erster Papiername',
+  'Ein Kontakt ohne brauchbaren Namen fällt auf das Papier zurück',
+)
+assert.equal(
+  blaetter([...LEERER_KONTAKT].reverse())[0].anzeigename,
+  'Erster Papiername',
+  'SABOTAGE-BELEG: der Rückfallweg hängt nicht an der Lieferreihenfolge',
+)
+
+// --- Die Eindeutigkeitsschranke -------------------------------------------
+//
+// **Der schwerste Befund der Fremdprüfung vom 04.09.2026 (Punkt 9):** in der
+// Produktion teilen sich NEUN Personen VIER Adressbuchnamen. Ohne Schranke
+// stünden dort gleichnamige Zeilen, rechnerisch getrennt und für den Leser
+// ununterscheidbar. Heute greift sie in den Familienblättern nicht — sie steht
+// für den Tag, an dem sie wachsen.
+
+const GENERATIONEN = [
+  fk('g1', 'Albrecht sen. v. Alvensleben', 2020, 'Sauen', 46, {
+    vorname: 'Albrecht',
+    nachname: 'v. Alvensleben',
+  }),
+  fk('g2', 'Albrecht jun./Alfons v. Alvensleben', 2020, 'Sauen', 22, {
+    vorname: 'Albrecht',
+    nachname: 'v. Alvensleben',
+  }),
+]
+assert.deepEqual(
+  blaetter(GENERATIONEN)
+    .map((b) => b.anzeigename)
+    .sort(),
+  ['Albrecht jun./Alfons v. Alvensleben', 'Albrecht sen. v. Alvensleben'],
+  'Bei geteiltem Adressbuchnamen behält JEDES Blatt seinen Papiernamen',
+)
+assert.deepEqual(
+  blaetter([...GENERATIONEN].reverse())
+    .map((b) => b.anzeigename)
+    .sort(),
+  ['Albrecht jun./Alfons v. Alvensleben', 'Albrecht sen. v. Alvensleben'],
+  'SABOTAGE-BELEG: und ebenso umgekehrt eingelesen',
+)
+
+// F5: die Schranke zählt die ETIKETTEN, nicht die Adressbuchnamen. Ein
+// Adressbuchname kann mit dem PAPIERnamen einer anderen Person zusammenfallen
+// — dann stünde er zweimal auf dem Blatt, obwohl er „eindeutig" ist.
+assert.deepEqual(
+  blaetter([
+    fk('e1', 'Kürzel', 2020, 'Sauen', 5, { vorname: 'Moritz', nachname: 'Lampe' }),
+    fk(null, 'Moritz Lampe', 2020, 'Sauen', 3, null),
+  ])
+    .map((b) => b.anzeigename)
+    .sort(),
+  ['Kürzel', 'Moritz Lampe'],
+  'Ein Adressbuchname, der einem fremden PAPIERnamen gleicht, gilt nicht als eindeutig',
+)
+
+// F7: die Reihenfolge `map(trim)` vor `filter(Boolean)`. Umgekehrt überlebt
+// ein Feld aus lauter Leerraum den Filter und erzeugt ein führendes
+// Leerzeichen — die Sabotage dazu lief zunächst grün.
+assert.equal(
+  blaetter([fk('e2', 'X', 2020, 'Sauen', 1, { vorname: '   ', nachname: 'Möller' })])[0]
+    .anzeigename,
+  'Möller',
+  'Ein Feld aus lauter Leerraum erzeugt kein führendes Leerzeichen',
+)
+
+// PostgREST kann das Embed als Objekt ODER als einelementiges Array liefern.
+// Bei falschem Shape wäre der Rückfall STILL — die Seite sähe aus wie vorher.
+assert.equal(
+  blaetter([
+    { ...f('e3', 'DL', 2020, 'Sauen', 4), kontakte: [{ vorname: 'Donata', nachname: 'Lampe' }] },
+  ])[0].anzeigename,
+  'Donata Lampe',
+  'Das Embed wird auch als einelementiges Array erkannt',
+)
+
+// Die Schranke darf den EINDEUTIGEN Fall nicht mitreissen.
+assert.equal(
+  blaetter([
+    fk('u1', 'DL', 2020, 'Sauen', 4, { vorname: 'Donata', nachname: 'Lampe' }),
+    ...GENERATIONEN,
+  ]).find((b) => b.schluessel === 'u1')!.anzeigename,
+  'Donata Lampe',
+  'Eine Kollision anderswo macht den eindeutigen Namen nicht mehrdeutig',
+)
+
+// Der Paar-Eintrag aus der Produktion: zwei Menschen, ein Kontakt, zwei
+// Papierzeilen — die Anzeige nennt beide statt einen von beiden.
+assert.equal(
+  blaetter([
+    fk('k5', 'Hundeführerin Petra Möller', 2020, 'D&R&F', 2, {
+      vorname: 'Jörg und Petra',
+      nachname: 'Möller',
+    }),
+    fk('k5', 'Hundfeführer Jörg Möller', 2021, 'D&R&F', 1, {
+      vorname: 'Jörg und Petra',
+      nachname: 'Möller',
+    }),
+  ])[0].anzeigename,
+  'Jörg und Petra Möller',
+  'Ein Paar-Kontakt zeigt beide Namen, nicht den alphabetisch ersten Papiernamen',
 )
 
 const kollektiv = liste.zeilen.filter((z) => !z.kontaktId)
@@ -181,7 +403,7 @@ assert.equal(
 
 // --- Sortierung und Spalten ------------------------------------------------
 
-assert.equal(liste.zeilen[0].papiername, 'Person A', 'Absteigend nach Gesamtstrecke')
+assert.equal(liste.zeilen[0].anzeigename, 'Person A', 'Absteigend nach Gesamtstrecke')
 assert.deepEqual(
   liste.spalten.map((s) => [s.art, s.anzahl]),
   [['Sauen', 361], ['D&R&F', 221]],
@@ -200,7 +422,7 @@ const gleich = rangliste([
   r('y', 'Anton', 'Sauen', 5),
 ])
 assert.deepEqual(
-  gleich.zeilen.map((z) => z.papiername),
+  gleich.zeilen.map((z) => z.anzeigename),
   ['Anton', 'Zacharias'],
   'Bei Gleichstand alphabetisch — nicht in Einlesereihenfolge',
 )
@@ -242,9 +464,9 @@ const X: Chronikzeile[] = [
 
 const bl = blaetter([...Y, ...X])
 assert.equal(bl.length, 2, 'Zwei Personen, zwei Blätter')
-assert.equal(bl[0].papiername, 'Person X', 'Absteigend nach Gesamtstrecke: 40 vor 7')
+assert.equal(bl[0].anzeigename, 'Person X', 'Absteigend nach Gesamtstrecke: 40 vor 7')
 
-const duenn = bl.find((b) => b.papiername === 'Person Y')!
+const duenn = bl.find((b) => b.anzeigename === 'Person Y')!
 assert.equal(duenn.gesamt, 7, 'Sieben Stück in 14 Kalenderjahren')
 assert.equal(duenn.jahre.length, 5, 'Fünf belegte Jahre — die neun leeren erzeugen keine Zeile')
 assert.equal(duenn.vonJahr, 2007)
@@ -265,12 +487,12 @@ const ZWEI_NAMEN = [
   f('kz', 'Alpha', 2011, 'Sauen', 1),
 ]
 assert.equal(
-  blaetter(ZWEI_NAMEN)[0].papiername,
+  blaetter(ZWEI_NAMEN)[0].anzeigename,
   'Alpha',
   'Auch ein Blatt nimmt den alphabetisch ersten Papiernamen seines Kontakts',
 )
 assert.equal(
-  blaetter([...ZWEI_NAMEN].reverse())[0].papiername,
+  blaetter([...ZWEI_NAMEN].reverse())[0].anzeigename,
   'Alpha',
   'SABOTAGE-BELEG: umgekehrt geliefert heisst das Blatt genauso',
 )
@@ -283,7 +505,7 @@ assert.deepEqual(
   'Drei Läufe — zwischen 2008 und 2013 liegen vier Jahre, über die die Chronik nichts sagt',
 )
 
-const dicht = bl.find((b) => b.papiername === 'Person X')!
+const dicht = bl.find((b) => b.anzeigename === 'Person X')!
 assert.equal(segmente(dicht.jahre).length, 1, 'Acht lückenlose Jahre sind EIN Lauf')
 
 // --- Die Zusicherung, die beim Schreiben der Fixtures entstanden ist -------
@@ -747,7 +969,7 @@ const RANG_KOLLATION = rangliste([
   { kontakt_id: null, erleger_name: NFD, art_text: 'Sauen', jagdjahr: null, anzahl: 4 },
 ])
 assert.deepEqual(
-  RANG_KOLLATION.zeilen.map((z) => z.papiername),
+  RANG_KOLLATION.zeilen.map((z) => z.anzeigename),
   [NFD, NFC],
   'Auch die Rangliste hat bei gleicher Strecke und gleicher Kollation eine totale Ordnung',
 )

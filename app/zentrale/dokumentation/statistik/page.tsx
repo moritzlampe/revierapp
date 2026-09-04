@@ -132,11 +132,24 @@ export default async function StatistikPage({
   const [rangZeilen, familieZeilen, journalZeilen] = await Promise.all([
     supabase
       .from('historische_rangliste_soeder')
+      // **KEIN `kontakte(...)`-Embed hier**, und das ist Absicht: die Rangliste
+      // beschriftet mit dem Papiernamen (s. `anzeigenamen()`). Ein Embed wäre
+      // 357 zusätzliche RLS-Auswertungen für Daten, die niemand liest — und
+      // eine Ausfallfläche, die dieser Ansicht nichts einbringt (Schlusslesung
+      // 04.09.2026, F6).
       .select('kontakt_id, erleger_name, art_text, jagdjahr, anzahl', { count: 'exact' })
       .eq('district_id', revier.id),
     supabase
       .from('historische_familie_jahr')
-      .select('kontakt_id, erleger_name, art_text, jagdjahr, anzahl', { count: 'exact' }),
+      // `kontakte(...)` ist ein PostgREST-Embed über `kontakt_id` — **die
+      // Beziehung ist an der VIEW bekannt, nicht nur an der Tabelle**,
+      // nachgemessen 04.09.2026: ein Embed auf eine Tabelle ohne
+      // Fremdschlüssel antwortet `PGRST200` beim Planbau, dieser kommt bis zur
+      // Rechteprüfung durch. Kostet keinen zweiten Roundtrip.
+      // Nur die FAMILIENBLÄTTER brauchen ihn (dort stehen die Kürzel).
+      .select('kontakt_id, erleger_name, art_text, jagdjahr, anzahl, kontakte(vorname, nachname)', {
+        count: 'exact',
+      }),
     supabase
       .from('historische_journal_msl')
       .select('erlegt_am, ort_text, art_text, anzahl', { count: 'exact' }),
@@ -239,7 +252,7 @@ export default async function StatistikPage({
                           Revierstrecke und darf deshalb nicht wie ein
                           Anzeigefehler aussehen (Fremdprüfung 27.08.2026, A1). */}
                       <th scope="row">
-                        {z.papiername || <span className="dok-leer">{OHNE_NAMEN}</span>}
+                        {z.anzeigename || <span className="dok-leer">{OHNE_NAMEN}</span>}
                       </th>
                       {liste.spalten.map((s) => {
                         const wert = z.arten.find((a) => a.art === s.art)
@@ -300,8 +313,9 @@ export default async function StatistikPage({
               aus der Kurve liest man sie nicht ab, ein Vorlesegerät gar nicht.
               Dieselbe Rollenteilung wie auf der Strecke-Seite nebenan. */}
           <Jahrestabelle
+            spaltenHinweis="Die Überschriften nennen den Namen aus dem Adressbuch, weil die Chronik für diese Blätter nur Kürzel führt."
             reihen={personen}
-            spalten={personen.map((p) => p.papiername || OHNE_NAMEN)}
+            spalten={personen.map((p) => p.anzeigename || OHNE_NAMEN)}
           />
 
           {/* Die Fussnote aus A-C7 — sie steht an der Kurve nebenan seit dem
@@ -420,7 +434,7 @@ function Personenblatt({ blatt }: { blatt: Blatt }) {
           genügt — heute unerreichbar (vier benannte Personen), aber es ist
           dieselbe Klasse, gegen die `identitaet()` schreibt (Schlusslesung
           27.08.2026, F2). */}
-      <h3>{blatt.papiername || OHNE_NAMEN}</h3>
+      <h3>{blatt.anzeigename || OHNE_NAMEN}</h3>
       <p className="dok-meta">
         {alsSaison(blatt.vonJahr)} bis {alsSaison(blatt.bisJahr)} ·{' '}
         {blatt.jahre.length} belegte Jagdjahre ·{' '}
@@ -599,9 +613,19 @@ function Jahreskurve({ reihe, beschreibung }: { reihe: Reihe; beschreibung: stri
 function Jahrestabelle({
   reihen,
   spalten,
+  spaltenHinweis,
 }: {
   reihen: readonly Reihe[]
   spalten: readonly string[]
+  /**
+   * Satz, der die SPALTEN erklärt — die Komponente wird von zwei Stellen
+   * gerufen (Familienblätter und Journal), und was über die Spalten gilt, gilt
+   * nur an einer davon. **Der erste Anlauf schrieb den Satz fest in die
+   * `<caption>`; unter der Journal-Tabelle behauptete er dann eine Überschrift
+   * mit Adressbuchnamen über einer Spalte namens „Stück"** (Schlusslesung
+   * 04.09.2026, F1).
+   */
+  spaltenHinweis?: string
 }) {
   const tabelle = jahrestabelle(reihen)
   if (!tabelle) return null
@@ -613,7 +637,7 @@ function Jahrestabelle({
           <span aria-hidden="true">—</span> in diesem Jagdjahr ist keine Strecke
           verzeichnet. Das heisst nicht null Stück: die Chronik führt keine Zeile
           ohne Strecke, ein Strich kann also ebenso gut heissen, dass jemand nicht
-          dabei war.
+          dabei war.{spaltenHinweis ? ` ${spaltenHinweis}` : ''}
         </caption>
         <thead>
           <tr>
