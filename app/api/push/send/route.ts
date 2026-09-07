@@ -22,16 +22,30 @@ type ServiceClient = ReturnType<typeof serviceClient>
 // Zugesagte Teilnehmer (status='joined') einer Jagd mit user_id. Gemeinsames
 // Muster für Jagd-Chat- und Treiben-Zweig (T0.C1 D4) — bewusst extrahiert
 // statt dupliziert, Verhalten identisch zum bisherigen huntId-Zweig.
+//
+// ⚠ `error` MUSS geprüft werden, und das ist hier kein Formalismus
+// (Schlusslesung 07.09.2026, F1). Ohne die Prüfung wird jeder DB-Fehler zur
+// leeren Liste; beide Aufrufer schliessen daraus „der Absender gehört nicht
+// dazu" und antworten `200 { sent: 0 }`. Ein PostgREST-Aussetzer oder eine
+// umbenannte Spalte legte damit Treiben- UND Jagd-Chat-Push still — und zwar
+// **stumm**: der Client sendet fire-and-forget und loggt selbst im `__DEV__`
+// nur bei `!antwort.ok` (`src/lib/push/send.ts:47`), und 200 ist ok.
+// Der Wurf landet im äusseren `catch` der Route (→ 500 samt Log). Damit gilt
+// für den ganzen Zweig, was der Kommentar an der Berechtigungsprüfung unten
+// verspricht: laut scheitern, nicht stumm sperren (S1/S4).
 async function resolveJoinedParticipantIds(
   supabase: ServiceClient,
   huntId: string,
 ): Promise<string[]> {
-  const { data: participants } = await supabase
+  const { data: participants, error } = await supabase
     .from('hunt_participants')
     .select('user_id')
     .eq('hunt_id', huntId)
     .eq('status', 'joined')
     .not('user_id', 'is', null)
+  if (error) {
+    throw new Error(`Teilnehmer der Jagd ${huntId} nicht lesbar: ${error.message}`)
+  }
   return (participants || []).map((p) => p.user_id as string)
 }
 
@@ -145,13 +159,142 @@ export async function POST(request: Request) {
       recipientUserIds = [empfaenger as string]
     } else if (type === 'drive') {
       // Treiben-Push (T0.C1 D4): gleiche Empfänger wie der Jagd-Chat — zugesagte
-      // Teilnehmer der Jagd, Sender rausgefiltert. Der Sender muss selbst
-      // zugesagter Teilnehmer sein (Spoofing-Schutz, wie im Jagd-Chat-Zweig).
+      // Teilnehmer der Jagd, Sender rausgefiltert.
+      //
+      // `driveName` wird geprüft, aber NICHT in den Payload übernommen: die
+      // Texte unten stehen fest je Event (s. dort, „kein Freitext"). Die
+      // Prüfung bleibt trotzdem stehen, weil sie Teil des Aufrufvertrags mit
+      // den Clients ist — der Absender kann kein Wort der Meldung bestimmen.
       if (!huntId || (event !== 'started' && event !== 'ended' && event !== 'reopened') || typeof driveName !== 'string' || !driveName.trim()) {
         return NextResponse.json({ error: 'Ungültige Treiben-Anfrage' }, { status: 400 })
       }
       recipientUserIds = await resolveJoinedParticipantIds(supabase, huntId)
       if (!recipientUserIds.includes(senderId)) {
+        return NextResponse.json({ sent: 0 })
+      }
+
+      // **Zugesagter Teilnehmer zu sein genügt NICHT** (Security-Review
+      // 07.09.2026, SR-02). Bis hierher stand genau diese Prüfung, übernommen
+      // aus dem Jagd-Chat-Zweig — dort ist sie richtig: eine Chatnachricht
+      // trägt den Namen ihres Absenders, und wer im Chat sein darf, darf
+      // reden. „Treiben beendet / Hahn in Ruh" trägt dagegen die **Autorität
+      // des Jagdleiters**: Waffe entladen, Stand verlassen. Ein gewöhnlicher
+      // Schütze konnte sie an alle übrigen Teilnehmer auslösen.
+      //
+      // Dieselbe Wurzel wie 076/079/083 in AGENTS.md, eine Ebene höher: eine
+      // Prüfung, die für EINE Nachrichtenklasse ausreicht, wurde auf eine
+      // andere kopiert, für die sie zu schwach ist.
+      //
+      // Der berechtigte Kreis wird nicht neu erfunden, sondern von den
+      // Policies abgeschrieben, die den Zustandswechsel tatsächlich erlauben —
+      // das Push-Gate spiegelt das Schreib-Gate (S2):
+      //   `hunt_drives_leader_all`     → Rolle 'jagdleiter' UND Status 'joined' (089)
+      //   `hunt_drives_creator_update` → hunts.creator_id
+      // **Ein reiner Rollencheck wäre ZU ENG** und nähme dem Jagdersteller den
+      // eigenen legitimen Push. Der Review empfiehlt „Jagdleiter-/Erstellerberechtigung",
+      // beides zusammen, und das deckt sich mit den Policies.
+      //
+      // Der Client hier ist Service-Role — RLS trägt an dieser Stelle NICHTS,
+      // jede Bedingung muss ausgeschrieben stehen.
+      const [
+        { data: leiterZeile, error: leiterFehler },
+        { data: jagdZeile, error: jagdFehler },
+      ] = await Promise.all([
+        supabase
+          .from('hunt_participants')
+          .select('id')
+          .eq('hunt_id', huntId)
+          .eq('user_id', senderId)
+          .eq('status', 'joined')
+          .eq('role', 'jagdleiter')
+          .maybeSingle(),
+        supabase.from('hunts').select('creator_id').eq('id', huntId).maybeSingle(),
+      ])
+      // Ein Ladefehler darf sich NIE als „nicht berechtigt" lesen (S4, und
+      // dasselbe Muster wie im schein-Zweig oben): ein Tippfehler im
+      // Spaltennamen sähe sonst exakt aus wie ein abgewiesener Angreifer, und
+      // der ganze Treiben-Push wäre still tot — auf die eine Art, die
+      // niemandem auffällt. Laut scheitern, nicht stumm sperren.
+      if (leiterFehler || jagdFehler) {
+        console.error('Push-Route drive: Berechtigung nicht lesbar:', leiterFehler ?? jagdFehler)
+        return NextResponse.json({ error: 'Interner Fehler' }, { status: 500 })
+      }
+      if (!leiterZeile && jagdZeile?.creator_id !== senderId) {
+        // Stumme Erfolgsantwort wie in den anderen Zweigen: der Aufrufer soll
+        // aus dem Ergebnis nichts über fremde Jagden ablesen können.
+        return NextResponse.json({ sent: 0 })
+      }
+
+      // Zweitens: das gemeldete Ereignis muss überhaupt stattgefunden haben.
+      // Der Client sendet den Push NACH der Mutation, der Zustand steht also
+      // schon in der DB. `hunt_drives_one_active_per_hunt` (partieller
+      // Unique-Index) lässt je Jagd höchstens EIN aktives Treiben zu — der
+      // Abgleich ist damit eindeutig, ganz ohne Treiben-ID. Das ist der Grund,
+      // warum dieser Fix **keinen neuen nativen Build braucht**: der Client
+      // schickt nur `{ type, huntId, event, driveName }`, keine ID.
+      //
+      // ⚠ Ein passender Status allein belegt NICHT den gemeldeten Wechsel —
+      // nur, dass *ein* Ereignis dieser Art vorliegt. Daraus folgt eine Race,
+      // die die Fremdprüfung am 07.09.2026 als F1 [high] gefunden hat und die
+      // **schon vor diesem Fix bestand** (vorher gab es gar keinen Abgleich):
+      //
+      //   Gerät A beendet Treiben A → sein Push-Request verzögert sich
+      //   → Leiter startet Treiben B, dessen Start-Push kommt zuerst an
+      //   → der verspätete `ended`-Request findet A weiterhin `completed`
+      //   → „Hahn in Ruh" geht raus, WÄHREND B läuft.
+      //
+      // Das braucht keinen Angreifer, nur ein Funkloch. Und es ist genau der
+      // Schaden, gegen den SR-02 schützt: Teilnehmer entladen und verlassen
+      // den Stand, während geschossen wird. Der partielle Unique-Index hilft
+      // nicht — er verbietet zwei AKTIVE Treiben, nicht `completed` A neben
+      // `active` B.
+      //
+      // **Der Riegel ist die Bedeutung der Meldung selbst, keine Heuristik:**
+      // „Hahn in Ruh" heisst „es läuft nichts mehr". Läuft ein Treiben, ist
+      // die Ansage falsch — unabhängig davon, welches endete. Also: `ended`
+      // sendet nur, wenn **zum Lesezeitpunkt dieser Zeile** kein Treiben
+      // aktiv ist.
+      //
+      // ⚠ „Zum Lesezeitpunkt" ist wörtlich zu nehmen (Schlusslesung
+      // 07.09.2026, F2). Zwischen diesem Read und dem tatsächlichen Versand
+      // weiter unten bleibt ein Restfenster: `run()` gibt nach `await
+      // endDrive` sofort frei, der Leiter kann in derselben Sekunde B
+      // starten. Dann geht „Hahn in Ruh" hinaus, obwohl B beim Zustellen
+      // schon läuft — und auf dem Web-Weg ersetzt `tag: drive-<huntId>` die
+      // ältere Meldung, es gewinnt also die zuletzt ZUGESTELLTE, nicht die
+      // zuletzt gesendete. Das Fenster schliesst auch die von der
+      // Fremdprüfung empfohlene Outbox nicht: sie ordnete das Senden, nicht
+      // die Zustellung.
+      // Ein legitimer Fall geht dabei nicht verloren: das Sheet zeigt „Hahn in
+      // Ruh" nur bei `status === 'active'` (`DrivesSheet.tsx:332-334`) und
+      // sperrt den Start, solange eines läuft (`:300`) — nach einem regulären
+      // Ende ist nie etwas aktiv, und der Push folgt erst auf das `await`.
+      //
+      // Bewusst NICHT gebaut: die von der Fremdprüfung empfohlene monotone
+      // Ereignisversion je Jagd samt Outbox. Sie löst die allgemeine
+      // Ordnung von Ereignissen; hier hat der Schaden genau eine Form, und
+      // die deckt eine Bedingung ab. Nötig wird sie, sobald die Meldung das
+      // Treiben BENENNT — dann trägt sie eine Aussage, die nur zu einem
+      // bestimmten Wechsel wahr ist.
+      // Ebenfalls bewusst kein Zeitfenster gegen Wiederholung: nach der
+      // Berechtigungsprüfung sendet nur, wer die Ansage ohnehin machen darf.
+      // Ein Fenster verlöre die legitime Meldung eines kurz offline
+      // gewesenen Geräts — bei „Hahn in Ruh" der falsche Tausch.
+      const { data: treiben, error: treibenFehler } = await supabase
+        .from('hunt_drives')
+        .select('status')
+        .eq('hunt_id', huntId)
+      if (treibenFehler) {
+        console.error('Push-Route drive: Treiben nicht lesbar:', treibenFehler)
+        return NextResponse.json({ error: 'Interner Fehler' }, { status: 500 })
+      }
+      const treibenListe = treiben ?? []
+      const laeuftEines = treibenListe.some((t) => t.status === 'active')
+      const gemeldeterWechselPlausibel =
+        event === 'ended'
+          ? !laeuftEines && treibenListe.some((t) => t.status === 'completed')
+          : laeuftEines
+      if (!gemeldeterWechselPlausibel) {
         return NextResponse.json({ sent: 0 })
       }
     } else if (recipientUserId) {
