@@ -1,0 +1,123 @@
+-- 120: Wer ein Chat-Foto hochgeladen hat, darf es auch wieder entfernen.
+--
+-- ANLASS, gemessen am 07.09.2026 (Fremdpruefung P2-F1, [high], danach gegen
+-- die Produktion verifiziert): `chat-photos` ist der EINZIGE Bucket ohne
+-- DELETE-Policy — nur INSERT und SELECT. `app-photos` traegt seit 083 alle
+-- vier, `group-avatars` ebenfalls.
+--
+-- `storage.remove()` fuehrt intern ein DELETE unter RLS aus. Ohne Policy
+-- trifft es null Zeilen und antwortet trotzdem mit HTTP 200 und leerem Array
+-- — kein Fehler, den ein Client sehen koennte. `loescheNachricht` loeschte
+-- daraufhin die Nachrichtenzeile, und das Foto blieb im Bucket liegen: fuer
+-- jedes Gruppenmitglied weiter signierbar, waehrend der einzige Weg dorthin
+-- verschwand. **Ein Schritt, der formal nie fehlschlaegt, sieht aus wie ein
+-- Schritt.**
+--
+-- Es ist also keine Regel, die das Loeschen verbietet — die Erlaubnis wurde
+-- nur nie angelegt (Moritz, 07.09.2026: „aber jeder darf sein eigenes foto
+-- doch loeschen? warum sollte das nicht gehen").
+--
+--
+-- WARUM `owner_id` UND NICHT DER PFAD
+--
+-- `app-photos` liegt unter `<uid>/<art>/<entity_id>/…`; 083 liest den
+-- Besitzer daraus. `chat-photos` liegt unter `<group_id>/…` — der Pfad
+-- traegt die GRUPPE, nicht den Absender. `owner_id` setzt der Storage-Dienst
+-- aus dem JWT des Uploads; kein Client kann ihn bestimmen. Genau die
+-- Eigenschaft, die 083 fordert.
+--
+-- WARUM NICHT UEBER `messages` GEJOINT
+--
+-- Das waere der 083-Fehler wortgleich wiederholt: `media_url` schreibt der
+-- Client. Eine Berechtigung an etwas zu haengen, das der Nutzer selbst
+-- schreiben darf, ist der Fehler — nicht bloss eine ungeprueft gebliebene
+-- Stelle.
+--
+--
+-- ⚠ WAS DIESE MIGRATION BEWUSST NICHT MEHR ENTHAELT
+--
+-- Stand 2 dieser Datei koppelte die DELETE-Policy an eine Reparatur von
+-- `messages_insert_member` (die Policy prueft die `sender_id` nicht, jeder
+-- Jagdteilnehmer kann im Namen eines anderen schreiben). **Die Kopplung ist
+-- gestrichen, und zwar aus zwei Gruenden:**
+--
+-- 1. **Stand 2 haette den PWA-Jagdchat GESPERRT.** `revierapp`
+--    `src/components/hunt/ChatPanel.tsx:352-357` schreibt dort `hunt_id` +
+--    `participant_id` und setzt `sender_id` GAR NICHT — eine Policy mit
+--    `sender_id = auth.uid()` haette jede solche Nachricht abgelehnt. Meine
+--    Begruendung stuetzte sich auf „0 von 172 Nachrichten tragen eine
+--    hunt_id"; die Zahl stimmt, der Schluss war falsch. **Ein leerer Bestand
+--    ist kein Beleg fuer einen toten Pfad.**
+-- 2. **Die Verhaeltnismaessigkeit stimmte nicht.** Der Angriff, gegen den die
+--    Kopplung schuetzte, braucht direkten REST-Zugriff, Kenntnis fremder
+--    interner Kennungen und Vorsatz. Das stille Foto-Leck dagegen entsteht
+--    bei JEDER Loeschung, ohne jeden Angreifer.
+--
+-- **Die INSERT-Luecke bleibt offen und ist dokumentiert** (AGENTS.md, 120;
+-- `docs/migrationen/120_chat_foto_loeschen.md`). Sie braucht einen
+-- PWA-Rollout und damit Anker 3 — ein eigener Vorgang, keine Beigabe.
+--
+-- **Der Restrisiko-Satz, damit ihn niemand ueberliest:** solange die
+-- INSERT-Luecke besteht, kann ein Angreifer mit REST-Zugriff eine Nachricht
+-- mit fremder `sender_id` und fremder `media_url` einschleusen; nimmt das
+-- Opfer sie zurueck, loescht es damit sein eigenes Foto. Bestand am
+-- 07.09.2026 auf genau diesen Fall geprueft: 16 Bildnachrichten, bei allen
+-- 16 stimmt `owner_id` der Datei mit `sender_id` der Nachricht ueberein,
+-- 0 Abweichungen. **Es liegt nichts Vorbereitetes.**
+--
+--
+-- ⚠ LOESCHEN NACH GRUPPENAUSTRITT GEHT NICHT, und das ist eine Grenze, keine
+-- Zusicherung. `storage.remove()` braucht SELECT **und** DELETE;
+-- `chat_photos_read` verlangt weiterhin Mitgliedschaft ueber
+-- `get_my_group_ids()`. Ein frueherer Entwurf behauptete das Gegenteil („der
+-- Absender bleibt Herr seiner Aufnahme") — die Fremdpruefung hat es
+-- widerlegt. Der Satz steht hier als Warnung, weil er beim Schreiben
+-- plausibel klang und trotzdem falsch war. Bewusst NICHT geheilt: eine
+-- zusaetzliche SELECT-Policy waere eine Erweiterung der LESEflaeche fuer
+-- einen Fall, den die App gar nicht anbietet.
+--
+-- CLIENT-SEITE, die zu dieser Migration gehoert und schon steht:
+-- `loescheNachricht` wertet ein leeres `remove()`-Ergebnis als Fehlschlag —
+-- und unterscheidet dabei „RLS hat gefiltert" von „die Datei war schon weg"
+-- (per `createSignedUrl`). Ohne diese Unterscheidung waere eine Nachricht
+-- nach einem Teilerfolg DAUERHAFT unloeschbar (Delta-Schlusslesung F-A).
+--
+-- BESTAND (07.09.2026): 19 Fotos in `chat-photos`, alle 19 mit gesetztem
+-- `owner_id`, das aelteste vom 02.04.2026. Der Anker traegt rueckwirkend.
+--
+-- ADDITIV: die Migration nimmt niemandem etwas. Vor ihr konnte niemand
+-- loeschen — es sah nur so aus.
+
+-- ⚠ DIESE DATEI TRAEGT BEWUSST KEIN `\set ON_ERROR_STOP on` — anders als 114
+-- und 117. Sie laeuft dadurch ueber JEDEN Weg: psql, SQL-Editor,
+-- `execute_sql`, `apply_migration`. Eine Datei mit `\set` laeuft nur ueber
+-- psql (AGENTS.md, „Applizieren per psql"), und das hat sich am 08.09.2026
+-- als echte Einschraenkung erwiesen: der psql-Aufruf war aus der Sitzung
+-- heraus nicht moeglich, der MCP-Weg wegen des Metabefehls nicht gangbar.
+-- Wer sie ueber psql faehrt, gibt den Riegel im AUFRUF mit:
+--   psql … -v ON_ERROR_STOP=1 -f 120_chat_foto_loeschen.sql
+--
+-- Ebenso bewusst KEIN eigenes begin/commit. Der `drop policy if exists` ist
+-- hier ein No-op, gemessen unmittelbar vor dem Lauf: `chat-photos` trug nur
+-- `chat_photos_upload` (INSERT) und `chat_photos_read` (SELECT). Er steht
+-- als Wiederholbarkeit da, nicht als Ruecknahme. Ohne Transaktionsklammer
+-- gaebe es sonst ein Fenster, in dem eine bestehende Policy weg waere und
+-- die neue noch nicht stuende — dieses Fenster ist hier leer, weil es nichts
+-- zu droppen gibt. **Wer die Datei je erneut faehrt, nachdem die Policy
+-- steht, hat dieses Fenster sehr wohl** (Millisekunden, aber vorhanden).
+--
+-- ⚠ WIRD SIE UEBER psql APPLIZIERT, registriert sich die Migration NICHT —
+-- die Zeile in `supabase_migrations.schema_migrations` muss dann von Hand
+-- nachgetragen werden (wie bei 114 und 117). Ueber `apply_migration`
+-- entsteht sie von selbst.
+
+drop policy if exists chat_photos_delete on storage.objects;
+
+create policy chat_photos_delete
+  on storage.objects
+  for delete
+  to authenticated
+  using (
+    bucket_id = 'chat-photos'
+    and owner_id = (select auth.uid()::text)
+  );
