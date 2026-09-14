@@ -96,7 +96,11 @@
 -- zeichengleich die Lage bei `kills.position` und damit keine neue
 -- Entscheidung — nur eine, die hier zum zweiten Mal getroffen wird.
 
-begin;
+
+-- ⚠ DIESE DATEI KLAMMERT NICHT SELBST (`begin;`/`commit;` fehlen bewusst) —
+-- wie 120 und 121. Die Transaktion bringt der Aufrufer: `apply_migration`
+-- klammert von sich aus, `psql` braucht dafuer `-1` bzw. `--single-transaction`.
+-- Wer sie ohne Klammer ueber `psql -f` faehrt, bekommt KEINE Atomaritaet.
 
 -- ── Teil 1: die Lesefreigabe ────────────────────────────────────────────
 
@@ -332,4 +336,3 @@ $$;
 revoke execute on function public.sync_wild_event_for_kill()
   from public, anon, authenticated, service_role;
 
-commit;

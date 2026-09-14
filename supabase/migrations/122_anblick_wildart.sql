@@ -60,7 +60,11 @@
 -- nach `trg_wild_events_katalog` sortiert und `species` überschreibt, machte
 -- diesen hier zu einem Riegel, der etwas prüft, das nicht gespeichert wird.
 
-begin;
+
+-- ⚠ DIESE DATEI KLAMMERT NICHT SELBST (`begin;`/`commit;` fehlen bewusst) —
+-- wie 120 und 121. Die Transaktion bringt der Aufrufer: `apply_migration`
+-- klammert von sich aus, `psql` braucht dafuer `-1` bzw. `--single-transaction`.
+-- Wer sie ohne Klammer ueber `psql -f` faehrt, bekommt KEINE Atomaritaet.
 
 alter table public.wild_events
   add column if not exists wildart_id uuid references public.wildarten(id) on delete restrict;
@@ -122,4 +126,3 @@ create trigger trg_wild_events_katalog
 revoke execute on function public.set_wild_event_katalog()
   from public, anon, authenticated, service_role;
 
-commit;
