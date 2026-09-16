@@ -51,7 +51,7 @@ async function resolveJoinedParticipantIds(
 
 export async function POST(request: Request) {
   try {
-    const { huntId, groupId, messageText, isDirect, chatName, url, recipientUserId, kind, type, event, driveName, licenseId } = await request.json()
+    const { huntId, groupId, messageText, isDirect, chatName, url, recipientUserId, kind, type, event, driveName, licenseId, sprungHuntId, sprungAnblickId } = await request.json()
 
     // drive-Push (T0.C1) baut den Payload serverseitig fix und braucht daher
     // kein messageText. Für alle bestehenden Zweige bleibt die Pflichtprüfung
@@ -419,6 +419,36 @@ export async function POST(request: Request) {
       body = messageText
     } else {
       title = chatName || 'QuickHunt'
+      // ⛔ **Hier stand am 16.09.2026 für eine Stunde ein Flag
+      // `systemMeldung`, das den Absendernamen weglässt (CN-163) — es ist
+      // wieder ausgebaut, und der Grund gehört hierher, weil der nächste
+      // Anlauf sonst denselben Weg nimmt.**
+      //
+      // Der Zweck war richtig: Anblick- und Erlegungsmeldungen sind im Chat
+      // bewusst namenlose Systemzeilen (Entscheidung 14.09.2026), und der
+      // Push stellte den Namen wieder her — „Johann: Anblick – 1x Keiler" um
+      // 10:02 und „Johann: Neue Erlegung – 1x Keiler" um 10:05 ist genau die
+      // Korrelation, gegen die die Namenlosigkeit gebaut wurde.
+      //
+      // **Der Preis war zu hoch, und eine Fremdprüfung hat ihn benannt
+      // (`[high]`):** ohne den Namen fehlt die Zuordnung, und `chatName` wie
+      // `messageText` sind Freitext vom Client. Ein gewöhnliches
+      // Gruppenmitglied konnte damit `chatName: 'Treiben beendet'` und
+      // `messageText: 'Hahn in Ruh'` senden und die sicherheitsrelevante
+      // Ansage des geschützten `drive`-Zweigs nachahmen. **Das ist SR-02 aus
+      // dem Security-Review vom 07.09.2026, auf einem zweiten Weg wieder
+      // geöffnet** — neun Tage, nachdem er geschlossen wurde.
+      //
+      // **Der naheliegende Riegel trägt nicht:** den Text serverseitig aus
+      // der `messages`-Zeile holen statt vom Client. Solange SR-01 offen ist
+      // (`messages_insert_member` prüft den Absender nicht), kann ein
+      // Mitglied sich die passende `kill_report`-Zeile selbst schreiben. Der
+      // Angriff würde dadurch nur sichtbar, nicht unmöglich.
+      //
+      // **Was es bräuchte:** die Bindung an ein serverseitig geprüftes
+      // Ereignis in `wild_events`/`kills` samt Gruppenzuordnung — ein
+      // eigener Bau, keine Zeile in diesem Zweig. Bis dahin trägt der Push
+      // den Namen.
       body = displayName ? `${displayName}: ${messageText}` : messageText
     }
 
@@ -489,6 +519,41 @@ export async function POST(request: Request) {
         .filter((t): t is { sub: typeof t.sub; token: string } =>
           typeof t.token === 'string' && Expo.isExpoPushToken(t.token))
 
+      // Sprungziel für die native App: aus einer Anblick-/Erlegungsmeldung
+      // soll der Tipp auf die Meldung führen, nicht nur in den Chat.
+      //
+      // **Die Felder heissen bewusst `sprungHuntId`/`sprungAnblickId` und
+      // nicht `huntId`/`anblickId`, und das ist der Kern, nicht Kosmetik:**
+      // der Rumpf trägt bereits ein `huntId`, und das steuert oben die
+      // EMPFÄNGERERMITTLUNG (`else if (huntId)` →
+      // `resolveJoinedParticipantIds`). Ein zweites, gleichnamiges Feld wäre
+      // heute folgenlos, weil `else if (groupId)` davorsteht und zuerst
+      // greift — aber das ist eine stille Abhängigkeit von der Reihenfolge
+      // zweier `else if`. Wer sie einmal umsortiert, ändert unbemerkt den
+      // Empfängerkreis eines Chat-Pushes. Ein eigener Feldname kann das
+      // konstruktiv nicht — dieselbe Wurzel wie bei `chatGruppeId` oben.
+      //
+      // Deshalb werden die beiden Felder AUSSCHLIESSLICH hier durchgereicht:
+      // nicht für Empfänger, nicht für Berechtigungen, nicht für `safeUrl`.
+      // Und nur vollständig oder gar nicht — ein halbes Ziel wäre ein Sprung
+      // ins Leere, und die App verlangt ohnehin beide (`src/lib/push/tap.ts`).
+      // Ein alter Build, der nichts davon schickt, bekommt exakt das `data`
+      // von heute.
+      // ⚠ **Die Route prüft NICHT, ob der Anblick einen Ort hat oder zu
+      // dieser Gruppe gehört** (Fremdprüfung 16.09.2026, F2/Q2) — das tut
+      // der Client, der beides weiss (`KillCaptureSheet`, `ortLiegtVor`).
+      // **Die Grenze ist benannt und hingenommen:** ein lügender Client
+      // erzeugt damit einen Sprung, der auf der Karte kein Ziel findet. Das
+      // ist ärgerlich und kein Leck — die App prüft beim Öffnen ohnehin
+      // gegen RLS, ein fremder Anblick wird dort nicht sichtbar. Ein Query
+      // gegen `wild_events` an dieser Stelle wäre der vollständige Riegel
+      // und kostet einen Roundtrip auf jedem Anblick-Push.
+      const sprungZiel =
+        typeof sprungHuntId === 'string' && sprungHuntId !== '' &&
+        typeof sprungAnblickId === 'string' && sprungAnblickId !== ''
+          ? { huntId: sprungHuntId, anblickId: sprungAnblickId }
+          : null
+
       const messages: ExpoPushMessage[] = targets.map(({ token }) => ({
         to: token,
         sound: 'default',
@@ -514,7 +579,7 @@ export async function POST(request: Request) {
             : type === 'schein'
               ? { type: 'schein', url: safeUrl }
               : chatGruppeId
-                ? { type: 'chat', groupId: chatGruppeId, url: safeUrl }
+                ? { type: 'chat', groupId: chatGruppeId, url: safeUrl, ...(sprungZiel ?? {}) }
                 : { url: safeUrl },
       }))
 
