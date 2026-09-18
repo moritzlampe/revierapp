@@ -67,16 +67,24 @@
 --    gelöschte Zeile also noch einmal an**, an seiner aktuellen Position, und
 --    schreibt einen letzten Batch, bevor es aufhört. Niemand löscht diese
 --    Zeile danach.
---    **Sichtbar wird dieser eine Nachzügler nicht:** die Kartenmarker decken
---    seit CN-195 jede Position ab, die innerhalb von zwei Minuten nach dem
---    Pausenzeitpunkt geschrieben wurde (`pauseDecktPunkt`), und die
---    Jägerliste filtert ohnehin unabhängig vom Zeitstempel.
---    ⛔ **Für die PWA und Build ≤ 24 gilt das NICHT.** Sie schreiben
---    DAUERHAFT weiter, ihre Zeilen sind nach zwei Minuten keine Nachzügler
---    mehr, und der Abgemeldete wird auf der Karte wieder sichtbar. **Das ist
---    die eine Lücke, die nur ein Riegel in der Datenbank schliesst** — s.
---    Punkt 1 oben. Eine frühere Fassung dieser Zeile behauptete pauschal
---    „sichtbar wird sie nicht"; das war falsch (Schlusslesung Delta 2, F1).
+--    **Sichtbar wird diese Zeile nicht**, solange der Client die Pause kennt:
+--    Kartenmarker, Posten-Overlay und Jägerliste verbergen jeden Pausierten,
+--    unabhängig vom Zeitstempel seiner Zeile.
+--    ⚠ **Zwei frühere Fassungen dieser Stelle waren falsch, und beide Male
+--    aus demselben Grund** — sie versuchten, den einmaligen Nachzügler eines
+--    Zweitgeräts von einer echten Wiederanmeldung zu TRENNEN (zuletzt über
+--    eine Zwei-Minuten-Grenze). **Das kann der Client nicht:** beide sind ein
+--    Upsert nach der Pause, ein stillliegendes Gerät liefert seinen
+--    Nachzügler auch zehn Minuten später, und ein Wiederangemeldeter, der
+--    sich nicht bewegt, sendet gar nichts Neues. Die Heuristik lag in beide
+--    Richtungen falsch und ist entfernt (Fremdprüfung Delta 3, Punkte 5 und
+--    O2).
+--    **Der Preis, benannt:** wer sich wieder anmeldet, erscheint auf einer
+--    bereits geöffneten Karte erst, wenn sie ihre Teilnehmer neu lädt.
+--    **Und die PWA sowie Build ≤ 24 bleiben offen:** sie kennen die Spalte
+--    nicht, schreiben weiter und machen einen Abgemeldeten dort wieder
+--    sichtbar, wo ihr eigener Client ihn zeigt. Das schliesst nur der Riegel
+--    aus Punkt 1.
 -- 2. KEIN Trigger, der die Spalte gegen fremde Schreiber festhält. Ein
 --    Jagdleiter kann sie über `participants_leader_all` ändern — aber
 --    `position_consent` ist heute genauso ungeschützt, und ein Riegel für
