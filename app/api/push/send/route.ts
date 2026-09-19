@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { darfPushEmpfangen } from '@/lib/push/stummschaltung'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import webpush from 'web-push'
@@ -47,6 +48,165 @@ async function resolveJoinedParticipantIds(
     throw new Error(`Teilnehmer der Jagd ${huntId} nicht lesbar: ${error.message}`)
   }
   return (participants || []).map((p) => p.user_id as string)
+}
+
+/**
+ * Entfernt die Empfänger, die DIESEN Chat für sich stummgeschaltet haben
+ * (CN-201, Migration 127).
+ *
+ * **Warum der Filter hier steht und nicht im Client:** der Push wird
+ * fire-and-forget vom Gerät ausgelöst, die Empfängerliste baut aber diese
+ * Route. Ein Riegel im Client wäre einer, den jeder alte Build und die PWA
+ * umgehen.
+ *
+ * **Warum er eine EIGENE Lesung ist und nicht ein Feld in der
+ * Mitgliederabfrage oben:** jene Abfrage (`chat_group_members`) prüft ihren
+ * `error` nicht — ein Fehler wird dort zur leeren Liste und damit zu
+ * `200 { sent: 0 }`. Wer `stumm` dort mit hineinzöge, machte aus einem
+ * Spaltenfehler einen still toten Gruppen-Push. Genau umgekehrt zur Absicht.
+ * (Bauplan-Schlusslesung 19.09.2026, B4.)
+ *
+ * **Im Zweifel wird GESENDET.** Das ist kein Widerspruch zum drive-Zweig
+ * weiter unten, der bei einem Lesefehler laut scheitert, sondern dasselbe
+ * Prinzip mit anderer sicherer Voreinstellung: dort schützt der Fehlschlag
+ * vor einem unbefugten „Hahn in Ruh", hier kostet er eine verpasste Meldung
+ * am Jagdtag. Ein Lesefehler darf sich nie als gültige Auskunft „ist stumm"
+ * lesen (S4).
+ * ⛔ Wer das je „vereinheitlicht", dreht eine Entscheidung um, nicht einen
+ *    Schönheitsfehler.
+ */
+async function filterStummgeschaltete(
+  supabase: ServiceClient,
+  gruppeId: string,
+  senderId: string,
+  empfaenger: string[],
+): Promise<string[]> {
+  if (empfaenger.length === 0) return empfaenger
+
+  const { data: stumme, error: stummFehler } = await supabase
+    .from('chat_stummschaltungen')
+    .select('besitzer_id')
+    .eq('group_id', gruppeId)
+    .in('besitzer_id', empfaenger)
+
+  if (stummFehler) {
+    console.error('[CN-201] Stummschaltungen nicht lesbar, sende an alle:', stummFehler)
+    return empfaenger
+  }
+
+  // ⛔ NUR die EXISTENZ der Zeile zählt, nie der Wert von `stumm_seit` —
+  //    der käme vom Gerät, wenn ein Client ihn mitschickt (126, Falle 5).
+  const stummIds = new Set((stumme || []).map((z) => z.besitzer_id as string))
+  if (stummIds.size === 0) return empfaenger
+
+  // Die Jagd DIESER Gruppe — aus der bereits autorisierten `gruppeId`,
+  // NIEMALS aus dem `huntId` des Request-Bodys.
+  //
+  // ⛔ Der Body trägt bei der PWA immer beide Felder und nativ zusätzlich eine
+  //    Sprung-Jagd. Wer den Leiter-Check mit dem Body-Wert baut, lässt den
+  //    ABSENDER die Jagd wählen, an der er Jagdleiter ist — und hebelt den
+  //    Riegel unten durch die Vordertür aus.
+  const { data: gruppe, error: gruppeFehler } = await supabase
+    .from('chat_groups')
+    .select('hunt_id')
+    .eq('id', gruppeId)
+    .maybeSingle()
+
+  if (gruppeFehler) {
+    console.error('[CN-201] Chatgruppe nicht lesbar, sende an alle:', gruppeFehler)
+    return empfaenger
+  }
+
+  const jagdDerGruppe = gruppe?.hunt_id as string | null | undefined
+  if (!jagdDerGruppe) {
+    // Freie Gruppe oder Direktchat: es gibt keinen Jagdleiter, der etwas
+    // durchbrechen könnte. Der Schalter wirkt voll.
+    return empfaenger.filter((id) => !stummIds.has(id))
+  }
+
+  const [
+    { data: jagd, error: jagdFehler },
+    { data: teilnehmer, error: teilnehmerFehler },
+  ] = await Promise.all([
+    supabase
+      .from('hunts')
+      .select('creator_id, district_id')
+      .eq('id', jagdDerGruppe)
+      .maybeSingle(),
+    supabase
+      .from('hunt_participants')
+      .select('user_id, role, status')
+      .eq('hunt_id', jagdDerGruppe)
+      .not('user_id', 'is', null),
+  ])
+
+  if (jagdFehler || teilnehmerFehler) {
+    console.error('[CN-201] Jagdrollen nicht lesbar, sende an alle:', jagdFehler ?? teilnehmerFehler)
+    return empfaenger
+  }
+
+  // ⛔ EINE JAGD OHNE REVIER GEWÄHRT KEINE AUSNAHMEN.
+  //
+  // `hunts.district_id` ist nullable, und `hunt_revier_muss_erlaubt_sein`
+  // (092) gibt bei NULL sofort `return new` zurück — eine Jagd ohne Revier
+  // darf also JEDER anlegen, ohne Besitz und ohne Begehungsschein. Wer den
+  // Durchstich daran hinge, hinge ihn an einen Titel, den man sich in drei
+  // Sekunden selbst ausstellt (Fremdprüfung 19.09.2026, F1 `[high]`).
+  //
+  // Mit Revier greift 092: die Jagd verlangt Revierbesitz oder einen gültigen
+  // Schein. Das ERHÖHT die Kosten — es schliesst den Weg nicht.
+  //
+  // ⚠ Hier stand „die erste Bedingung, die der Absender NICHT selbst
+  //   herstellen kann". **Falsch, gefunden von der Schlusslesung am
+  //   19.09.2026:** `districts_owner_all` lässt jeden ein Revier anlegen
+  //   (`owner_id = auth.uid()`, kein Trigger). Wer eines anlegt, legt darauf
+  //   eine Jagd an, schreibt sein Opfer per REST als `joined` hinein
+  //   (`participants_creator_all` hat kein `with_check`) und hängt einen Chat
+  //   daran — Riegel 3 erlaubt das, es ist ja seine eigene Jagd.
+  //
+  // **Die Wurzel ist nicht das Revier, sondern `joined`:** solange ein
+  // Jagdersteller fremde Teilnehmerzeilen auf `joined` setzen darf, ist
+  // „beigetreten" keine Zustimmung, sondern eine Behauptung — und jeder
+  // Riegel, der darauf baut, ist nur so stark wie dessen Wohlverhalten.
+  // Das ist vorbestehend und liegt als **CN-203** im Backlog.
+  //
+  // Was diese Bedingung trotzdem leistet: sie macht aus einem Klick einen
+  // Ablauf aus vier Schritten mit REST-Zugriff und Vorsatz, und sie hält die
+  // erfundene leere Jagd draussen. Der Schaden bleibt Belästigung in einer
+  // Gruppe, der man freiwillig angehört — keine Datenoffenlegung.
+  //
+  // **Der Preis ist gemessen und liegt bei null:** von 7 reviersosen Jagden im
+  // Bestand sind 6 Einzeljagden (`kind='solo'`) mit genau einem Teilnehmer und
+  // ohne Chat; die siebte ebenso einteilig. Ein Mehrpersonen-Jagdchat ohne
+  // Revier existiert nicht — und in einer Einzeljagd gibt es niemanden, den
+  // ein Jagdleiter durchstechen müsste.
+  if (!jagd?.district_id) {
+    return empfaenger.filter((id) => !stummIds.has(id))
+  }
+
+  // „Jagdleiter" ist Rolle ODER Ersteller — beides zusammen, wie im
+  // drive-Zweig weiter unten und aus demselben Grund: ein reiner Rollencheck
+  // nähme dem Jagdersteller den eigenen legitimen Push.
+  const leiter = new Set<string>()
+  const beigetreten = new Set<string>()
+  for (const t of teilnehmer || []) {
+    if (t.status !== 'joined') continue
+    const uid = t.user_id as string
+    beigetreten.add(uid)
+    if (t.role === 'jagdleiter') leiter.add(uid)
+  }
+  if (jagd?.creator_id) leiter.add(jagd.creator_id as string)
+
+  const absenderIstLeiter = leiter.has(senderId)
+
+  return empfaenger.filter((id) =>
+    darfPushEmpfangen({
+      istStumm: stummIds.has(id),
+      empfaengerIstLeiter: leiter.has(id),
+      absenderIstLeiter,
+      empfaengerIstJagdteilnehmer: beigetreten.has(id),
+    }),
+  )
 }
 
 export async function POST(request: Request) {
@@ -105,6 +265,14 @@ export async function POST(request: Request) {
     // einem Feld ableiten, das der Aufrufer schreibt, statt aus dem Zweig, der
     // die Berechtigung geprüft hat.**
     let chatGruppeId: string | null = null
+    // Die Chatgruppe, gegen die CN-201 filtert.
+    //
+    // ⚠ BEWUSST NICHT `chatGruppeId` wiederverwendet: die steuert weiter unten
+    //    den Expo-Deep-Link (`{ type: 'chat', groupId }`). Sie auch im
+    //    huntId-Zweig zu setzen änderte das Antipp-Verhalten und die
+    //    Vordergrund-Unterdrückung der PWA-Jagdchat-Pushes — eine
+    //    Nebenwirkung, die niemand bestellt hat.
+    let stummGruppeId: string | null = null
 
     if (type === 'schein') {
       // Einladung zu einem Begehungsschein (31.07.2026).
@@ -329,6 +497,7 @@ export async function POST(request: Request) {
       }
       // Ab hier ist belegt, dass der Absender Mitglied dieser Gruppe ist.
       chatGruppeId = groupId
+      stummGruppeId = groupId
     } else if (huntId) {
       // Jagd-Chat: nur ZUGESAGTE Teilnehmer (status='joined') mit user_id.
       // invited-User sind nicht im Hunt-Chat und dürfen keine Push-Vorschau
@@ -337,6 +506,38 @@ export async function POST(request: Request) {
       recipientUserIds = await resolveJoinedParticipantIds(supabase, huntId)
       if (!recipientUserIds.includes(senderId)) {
         return NextResponse.json({ sent: 0 })
+      }
+      // CN-201: Auch dieser Weg muss durch den Stummschaltungs-Filter.
+      //
+      // ⛔ Er sieht tot aus und ist es nicht. Gemessen am 19.09.2026: 216 von
+      //    216 Nachrichten tragen `group_id`, keine einzige `hunt_id` — der
+      //    Zweig wird also nicht benutzt. Erreichbar ist er trotzdem: die
+      //    PWA-Jagdseite rendert ihren Chat-Tab ohne `groupId`, und ein
+      //    zugesagter Teilnehmer erreicht ihn auch per `curl`.
+      //    Eine Nutzungszahl belegt keine Unerreichbarkeit; ein Riegel, den
+      //    ein zweiter Weg umgeht, ist für den Nutzer keiner.
+      //
+      // Die Gruppe wird aus der Jagd aufgelöst, nicht umgekehrt.
+      //
+      // ⚠ **Die Eindeutigkeit kommt aus Migration 127**, nicht aus dieser
+      //    Abfrage: `chat_groups_eine_gruppe_je_jagd` lässt genau eine Gruppe
+      //    je Jagd zu. Ohne ihn konnte ein gewöhnlicher Teilnehmer eine
+      //    ZWEITE Gruppe mit derselben `hunt_id` und einem früheren
+      //    `created_at` anlegen — der Filter hätte dann die vorgeschobene
+      //    Gruppe genommen, dort keine Stummschaltungen gefunden und an alle
+      //    gesendet (Fremdprüfung 19.09.2026, F2).
+      //    `limit(1)` bleibt als Gürtel neben dem Hosenträger stehen: vor dem
+      //    Applizieren von 127 ist die Annahme nicht durchgesetzt.
+      const { data: jagdGruppe, error: jagdGruppeFehler } = await supabase
+        .from('chat_groups')
+        .select('id')
+        .eq('hunt_id', huntId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+      if (jagdGruppeFehler) {
+        console.error('[CN-201] Jagd-Chatgruppe nicht auflösbar, sende ungefiltert:', jagdGruppeFehler)
+      } else {
+        stummGruppeId = (jagdGruppe?.[0]?.id as string | undefined) ?? null
       }
     } else {
       return NextResponse.json({ error: 'huntId, groupId oder recipientUserId nötig' }, { status: 400 })
@@ -354,8 +555,40 @@ export async function POST(request: Request) {
       recipientUserIds = recipientUserIds.filter(id => id !== senderId)
     }
 
+    // CN-201: stummgeschaltete Empfänger entfernen.
+    //
+    // Der Filter sitzt NACH dem Sender-Filter (ein Absender bekommt ohnehin
+    // nichts) und VOR der Leerprüfung darunter — sonst liefe die Route mit
+    // einer Liste weiter, die nach dem Filtern leer ist.
+    // `stummGruppeId` ist nur in den beiden Chat-Zweigen gesetzt; `schein`,
+    // `drive` und `rsvp` sind damit per Konstruktion unberührt.
+    if (stummGruppeId) {
+      recipientUserIds = await filterStummgeschaltete(
+        supabase,
+        stummGruppeId,
+        senderId,
+        recipientUserIds,
+      )
+    }
+
+    // **Ab hier darf die Antwort nicht mehr verraten, WIE VIELE erreicht
+    // wurden** — sonst wird die private Stummschaltung aus der Versandzahl
+    // ableitbar (Fremdprüfung 19.09.2026, F3).
+    //
+    // Der Fall ist im Direktchat scharf: dort bleibt nach dem Senderfilter
+    // genau EIN Empfänger. Hat der stummgeschaltet, endet die Route mit
+    // `{ sent: 0 }`; sonst mit einer Zahl. Wer die Gegenseite kennt und weiss,
+    // dass ihr Gerät angemeldet ist, liest daraus genau die Einstellung, die
+    // Migration 127 gerade in eine eigene Tabelle gelegt hat, damit niemand
+    // sie sieht. **Ein Riegel, der die Antwort ungeschützt lässt, verlegt das
+    // Leck nur.**
+    //
+    // Das Muster ist nicht neu: `type === 'schein'` antwortet aus demselben
+    // Grund seit je neutral (s. unten). Hier kommt der Chat dazu.
+    const verbirgtVersand = type === 'schein' || stummGruppeId !== null
+
     if (recipientUserIds.length === 0) {
-      return NextResponse.json({ sent: 0 })
+      return NextResponse.json(verbirgtVersand ? { ok: true } : { sent: 0 })
     }
 
     // Push-Subscriptions aller Empfänger laden (inkl. kind für die web/expo-Partition)
@@ -369,7 +602,7 @@ export async function POST(request: Request) {
       // ein Konto hat, aber kein Gerät — und genau die beiden Fälle „Konto ohne
       // Gerät" und „kein Konto" dürfen sich nicht unterscheiden lassen.
       // Dieselbe Antwort wie am Ende der Funktion.
-      return NextResponse.json(type === 'schein' ? { ok: true } : { sent: 0 })
+      return NextResponse.json(verbirgtVersand ? { ok: true } : { sent: 0 })
     }
 
     // Absendername autoritativ aus profiles auflösen (race-frei, Service-Role)
@@ -634,7 +867,7 @@ export async function POST(request: Request) {
     // wer so misst, braucht ein eigenes Revier UND hinterlässt je Versuch eine
     // Schein-Zeile. Der Aufwand steht in keinem Verhältnis zur Auskunft
     // „diese Adresse hat ein Konto".
-    if (type === 'schein') {
+    if (verbirgtVersand) {
       return NextResponse.json({ ok: true })
     }
 
