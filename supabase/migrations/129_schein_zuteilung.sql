@@ -175,15 +175,37 @@ alter table public.hunting_licenses
 -- ist aber UNIQUE (hunting_licenses_invite_code_key). Also ein Trigger mit
 -- Schleife.
 --
--- ⚠ Dies ist der ERSTE BEFORE-INSERT-Trigger dieser Tabelle (gemessen: heute
--- zwei Trigger, beide BEFORE UPDATE). BEFORE-Trigger feuern ALPHABETISCH —
--- die 096-Falle. Der Name ist bewusst kurz gewählt: ein späterer Trigger,
--- der den Code PRÜFT statt ihn zu setzen, sortiert mit jedem längeren Namen
--- (`trg_hunting_licenses_code_*`) dahinter und sieht damit den fertigen Wert.
--- Ein Trigger, der VOR dem Setzer prüft, prüfte etwas, das nicht gespeichert
--- wird — und sähe weiterhin aus wie ein Riegel.
+-- ⛔ Dies ist der ERSTE BEFORE-INSERT-Trigger dieser Tabelle (gemessen: heute
+-- zwei Trigger, beide BEFORE UPDATE). BEFORE-Trigger feuern ALPHABETISCH über
+-- `tgname` (Typ `name`, C-Ordnung, Index `pg_trigger_tgrelid_tgname_index`) —
+-- die 096-Falle.
+--
+-- DIE REGEL FÜR JEDEN KÜNFTIGEN BEFORE-INSERT-TRIGGER DIESER TABELLE:
+-- Wer einen Wert PRÜFT, den dieser Trigger SETZT, muss alphabetisch NACH
+-- `trg_hunting_licenses_vorgaben` liegen — also mit `vorgaben_` beginnen oder
+-- mit w–z. Gemessen (`::name`-Vergleich):
+--     trg_hunting_licenses_code_pruefen      → DAVOR  ⛔
+--     trg_hunting_licenses_code_format       → DAVOR  ⛔
+--     trg_hunting_licenses_pruefe_code       → DAVOR  ⛔
+--     trg_hunting_licenses_vorgaben_pruefen  → dahinter ✓
+--     trg_hunting_licenses_zuteilung_pruefen → dahinter ✓
+--
+-- ⚠ Genau hier stand bis zum 20.09.2026 das GEGENTEIL, und das ist die
+-- Lehre: die Vorfassung hieß `trg_hunting_licenses_code`, und dagegen
+-- sortierte jeder natürliche Prüfername (`…_code_pruefen`) tatsächlich
+-- DAHINTER — der Satz war wahr. Die Umbenennung auf `…_vorgaben` (nötig,
+-- weil die Funktion seither zwei Vorgaben setzt) hat ihn still umgedreht,
+-- der Kommentar blieb stehen. Gefunden von der Schlusslesung im
+-- Delta-Durchgang, nicht beim Umbenennen.
+-- **Ein Name, der einen Schutz trägt, ändert den Schutz mit.**
+--
+-- Woran das hängt: ein Prüfer, der VOR dem Setzer feuert, sieht
+-- `new.invite_code IS NULL` (der Spalten-Default ist seit 129 weg) und
+-- lehnt entweder jeden Zentrale-INSERT ab — oder lässt NULL durch und prüft
+-- den gesetzten Wert nie. Er prüfte etwas, das nicht gespeichert wird, und
+-- sähe weiterhin aus wie ein Riegel.
 
-create or replace function public.hunting_licenses_code_setzen()
+create or replace function public.hunting_licenses_vorgaben_setzen()
   returns trigger
   language plpgsql
   security definer
@@ -193,6 +215,62 @@ declare
   kandidat text;
   roh      bytea;
 begin
+  -- ---------------------------------------------------------------------
+  -- (1) Die Zuteilung ableiten, wenn der Aussteller sie nicht gesetzt hat
+  -- ---------------------------------------------------------------------
+  -- ⛔ Ohne diesen Block erzeugt der EINZIGE heute existierende Ausstellweg
+  -- Scheine, die beide Clients als beschränkt ANZEIGEN und die Datenbank als
+  -- Vollschein BEHANDELT (Schlusslesung F3, 20.09.2026).
+  -- Gemessen: `revierapp/app/zentrale/jagderlaubnisse/scheine.ts` schreibt in
+  -- `alsSpalten` zwar `stand_ids` bei `art === 'staende'`, aber keine
+  -- `zuteilung` — die Spalte gibt es dort noch nicht. Angezeigt wird die Art
+  -- dagegen aus den ARRAYS abgeleitet (`zuteilungsArt` :137, nativ
+  -- `areaKindOf` in `src/lib/data/licenses.ts:533`). Ein Schein "nur Stände A, B"
+  -- stünde also mit `zuteilung = 'revier'` in der DB und zeigte "Stände A, B"
+  -- auf beiden Bildschirmen. "Wirklich beschränken" gälte dann für keinen
+  -- einzigen Schein, der heute ausgestellt werden kann.
+  --
+  -- Die Ableitung spiegelt `zuteilungsArt` ZEICHENGLEICH: Zonen haben Vorrang
+  -- vor Ständen. Damit sagen Anzeige und Policy dasselbe, statt sich zu
+  -- widersprechen — und zwar ohne PWA-Deploy und ohne eine Zeile in einem
+  -- fremden Track (R1).
+  --
+  -- ⚠ Sie greift NUR beim INSERT. Der Bestand wird nicht angefasst —
+  -- `add column … default` hat ihn bereits mit 'revier' gefüllt.
+  --
+  -- ⛔ GRENZE, gemessen und bewusst hingenommen: beim INSERT ist ein
+  -- ausdrückliches `zuteilung = 'revier'` NICHT von der Spalten-Vorgabe zu
+  -- unterscheiden — beides kommt als 'revier' im Trigger an. Wer also eine
+  -- Zeile mit 'revier' UND gefüllten Arrays einfügt, bekommt trotzdem die
+  -- abgeleitete Art (gemessen: Fall D wird 'staende', nicht 'revier').
+  -- Das trifft heute keinen realen Weg: die Zentrale schickt bei jeder
+  -- anderen Art leere Arrays, und der native Client aus Paket B wird es
+  -- ebenso tun — "ganzes Revier" heisst dort, dass nichts ausgewählt ist.
+  -- Wer die Kombination doch braucht, setzt sie per UPDATE nach; ein UPDATE
+  -- ist unberührt (gemessen: Fall E bleibt 'revier').
+  -- Die Alternative wäre, die Spalte nullable zu machen, um "nicht
+  -- angegeben" unterscheidbar zu halten — das zöge NULL-Behandlung in jede
+  -- Policy und wäre teurer als diese Grenze.
+  --
+  -- ⚠ Die Richtung ist die einschränkende, und das ist Absicht: wer Arrays
+  -- füllt, meint eine Beschränkung. Der umgekehrte Irrtum (Beschränkung
+  -- gemeint, Vollschein entstanden) ist der gefährliche.
+  --
+  -- ⚠ Das steht NICHT im Widerspruch zum Kopfsatz "AUSDRÜCKLICH und nicht
+  -- implizit über leere Arrays". Der gilt der POLICY: leere Arrays dürfen
+  -- nicht "gar nichts" bedeuten. Hier werden GEFÜLLTE Arrays gelesen, und nur
+  -- dann, wenn niemand etwas anderes gesagt hat.
+  if new.zuteilung = 'revier' then
+    if coalesce(array_length(new.zone_ids, 1), 0) > 0 then
+      new.zuteilung := 'bereiche';
+    elsif coalesce(array_length(new.stand_ids, 1), 0) > 0 then
+      new.zuteilung := 'staende';
+    end if;
+  end if;
+
+  -- ---------------------------------------------------------------------
+  -- (2) Den Einlösecode ziehen, wenn keiner mitgegeben wurde
+  -- ---------------------------------------------------------------------
   -- Ein ausdrücklich mitgegebener Code bleibt stehen: die PWA schreibt heute
   -- keinen, aber ein Import oder eine Datenkorrektur darf es.
   if new.invite_code is not null then
@@ -238,13 +316,23 @@ begin
 end;
 $$;
 
-comment on function public.hunting_licenses_code_setzen() is
-  'BEFORE INSERT auf hunting_licenses: setzt invite_code auf acht Ziffern, '
-  'mit Kollisionsschleife (invite_code ist UNIQUE). SECURITY DEFINER, weil '
-  'die Existenzprüfung ALLE Scheine sehen muss — der Aussteller sieht per '
-  'RLS nur die eigenen, und eine Kollision mit einem fremden Code fiele '
-  'sonst erst am Unique-Index auf. Die Funktion gibt nichts über fremde '
-  'Scheine preis: sie liefert nur den gesetzten Code zurück.';
+comment on function public.hunting_licenses_vorgaben_setzen() is
+  'BEFORE INSERT auf hunting_licenses, setzt ZWEI Vorgaben. '
+  '(1) zuteilung: trägt sie den Vorgabewert ''revier'' und ist zone_ids oder '
+  'stand_ids gefüllt, wird die Art daraus abgeleitet — Zonen vor Ständen, '
+  'zeichengleich zu zuteilungsArt (PWA) und areaKindOf (nativ). Ohne das '
+  'erzeugt der einzige heute existierende Ausstellweg, die Zentrale, '
+  'Scheine, die beide Clients als beschränkt ANZEIGEN und die Policy als '
+  'Vollschein BEHANDELT. Nur beim INSERT: ein UPDATE kann zuteilung '
+  'jederzeit ausdrücklich auf ''revier'' setzen, auch bei gefüllten Arrays. '
+  '(2) invite_code: acht Ziffern mit Kollisionsschleife (die Spalte ist '
+  'UNIQUE). SECURITY DEFINER, weil die Existenzprüfung ALLE Scheine sehen '
+  'muss — der Aussteller sieht per RLS nur die eigenen, und eine Kollision '
+  'mit einem fremden Code fiele sonst erst am Unique-Index auf. Sie gibt '
+  'nichts über fremde Scheine preis: zurück kommt nur der gesetzte Code. '
+  'Sie heißt ''vorgaben'' und nicht ''code'', weil sie beides tut — ein '
+  'Name, der nur die Hälfte nennt, lässt die andere Hälfte bei der nächsten '
+  'Änderung übersehen.';
 
 -- ⛔ 082-ENTZUG — von der Fremdprüfung gefunden (S3, 20.09.2026).
 -- Diese Funktion ist SECURITY DEFINER und eine TRIGGER-Funktion: wer sie
@@ -263,13 +351,13 @@ comment on function public.hunting_licenses_code_setzen() is
 -- `REVOKE ... FROM PUBLIC` allein entzöge NICHTS — Supabase vergibt EXECUTE
 -- per ALTER DEFAULT PRIVILEGES ausdrücklich an die drei Rollen. Sie müssen
 -- namentlich genannt werden.
-revoke execute on function public.hunting_licenses_code_setzen()
+revoke execute on function public.hunting_licenses_vorgaben_setzen()
   from public, anon, authenticated, service_role;
 
-create trigger trg_hunting_licenses_code
+create trigger trg_hunting_licenses_vorgaben
   before insert on public.hunting_licenses
   for each row
-  execute function public.hunting_licenses_code_setzen();
+  execute function public.hunting_licenses_vorgaben_setzen();
 
 -- ============================================================================
 -- TEIL 3 — Die Zuteilung wirkt: Lesen
