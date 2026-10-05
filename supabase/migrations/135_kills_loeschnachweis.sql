@@ -66,6 +66,13 @@
 --   * `kills.hunt_id` ist nullable; eine Erlegung OHNE Jagd waere fuer
 --     Clients unloeschbar (`42501`, "Jagd nicht sichtbar"). Bestand: 0.
 --   * Alle 6 Erlegungen haben heute einen Melder mit Status `joined`.
+--   * RESTRISIKO (Codex 135, F3): Sichern und Loeschen sind nicht
+--     gegeneinander serialisiert. Die Funktion aus 133 liest
+--     `hunts.gesichert_am` ohne Zeilensperre; sichert der Jagdleiter in
+--     derselben Millisekunde, in der ein DELETE laeuft, kann das DELETE den
+--     ungesicherten Stand lesen. Dieselbe Luecke hat 133 bei
+--     `hunt_participants`. Schliessen hiesse, `jagd_sichern()` (133) und
+--     die geteilte Funktion umzubauen — bewusst nicht hier.
 --
 --
 -- REIHENFOLGE DER TRIGGER AUF `kills` (feuern alphabetisch, 096)
@@ -74,7 +81,8 @@
 --   `trg_kills_herkunft`, `_katalog`, `_set_drive_id`, `_trichinen`,
 --   `_wild_event_id` — damit eine geloeschte Kennung mit IHREM Grund
 --   abgewiesen wird und nicht mit dem eines Herkunfts-Triggers.
---   BEFORE DELETE: `trg_kills_gesichert_loeschsperre` (NEU) ist der einzige.
+--   BEFORE DELETE: `trg_kills_a_kennung_sperren` (NEU, Sperre auf die
+--   Kennung), dann `trg_kills_gesichert_loeschsperre` (NEU) — sonst keiner.
 --   AFTER DELETE: `trg_kills_loeschnachweis` (NEU) neben
 --   `trg_kills_sync_wild_event` — Reihenfolge ohne Belang.
 --
@@ -105,9 +113,11 @@ comment on table public.kills_geloescht is
   'nie wieder als kills.id angelegt werden. Nur Trigger schreiben und lesen.';
 
 -- Kein Client liest oder schreibt hier. RLS an und keine Policy, dazu die
--- Tabellenrechte entzogen, die Supabase per Default vergibt.
+-- Tabellenrechte entzogen, die Supabase per Default vergibt — auch
+-- `service_role` (Codex 135, F4): sie umgeht RLS und koennte sonst einen
+-- Nachweis entfernen. Schreiben und lesen nur die DEFINER-Trigger.
 alter table public.kills_geloescht enable row level security;
-revoke all on table public.kills_geloescht from public, anon, authenticated;
+revoke all on table public.kills_geloescht from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 2. Nachweis schreiben (AFTER DELETE)
@@ -148,6 +158,13 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
+  -- Erst die Kennung sperren, DANN nachsehen (Codex 135, F1 [hoch]): ohne
+  -- Sperre saehe ein INSERT, der waehrend eines noch offenen DELETE derselben
+  -- Kennung ankommt, den Nachweis nicht — die Eindeutigkeitspruefung wartet
+  -- danach auf das DELETE und laesst die Zeile anschliessend durch. Mit der
+  -- Sperre wartet er hier; die folgende Abfrage liest einen neuen Schnappschuss
+  -- (READ COMMITTED, je Anweisung) und sieht den Nachweis.
+  perform pg_advisory_xact_lock(hashtextextended(new.id::text, 135));
   if exists (select 1 from public.kills_geloescht g where g.kill_id = new.id) then
     raise exception 'Diese Erlegung wurde geloescht und wird nicht neu angelegt'
       using errcode = '42501';
@@ -159,6 +176,36 @@ $$;
 create trigger trg_kills_a_nicht_geloescht
   before insert on public.kills
   for each row execute function public.kill_nicht_geloescht();
+
+-- ---------------------------------------------------------------------------
+-- 3b. Kennung beim Loeschen sperren (BEFORE DELETE)
+-- ---------------------------------------------------------------------------
+--
+-- Gegenstueck zur Sperre in `kill_nicht_geloescht` (Codex 135, F1): das
+-- DELETE haelt die Sperre bis zum Commit, also bis der Nachweis sichtbar ist.
+-- BEFORE statt AFTER: die Zeilensperre des DELETE besteht schon, wenn der
+-- Trigger feuert; holte erst der AFTER-Trigger die Kennungs-Sperre, koennte
+-- ein INSERT, der sie zuerst haelt, in der Eindeutigkeitspruefung auf genau
+-- diese Zeile warten — Verklemmung. So wartet immer nur einer auf den anderen:
+-- haelt der INSERT die Sperre zuerst, findet er die (noch lebende) Zeile und
+-- scheitert sofort mit `23505`.
+-- INVOKER: Advisory-Locks darf jede Rolle nehmen. Der Name sortiert vor
+-- `trg_kills_gesichert_loeschsperre` — die Sperre kommt zuerst.
+
+create function public.kill_kennung_sperren()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended(old.id::text, 135));
+  return old;
+end;
+$$;
+
+create trigger trg_kills_a_kennung_sperren
+  before delete on public.kills
+  for each row execute function public.kill_kennung_sperren();
 
 -- ---------------------------------------------------------------------------
 -- 4. Loeschsperre bei gesicherter Jagd (BEFORE DELETE)
@@ -184,6 +231,8 @@ create trigger trg_kills_gesichert_loeschsperre
 revoke execute on function public.kill_loeschnachweis()
   from public, anon, authenticated, service_role;
 revoke execute on function public.kill_nicht_geloescht()
+  from public, anon, authenticated, service_role;
+revoke execute on function public.kill_kennung_sperren()
   from public, anon, authenticated, service_role;
 
 commit;
