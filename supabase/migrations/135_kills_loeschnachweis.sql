@@ -20,7 +20,8 @@
 --
 -- 1. Wer eine Erlegung loescht, hinterlaesst ihre Kennung in
 --    `kills_geloescht`. Eine Erlegung mit dieser Kennung kann nie wieder
---    angelegt werden: der INSERT scheitert mit `42501`.
+--    angelegt werden: der INSERT scheitert mit `42501`. Die Kennung einer
+--    bestehenden Erlegung ist unveraenderlich (UPDATE von `id`: `42501`).
 -- 2. Eine Erlegung einer gesicherten Jagd (`hunts.gesichert_am`) loescht
 --    ein Client nicht: `55006`, wie bei Jagd und Teilnehmer (133).
 -- 3. Server-Wege (`konto_loeschen`, Owner `postgres`) sind von der Sperre
@@ -66,6 +67,10 @@
 --   * `kills.hunt_id` ist nullable; eine Erlegung OHNE Jagd waere fuer
 --     Clients unloeschbar (`42501`, "Jagd nicht sichtbar"). Bestand: 0.
 --   * Alle 6 Erlegungen haben heute einen Melder mit Status `joined`.
+--   * ⚠ KEIN UPSERT AUF `kills` (Schlusslesung 135, B2): ein
+--     `insert … on conflict do update` verklemmte sich mit einem
+--     gleichzeitigen DELETE derselben Kennung (`40P01`). Heute schreiben
+--     beide Clients nur `.insert(…)` (gemessen).
 --   * RESTRISIKO (Codex 135, F3): Sichern und Loeschen sind nicht
 --     gegeneinander serialisiert. Die Funktion aus 133 liest
 --     `hunts.gesichert_am` ohne Zeilensperre; sichert der Jagdleiter in
@@ -80,7 +85,8 @@
 --   BEFORE INSERT: `trg_kills_a_nicht_geloescht` (NEU) feuert vor
 --   `trg_kills_herkunft`, `_katalog`, `_set_drive_id`, `_trichinen`,
 --   `_wild_event_id` — damit eine geloeschte Kennung mit IHREM Grund
---   abgewiesen wird und nicht mit dem eines Herkunfts-Triggers.
+--   abgewiesen wird und nicht mit dem eines Herkunfts-Triggers. Als
+--   BEFORE UPDATE OF id feuert er ebenfalls vor allen anderen.
 --   BEFORE DELETE: `trg_kills_a_kennung_sperren` (NEU, Sperre auf die
 --   Kennung), dann `trg_kills_gesichert_loeschsperre` (NEU) — sonst keiner.
 --   AFTER DELETE: `trg_kills_loeschnachweis` (NEU) neben
@@ -144,7 +150,7 @@ create trigger trg_kills_loeschnachweis
   for each row execute function public.kill_loeschnachweis();
 
 -- ---------------------------------------------------------------------------
--- 3. Geloeschte Kennung abweisen (BEFORE INSERT)
+-- 3. Geloeschte Kennung abweisen (BEFORE INSERT), Kennung festhalten (UPDATE)
 -- ---------------------------------------------------------------------------
 --
 -- SECURITY DEFINER: der Schreibende darf `kills_geloescht` nicht lesen.
@@ -158,12 +164,28 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
+  -- Die Kennung einer Erlegung steht fest (Codex 135-Delta, F5): sonst
+  -- schriebe ein Melder die Kennung einer ANDEREN eigenen Erlegung per
+  -- UPDATE auf eine geloeschte um, und an Nachweis und Sperre vorbei
+  -- existierte sie wieder. Keine Weiche — auch kein Server-Weg aendert sie.
+  if tg_op = 'UPDATE' then
+    if new.id is distinct from old.id then
+      raise exception 'Die Kennung einer Erlegung steht fest'
+        using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
   -- Erst die Kennung sperren, DANN nachsehen (Codex 135, F1 [hoch]): ohne
   -- Sperre saehe ein INSERT, der waehrend eines noch offenen DELETE derselben
   -- Kennung ankommt, den Nachweis nicht — die Eindeutigkeitspruefung wartet
   -- danach auf das DELETE und laesst die Zeile anschliessend durch. Mit der
   -- Sperre wartet er hier; die folgende Abfrage liest einen neuen Schnappschuss
   -- (READ COMMITTED, je Anweisung) und sieht den Nachweis.
+  -- ⚠ NUR unter READ COMMITTED (Schlusslesung 135, B1): eine Sitzung mit
+  -- REPEATABLE READ liest den alten Schnappschuss und kaeme durch. Ueber die
+  -- API unerreichbar (Default `read committed`, PostgREST bietet keine Wahl,
+  -- gemessen 05.10.2026) — nur eine direkte DB-Sitzung koennte es.
   perform pg_advisory_xact_lock(hashtextextended(new.id::text, 135));
   if exists (select 1 from public.kills_geloescht g where g.kill_id = new.id) then
     raise exception 'Diese Erlegung wurde geloescht und wird nicht neu angelegt'
@@ -174,7 +196,7 @@ end;
 $$;
 
 create trigger trg_kills_a_nicht_geloescht
-  before insert on public.kills
+  before insert or update of id on public.kills
   for each row execute function public.kill_nicht_geloescht();
 
 -- ---------------------------------------------------------------------------
