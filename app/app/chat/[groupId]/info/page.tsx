@@ -30,6 +30,7 @@ type ChatGroup = {
   emoji: string
   created_by: string
   avatar_url: string | null
+  kind: string | null
 }
 
 type MediaItem = {
@@ -116,7 +117,7 @@ export default function GroupInfoPage() {
 
     const { data: groupData } = await supabase
       .from('chat_groups')
-      .select('id, name, emoji, created_by, avatar_url')
+      .select('id, name, emoji, created_by, avatar_url, kind')
       .eq('id', groupId)
       .single()
 
@@ -630,8 +631,12 @@ export default function GroupInfoPage() {
             </span>
           </div>
 
-          {/* Mitglied hinzufügen (nur Ersteller) */}
-          {isCreator && !showAddMember && (
+          {/* Mitglied hinzufügen (nur Ersteller, nie im Einzelchat). `isDirect`
+              taugt dafür nicht: es zählt nur Mitglieder. Seit Migration 136
+              lehnt der Server jeden Eintrag in eine `kind = 'direct'`-Gruppe
+              ab, und `handleAddMember` zeigt keinen Fehler an — der Knopf
+              täte dort still nichts. */}
+          {isCreator && group?.kind !== 'direct' && !showAddMember && (
             <button
               onClick={() => { setShowAddMember(true); loadContacts() }}
               className="w-full flex items-center gap-3"
