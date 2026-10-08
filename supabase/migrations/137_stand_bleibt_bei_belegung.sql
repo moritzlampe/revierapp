@@ -68,9 +68,18 @@
 -- BEKANNTE RESTLUECKE (wie 081, Backlog CN-307)
 --
 -- Committet ein Einlocken oder Einteilen, NACHDEM das UPDATE seinen Snapshot
--- genommen hat, gewinnt das UPDATE: zwei Tabellen ohne Sperrbeziehung
--- (`hunt_stand_bezug.map_object_id` hat keinen Fremdschluessel). Der Riegel
--- gehoert an den Einlock- bzw. Einteil-Pfad, nicht hierher.
+-- genommen hat, gewinnt das UPDATE. Die Fremdschluessel
+-- `hunt_stand_bezug.map_object_id` und `hunt_seat_assignments.seat_id`
+-- sperren die `map_objects`-Zeile beim Einlocken nur FOR KEY SHARE, und ein
+-- Verschieben aendert keinen Schluessel (FOR NO KEY UPDATE) — die beiden
+-- warten nicht aufeinander. (Hier stand bis zur Fremdpruefung "kein
+-- Fremdschluessel" — falsch gemessen, Codex P3 Punkt 1.) Ein `FOR UPDATE`
+-- auf die eigene Zeile im Trigger wuerde auf ein laufendes Einlocken warten
+-- und die Luecke schliessen — eigene Entscheidung, Backlog CN-307.
+--
+-- ID-WECHSEL: Die `id` eines eingelockten oder eingeteilten Stands laesst
+-- sich nicht aendern — beide Fremdschluessel sind ON UPDATE NO ACTION
+-- (gemessen 08.10.2026). Der Trigger muss `id` deshalb nicht pruefen.
 --
 -- ⚠ DIE SCHEIN-RANGFOLGE STEHT DAMIT AN DREI STELLEN:
 -- `kann_revier_pflegen`, `schein_deckt_objekt/4` und `darf_objekt_setzen`
