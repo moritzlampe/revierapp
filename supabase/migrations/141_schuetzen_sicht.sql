@@ -67,16 +67,20 @@
 --    verschob die Grenze aus E6/E7.
 --    Liegt `scheduled_until` vor `scheduled_for` (kein DB-Riegel, 095),
 --    bleibt das Fenster zu, auch am selben Tag (Codex 141 B9).
--- e) In `objekt_in_sicht` und `zonen_in_sicht` gelten die Leitung (E2
---    Zeile 1), `alles`, `umkreis` und die "immer sichtbaren" Typen
---    (`notfall_treffpunkt`, `parkplatz`) nur fuer `joined` — wie bisher
---    die ganze Policy (`jagd_deckt_objekt` → `get_my_joined_hunt_ids`).
---    Ein Jagdleiter, der die Jagd verlassen hat, sieht ueber sie also
---    weiter KEINE Reviereinrichtungen. Sonst saehe er das Revier ohne
---    Fenster und ohne Ende (Codex 141 A3 — bewusst nicht uebernommen).
---    Fuer `left` neu ist nur der eigene Stand, wie geplant (E5 (c), Codex
---    P6). Das ist eine Erweiterung gegenueber heute; die erste Fassung
---    dieses Satzes nannte sie faelschlich "keine".
+-- e) In `objekt_in_sicht` und `zonen_in_sicht` gilt die LEITUNG (E2 Zeile
+--    1) ueber jede Teilnahme, auch `left` — in jedem Status, wie im
+--    Bauplan. Moritz, 15.10.2026: *"eigentlich ist der jagdleiter doch
+--    immer die leitung. verlaesst er versehentlich die jagd und will wieder
+--    rein ist das problematisch da er im zweifel die verantwortung der jagd
+--    hat"* (Codex 141 A3; die Fassung v2/v3 hatte die Leitung an `joined`
+--    gebunden und ist damit ueberholt).
+--    `alles`, `umkreis` und die "immer sichtbaren" Typen
+--    (`notfall_treffpunkt`, `parkplatz`) gelten nur fuer `joined`, wie
+--    bisher die ganze Policy. Ein `left`-GAST bekommt nur seinen eigenen
+--    Stand (E5 (c), Codex P6) — das ist gegenueber heute eine Erweiterung.
+--    Sitzordnung, Stand-Bezug, Live und Wege behalten ihre heutigen
+--    Teilnahme-Riegel (`joined`); auch fuer die Leitung aendert sich dort
+--    nichts.
 -- f) Der Trigger ueberschreibt, wenn der Ersteller eine
 --    `user_settings`-Zeile hat (heute 4 Konten). Ohne Zeile bleibt, was der
 --    INSERT traegt — heute schickt kein Client die Spalten, also der Default.
@@ -161,12 +165,11 @@
 --   (E7).
 -- - `kills.hochsitz_id` traegt in jeder sichtbaren Erlegung die ID des
 --   Stands, ohne Koordinate; kein Client liest sie (Schlusslesung 141, S9).
--- - Ein REINER Treiber (ohne Tag `hundefuehrer`) mit Stand bleibt fuer alle
---   sichtbar, auch seine Meldungen fuer andere Treiber. Das ist die Lesart
---   von V8 ("Treiber … immer sichtbar") und V13 (nur Hundefuehrer). Die
---   E3-Tabelle ("Treiber + Hundefuehrer ohne Stand") laesst sich auch so
---   lesen, dass "ohne Stand" fuer beide gilt (Schlusslesung 141 Delta, F4).
---   Entscheidung Moritz; 0 Treiben im Bestand.
+-- - Ein reiner Treiber mit nur ZUGETEILTEM Stand (nicht eingeloggt) bleibt
+--   fuer alle sichtbar (V15: erst das Einloggen macht ihn zum Schuetzen).
+-- - Die Meldung eines Treibers, der beim Melden eingeloggt war, wird nach
+--   Jagdende fuer andere Treiber sichtbar: der Bezug ist dann geraeumt,
+--   und die Pruefung laeuft beim Lesen.
 --
 --
 -- ⚠ DIESE DATEI TRAEGT BEWUSST KEIN `\set ON_ERROR_STOP on` (120-Muster).
@@ -442,10 +445,17 @@ as $$
        and p_ort is not null), false);
 $$;
 
--- V13: ein Hundefuehrer (Tag, gleich welche Rolle) mit zugeteiltem Stand
--- in dieser Jagd. Er gilt dann wie ein Schuetze — fuer Live-Punkt, Weg und
--- in der Treiber-Sicht auf Meldungen.
-create function public.hundefuehrer_am_stand(p_teilnahme uuid)
+-- Wer als Treiber oder Hundefuehrer "am Stand steht" und darum wie ein
+-- Schuetze gilt:
+-- - jeder, der auf einem Stand EINGELOGGT ist (Stand-Bezug). Moritz,
+--   15.10.2026, zum reinen Treiber: *"wie ein treiber immer, wie ein
+--   schuetze sobald er auf einem stand eingeloggt ist"* (V15);
+-- - ein Hundefuehrer (Tag, gleich welche Rolle) auch mit ZUGETEILTEM
+--   Stand (V13).
+-- Der Stand-Bezug ist selbst geschrieben. Hier schraenkt er aber nur die
+-- Sicht AUF den Schreiber ein; er gibt niemandem etwas frei. Fuer den
+-- eigenen Umkreis des Betrachters zaehlt er weiterhin nicht (E3).
+create function public.steht_am_stand(p_teilnahme uuid)
 returns boolean
 language sql
 stable
@@ -453,10 +463,44 @@ security definer
 set search_path = public, extensions, pg_temp
 as $$
   select coalesce((
-    select 'hundefuehrer' = any (t.tags)
-           and exists (select 1 from public.staende_der_teilnahme(t.id))
+    select exists (select 1 from public.hunt_stand_bezug b
+                    where b.participant_id = t.id and b.hunt_id = t.hunt_id)
+        or (coalesce('hundefuehrer' = any (t.tags), false)
+            and exists (select 1 from public.staende_der_teilnahme(t.id)))
       from public.hunt_participants t
      where t.id = p_teilnahme), false);
+$$;
+
+-- Der Ort, an dem eine Teilnahme eingeloggt ist (Stand-Bezug): das Objekt im
+-- Revier DIESER Jagd, sonst die Sitzzeile dieser Jagd. Gilt nur fuer den
+-- BEOBACHTETEN — wer eingeloggt ist, wird im Umkreis dieses Stands sichtbar
+-- und gibt damit nur sich selbst preis. Nie fuer den eigenen Umkreis (E3).
+create function public.bezug_ort(p_teilnahme uuid)
+returns geometry
+language sql
+stable
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+  select coalesce(
+           o.position,
+           case when s.seat_id is null then
+                st_setsrid(st_makepoint(s.position_lng, s.position_lat), 4326)
+           else o2.position end)
+    from public.hunt_stand_bezug b
+    join public.hunts h on h.id = b.hunt_id
+    left join public.map_objects o
+           on o.id = b.map_object_id
+          and o.district_id = h.district_id
+          and o.deleted_at is null
+    left join public.hunt_seat_assignments s
+           on s.id = b.seat_assignment_id
+          and s.hunt_id = b.hunt_id
+    left join public.map_objects o2
+           on o2.id = s.seat_id
+          and o2.district_id = h.district_id
+          and o2.deleted_at is null
+   where b.participant_id = p_teilnahme;
 $$;
 
 -- Live-Punkt und Weg EINER Teilnahme (E3-Tabelle, V8, V13).
@@ -464,12 +508,12 @@ $$;
 -- - Treiber sehen Treiber (V4).
 -- - Bei `eigener` und `umkreis`: immer Treiber und Hundefuehrer, die
 --   KEINEN Stand haben; bei `umkreis` dazu, wessen Stand im Umkreis liegt.
--- Ein HUNDEFUEHRER MIT Stand gilt wie ein Schuetze, auch mit Rolle
--- `treiber` (V13; sonst verriete sein Live-Punkt den Stand, Codex 141 A5).
--- Ein reiner Treiber bleibt immer sichtbar (V8) — auch fuer andere Treiber.
--- Die erste Fixfassung beschraenkte JEDEN Treiber mit Stand; das ging ueber
--- V13 hinaus (Codex 141 Delta 4). Die Regel haengt an der Zuteilung, nicht
--- an der Bewegung.
+-- Wer am Stand steht (`steht_am_stand`: eingeloggt, oder Hundefuehrer mit
+-- zugeteiltem Stand), gilt wie ein Schuetze, auch mit Rolle `treiber` —
+-- sonst verriete sein Live-Punkt den Stand (V13, V15, Codex 141 A5). Ein
+-- Treiber, der nicht am Stand steht, bleibt immer sichtbar (V8), auch
+-- fuer andere Treiber. Beim Umkreis zaehlt fuer den BEOBACHTETEN neben dem
+-- zugeteilten auch der eingeloggte Stand (`bezug_ort`).
 create function public.teilnahme_in_sicht(p_teilnahme uuid)
 returns boolean
 language sql
@@ -481,21 +525,22 @@ as $$
     select case
              when st.stufe in ('leitung', 'alles') then true
              when st.stufe = 'treiber' then
-                  t.role = 'treiber' and not ms.hf_am_stand
+                  t.role = 'treiber' and not ms.am_stand
              else st.stufe in ('eigener', 'umkreis')
-                  and ((not ms.hf_am_stand
+                  and ((not ms.am_stand
                         and (t.role = 'treiber'
                              or coalesce('hundefuehrer' = any (t.tags), false)))
                        or (st.stufe = 'umkreis'
-                           and exists (
-                                 select 1
-                                   from public.staende_der_teilnahme(t.id) s
-                                  where public.ort_in_umkreis(t.hunt_id, s.ort))))
+                           and (exists (
+                                  select 1
+                                    from public.staende_der_teilnahme(t.id) s
+                                   where public.ort_in_umkreis(t.hunt_id, s.ort))
+                                or public.ort_in_umkreis(t.hunt_id,
+                                                         public.bezug_ort(t.id)))))
            end
       from public.hunt_participants t
       cross join lateral (select public.sicht_stufe(t.hunt_id) as stufe) st
-      cross join lateral (select public.hundefuehrer_am_stand(t.id)
-                            as hf_am_stand) ms
+      cross join lateral (select public.steht_am_stand(t.id) as am_stand) ms
      where t.id = p_teilnahme), false);
 $$;
 
@@ -511,7 +556,9 @@ revoke all on function public.ort_in_umkreis(uuid, geometry)
   from public, anon, authenticated, service_role;
 revoke all on function public.teilnahme_in_sicht(uuid)
   from public, anon, authenticated, service_role;
-revoke all on function public.hundefuehrer_am_stand(uuid)
+revoke all on function public.steht_am_stand(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.bezug_ort(uuid)
   from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
@@ -522,11 +569,11 @@ revoke all on function public.hundefuehrer_am_stand(uuid)
 -- sichtbar, wenn IRGENDEINE Teilnahme des Betrachters es zeigt (E5; zwei
 -- gleichzeitig offene Jagden im selben Revier: die weitere gewinnt,
 -- hingenommen). Je Jagd muss sie das Objekt decken, und dann gilt eines:
+--   (b) Leitung — jeder Status, auch `left` (E2 Zeile 1, von V7
+--       ausgenommen; Abweichung e);
 --   (c) es ist ein eigener Stand dieser Jagd — jeder Status, auch `left`;
 --   nur `joined`:
 --   (d) "immer sichtbarer" Typ — jeder Status;
---   (b) Leitung — jeder Status (E2 Zeile 1, von V7 ausgenommen; nur
---       `joined`, Abweichung e);
 --   (a) `alles`, bzw. `umkreis` um einen eigenen Stand — nur offen (E6).
 create function public.objekt_in_sicht(p_object_id uuid)
 returns boolean
@@ -554,10 +601,10 @@ as $$
             or public.schein_deckt_objekt(h.creator_id, o.district_id,
                                           o.id, o.position))
        and (
-             (m.status = 'joined'
+             public.sicht_stufe(h.id) = 'leitung'
+          or (m.status = 'joined'
               and (o.type in ('notfall_treffpunkt', 'parkplatz')
                    or case public.sicht_stufe(h.id)
-                        when 'leitung' then true
                         when 'alles' then
                              public.jagd_ist_offen(h.status, h.scheduled_for,
                                                    h.scheduled_until)
@@ -574,9 +621,10 @@ as $$
   );
 $$;
 
--- Zonen (E5): nur, wenn eine OFFENE Jagd mit Stufe `alles` sie zeigt, oder
--- der Betrachter dort Leitung ist (jeder Status). Der 121-Riegel bleibt:
--- nur Jagden des Revierbesitzers.
+-- Zonen (E5): nur, wenn eine OFFENE Jagd mit Stufe `alles` sie zeigt
+-- (`joined`), oder der Betrachter dort Leitung ist (jeder Status, auch
+-- `left`, Abweichung e). Der 121-Riegel bleibt: nur Jagden des
+-- Revierbesitzers.
 create function public.zonen_in_sicht(p_district_id uuid)
 returns boolean
 language sql
@@ -591,14 +639,17 @@ as $$
       join public.hunt_participants m
         on m.hunt_id = h.id
        and m.user_id = auth.uid()
-       and m.status = 'joined'
+       and m.entfernt_am is null
+       and (m.status = 'joined'
+            or (m.status = 'left' and m.joined_at is not null))
      where h.district_id = p_district_id
        and h.creator_id = d.owner_id
        and case public.sicht_stufe(h.id)
              when 'leitung' then true
              when 'alles' then
-                  public.jagd_ist_offen(h.status, h.scheduled_for,
-                                        h.scheduled_until)
+                  m.status = 'joined'
+                  and public.jagd_ist_offen(h.status, h.scheduled_for,
+                                            h.scheduled_until)
              else false
            end
   );
@@ -666,7 +717,10 @@ $$;
 -- Umkreis entscheidet der Ort des SCHUETZEN (`wild_events.location`, `kills.position`), nie der
 -- Tierort: gaebe der Tierort die Zeile frei, kaeme der Schuetzenort mit
 -- (Schlusslesung P1). Treiber sehen die Meldungen von Treibern (E4), nicht
--- die eines Hundefuehrers am Stand (V13; seine Meldung traegt den Stand).
+-- die eines Treibers, der am Stand steht (V13, V15; seine Meldung traegt
+-- den Stand). ⚠ Geprueft wird beim LESEN: nach Jagdende raeumt
+-- `trg_hunts_stand_bezug_clear` die Bezuege, und die Meldung eines
+-- eingeloggten Treibers wird fuer Treiber wieder sichtbar (benannter Rest).
 -- Jagd-Daten, also kein Fenster aus V7.
 create function public.meldung_in_sicht(p_hunt_id uuid,
                                         p_ort geometry,
@@ -688,7 +742,7 @@ as $$
                  and p.user_id = p_melder
                  and p.role = 'treiber'
                  and p.entfernt_am is null
-                 and not public.hundefuehrer_am_stand(p.id))
+                 and not public.steht_am_stand(p.id))
          when 'umkreis' then public.ort_in_umkreis(p_hunt_id, p_ort)
          else false
        end,
