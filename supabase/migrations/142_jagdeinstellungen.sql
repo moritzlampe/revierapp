@@ -105,6 +105,18 @@
 begin;
 
 -- ---------------------------------------------------------------------------
+-- 0. Sperr-Reihenfolge: ERST `hunts`, dann `user_settings` (Codex 142 M2)
+-- ---------------------------------------------------------------------------
+-- Ohne diese Zeile sperrte die Datei zuerst `user_settings` (ALTER TABLE,
+-- ACCESS EXCLUSIVE) und erst ganz unten `hunts` (CREATE TRIGGER, SHARE ROW
+-- EXCLUSIVE). Ein gleichzeitiges Anlegen einer Jagd haelt `hunts` und liest
+-- im Trigger `hunts_sicht_vorgabe` dann `user_settings` — beide warteten
+-- aufeinander (Deadlock, die Migration bricht ab). Mit der Sperre vorn wartet
+-- die Migration, bis laufende INSERTs fertig sind, und haelt danach beide in
+-- derselben Reihenfolge wie jeder Anleger.
+lock table public.hunts in share row exclusive mode;
+
+-- ---------------------------------------------------------------------------
 -- 1. "Nie" als Frist und als Standard (CN-373, Bauplan E1)
 -- ---------------------------------------------------------------------------
 alter table public.user_settings
@@ -199,10 +211,11 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  v_titel   text;
-  v_treffer integer;
-  v_regeln  jsonb;
-  v_text    text;
+  v_titel    text;
+  v_vorlagen jsonb;
+  v_treffer  integer;
+  v_regeln   jsonb;
+  v_text     text;
 begin
   -- 1. Nur Gruppenjagden, nur ohne mitgeschickte Regeln, nur die zwei Arten.
   if new.kind is distinct from 'group'
@@ -212,25 +225,28 @@ begin
     return new;
   end if;
 
-  -- 2. Der Standard des Erstellers. Keine Zeile oder null -> nichts.
+  -- 2. Standard UND Vorlagen des Erstellers in EINER Abfrage — zwei
+  -- Abfragen saehen unter READ COMMITTED womoeglich zwei Staende (Titel A,
+  -- Vorlagen schon B) und truegen trotz gueltigem Standard nichts ein
+  -- (Codex 142 S9). Keine Zeile oder kein Standard -> nichts.
   select case new.type
            when 'ansitz'     then us.regel_standard_ansitz
            when 'drueckjagd' then us.regel_standard_drueckjagd
-         end
-    into v_titel
+         end,
+         us.regel_vorlagen
+    into v_titel, v_vorlagen
     from public.user_settings us
    where us.user_id = new.creator_id;
   if v_titel is null then
     return new;
   end if;
 
-  -- 3. Genau EIN Treffer (kein `strict`). Nicht-Objekte zaehlen nicht.
+  -- 3. Genau EIN Treffer (kein `strict`). Nicht-Objekte zaehlen nicht. Liest
+  -- nur noch die Variable, nicht die Tabelle.
   select count(*), (array_agg(e.value -> 'regeln'))[1]
     into v_treffer, v_regeln
-    from public.user_settings us
-   cross join lateral jsonb_array_elements(us.regel_vorlagen) e
-   where us.user_id = new.creator_id
-     and jsonb_typeof(e.value) = 'object'
+    from jsonb_array_elements(v_vorlagen) e
+   where jsonb_typeof(e.value) = 'object'
      and jsonb_typeof(e.value -> 'titel') = 'string'
      and lower(btrim(e.value ->> 'titel', E' \t\r\n'))
          = lower(btrim(v_titel, E' \t\r\n'));
