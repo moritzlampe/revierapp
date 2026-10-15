@@ -642,8 +642,15 @@ $$;
 -- - bei `eigener` und `umkreis` jede Zeile, die auf einen EIGENEN Stand
 --   zeigt — Objekt oder Sitzzeile, also ueber IDs (E3, Codex 141 A2);
 -- - bei `umkreis` dazu jede Zeile, deren Ort im Umkreis liegt. Der Ort ist
---   ihr Objekt, sofern es im Revier DIESER Jagd liegt, sonst ihre
---   Sitzzeile (Objekt bzw. Ad-hoc-Ort).
+--   ihr Objekt, sofern es im Revier DIESER Jagd liegt UND in dieser Jagd
+--   als Stand VERGEBEN ist (Sitzordnung oder Treiben-Stand — beides
+--   schreibt nur die Leitung); sonst ihre Sitzzeile dieser Jagd (Objekt
+--   bzw. Ad-hoc-Ort). Grund: der Stand-Bezug zeigt auf ein Objekt, das der
+--   Teilnehmer SELBST waehlt (`stand_bezug_own`). Ohne die Vergabe-Bedingung
+--   loggt sich A auf eine verborgene Objekt-ID ein, und B erfaehrt an der
+--   Sichtbarkeit von A's Bezug-Zeile, ob das Objekt in seinem Umkreis liegt
+--   (Codex 141 Delta 4 [hoch]). Mit ihr verraet die Zeile hoechstens, was die
+--   vergebenen Stand-Zeilen ohnehin zeigen.
 -- Treiber sehen nur eigene Zeilen (V4). Es sind Jagd-Daten, also gilt kein
 -- Fenster aus V7 (E6).
 create function public.stand_zeile_in_sicht(p_hunt_id uuid,
@@ -674,7 +681,17 @@ as $$
                  join public.hunts h on h.id = p_hunt_id
                 where o.id = p_objekt
                   and o.district_id = h.district_id
-                  and o.deleted_at is null),
+                  and o.deleted_at is null
+                  and (exists (select 1
+                                 from public.hunt_seat_assignments s2
+                                where s2.hunt_id = p_hunt_id
+                                  and s2.seat_id = o.id)
+                       or exists (select 1
+                                    from public.hunt_drive_stands ds2
+                                    join public.hunt_drives d2
+                                      on d2.id = ds2.drive_id
+                                   where d2.hunt_id = p_hunt_id
+                                     and ds2.map_object_id = o.id))),
               (select case
                         when s.seat_id is null then
                              st_setsrid(st_makepoint(s.position_lng,
