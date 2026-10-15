@@ -92,6 +92,13 @@
 --    an der ID-Funktion (Schnappschuss, §4; Codex 141 Delta 6). Er ist
 --    Leitung (E2 Zeile 1) — er sieht dadurch nichts, was ihm nicht
 --    zusteht.
+--    ⚠ Die Policies haengen allein an `hunts.creator_id`, AUCH OHNE
+--    Teilnahme. Damit ueberholt h) den Bauplan-Satz in E2 ("Ersteller ohne
+--    Teilnehmerzeile … daran aendert dieser Plan nichts") fuer Sitzordnung
+--    und Treiben-Staende. Ebenso den Kommentar in `seats.ts`
+--    (insertAdhocStandWithId: "creator who is not joined may INSERT but not
+--    read … 42501"). Der INSERT gelingt jetzt. Bestand: 0 Ersteller ohne
+--    joined-Jagdleiter-Zeile (Schlusslesung 141 Delta, F1).
 --
 --
 -- SICHERHEIT
@@ -155,8 +162,11 @@
 -- - `kills.hochsitz_id` traegt in jeder sichtbaren Erlegung die ID des
 --   Stands, ohne Koordinate; kein Client liest sie (Schlusslesung 141, S9).
 -- - Ein REINER Treiber (ohne Tag `hundefuehrer`) mit Stand bleibt fuer alle
---   sichtbar, auch seine Meldungen fuer andere Treiber (V8 woertlich). Der
---   Bauplan regelt diesen Fall nicht eigens; 0 Treiben im Bestand.
+--   sichtbar, auch seine Meldungen fuer andere Treiber. Das ist die Lesart
+--   von V8 ("Treiber … immer sichtbar") und V13 (nur Hundefuehrer). Die
+--   E3-Tabelle ("Treiber + Hundefuehrer ohne Stand") laesst sich auch so
+--   lesen, dass "ohne Stand" fuer beide gilt (Schlusslesung 141 Delta, F4).
+--   Entscheidung Moritz; 0 Treiben im Bestand.
 --
 --
 -- ⚠ DIESE DATEI TRAEGT BEWUSST KEIN `\set ON_ERROR_STOP on` (120-Muster).
