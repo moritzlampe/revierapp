@@ -85,6 +85,13 @@
 --    Client ruft sie (gemessen: nativ, PWA, Portal). Sonst bliebe eine
 --    Auskunft "liegt Objekt X in einem Revier, in dem ich je Gast war" ohne
 --    das Fenster aus V7.
+-- h) Zwei neue Lese-Policies fuer den ERSTELLER
+--    (`seat_assignments_creator_select`, `drive_stands_creator_select`).
+--    Er schreibt diese Zeilen schon heute; lesen konnte er sie nur ueber
+--    die Teilnahme. Ohne eigene Policy scheiterte sein `.insert().select()`
+--    an der ID-Funktion (Schnappschuss, §4; Codex 141 Delta 6). Er ist
+--    Leitung (E2 Zeile 1) — er sieht dadurch nichts, was ihm nicht
+--    zusteht.
 --
 --
 -- SICHERHEIT
@@ -102,9 +109,10 @@
 -- - Fuer eine Jagd, an der der Aufrufer nicht teilnimmt, liefern alle
 --   Ja/Nein-Funktionen `false` (E2 Zeile 0).
 -- - Was sie per RPC verraten: ob ein Objekt, eine Zone oder eine Zeile
---   sichtbar waere — dasselbe, was ein `select` zeigt. Alle nehmen NUR
---   eine ID, nie einen Ort oder ein frei gewaehltes Objekt (130 Falle 3,
---   Abweichung a).
+--   sichtbar waere — hoechstens, was ein `select` zeigt: Jede nimmt NUR
+--   eine ID (nie einen Ort oder ein frei gewaehltes Objekt, 130 Falle 3,
+--   Abweichung a) und traegt die vollen Bedingungen ihrer Policy (Codex 141
+--   Delta 2).
 -- - `schein_deckt_objekt/4` (EXECUTE fuer niemanden, 130 Falle 2) wird nur
 --   aus DEFINER-Funktionen gerufen.
 -- - Gemessen 15.10.2026 (PostGIS 3.3.7): ein Punkt ausserhalb von
@@ -133,6 +141,23 @@
 -- Die PWA setzt Staende weiter in zwei Anfragen um (E9, Maintenance) — dort
 -- bleibt der kurze "ohne Stand"-Zustand.
 --
+-- BENANNTE RESTE:
+-- - Ein `left`-Gast, dessen Stand NUR ein Ad-hoc-Sitz ohne `user_id` ueber
+--   ein Treiben ist, sieht diese Sitzzeile nicht. Fremde Sitzzeilen gibt es
+--   fuer `left` nur ueber `joined`; das bleibt so (Codex 141 Delta 1).
+--   Heute sieht ein `left`-Gast gar keine Sitzzeile — keine Regression.
+--   Bestand: 0 Treiben.
+-- - Verlaesst ein FREMDER Stand-Bezug per UPDATE den Umkreis, liefert
+--   Realtime kein Ereignis (RLS unterdrueckt es); der alte Bezug steht bis
+--   zum Neuladen (Codex 141 B5). Eine veraltete Anzeige, kein Leck — der
+--   Client laedt beim Vordergrund-Wechsel und beim Sicht-Schluessel neu
+--   (E7).
+-- - `kills.hochsitz_id` traegt in jeder sichtbaren Erlegung die ID des
+--   Stands, ohne Koordinate; kein Client liest sie (Schlusslesung 141, S9).
+-- - Ein REINER Treiber (ohne Tag `hundefuehrer`) mit Stand bleibt fuer alle
+--   sichtbar, auch seine Meldungen fuer andere Treiber (V8 woertlich). Der
+--   Bauplan regelt diesen Fall nicht eigens; 0 Treiben im Bestand.
+--
 --
 -- ⚠ DIESE DATEI TRAEGT BEWUSST KEIN `\set ON_ERROR_STOP on` (120-Muster).
 -- Ueber psql (Kartei psql, 132):
@@ -140,6 +165,11 @@
 --        -c "set statement_timeout = '120s'" -f 141_schuetzen_sicht.sql
 -- Registrierung dann von Hand nachtragen.
 -- ⚠ GEZIELT APPLIZIEREN, nie ueber "alle ausstehenden" (115, T9).
+-- ⚠ Am besten, wenn keine Jagd laeuft: `alter table hunts` haelt die Sperre
+-- bis zum COMMIT. Eine gleichzeitige Erlegung (`trg_kills_activity` →
+-- `update hunts`) und das spaetere `alter policy` auf `kills` koennen sich
+-- kreuzen → `40P01`. Eine Seite bricht ab, die Migration bleibt atomar
+-- (Schlusslesung 141, F5).
 -- ⛔ VOR dem nativen Build applizieren, der die neuen Spalten liest
 -- (`fetchHuntSummary`, Jagdeinstellungen). Builds bis 49 lesen sie nicht
 -- und bleiben unveraendert.
@@ -402,15 +432,34 @@ as $$
        and p_ort is not null), false);
 $$;
 
+-- V13: ein Hundefuehrer (Tag, gleich welche Rolle) mit zugeteiltem Stand
+-- in dieser Jagd. Er gilt dann wie ein Schuetze — fuer Live-Punkt, Weg und
+-- in der Treiber-Sicht auf Meldungen.
+create function public.hundefuehrer_am_stand(p_teilnahme uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+  select coalesce((
+    select 'hundefuehrer' = any (t.tags)
+           and exists (select 1 from public.staende_der_teilnahme(t.id))
+      from public.hunt_participants t
+     where t.id = p_teilnahme), false);
+$$;
+
 -- Live-Punkt und Weg EINER Teilnahme (E3-Tabelle, V8, V13).
 -- - Leitung und `alles`: alle.
 -- - Treiber sehen Treiber (V4).
 -- - Bei `eigener` und `umkreis`: immer Treiber und Hundefuehrer, die
 --   KEINEN Stand haben; bei `umkreis` dazu, wessen Stand im Umkreis liegt.
--- "Mit Stand" geht der Rolle vor: ein Treiber oder Hundefuehrer MIT Stand
--- gilt wie ein Schuetze, gleich welche Rolle (V13). Sonst verriete sein
--- Live-Punkt den Stand (Codex 141 A5). Die Regel haengt an der
--- Zuteilung, nicht an der Bewegung.
+-- Ein HUNDEFUEHRER MIT Stand gilt wie ein Schuetze, auch mit Rolle
+-- `treiber` (V13; sonst verriete sein Live-Punkt den Stand, Codex 141 A5).
+-- Ein reiner Treiber bleibt immer sichtbar (V8) — auch fuer andere Treiber.
+-- Die erste Fixfassung beschraenkte JEDEN Treiber mit Stand; das ging ueber
+-- V13 hinaus (Codex 141 Delta 4). Die Regel haengt an der Zuteilung, nicht
+-- an der Bewegung.
 create function public.teilnahme_in_sicht(p_teilnahme uuid)
 returns boolean
 language sql
@@ -422,10 +471,11 @@ as $$
     select case
              when st.stufe in ('leitung', 'alles') then true
              when st.stufe = 'treiber' then
-                  t.role = 'treiber' and not ms.mit_stand
+                  t.role = 'treiber' and not ms.hf_am_stand
              else st.stufe in ('eigener', 'umkreis')
-                  and (((t.role = 'treiber' or 'hundefuehrer' = any (t.tags))
-                        and not ms.mit_stand)
+                  and ((not ms.hf_am_stand
+                        and (t.role = 'treiber'
+                             or coalesce('hundefuehrer' = any (t.tags), false)))
                        or (st.stufe = 'umkreis'
                            and exists (
                                  select 1
@@ -434,9 +484,8 @@ as $$
            end
       from public.hunt_participants t
       cross join lateral (select public.sicht_stufe(t.hunt_id) as stufe) st
-      cross join lateral (select exists (
-                            select 1 from public.staende_der_teilnahme(t.id))
-                            as mit_stand) ms
+      cross join lateral (select public.hundefuehrer_am_stand(t.id)
+                            as hf_am_stand) ms
      where t.id = p_teilnahme), false);
 $$;
 
@@ -451,6 +500,8 @@ revoke all on function public.staende_der_teilnahme(uuid)
 revoke all on function public.ort_in_umkreis(uuid, geometry)
   from public, anon, authenticated, service_role;
 revoke all on function public.teilnahme_in_sicht(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.hundefuehrer_am_stand(uuid)
   from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
@@ -604,7 +655,8 @@ $$;
 -- INTERN, wie oben. Anblicke und Erlegungen (E3-Tabelle, V9). Beim
 -- Umkreis entscheidet der Ort des SCHUETZEN (`wild_events.location`, `kills.position`), nie der
 -- Tierort: gaebe der Tierort die Zeile frei, kaeme der Schuetzenort mit
--- (Schlusslesung P1). Treiber sehen die Meldungen von Treibern (E4).
+-- (Schlusslesung P1). Treiber sehen die Meldungen von Treibern (E4), nicht
+-- die eines Hundefuehrers am Stand (V13; seine Meldung traegt den Stand).
 -- Jagd-Daten, also kein Fenster aus V7.
 create function public.meldung_in_sicht(p_hunt_id uuid,
                                         p_ort geometry,
@@ -625,7 +677,8 @@ as $$
                where p.hunt_id = p_hunt_id
                  and p.user_id = p_melder
                  and p.role = 'treiber'
-                 and p.entfernt_am is null)
+                 and p.entfernt_am is null
+                 and not public.hundefuehrer_am_stand(p.id))
          when 'umkreis' then public.ort_in_umkreis(p_hunt_id, p_ort)
          else false
        end,
@@ -634,10 +687,17 @@ $$;
 
 -- Die Zeilen-Funktionen fuer die Policies: NUR die ID, alles andere aus
 -- der gespeicherten Zeile (Abweichung a). Unbekannte ID → `false`.
+-- Jede traegt die VOLLEN Bedingungen ihrer Policy (Teilnahme, `joined`,
+-- `type`, `kill_visibility`), nicht nur die Sichtregel: sonst verriete die
+-- RPC mehr als ein `select` (Codex 141 Delta 2). Die Policies behalten
+-- ihre Bedingungen trotzdem — als billigen Vorfilter vor dem Aufruf.
 -- ⚠ STABLE sieht den Schnappschuss vom Anweisungsbeginn: bei INSERT …
--- RETURNING findet die Funktion die NEUE Zeile nicht. Das trifft nur
--- Schreiber, die ihre Zeile ohnehin ueber eine eigene Policy sehen
--- (Leitung, `kills_reporter`, `wild_events_owner_all`, `stand_bezug_own`).
+-- RETURNING findet die Funktion die NEUE Zeile nicht. Jeder Schreiber
+-- braucht deshalb eine EIGENE Lese-Policy: joined Jagdleiter (`*_leader_all`),
+-- Ersteller (`*_creator_select`, unten neu), `kills_reporter`,
+-- `wild_events_owner_all`, `stand_bezug_own`. Ohne die zweite Gruppe
+-- scheiterte ein Ersteller mit Rolle `schuetze` an `.insert().select()`
+-- eines Ad-hoc-Stands (`seats.ts:78`, Codex 141 Delta 6).
 create function public.sitz_in_sicht(p_sitz uuid)
 returns boolean
 language sql
@@ -646,8 +706,11 @@ security definer
 set search_path = public, extensions, pg_temp
 as $$
   select coalesce((
-    select public.stand_zeile_in_sicht(s.hunt_id, s.seat_id, s.id, null,
-                                       s.user_id)
+    select (s.user_id = auth.uid()
+            and s.hunt_id in (select public.get_my_teilnahme_hunt_ids()))
+        or (s.hunt_id in (select public.get_my_joined_hunt_ids())
+            and public.stand_zeile_in_sicht(s.hunt_id, s.seat_id, s.id, null,
+                                            s.user_id))
       from public.hunt_seat_assignments s
      where s.id = p_sitz), false);
 $$;
@@ -660,9 +723,10 @@ security definer
 set search_path = public, extensions, pg_temp
 as $$
   select coalesce((
-    select public.stand_zeile_in_sicht(b.hunt_id, b.map_object_id,
-                                       b.seat_assignment_id,
-                                       b.participant_id, null)
+    select b.hunt_id in (select public.get_my_joined_hunt_ids())
+           and public.stand_zeile_in_sicht(b.hunt_id, b.map_object_id,
+                                           b.seat_assignment_id,
+                                           b.participant_id, null)
       from public.hunt_stand_bezug b
      where b.participant_id = p_teilnehmer), false);
 $$;
@@ -675,9 +739,10 @@ security definer
 set search_path = public, extensions, pg_temp
 as $$
   select coalesce((
-    select public.stand_zeile_in_sicht(d.hunt_id, ds.map_object_id,
-                                       ds.seat_assignment_id,
-                                       ds.participant_id, null)
+    select d.hunt_id in (select public.get_my_teilnahme_hunt_ids())
+           and public.stand_zeile_in_sicht(d.hunt_id, ds.map_object_id,
+                                           ds.seat_assignment_id,
+                                           ds.participant_id, null)
       from public.hunt_drive_stands ds
       join public.hunt_drives d on d.id = ds.drive_id
      where ds.id = p_stand), false);
@@ -691,7 +756,9 @@ security definer
 set search_path = public, extensions, pg_temp
 as $$
   select coalesce((
-    select public.meldung_in_sicht(w.hunt_id, w.location::geometry, w.user_id)
+    select w.type = 'sighting'::wild_event_type
+           and w.hunt_id in (select public.get_my_teilnahme_hunt_ids())
+           and public.meldung_in_sicht(w.hunt_id, w.location::geometry, w.user_id)
       from public.wild_events w
      where w.id = p_id), false);
 $$;
@@ -704,8 +771,13 @@ security definer
 set search_path = public, extensions, pg_temp
 as $$
   select coalesce((
-    select public.meldung_in_sicht(k.hunt_id, k.position, k.reporter_id)
+    select ((k.hunt_id in (select public.get_my_teilnahme_hunt_ids())
+             and h.kill_visibility = 'all'::kill_visibility)
+            or (k.hunt_id in (select public.get_my_joined_hunt_ids_as_leader_or_groupleader())
+                and h.kill_visibility = 'leader_and_groupleader'::kill_visibility))
+           and public.meldung_in_sicht(k.hunt_id, k.position, k.reporter_id)
       from public.kills k
+      join public.hunts h on h.id = k.hunt_id
      where k.id = p_id), false);
 $$;
 
@@ -742,6 +814,23 @@ revoke all on function public.jagd_deckt_objekt(uuid)
 -- ---------------------------------------------------------------------------
 -- 5. Policies
 -- ---------------------------------------------------------------------------
+
+-- Der Ersteller schreibt Sitzordnung und Treiben-Staende seiner Jagd
+-- (`seat_assignments_creator_*`, `drive_stands_creator_*`), konnte sie aber
+-- nur ueber eine Teilnehmer- oder Leiter-Policy lesen. Seit die
+-- Teilnehmer-Policy eine Zeilenfunktion ruft, die die eigene neue Zeile
+-- nicht sieht (s. §4), braucht er eine eigene (Abweichung h).
+create policy seat_assignments_creator_select on public.hunt_seat_assignments
+  for select to authenticated
+  using (hunt_id in (select hunts.id from public.hunts
+                      where hunts.creator_id = auth.uid()));
+
+create policy drive_stands_creator_select on public.hunt_drive_stands
+  for select to authenticated
+  using (drive_id in (select d.id
+                        from public.hunt_drives d
+                        join public.hunts h on h.id = d.hunt_id
+                       where h.creator_id = auth.uid()));
 
 alter policy map_objects_hunt_member on public.map_objects
   to authenticated
