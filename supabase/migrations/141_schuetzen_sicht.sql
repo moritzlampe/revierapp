@@ -308,7 +308,7 @@ $$;
 -- (Codex P5). Ad-hoc-Sitze (Ort ohne Objekt) schreibt nur die Leitung der
 -- Zieljagd.
 create function public.staende_der_teilnahme(p_teilnahme uuid)
-returns table (objekt_id uuid, sitz_id uuid, ort geometry)
+returns table (objekt_id uuid, ort geometry)
 language sql
 stable
 security definer
@@ -343,15 +343,12 @@ as $$
         on s.id = ts.seat_assignment_id and s.hunt_id = t.hunt_id
   ),
   objekte as (
-    select s.seat_id as objekt_id, s.id as sitz_id
-      from sitze s
-     where s.seat_id is not null
+    select s.seat_id as objekt_id from sitze s where s.seat_id is not null
     union
-    select ts.map_object_id, null::uuid
-      from treiben_staende ts
+    select ts.map_object_id from treiben_staende ts
      where ts.map_object_id is not null
   )
-  select o.id, ob.sitz_id, o.position
+  select o.id, o.position
     from objekte ob
     join public.map_objects o on o.id = ob.objekt_id
     join t on o.district_id = t.district_id
@@ -360,7 +357,7 @@ as $$
           or public.schein_deckt_objekt(t.creator_id, o.district_id,
                                         o.id, o.position))
   union all
-  select null::uuid, s.id,
+  select null::uuid,
          st_setsrid(st_makepoint(s.position_lng, s.position_lat), 4326)
     from sitze s
    where s.seat_id is null
@@ -400,24 +397,22 @@ security definer
 set search_path = public, extensions, pg_temp
 as $$
   select coalesce((
-    select case public.sicht_stufe(t.hunt_id)
-             when 'leitung' then true
-             when 'alles'   then true
-             when 'treiber' then t.role = 'treiber'
-             when 'eigener' then
-                  t.role = 'treiber'
-               or ('hundefuehrer' = any (t.tags)
-                   and not exists (select 1 from public.staende_der_teilnahme(t.id)))
-             when 'umkreis' then
-                  t.role = 'treiber'
-               or ('hundefuehrer' = any (t.tags)
-                   and not exists (select 1 from public.staende_der_teilnahme(t.id)))
-               or exists (select 1
-                            from public.staende_der_teilnahme(t.id) s
-                           where public.ort_in_umkreis(t.hunt_id, s.ort))
-             else false
+    select case
+             when st.stufe in ('leitung', 'alles') then true
+             when st.stufe = 'treiber' then t.role = 'treiber'
+             else st.stufe in ('eigener', 'umkreis')
+                  and (t.role = 'treiber'
+                       or ('hundefuehrer' = any (t.tags)
+                           and not exists (
+                                 select 1 from public.staende_der_teilnahme(t.id)))
+                       or (st.stufe = 'umkreis'
+                           and exists (
+                                 select 1
+                                   from public.staende_der_teilnahme(t.id) s
+                                  where public.ort_in_umkreis(t.hunt_id, s.ort))))
            end
       from public.hunt_participants t
+      cross join lateral (select public.sicht_stufe(t.hunt_id) as stufe) st
      where t.id = p_teilnahme), false);
 $$;
 
