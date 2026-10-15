@@ -89,7 +89,9 @@
 -- Jagdjahres". Beides in der harmlosen Richtung (angezeigt wird mehr, als der
 -- Server gewaehrt). Jeder Build-50-Schreiber, der zum ersten Mal eine Zeile
 -- anlegt (Sterne, Grundkarte, Ruhefenster, Sicht, Vorlage), legt sie mit
--- 'nie' an. Hingenommen bis zum Update.
+-- 'nie' an. Auf der Jagdkarte sagt Build 50 ueber den Weg eines "Nie"-Kontos
+-- in einer LAUFENDEN Jagd "Noch kein Weg aufgezeichnet." (Schlusslesung F1) —
+-- falsch, aber ohne Leck. Hingenommen bis zum Update.
 -- Die Datenkorrektur loest `trg_user_settings_updated_at` aus: ein offener
 -- Vorlagen-Editor prallt beim Compare-and-Swap einmal ab und liest neu
 -- (`aendereVorlagen`, VERSUCHE = 3) — gewollt.
