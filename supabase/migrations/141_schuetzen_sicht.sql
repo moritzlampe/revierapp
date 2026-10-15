@@ -167,9 +167,20 @@
 --   Stands, ohne Koordinate; kein Client liest sie (Schlusslesung 141, S9).
 -- - Ein reiner Treiber mit nur ZUGETEILTEM Stand (nicht eingeloggt) bleibt
 --   fuer alle sichtbar (V15: erst das Einloggen macht ihn zum Schuetzen).
--- - Die Meldung eines Treibers, der beim Melden eingeloggt war, wird nach
---   Jagdende fuer andere Treiber sichtbar: der Bezug ist dann geraeumt,
---   und die Pruefung laeuft beim Lesen.
+-- - "Am Stand" wird beim LESEN geprueft, nicht beim Melden. Endet der
+--   Bezug eines reinen Treibers, werden seine frueheren Meldungen und Wege
+--   fuer andere Treiber wieder sichtbar — samt dem Ort des Stands, an dem
+--   er stand (Codex 141 Delta 4). Der Bezug endet beim Ausloggen, bei JEDEM
+--   Treiben-Ende (`trg_clear_stand_bezug_on_drive_end` raeumt alle Bezuege
+--   der Jagd) und bei Jagdende (`trg_hunts_stand_bezug_clear`)
+--   (Schlusslesung 141 Delta 2, F1). Ein Hundefuehrer mit fortbestehender
+--   Zuteilung bleibt eingeschraenkt.
+-- - Loggt sich ein Treiber ein, faellt sein Live-Punkt fuer Schuetzen aus
+--   der Policy, ohne DELETE-Ereignis; der letzte Punkt steht bis zum
+--   Neuladen (E7; dieselbe Klasse wie Codex B5).
+-- - Ein Jagdleiter, der die Jagd verlassen hat, sieht nach V14 Objekte und
+--   Zonen, aber nicht die Reviergrenze: `districts_joined_participant_select`
+--   kennt nur `joined` (vorbestehend, Bauplan E6; CN-366).
 --
 --
 -- ⚠ DIESE DATEI TRAEGT BEWUSST KEIN `\set ON_ERROR_STOP on` (120-Muster).
@@ -452,9 +463,14 @@ $$;
 --   schuetze sobald er auf einem stand eingeloggt ist"* (V15);
 -- - ein Hundefuehrer (Tag, gleich welche Rolle) auch mit ZUGETEILTEM
 --   Stand (V13).
--- Der Stand-Bezug ist selbst geschrieben. Hier schraenkt er aber nur die
--- Sicht AUF den Schreiber ein; er gibt niemandem etwas frei. Fuer den
--- eigenen Umkreis des Betrachters zaehlt er weiterhin nicht (E3).
+-- Der Stand-Bezug ist selbst geschrieben. Hier zaehlt er nur als Ja/Nein
+-- ("eingeloggt"), nie mit seinem Ort: das schraenkt nur die Sicht AUF den
+-- Schreiber ein. Mit Ort waere er ein Seitenkanal gewesen — ein Treiber
+-- loggt sich auf eine verborgene Objekt-ID ein, und ein Schuetze erfuehre
+-- an dessen Sichtbarkeit, ob das Objekt in seinem Umkreis liegt (Codex 141
+-- Delta 3 [hoch]; die Fassung v4 trug dafuer eine eigene Ortsfunktion).
+-- Wer eingeloggt ist, gilt also wie ein Schuetze: im Umkreis sichtbar nur
+-- ueber einen ZUGETEILTEN Stand (E3).
 create function public.steht_am_stand(p_teilnahme uuid)
 returns boolean
 language sql
@@ -471,38 +487,6 @@ as $$
      where t.id = p_teilnahme), false);
 $$;
 
--- Der Ort, an dem eine Teilnahme eingeloggt ist (Stand-Bezug): das Objekt im
--- Revier DIESER Jagd, sonst die Sitzzeile dieser Jagd. Gilt nur fuer den
--- BEOBACHTETEN — wer eingeloggt ist, wird im Umkreis dieses Stands sichtbar
--- und gibt damit nur sich selbst preis. Nie fuer den eigenen Umkreis (E3).
-create function public.bezug_ort(p_teilnahme uuid)
-returns geometry
-language sql
-stable
-security definer
-set search_path = public, extensions, pg_temp
-as $$
-  select coalesce(
-           o.position,
-           case when s.seat_id is null then
-                st_setsrid(st_makepoint(s.position_lng, s.position_lat), 4326)
-           else o2.position end)
-    from public.hunt_stand_bezug b
-    join public.hunts h on h.id = b.hunt_id
-    left join public.map_objects o
-           on o.id = b.map_object_id
-          and o.district_id = h.district_id
-          and o.deleted_at is null
-    left join public.hunt_seat_assignments s
-           on s.id = b.seat_assignment_id
-          and s.hunt_id = b.hunt_id
-    left join public.map_objects o2
-           on o2.id = s.seat_id
-          and o2.district_id = h.district_id
-          and o2.deleted_at is null
-   where b.participant_id = p_teilnahme;
-$$;
-
 -- Live-Punkt und Weg EINER Teilnahme (E3-Tabelle, V8, V13).
 -- - Leitung und `alles`: alle.
 -- - Treiber sehen Treiber (V4).
@@ -512,8 +496,8 @@ $$;
 -- zugeteiltem Stand), gilt wie ein Schuetze, auch mit Rolle `treiber` —
 -- sonst verriete sein Live-Punkt den Stand (V13, V15, Codex 141 A5). Ein
 -- Treiber, der nicht am Stand steht, bleibt immer sichtbar (V8), auch
--- fuer andere Treiber. Beim Umkreis zaehlt fuer den BEOBACHTETEN neben dem
--- zugeteilten auch der eingeloggte Stand (`bezug_ort`).
+-- fuer andere Treiber. Beim Umkreis zaehlt nur der ZUGETEILTE Stand, wie
+-- fuer jeden Schuetzen (E3).
 create function public.teilnahme_in_sicht(p_teilnahme uuid)
 returns boolean
 language sql
@@ -531,12 +515,10 @@ as $$
                         and (t.role = 'treiber'
                              or coalesce('hundefuehrer' = any (t.tags), false)))
                        or (st.stufe = 'umkreis'
-                           and (exists (
-                                  select 1
-                                    from public.staende_der_teilnahme(t.id) s
-                                   where public.ort_in_umkreis(t.hunt_id, s.ort))
-                                or public.ort_in_umkreis(t.hunt_id,
-                                                         public.bezug_ort(t.id)))))
+                           and exists (
+                                 select 1
+                                   from public.staende_der_teilnahme(t.id) s
+                                  where public.ort_in_umkreis(t.hunt_id, s.ort))))
            end
       from public.hunt_participants t
       cross join lateral (select public.sicht_stufe(t.hunt_id) as stufe) st
@@ -557,8 +539,6 @@ revoke all on function public.ort_in_umkreis(uuid, geometry)
 revoke all on function public.teilnahme_in_sicht(uuid)
   from public, anon, authenticated, service_role;
 revoke all on function public.steht_am_stand(uuid)
-  from public, anon, authenticated, service_role;
-revoke all on function public.bezug_ort(uuid)
   from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
@@ -718,9 +698,8 @@ $$;
 -- Tierort: gaebe der Tierort die Zeile frei, kaeme der Schuetzenort mit
 -- (Schlusslesung P1). Treiber sehen die Meldungen von Treibern (E4), nicht
 -- die eines Treibers, der am Stand steht (V13, V15; seine Meldung traegt
--- den Stand). ⚠ Geprueft wird beim LESEN: nach Jagdende raeumt
--- `trg_hunts_stand_bezug_clear` die Bezuege, und die Meldung eines
--- eingeloggten Treibers wird fuer Treiber wieder sichtbar (benannter Rest).
+-- den Stand). ⚠ Geprueft wird beim LESEN, nicht beim Melden (benannter
+-- Rest, Codex 141 Delta 4).
 -- Jagd-Daten, also kein Fenster aus V7.
 create function public.meldung_in_sicht(p_hunt_id uuid,
                                         p_ort geometry,
