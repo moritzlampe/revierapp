@@ -120,19 +120,14 @@ alter table public.user_settings
 -- ---------------------------------------------------------------------------
 -- Ob die Konten 'folgejagdjahr' gewaehlt hatten, war nicht unterscheidbar
 -- (es war der Spalten-Default). Moritz: "ja mit auf nie setzen als Basis".
+-- Gezaehlt wird im Probelauf vorher/nachher; hier nur die Meldung.
 do $$
 declare
-  v_vorher integer;
   v_geaendert integer;
 begin
-  select count(*) into v_vorher from public.user_settings where weg_frist = 'folgejagdjahr';
   update public.user_settings set weg_frist = 'nie' where weg_frist = 'folgejagdjahr';
   get diagnostics v_geaendert = row_count;
-  raise notice '142 Datenkorrektur weg_frist folgejagdjahr -> nie: vorher %, geaendert %',
-    v_vorher, v_geaendert;
-  if v_geaendert <> v_vorher then
-    raise exception '142: % Zeilen erwartet, % geaendert', v_vorher, v_geaendert;
-  end if;
+  raise notice '142 Datenkorrektur weg_frist folgejagdjahr -> nie: % Zeilen', v_geaendert;
 end;
 $$;
 
