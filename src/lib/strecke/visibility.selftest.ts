@@ -26,7 +26,7 @@
  */
 import assert from 'node:assert/strict'
 
-import { ANONYMOUS_NAME, maskKillForViewer } from './visibility.ts'
+import { ANONYMOUS_NAME, anonymBeiJagd, maskKillForViewer } from './visibility.ts'
 import type { Kill, KillerProfile, ViewerContext } from './visibility.ts'
 
 const HEINRICH = 'heinrich-id'
@@ -71,6 +71,17 @@ const killer = (over: Partial<KillerProfile> = {}): KillerProfile =>
   const offen = maskKillForViewer(kill(), killer(), viewer())
   assert.equal(offen?.is_anonymized, false)
   assert.equal(offen?.display_name, 'Heinrich')
+}
+
+// CN-391: nach dem Jagdende gilt der festgehaltene Wert, in beide Richtungen;
+// offen (NULL) gilt der Schalter; Profil unlesbar -> undefined (Rueckfall beim
+// Aufrufer).
+{
+  assert.equal(anonymBeiJagd({ anonym_fest: true, profiles: { anonymize_kills: false } }), true)
+  assert.equal(anonymBeiJagd({ anonym_fest: false, profiles: { anonymize_kills: true } }), false)
+  assert.equal(anonymBeiJagd({ anonym_fest: null, profiles: { anonymize_kills: true } }), true)
+  assert.equal(anonymBeiJagd({ anonym_fest: null, profiles: null }), undefined)
+  assert.equal(anonymBeiJagd(undefined), undefined)
 }
 
 console.log('visibility: Anonymisierungs-Riegel haelt')

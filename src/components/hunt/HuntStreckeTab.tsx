@@ -14,6 +14,7 @@ import KillDetailSheet from '@/components/kill/KillDetailSheet'
 import type { WildArt, WildGroup } from '@/lib/species-config'
 import { WILD_ART_TO_GROUP } from '@/lib/species-config'
 import {
+  anonymBeiJagd,
   maskKillForViewer,
   type DisplayKill,
   type KillerProfile,
@@ -31,6 +32,8 @@ interface Participant {
   guest_name: string | null
   role: string
   tags: string[]
+  /** Migration 143 (CN-391): beim Jagdende festgehalten, NULL = offen. */
+  anonym_fest?: boolean | null
   profiles: { display_name: string; anonymize_kills: boolean } | null
 }
 
@@ -152,7 +155,8 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
     return {
       user_id: userId,
       role,
-      anonymize_kills: myParticipant?.profiles?.anonymize_kills ?? false,
+      // CN-391: nach dem Jagdende der festgehaltene Wert (auch die Gegenseitigkeit).
+      anonymize_kills: anonymBeiJagd(myParticipant) ?? false,
       tags,
       shf_qualified: false, // V1: noch nicht verfügbar
     }
@@ -166,7 +170,8 @@ export default function HuntStreckeTab({ huntId, participants, userId }: HuntStr
         map.set(p.user_id, {
           user_id: p.user_id,
           display_name: p.profiles.display_name,
-          anonymize_kills: p.profiles.anonymize_kills,
+          // CN-391: nach dem Jagdende der festgehaltene Wert.
+          anonymize_kills: anonymBeiJagd(p) ?? true,
         })
       }
     }

@@ -87,7 +87,7 @@ function FreigabeToggle({ noun, hint, open, busy, onToggle, Icon }: {
 }
 
 type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; scheduled_for: string | null; chat_open: boolean; map_open: boolean; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
-type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; profiles: { display_name: string; anonymize_kills: boolean } | null }
+type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; anonym_fest?: boolean | null; profiles: { display_name: string; anonymize_kills: boolean } | null }
 type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null; adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null }
 
 export default function HuntPage() {

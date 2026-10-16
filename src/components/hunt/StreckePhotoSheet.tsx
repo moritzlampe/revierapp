@@ -12,6 +12,7 @@ import type { Kill } from '@/lib/types/kill'
 import type { Geschlecht } from '@/lib/species-config'
 import { getWildArtLabelSingle } from '@/lib/wildArt'
 import {
+  anonymBeiJagd,
   maskKillForViewer,
   type DisplayKill,
   type KillerProfile,
@@ -25,6 +26,8 @@ interface Participant {
   guest_name: string | null
   role: string
   tags: string[]
+  /** Migration 143 (CN-391): beim Jagdende festgehalten, NULL = offen. */
+  anonym_fest?: boolean | null
   profiles: { display_name: string; anonymize_kills: boolean } | null
 }
 
@@ -101,7 +104,8 @@ export default function StreckePhotoSheet({
         map.set(p.user_id, {
           user_id: p.user_id,
           display_name: p.profiles.display_name,
-          anonymize_kills: p.profiles.anonymize_kills,
+          // CN-391: nach dem Jagdende der festgehaltene Wert.
+          anonymize_kills: anonymBeiJagd(p) ?? true,
         })
       }
     }

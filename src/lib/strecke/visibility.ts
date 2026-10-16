@@ -29,6 +29,21 @@ export interface DisplayKill extends Kill {
 // Anonymer Anzeigename — exakt "Jäger", keine Nummerierung.
 export const ANONYMOUS_NAME = 'Jäger' as const
 
+// Anonym-Wert einer Person IN EINER JAGD (CN-391, Migration 143): beim
+// Jagdende festgehalten (`hunt_participants.anonym_fest`), sonst der Schalter.
+// Beide Werte aus DERSELBEN Teilnahmezeile — aus zwei Anfragen gelesen,
+// koennte die eine noch „offen" sehen und die andere schon den Schalter von
+// nach dem Ende. `undefined` = Profil unlesbar; den Rueckfall waehlt der
+// Aufrufer. Dieselbe Regel wie nativ (quickhunt-native, visibility.ts).
+export function anonymBeiJagd(
+  zeile:
+    | { anonym_fest?: boolean | null; profiles?: { anonymize_kills?: boolean | null } | null }
+    | null
+    | undefined,
+): boolean | undefined {
+  return zeile?.anonym_fest ?? zeile?.profiles?.anonymize_kills ?? undefined
+}
+
 // Fallback-Kaskade für den Reporter-Namen:
 //   1. display_name, sofern gesetzt und keine E-Mail-Adresse
 //   2. Teil vor "@", wenn display_name eine E-Mail ist (z.B. "moritz.lampe")

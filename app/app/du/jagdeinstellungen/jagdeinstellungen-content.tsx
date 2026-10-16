@@ -83,7 +83,8 @@ export default function JagdeinstellungenContent({ userId, initialAnonymizeKills
             sublabel={
               'Andere Schützen sehen deinen Namen als „Jäger". ' +
               'Wenn aktiv, siehst du ebenfalls alle anderen anonym. ' +
-              'Jagdleiter sehen immer alle Namen.'
+              'Jagdleiter sehen immer alle Namen. ' +
+              'Gilt ab jetzt; beendete Jagden ändern sich nicht.'
             }
             value={anonymizeKills}
             onChange={handleToggleAnonymize}
