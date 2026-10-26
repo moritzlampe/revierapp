@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Punkt } from '../../revierkarte-map'
 import { schreibe } from '../../schreiben'
 import TreibenBereich from './treiben-bereich'
+import RegelnBereich, { type Katalogzeile, type RegelnRoh } from './regeln-bereich'
 import type { Treiben } from './treiben'
 import {
   alsEingabewert,
@@ -84,6 +85,8 @@ export default function Detail({
   treiben,
   punkte,
   grenze,
+  regeln,
+  katalog,
 }: {
   jagd: Jagd
   revierName: string | null
@@ -101,6 +104,9 @@ export default function Detail({
   /** Die Stände des Reviers als Kartenpunkte. Leer ohne Revier. */
   punkte: Punkt[]
   grenze: [number, number][][] | null
+  /** Freigabe, Regeln, Sicht (P1a) — `null` bei einer Einzeljagd. */
+  regeln: RegelnRoh | null
+  katalog: Katalogzeile[]
 }) {
   const router = useRouter()
   const [bearbeiten, setBearbeiten] = useState(false)
@@ -458,6 +464,7 @@ export default function Detail({
       {bearbeiten ? (
         <JagdFormular
           jagd={jagd}
+          gesellschaftsjagd={regeln !== null}
           aufSichern={jagdSpeichern}
           aufAbbrechen={() => setBearbeiten(false)}
         />
@@ -510,6 +517,10 @@ export default function Detail({
         <p className="zentrale-inspektor-fehler" role="alert">
           {fehler}
         </p>
+      ) : null}
+
+      {regeln ? (
+        <RegelnBereich jagdId={jagd.id} roh={regeln} katalog={katalog} schreibbar={schreibbar} />
       ) : null}
 
       <h2 className="jagden-abschnitt">Teilnehmer</h2>
@@ -610,10 +621,13 @@ export default function Detail({
  */
 function JagdFormular({
   jagd,
+  gesellschaftsjagd,
   aufSichern,
   aufAbbrechen,
 }: {
   jagd: Jagd
+  /** Trägt die Jagd „Freigabe & Regeln"? Nur dann der Artwechsel-Hinweis. */
+  gesellschaftsjagd: boolean
   aufSichern: (entwurf: JagdEntwurf) => Promise<void>
   aufAbbrechen: () => void
 }) {
@@ -788,6 +802,21 @@ function JagdFormular({
           ? `Mehrtägig: ${terminText(alsZeitstempel(entwurf.termin))} – ${terminText(alsZeitstempel(entwurf.bis), false)}`
           : ''}
       </p>
+      {/* **Hinweis statt stiller Ersetzung** (Fahrplan E5, Moritz 26.10.2026:
+          „ja, mit hinweis"). Die Standard-Jagdregeln trägt der Server nur beim
+          ANLEGEN ein (`trg_hunts_regeln_vorgabe`, 142) — ein späterer
+          Wechsel der Jagdart lässt sie stehen, wie sie sind. Das soll man
+          wissen, bevor man speichert, statt es nachher zu entdecken. */}
+      {/* Nur bei einer Gesellschaftsjagd mit gespeicherter Art (Schlusslesung
+          26.10.2026, B1): `hunts.type` ist nullable, und eine Einzeljagd hat
+          weder den Abschnitt noch einen Standard (142 greift nur bei
+          `kind='group'`). Sonst stünde der Hinweis beim bloßen Öffnen da. */}
+      {gesellschaftsjagd && jagd.type !== null && entwurf.type !== jagd.type ? (
+        <p className="zentrale-hinweis" role="status">
+          Die Jagdregeln ändern sich mit der Jagdart nicht — sie bleiben, wie sie sind. Prüfe sie
+          unter „Freigabe &amp; Regeln“, wenn für {jagdart(entwurf.type)} andere gelten.
+        </p>
+      ) : null}
 
       {fehler ? (
         <p className="zentrale-inspektor-fehler" role="alert">

@@ -7,6 +7,7 @@ import { STAND_TYPEN } from '../../objekte'
 import { geladen, vollstaendig } from '../../laden'
 import type { Punkt } from '../../revierkarte-map'
 import Detail from './detail'
+import type { Katalogzeile, RegelnRoh } from './regeln-bereich'
 import { ausZeilen, type TreibenZeile } from './treiben'
 import {
   ersterWert,
@@ -113,8 +114,11 @@ export default async function JagdDetailPage({
     await Promise.all([
       supabase
         .from('hunts')
+        // Ab `kind`: Freigabe, Regeln und Sicht (Fahrplan P1a, Migrationen
+        // 138/140/141). Gelesen wird roh; was unlesbar ist, zeigt
+        // `regeln-bereich.tsx` als „nicht lesbar", nicht als leer.
         .select(
-          'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id'
+          'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id, kind, freigabe, freigabe_regeln, jagdregeln, schuetzen_sicht, sicht_umkreis_m, gruppenleiter_sicht'
         )
         .eq('id', id)
         .maybeSingle(),
@@ -245,16 +249,17 @@ export default async function JagdDetailPage({
   const treibenSichtbar = !!revier && istLeiter && vorbereitbar(jagd.status)
 
   /**
-   * **Welle 2, und zwar wieder gleichzeitig** (CP-69). Beide Abfragen brauchen
-   * `treibenSichtbar` — also `revier` aus Welle 1 und `istLeiter`, das seinerseits
-   * `hunt_participants` braucht. Deshalb sind sie nicht in Welle 1 gerutscht.
+   * **Welle 2, und zwar wieder gleichzeitig** (CP-69). Treiben und Objekte
+   * brauchen `treibenSichtbar` — also `revier` aus Welle 1 und `istLeiter`, das
+   * seinerseits `hunt_participants` braucht —, der Katalog (seit P1a) die
+   * Jagdform aus Welle 1 (`kind`, Gesellschaftsjagd — nicht die Jagdart). Deshalb sind sie nicht in Welle 1 gerutscht.
    * Untereinander sind sie unabhängig; vorher warteten sie trotzdem aufeinander.
    *
    * `null` statt einer Abfrage, wenn die Sektion nicht sichtbar ist: `Promise.all`
    * nimmt das anstandslos, und der Zweig bleibt derselbe wie vorher — eine Jagd
    * ohne Revier oder ohne Jagdleiterrecht stellt gar keine Abfrage.
    */
-  const [treibenErgebnis, objekteErgebnis] = await Promise.all([
+  const [treibenErgebnis, objekteErgebnis, katalogErgebnis] = await Promise.all([
     treibenSichtbar
       ? supabase
           .from('hunt_drives')
@@ -306,6 +311,20 @@ export default async function JagdDetailPage({
           // Filter nimmt also keiner bestehenden Zeile ihre Sichtbarkeit.
           .in('type', STAND_TYPEN)
       : null,
+    /**
+     * **Der globale Wildartenkatalog (096)** — für die Blöcke der Freigabe:
+     * welche Art unter welcher Oberart steht. Nur `besitzer_id is null`, wie
+     * in der App (`FreigabeAnsicht`): die Freigabe kennt nur globale Arten, der
+     * Trigger aus 140 weist andere ab. 87 Zeilen (26.10.2026), mit Zähler
+     * gegen die 1000er-Grenze.
+     *
+     * **In Welle 2 und nur für Gesellschaftsjagden** (Fremdprüfung 26.10.2026,
+     * F3): in Welle 1 wartete auch „Nicht gefunden" auf ihn, und ein Fehler
+     * hätte eine Einzeljagd abgebrochen, die gar keine Freigabe zeigt.
+     */
+    jagd.kind === 'group'
+      ? supabase.from('wildarten').select('id, name, eltern_id', { count: 'exact' }).is('besitzer_id', null)
+      : null,
   ])
 
   const treibenZeilen = treibenErgebnis
@@ -313,6 +332,10 @@ export default async function JagdDetailPage({
     : []
 
   const objekte = objekteErgebnis ? vollstaendig<Objekt>(objekteErgebnis, 'Kartenobjekte') : []
+
+  // Der Katalog wirft bei Kappung oder Fehler (`vollstaendig`): ohne ihn
+  // stünden die Klassen der Freigabe ohne ihre Wildart da.
+  const katalog = katalogErgebnis ? vollstaendig<Katalogzeile>(katalogErgebnis, 'Wildartenkatalog') : []
 
   // `beschreibung` und `fotoUrl` bleiben `null`, statt geladen zu werden: die
   // Treiben-Karte hat keinen Objekt-Inspektor, sie zeigt Namen und wählt aus.
@@ -366,6 +389,10 @@ export default async function JagdDetailPage({
         treiben={ausZeilen(treibenZeilen)}
         punkte={punkte}
         grenze={revier ? parsePolygonHex(revier.boundary) : null}
+        // Freigabe & Regeln nur bei Gesellschaftsjagden — wie nativ
+        // (`teilnehmer.tsx`): eine Einzeljagd hat keine.
+        regeln={jagd.kind === 'group' ? (jagd as RegelnRoh) : null}
+        katalog={katalog}
       />
     </div>
   )
