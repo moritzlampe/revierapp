@@ -128,7 +128,9 @@ const STATUS_LABEL: Record<Jagdstatus, string> = {
   draft: 'Entwurf',
   scheduled: 'Geplant',
   active: 'Läuft',
-  paused: 'Pause',
+  // „Pausiert", wie bis 26.10.2026 schon auf der Übersicht, die eine eigene
+  // Kopie dieser Liste trug.
+  paused: 'Pausiert',
   completed: 'Beendet',
   auto_completed: 'Beendet',
 }
@@ -623,8 +625,10 @@ const TEILNAHME_LABEL: Record<string, string> = {
   joined: 'Zugesagt',
   declined: 'Abgesagt',
   left: 'Ausgetreten',
+  entfernt: 'Entfernt',
 }
 
+/** Beschriftung zu einem Wert aus `zustand()` (oder einem rohen `status`). */
 export function teilnahme(wert: string | null): string {
   return TEILNAHME_LABEL[wert ?? ''] ?? 'Unbekannt'
 }
@@ -636,18 +640,77 @@ export interface Teilnehmer {
   role: string | null
   tags: string[] | null
   status: string | null
+  /** Gesetzt heißt: der Jagdleiter hat entfernt (Migration 128). */
+  entfernt_am: string | null
+  /** Der Adressbucheintrag hinter einer Gastzeile (Migration 106). */
+  kontakt_id: string | null
 }
 
 /**
- * Wer wieder eingeladen werden kann.
+ * Der Zustand, wie die Liste ihn zeigt: `status`, nur dass `left` sich seit
+ * Migration 128 in zwei Fälle teilt — `left` **mit** `entfernt_am` hat der
+ * Jagdleiter entfernt, **ohne** ist die Person selbst gegangen. Beides als
+ * „Ausgetreten" zu zeigen hieße, dem Leiter seinen eigenen Rauswurf als
+ * Entscheidung des anderen vorzulesen.
+ */
+export function zustand(t: { status: string | null; entfernt_am: string | null }): string {
+  return t.status === 'left' && t.entfernt_am ? 'entfernt' : (t.status ?? '')
+}
+
+/**
+ * Wer wieder eingeladen werden kann: wer abgesagt hat, gegangen ist oder
+ * entfernt wurde — per UPDATE auf `invited`, weil die Zeile stehen bleibt
+ * (`UNIQUE (hunt_id, user_id)`). Der Trigger aus 128 nullt dabei
+ * `entfernt_am`.
  *
- * `left` steht bewusst NICHT darin: wer eine Jagd verlassen hat, ist etwas
- * anderes als wer abgesagt hat, und der Weg zurück gehört in die App, wo die
- * Person gerade steht. Was hier passiert, ist eine erneute Einladung an jemanden,
- * der noch gar nicht dabei war.
+ * **Bis 26.10.2026 stand hier nur `declined`**, mit der Begründung, der Weg
+ * zurück nach einem `left` gehöre in die App. Seit 128 ist `left` aber auch
+ * der Zustand nach einem Rauswurf, und den kann nur der Jagdleiter
+ * zurücknehmen. Die App bietet `declined` und `left` seit 128 gleichermaßen
+ * an (`einladePlan()` in quickhunt-native `participants.ts`) — dieselbe
+ * Regel in beiden Clients, nicht zwei.
  */
 export function wiederEinladbar(status: string | null): boolean {
-  return status === 'declined'
+  return status === 'declined' || status === 'left'
+}
+
+const ERNEUT_HINWEIS: Record<string, string> = {
+  declined: 'hatte abgesagt',
+  left: 'ist gegangen',
+  entfernt: 'wurde entfernt',
+}
+
+/** Der Hinweis neben einem Wiedereinzuladenden in der Auswahl. */
+export function erneutHinweis(vorher: string): string {
+  return ERNEUT_HINWEIS[vorher] ?? 'war schon eingeladen'
+}
+
+/**
+ * Wen der Jagdleiter entfernen kann — dieselbe Regel wie nativ
+ * (`teilnehmer.tsx` → `darfEntfernen`, `jaeger/[participantId].tsx` →
+ * `zeigeEntfernen`):
+ *
+ * - nur wer eingeladen ist oder zugesagt hat; wer schon draußen ist, wird
+ *   nicht noch einmal entfernt,
+ * - nie sich selbst — dafür gibt es „Jagd verlassen", und die RPC weist es
+ *   mit `22023` ab (Fremdprüfung 26.10.2026, F1: ein zugesagter Co-Leiter sah
+ *   den Knopf an seiner eigenen Zeile),
+ * - **nie einen Gast ohne Konto.** Ein entfernter Gast wäre eine Sackgasse:
+ *   `kandidaten()` blendet einen Kontakt mit Gastzeile aus, ein neuer INSERT
+ *   prallte am Index `(hunt_id, kontakt_id)` ab, und `GAST_ZUSTAENDE` bietet
+ *   für `left` keinen Weg zurück (Fremdprüfung F4; nativ seit der
+ *   Schlusslesung vom 20.09.2026 genauso). Einen Gast nimmt der Jagdleiter
+ *   über seinen Zustand heraus: „Abgesagt".
+ *
+ * Die Ersteller-Zeile schließt der Aufrufer aus (`istErstellerZeile`).
+ */
+export function entfernbar(
+  t: { status: string | null; user_id: string | null },
+  eigeneId: string,
+): boolean {
+  return (
+    t.user_id !== null && t.user_id !== eigeneId && (t.status === 'invited' || t.status === 'joined')
+  )
 }
 
 /**
@@ -655,7 +718,13 @@ export function wiederEinladbar(status: string | null): boolean {
  * Name. Wer abgesagt hat, steht unten — er ist die Auskunft „hier fehlt
  * jemand", nicht der erste Blick.
  */
-const ZUSTAND_RANG: Record<string, number> = { joined: 0, invited: 1, declined: 2, left: 3 }
+const ZUSTAND_RANG: Record<string, number> = {
+  joined: 0,
+  invited: 1,
+  declined: 2,
+  left: 3,
+  entfernt: 4,
+}
 
 export function sortiereTeilnehmer(
   liste: readonly Teilnehmer[],
@@ -664,7 +733,7 @@ export function sortiereTeilnehmer(
   return [...liste].sort((a, b) => {
     const leiter = (t: Teilnehmer) => (t.role === 'jagdleiter' ? 0 : 1)
     if (leiter(a) !== leiter(b)) return leiter(a) - leiter(b)
-    const rang = (t: Teilnehmer) => ZUSTAND_RANG[t.status ?? ''] ?? 9
+    const rang = (t: Teilnehmer) => ZUSTAND_RANG[zustand(t)] ?? 9
     if (rang(a) !== rang(b)) return rang(a) - rang(b)
     return teilnehmerName(a, namen).localeCompare(teilnehmerName(b, namen), 'de')
   })
@@ -694,9 +763,10 @@ export interface Teilnehmergruppe {
  * Gliederung. Die größte Jagd im Bestand hat heute 4 Teilnehmer, im Oktober
  * sollen es 40 sein — beide Größen müssen ohne Umbau tragen.
  *
- * **`declined` und `left` bleiben getrennt.** Nur Abgesagte sind wieder
- * einladbar (`wiederEinladbar`); eine gemeinsame Gruppe „nicht dabei" würde
- * genau diesen Unterschied verwischen.
+ * **`declined`, `left` und „entfernt" bleiben getrennt.** Alle drei sind
+ * wieder einladbar, aber sie sagen Verschiedenes: abgesagt, selbst gegangen,
+ * vom Leiter entfernt (`zustand()`). Eine gemeinsame Gruppe „nicht dabei"
+ * verwischte, wer die Entscheidung getroffen hat.
  */
 export function gruppiereTeilnehmer(
   liste: readonly Teilnehmer[],
@@ -710,7 +780,7 @@ export function gruppiereTeilnehmer(
   // die Laufzeit nicht.
   const koepfe = new Map<string, Teilnehmer[]>()
   for (const t of liste) {
-    const s = t.status ?? ''
+    const s = zustand(t)
     const vorhanden = koepfe.get(s)
     if (vorhanden) vorhanden.push(t)
     else koepfe.set(s, [t])
@@ -1135,15 +1205,14 @@ export function namensvorschlag(termin: string): string {
 // `teilnehmerName()` hier tut dasselbe, und `/join/<code>` nimmt Gäste ohne
 // Anmeldung auf. Gefehlt hat allein die Auswahl.
 //
-// **Was NICHT gebaut wurde: eine Spalte `hunt_participants.kontakt_id`.** Sie
-// wäre der saubere Bezug zwischen Teilnehmerzeile und Adressbuch, und ohne sie
-// hängt der Dublettenschutz am NAMEN (`schonDabei`). Sie wäre aber DDL, also
-// Migration, also Anker 2 der Review-Kette — für einen Schutz, dessen
-// Ausfallschaden eine überzählige Zeile ist, die man entfernt. Fällig, sobald
-// etwas an der Zeile HÄNGT statt nur an ihr abzulesen: A-S3 Legitimation will
-// einen Nachweis je Person und Jagd, und ein Name trägt den nicht.
-// ponytail: Dublettenschutz über den Namen. Auf `kontakt_id` umstellen, sobald
-// A-S3 gebaut wird.
+// **`hunt_participants.kontakt_id` gibt es seit Migration 106** (nativ,
+// 05.08.2026) — der Bezug zwischen Gastzeile und Adressbuch, mit einem
+// partiellen Unique-Index `(hunt_id, kontakt_id)`. Hier stand bis 26.10.2026,
+// die Spalte sei „nicht gebaut", und das Portal schrieb sie deshalb nicht mit
+// (Backlog A-G11). Seither schreibt es sie, und `kandidaten()` erkennt einen
+// eingetragenen Gast an ihr. **Der Namensvergleich bleibt als zweite Achse**
+// — für Gastzeilen von vor dem 26.10.2026 und für frei eingetragene Gäste,
+// genau wie nativ in `einladbare()`.
 
 /** Ein Adressbuch-Eintrag, so weit das Einladen ihn braucht. */
 export interface EinladbarerKontakt {
@@ -1164,6 +1233,12 @@ export interface EinladbarerKontakt {
 export interface Profil {
   id: string
   display_name: string | null
+  /**
+   * Konto gelöscht (Migration 132, `konto_namen()` liefert den Grabstein mit).
+   * Ein Name lässt sich weiter auflösen, einladen lässt sich das Konto nicht
+   * mehr — dieselbe Regel wie nativ (`fetchInvitableProfiles`).
+   */
+  geloescht?: boolean
 }
 
 export interface Kandidat {
@@ -1177,9 +1252,15 @@ export interface Kandidat {
   name: string
   /** Gesetzt heißt: die Person hat ein Konto und wird darüber eingeladen. */
   userId: string | null
+  /** Gesetzt heißt: ein Gast aus dem Adressbuch — geht als `kontakt_id` mit. */
+  kontaktId: string | null
   kategorien: readonly string[]
-  /** Hat abgesagt — wird per UPDATE wieder eingeladen, nicht per INSERT. */
-  erneut: boolean
+  /**
+   * Der bisherige Zustand (`zustand()`: `declined`, `left` oder `entfernt`),
+   * wenn die Person schon eine Zeile hat — sie wird dann per UPDATE wieder
+   * eingeladen, nicht per INSERT. `null` heißt neu.
+   */
+  erneut: string | null
 }
 
 export const KONTO_SCHLUESSEL = 'konto:'
@@ -1190,10 +1271,12 @@ export const KONTAKT_SCHLUESSEL = 'kontakt:'
  *
  * Drei Gruppen, in dieser Reihenfolge:
  * 1. Konten ohne Teilnehmerzeile (INSERT mit `user_id`),
- * 2. Konten, die abgesagt haben (UPDATE — seit 088 bleibt die Zeile stehen),
+ * 2. Konten, die abgesagt haben, gegangen sind oder entfernt wurden (UPDATE —
+ *    seit 088 bzw. 128 bleibt die Zeile stehen),
  * 3. Adressbuch-Kontakte, die noch nicht als Gast eingetragen sind.
  *
  * **Der Ersteller fällt raus**, wie bisher: er steht als Jagdleiter schon drin.
+ * **Gelöschte Konten fallen raus** (132) — in beiden Kontogruppen.
  *
  * **Konto und Kontakt derselben Person erscheinen beide**, wenn beides
  * existiert — `kontakte.profil_id` ist bei 0 von 154 Zeilen gesetzt (03.08.2026),
@@ -1215,48 +1298,59 @@ export const KONTAKT_SCHLUESSEL = 'kontakt:'
  *    normalisiert nur Groß-/Kleinschreibung und Leerraum, keine Satzzeichen und
  *    keine Unicode-Zusammensetzung.
  * 3. **Zwei Jagdleiter laden gleichzeitig denselben Gast ein** — `UNIQUE
- *    (hunt_id, user_id)` greift bei `NULL` nicht, beide INSERTs gehen durch.
- *    Danach steht ein Mensch zweimal auf der Liste, zählt doppelt und kann zwei
- *    Stände bekommen.
- *
- * Fall 3 ist der einzige, den Code hier nicht schließen kann: dagegen hilft nur
- * ein partieller Unique-Index (`(hunt_id, lower(guest_name)) where user_id is
- * null`), also DDL, also der native Track (R2) und Anker 2. Notiert, nicht
- * stillschweigend übergangen.
+ *    (hunt_id, user_id)` greift bei `NULL` nicht. Seit das Portal
+ *    `kontakt_id` mitschreibt, prallt der zweite INSERT am partiellen Index
+ *    aus 106 ab (`23505`). Offen bleibt der Fall nur für frei eingetragene
+ *    Gäste ohne Adressbuchbezug (A-G6).
  */
 export function kandidaten(
   profile: readonly Profil[],
   kontakte: readonly EinladbarerKontakt[],
-  teilnehmer: readonly { user_id: string | null; guest_name: string | null; status: string | null }[],
+  teilnehmer: readonly {
+    user_id: string | null
+    guest_name: string | null
+    status: string | null
+    entfernt_am: string | null
+    kontakt_id: string | null
+  }[],
   eigeneId: string,
   namen: Record<string, string>,
 ): Kandidat[] {
   const mitZeile = new Set(teilnehmer.map((t) => t.user_id).filter(Boolean) as string[])
-  // Gäste erkennt man nur am Namen — s. der ponytail-Hinweis oben. Vergleich
-  // über `schonDabei`, damit Groß-/Kleinschreibung und Leerraum nicht zu einer
-  // zweiten Zeile für dieselbe Person führen.
+  // **Positiv: wer als lebendes Konto bekannt ist** — nicht „wer nicht als
+  // gelöscht bekannt ist". `konto_namen()` ist ungepagt (CP-71); fehlte ein
+  // Grabstein jenseits der 1000er-Grenze, käme sein Konto über eine
+  // Negativliste wieder in die Auswahl (Fremdprüfung 26.10.2026, F3). So
+  // fällt ein unbekanntes Konto heraus statt hinein.
+  const aktiv = new Set(profile.filter((p) => !p.geloescht).map((p) => p.id))
+  // Gäste erkennt man an `kontakt_id` und, für ältere oder frei eingetragene
+  // Zeilen, am Namen — Vergleich über `namensschluessel`, damit Groß-/
+  // Kleinschreibung und Leerraum nicht zu einer zweiten Zeile führen.
+  const gastKontakte = new Set(teilnehmer.map((t) => t.kontakt_id).filter(Boolean) as string[])
   const gaeste = new Set(
     teilnehmer.filter((t) => !t.user_id && t.guest_name).map((t) => namensschluessel(t.guest_name!)),
   )
 
   const neu: Kandidat[] = profile
-    .filter((p) => p.id !== eigeneId && !mitZeile.has(p.id))
+    .filter((p) => p.id !== eigeneId && !mitZeile.has(p.id) && !p.geloescht)
     .map((p) => ({
       schluessel: KONTO_SCHLUESSEL + p.id,
       name: p.display_name || `Konto ${p.id.slice(0, 8)}`,
       userId: p.id,
+      kontaktId: null,
       kategorien: [],
-      erneut: false,
+      erneut: null,
     }))
 
   const abgesagt: Kandidat[] = teilnehmer
-    .filter((t) => t.user_id && wiederEinladbar(t.status))
+    .filter((t) => t.user_id && wiederEinladbar(t.status) && aktiv.has(t.user_id))
     .map((t) => ({
       schluessel: KONTO_SCHLUESSEL + t.user_id!,
       name: namen[t.user_id!] || `Konto ${t.user_id!.slice(0, 8)}`,
       userId: t.user_id!,
+      kontaktId: null,
       kategorien: [],
-      erneut: true,
+      erneut: zustand(t),
     }))
 
   const ausAdressbuch: Kandidat[] = kontakte
@@ -1269,13 +1363,14 @@ export function kandidaten(
     // dass eine Datenbankbedingung nie verletzt wird — dieselbe Haltung wie bei
     // `anzeigeName()` in `../gaeste/kontakte.ts`.
     .filter((k) => kontaktName(k) !== OHNE_NAMEN)
-    .filter((k) => !gaeste.has(namensschluessel(kontaktName(k))))
+    .filter((k) => !gastKontakte.has(k.id) && !gaeste.has(namensschluessel(kontaktName(k))))
     .map((k) => ({
       schluessel: KONTAKT_SCHLUESSEL + k.id,
       name: kontaktName(k),
       userId: null,
+      kontaktId: k.id,
       kategorien: k.kategorien ?? [],
-      erneut: false,
+      erneut: null,
     }))
 
   return [...neu, ...abgesagt, ...ausAdressbuch]

@@ -14,26 +14,10 @@ import { alsBerlinDatum, alsDatum, alsStatus, effektiverStatus } from './jagderl
 // Statt eines zweiten Intl-Formatters daneben: `terminText(…, false)` ist
 // bereits das Datum ohne Uhrzeit in Berliner Zeit. Der Endtermin einer
 // mehrtägigen Jagd ist ein Tag, keine Feierabendzeit (Migration 095).
-import { mehrtaegig, terminText } from './jagden/jagden'
-
-// Die Jagdart steckt in hunts.type, NICHT in hunts.kind (das kennt nur
-// group/solo). Alle vier Werte werden getragen, auch die heute ungenutzten
-// (Konzept §4.3).
-const JAGDART: Record<string, string> = {
-  ansitz: 'Ansitz',
-  pirsch: 'Pirsch',
-  drueckjagd: 'Drückjagd',
-  erntejagd: 'Erntejagd',
-}
-
-const JAGDSTATUS: Record<string, string> = {
-  draft: 'Entwurf',
-  scheduled: 'Geplant',
-  active: 'Läuft',
-  paused: 'Pausiert',
-  completed: 'Beendet',
-  auto_completed: 'Beendet',
-}
+// Die Beschriftungen von Jagdart und Zustand kommen ebenfalls von dort. Bis
+// 26.10.2026 stand hier eine eigene Kopie beider Listen, und sie widersprach
+// der Jagdliste („Pausiert" gegen „Pause").
+import { jagdart, jagdstatus, mehrtaegig, terminText } from './jagden/jagden'
 
 // Fest auf Berlin: der Container läuft in UTC, sonst stünde eine 07:15-Jagd
 // im Sommer als 05:15 in der Liste.
@@ -50,6 +34,7 @@ type Jagd = {
   id: string
   name: string
   type: string | null
+  kind: string | null
   status: string | null
   scheduled_for: string | null
   scheduled_until: string | null
@@ -216,33 +201,44 @@ export default async function ZentraleUebersicht({
   // **`vollstaendig` statt `geladen`** (Fremdprüfung, P3): ohne Zähler wäre eine
   // Abschneidung bei 1000 Jagden unsichtbar, und die Agenda zeigte glaubwürdig
   // „Nichts offen" — die schlimmste Ausgabe, die diese Sektion haben kann.
-  const jagden = vollstaendig<Jagd>(
+  const alleJagden = vollstaendig<Jagd>(
     await supabase
       .from('hunts')
-      .select('id, name, type, status, scheduled_for, scheduled_until', { count: 'exact' })
+      .select('id, name, type, kind, status, scheduled_for, scheduled_until', { count: 'exact' })
       .eq('district_id', revier.id),
     'Jagden'
   )
+  // **Agenda, Zahl und Hinweis zählen nur Gesellschaftsjagden** — dieselbe
+  // Grenze wie die Jagdliste (`jagden/page.tsx`). Seit CN-283 (04.10.2026)
+  // tragen auch Einzeljagden ein Revier und zählten sonst als „Jagden in
+  // diesem Revier" mit. Ihre Erlegungen gehören trotzdem zur Strecke unten.
+  const jagden = alleJagden.filter((j) => j.kind === 'group')
 
-  // Umweg über die Jagd-IDs, weil kills.district_id von keinem Client
-  // geschrieben wird (Konzept §4.1). Genau deshalb steht unter der Kennzahl
-  // eine Fußnote statt einer blanken Zahl.
-  // Ohne Jagden gar nicht erst fragen: .in('hunt_id', []) serialisiert die
-  // Bibliothek zu `in.()`, was PostgREST nicht annimmt.
-  let strecke = 0
-  if (jagden.length > 0) {
-    strecke = await zaehle(
-      () =>
-        supabase
-          .from('kills')
-          .select('id', { count: 'exact', head: true })
-          .in(
-            'hunt_id',
-            jagden.map((j) => j.id)
-          ),
-      'Strecke'
-    )
-  }
+  // **Strecke = Erlegungen im Revier**: über `kills.district_id` (seit 087,
+  // die Policy `kills_district_owner` lässt den Besitzer sie lesen) ODER über
+  // eine Jagd des Reviers — die Spalte ist nicht an jeder Zeile gesetzt
+  // (3 von 7, gemessen 26.10.2026). Bis 26.10.2026 zählte hier nur der Weg
+  // über die Jagd, und die Fußnote behauptete, `district_id` werde nicht
+  // geschrieben; eine Erlegung eines Scheininhabers, dessen Jagd der Besitzer
+  // nicht sieht, fehlte.
+  // **Nur `harvested`**: ein angeschossenes Stück (`wounded`) liegt nicht auf
+  // der Strecke, bis es gefunden ist.
+  // Ohne Jagden kein `in.()` — die Bibliothek serialisiert `[]` zu `in.()`,
+  // was PostgREST nicht annimmt.
+  const jagdIds = alleJagden.map((j) => j.id)
+  const strecke = await zaehle(
+    () =>
+      supabase
+        .from('kills')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'harvested')
+        .or(
+          jagdIds.length > 0
+            ? `district_id.eq.${revier.id},hunt_id.in.(${jagdIds.join(',')})`
+            : `district_id.eq.${revier.id}`
+        ),
+    'Strecke'
+  )
 
   const jetzt = new Date()
   const kuenftige = jagden
@@ -641,11 +637,18 @@ export default async function ZentraleUebersicht({
             keine eigene hunts-Policy, fremd angelegte Jagden fehlen der Zahl.
             Der Vorbehalt stand bisher nur als Kommentar im Code — seit die
             Agenda daran hängt, gehört er auf die Seite (Fremdprüfung, P6). */}
-        <Kennzahl label="Jagden" wert={String(jagden.length)} fuss="in diesem Revier, soweit dir sichtbar" />
+        <Kennzahl
+          label="Jagden"
+          wert={String(jagden.length)}
+          fuss="Gesellschaftsjagden in diesem Revier, soweit dir sichtbar"
+        />
         <Kennzahl
           label="Strecke"
           wert={String(strecke)}
-          fuss="nur über Jagden zuordenbar — kills.district_id wird noch nicht geschrieben"
+          // „soweit dir sichtbar" wie bei den Jagden: eine ältere Erlegung
+          // ohne `district_id` an einer Jagd, die der Besitzer nicht sieht,
+          // fehlt der Zahl (Fremdprüfung 26.10.2026, Paket B F1).
+          fuss="erlegt in diesem Revier, ohne angeschossene Stücke, soweit dir sichtbar"
         />
       </div>
 
@@ -716,11 +719,9 @@ export default async function ZentraleUebersicht({
                       : ''}
                   </td>
                   <td>{j.name}</td>
-                  <td>{j.type ? (JAGDART[j.type] ?? j.type) : '—'}</td>
+                  <td>{j.type ? jagdart(j.type) : '—'}</td>
                   <td>
-                    <span className="zentrale-pill">
-                      {j.status ? (JAGDSTATUS[j.status] ?? j.status) : '—'}
-                    </span>
+                    <span className="zentrale-pill">{j.status ? jagdstatus(j.status) : '—'}</span>
                   </td>
                 </tr>
               ))}

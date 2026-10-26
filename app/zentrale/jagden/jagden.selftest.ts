@@ -50,6 +50,9 @@ import {
   wiederEinladbar,
   zeitraumText,
   zusagen,
+  zustand,
+  entfernbar,
+  erneutHinweis,
   type Jagd,
   type JagdEntwurf,
   type Teilnahme,
@@ -430,18 +433,56 @@ assert.equal(tag('waldpilz'), 'waldpilz')
 assert.equal(teilnahme('declined'), 'Abgesagt')
 assert.equal(teilnahme('joined'), 'Zugesagt')
 assert.equal(teilnahme('left'), 'Ausgetreten')
+assert.equal(teilnahme('entfernt'), 'Entfernt')
 assert.equal(teilnahme(null), 'Unbekannt')
 
-// Nur eine Absage ist eine erneute Einladung wert. `left` gehoert in die App.
+// `left` teilt sich seit 128: mit `entfernt_am` hat der Leiter entfernt.
+assert.equal(zustand({ status: 'left', entfernt_am: '2026-10-26T10:00:00Z' }), 'entfernt')
+assert.equal(zustand({ status: 'left', entfernt_am: null }), 'left')
+// `entfernt_am` zaehlt nur bei `left` — der Trigger nullt es sonst ohnehin.
+assert.equal(zustand({ status: 'joined', entfernt_am: '2026-10-26T10:00:00Z' }), 'joined')
+assert.equal(zustand({ status: null, entfernt_am: null }), '')
+
+// Absage, Austritt und Rauswurf sind wieder einladbar (UPDATE), wie nativ
+// `einladePlan()`. Wer eingeladen ist oder zugesagt hat, nicht.
 assert.equal(wiederEinladbar('declined'), true)
-assert.equal(wiederEinladbar('left'), false)
+assert.equal(wiederEinladbar('left'), true)
 assert.equal(wiederEinladbar('invited'), false)
 assert.equal(wiederEinladbar('joined'), false)
+
+// Entfernen — dieselbe Regel wie nativ (`darfEntfernen`, `zeigeEntfernen`):
+// nur Konten, nicht die eigene Zeile, nur wer noch drin ist.
+{
+  const ich = 'u-ich'
+  assert.equal(entfernbar({ user_id: 'u2', status: 'invited' }, ich), true)
+  assert.equal(entfernbar({ user_id: 'u2', status: 'joined' }, ich), true)
+  assert.equal(entfernbar({ user_id: 'u2', status: 'declined' }, ich), false)
+  assert.equal(entfernbar({ user_id: 'u2', status: 'left' }, ich), false)
+  assert.equal(entfernbar({ user_id: 'u2', status: null }, ich), false)
+  // Fremdprüfung 26.10.2026, F1: der zugesagte Co-Leiter an seiner eigenen Zeile.
+  assert.equal(entfernbar({ user_id: ich, status: 'joined' }, ich), false)
+  // F4: ein Gast ohne Konto — entfernt wäre er eine Sackgasse.
+  assert.equal(entfernbar({ user_id: null, status: 'joined' }, ich), false)
+}
+
+assert.equal(erneutHinweis('declined'), 'hatte abgesagt')
+assert.equal(erneutHinweis('left'), 'ist gegangen')
+assert.equal(erneutHinweis('entfernt'), 'wurde entfernt')
 
 // --- Teilnehmernamen --------------------------------------------------------
 
 function teiln(teil: Partial<Teilnehmer>): Teilnehmer {
-  return { id: 't', user_id: null, guest_name: null, role: 'schuetze', tags: [], status: 'joined', ...teil }
+  return {
+    id: 't',
+    user_id: null,
+    guest_name: null,
+    role: 'schuetze',
+    tags: [],
+    status: 'joined',
+    entfernt_am: null,
+    kontakt_id: null,
+    ...teil,
+  }
 }
 
 const namen = { 'aaaaaaaa-1111': 'Moritz', 'bbbbbbbb-2222': 'Heinrich' }
@@ -504,6 +545,20 @@ assert.equal(teilnehmerName(teiln({}), namen), 'Unbekannt')
   assert.deepEqual(g.map((x) => x.status), ['joined', 'declined'])
   assert.deepEqual(g[0].eintraege.map((t) => t.id), ['schuetze'])
   assert.deepEqual(g[1].eintraege.map((t) => t.id), ['leiter'])
+}
+
+// Ein Entfernter (128) steht in einer EIGENEN Gruppe hinter den Ausgetretenen
+// — nicht unter „Ausgetreten", das laese sich wie seine eigene Entscheidung.
+{
+  const liste = [
+    teiln({ id: 'raus', guest_name: 'Rudi', status: 'left', entfernt_am: '2026-10-26T10:00:00Z' }),
+    teiln({ id: 'weg', guest_name: 'Ludwig', status: 'left' }),
+    teiln({ id: 'zugesagt', guest_name: 'Wilhelm', status: 'joined' }),
+  ]
+  const g = gruppiereTeilnehmer(liste, namen)
+  assert.deepEqual(g.map((x) => x.status), ['joined', 'left', 'entfernt'])
+  assert.deepEqual(g.map((x) => x.titel), ['Zugesagt', 'Ausgetreten', 'Entfernt'])
+  assert.deepEqual(g[2].eintraege.map((t) => t.id), ['raus'])
 }
 
 // Reihenfolge der Gruppen: zugesagt, eingeladen, abgesagt, ausgetreten
@@ -1147,17 +1202,27 @@ assert.equal(aktuellesJagdjahr(''), ALLE_JAHRE)
 
 // --- Einladen: Konten UND Gaeste ohne Konto ---------------------------------
 
-const P = (id: string, name: string) => ({ id, display_name: name })
+const P = (id: string, name: string, geloescht = false) => ({ id, display_name: name, geloescht })
 const K = (id: string, vorname: string, nachname: string, kategorien: string[] = []) => ({
   id,
   vorname,
   nachname,
   kategorien,
 })
-const T = (teil: Partial<{ user_id: string | null; guest_name: string | null; status: string | null }>) => ({
+const T = (
+  teil: Partial<{
+    user_id: string | null
+    guest_name: string | null
+    status: string | null
+    entfernt_am: string | null
+    kontakt_id: string | null
+  }>,
+) => ({
   user_id: null,
   guest_name: null,
   status: 'invited',
+  entfernt_am: null,
+  kontakt_id: null,
   ...teil,
 })
 
@@ -1192,6 +1257,52 @@ assert.deepEqual(
 )
 assert.equal(frisch[0].schluessel, KONTO_SCHLUESSEL + 'u2')
 assert.equal(frisch[2].schluessel, KONTAKT_SCHLUESSEL + 'k1')
+// Ein Gast traegt seinen Kontakt mit (geht als `kontakt_id` in den INSERT),
+// ein Konto nicht.
+assert.equal(frisch[2].kontaktId, 'k1')
+assert.equal(frisch[0].kontaktId, null)
+assert.equal(frisch[0].erneut, null, 'neu heisst null')
+
+// **Gelöschte Konten (132) stehen nicht zur Wahl** — weder neu noch erneut.
+// Der Name bleibt auflösbar; das ist `namen`, nicht diese Liste.
+{
+  const mitGrabstein = [P('u1', 'Moritz'), P('u2', 'Heinrich', true), P('u3', 'Jobst')]
+  const neu = kandidaten(mitGrabstein, [], [T({ user_id: 'u1', status: 'joined' })], 'u1', kontoNamen)
+  assert.deepEqual(neu.map((k) => k.userId), ['u3'])
+  const erneut = kandidaten(
+    mitGrabstein,
+    [],
+    [T({ user_id: 'u1', status: 'joined' }), T({ user_id: 'u2', status: 'declined' })],
+    'u1',
+    kontoNamen,
+  )
+  assert.equal(erneut.some((k) => k.userId === 'u2'), false, 'auch nicht als Wiedereinladung')
+  // Fremdprüfung F3: ein Konto, das `konto_namen()` gar nicht liefert (Kappung
+  // bei 1000, CP-71), kommt NICHT als Wiedereinladung zurück — positiv geprüft.
+  const unbekannt = kandidaten(
+    mitGrabstein,
+    [],
+    [T({ user_id: 'u1', status: 'joined' }), T({ user_id: 'u-weg', status: 'left' })],
+    'u1',
+    kontoNamen,
+  )
+  assert.equal(unbekannt.some((k) => k.userId === 'u-weg'), false)
+}
+
+// **Ein Gast mit `kontakt_id` faellt raus, auch wenn der Name nicht mehr
+// passt** (Schreibweise im Adressbuch geaendert, 106). Genau den Fall liess
+// der Namensvergleich allein durch.
+{
+  const umbenannt = kandidaten(
+    profile,
+    buch,
+    [T({ user_id: 'u1', status: 'joined' }), T({ guest_name: 'H. Ahlwes', kontakt_id: 'k1' })],
+    'u1',
+    kontoNamen,
+  )
+  assert.equal(umbenannt.some((k) => k.kontaktId === 'k1'), false)
+  assert.equal(umbenannt.some((k) => k.kontaktId === 'k3'), true, 'die anderen bleiben')
+}
 
 // Wer schon eine Zeile hat, steht nicht mehr zur Wahl.
 const mitHeinrich = kandidaten(
@@ -1234,20 +1345,27 @@ const mitAbsage = kandidaten(
   kontoNamen,
 )
 const wieder = mitAbsage.find((k) => k.userId === 'u2')
-assert.equal(wieder?.erneut, true, 'abgesagt heisst wieder einladbar')
+assert.equal(wieder?.erneut, 'declined', 'abgesagt heisst wieder einladbar')
 // **Genau EINMAL, nicht zweimal.** Er hat eine Zeile, faellt also aus dem
 // ersten Zweig — und kommt ueber den Absage-Zweig zurueck. Stuende er in
 // beiden, waeren es zwei Kaestchen fuer eine Person.
 assert.equal(mitAbsage.filter((k) => k.userId === 'u2').length, 1)
-// `left` ist NICHT wieder einladbar (nur `declined` ist es, s. wiederEinladbar).
+// Seit 26.10.2026 (128, wie nativ): auch wer gegangen ist oder entfernt wurde,
+// kommt als Wiedereinladung zurueck — mit dem Zustand, den der Hinweis nennt.
 const ausgetreten = kandidaten(
   profile,
   buch,
-  [T({ user_id: 'u1', status: 'joined' }), T({ user_id: 'u2', status: 'left' })],
+  [
+    T({ user_id: 'u1', status: 'joined' }),
+    T({ user_id: 'u2', status: 'left' }),
+    T({ user_id: 'u3', status: 'left', entfernt_am: '2026-10-26T10:00:00Z' }),
+  ],
   'u1',
   kontoNamen,
 )
-assert.equal(ausgetreten.some((k) => k.userId === 'u2'), false)
+assert.equal(ausgetreten.find((k) => k.userId === 'u2')?.erneut, 'left')
+assert.equal(ausgetreten.find((k) => k.userId === 'u3')?.erneut, 'entfernt')
+assert.equal(ausgetreten.filter((k) => k.userId === 'u3').length, 1)
 
 // --- Filter ---
 const leer = new Set<string>()

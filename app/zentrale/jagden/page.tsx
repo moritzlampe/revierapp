@@ -93,13 +93,15 @@ export default async function JagdenPage({
   const revier = reviere.find((r) => r.id === gewuenscht)
   if (!revier) redirect(`/zentrale/jagden?revier=${reviere[0].id}`)
 
-  // **`district_id` ist der Filter, und er blendet die Einzeljagden aus.**
-  // Von 39 Jagden im Bestand tragen 18 gar kein Revier (gemessen 03.08.2026):
-  // `createSoloHunt` der App schreibt `districtId: null`. Diese Seite zeigt sie
-  // nie, und das ist gewollt — die Revierzentrale bereitet Reviergeschehen vor,
-  // eine Einzeljagd ist ein Ansitz von einer Person, den niemand organisiert.
-  // Es steht hier, weil fast die halbe Zahl fehlt und ein leeres Revier sonst
-  // wie „keine Jagden" aussieht statt wie „keine Revierjagden".
+  // **Nur Gesellschaftsjagden (`kind = 'group'`), keine Einzeljagden.** Die
+  // Revierzentrale bereitet Reviergeschehen vor; eine Einzeljagd ist ein
+  // Ansitz von einer Person, den niemand organisiert. Bis 26.10.2026 erledigte
+  // das `district_id` allein, weil die App Einzeljagden ohne Revier anlegte
+  // (18 von 39, gemessen 03.08.2026). **Seit CN-283 (04.10.2026) tragen sie
+  // ein Revier** und standen damit in dieser Liste zwischen den Jagden, die
+  // man vorbereitet — daher der ausdrückliche Filter. Ihre Erlegungen zählt
+  // die Strecke der Übersicht weiterhin mit.
+  // Eine leere Liste heißt also „keine Revierjagden", nicht „keine Jagden".
   // (Schlusslesung 03.08.2026, offener Punkt.)
   //
   // Sichtbar ist außerdem nur, was RLS durchlässt: Ersteller und Teilnehmer der
@@ -127,6 +129,7 @@ export default async function JagdenPage({
         'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at'
       )
       .eq('district_id', revier.id)
+      .eq('kind', 'group')
       .limit(GRENZE),
     'Jagden'
   )

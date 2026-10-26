@@ -125,7 +125,7 @@ export default async function JagdDetailPage({
         .eq('hidden', false),
       supabase
         .from('hunt_participants')
-        .select('id, user_id, guest_name, role, tags, status')
+        .select('id, user_id, guest_name, role, tags, status, entfernt_am, kontakt_id')
         .eq('hunt_id', id),
       // konto_namen() statt profiles — s. `src/lib/konto-namen.ts`. Die RPC
       // sortiert selbst nach display_name; das `.order` entfaellt deshalb,
