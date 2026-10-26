@@ -30,6 +30,8 @@
 --     (`src/lib/data/participants.ts`, `inviteToHunt`). Client und Migration
 --     gehen zusammen aufs Geraet — die Spalte geht also nicht leer in Betrieb.
 --   * **Die Zentrale schreibt sie NICHT**
+--     (⚠ ueberholt seit P0, revierapp `53a3e9c`, 26.10.2026: sie traegt
+--     `kontakt_id` bei Gaesten aus dem Adressbuch mit)
 --     (`app/zentrale/jagden/[id]/detail.tsx`, Gast-INSERT). Jede dort
 --     eingetragene Gastzeile bleibt namensgebunden und traegt genau die
 --     Schwaeche, gegen die diese Spalte gebaut ist.
@@ -67,7 +69,8 @@
 --   Mail-Code.
 -- * Kein Unique-Index ueber `lower(guest_name)` (A-G6 in seiner urspruenglichen
 --   Fassung). Der Index unten deckt die Gaeste ab, die DIESES Repo kuenftig
---   schreibt; Gastzeilen ohne `kontakt_id` — die der Zentrale und die 0
+--   schreibt; Gastzeilen ohne `kontakt_id` — die der Zentrale (bis P0,
+--   26.10.2026) und die 0
 --   Altzeilen — bleiben ungeschuetzt. Ein zweiter Index ueber den Namen waere
 --   ein Riegel an einer Achse, die gerade abgeloest wird.
 -- * Kein Index auf `kontakt_id`. Es gibt keine Abfrage, die danach filtert —
@@ -109,6 +112,8 @@ comment on column public.hunt_participants.kontakt_id is
 --
 -- Partiell, weil `kontakt_id` bei Konten und bei jeder Zeile der Zentrale NULL
 -- ist und mehrere NULLs sich nie ins Gehege kommen sollen.
+-- (Seit P0, 26.10.2026, schreibt die Zentrale `kontakt_id` bei Gaesten aus dem
+-- Adressbuch mit; NULL bleibt bei Konten, freien Gastnamen und Altzeilen.)
 -- **Folge fuer den Client, benannt:** der INSERT kann jetzt `23505` werfen, wo
 -- er vorher stumm eine zweite Zeile anlegte. Der Fehler ist die Verbesserung,
 -- nicht ein Rueckschritt.
