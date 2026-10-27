@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../../schreiben'
 import { VORBEREITBARE_STATUS } from '../jagden'
 import { ladeVorlagen, useSpeicherLauf } from './editor-teile'
+import VorlageSpeichern from './vorlage-speichern'
 import {
   alsFeldtext,
   JAGDREGELN_MAX_ZEICHEN,
@@ -18,6 +19,9 @@ import {
 type Rueckfrage = { art: 'schliessen' } | { art: 'vorlage'; vorlage: RegelVorlage }
 
 type Vorlagen = { zustand: 'laedt' } | { zustand: 'fehler'; text: string } | { zustand: 'da'; liste: RegelVorlage[] }
+
+/** „Als Vorlage speichern" (P1d): das Namensfeld offen, oder danach die Meldung. */
+type VorlageSichern = { art: 'offen' } | { art: 'gespeichert'; titel: string }
 
 /**
  * Jagdregeln einer Jagd bearbeiten (Fahrplan P1b, Bauplan Portal
@@ -61,6 +65,8 @@ export default function JagdregelnEditor({
   const { phase, meldung, starte, lebt } = useSpeicherLauf()
   const [rueckfrage, setRueckfrage] = useState<Rueckfrage | null>(null)
   const [vorlagen, setVorlagen] = useState<Vorlagen | null>(null)
+  const [vorlageSichern, setVorlageSichern] = useState<VorlageSichern | null>(null)
+  const [vorlageSchreibt, setVorlageSchreibt] = useState(false)
 
   const neu = regelnZumSpeichern([feld])
   const geaendert = jagdregelnGeaendert(neu, basis)
@@ -68,12 +74,19 @@ export default function JagdregelnEditor({
   const zeichen = neu?.length ?? 0
   const zuLang = zeichen > JAGDREGELN_MAX_ZEICHEN
   const laeuft = phase === 'schreibt' || phase === 'wartet'
-  // Solange eine Rückfrage offen ist, ist der übrige Editor gesperrt (E1).
-  const gesperrt = phase !== 'bearbeiten' || rueckfrage !== null
+  // Solange eine Rückfrage offen ist, ist der übrige Editor gesperrt (E1);
+  // ebenso, solange eine Vorlage gesichert wird (`VorlageSpeichern`).
+  const gesperrt = phase !== 'bearbeiten' || rueckfrage !== null || vorlageSchreibt
+  // Keine Vorlage, solange der Editor speichert oder fragt — wohl aber in
+  // `veraltet`: sie geht an das eigene Konto, nicht an die Jagd, und rettet
+  // den Text, den Speichern nicht mehr loswird (Schlusslesung P1d F3, Moritz
+  // 27.10.2026).
+  const beschaeftigt = laeuft || rueckfrage !== null
 
   // Reload und Tab schließen fragen nach, solange etwas verloren ginge (E9).
   // Link-Navigation im Portal erreicht das nicht (CP-107, hingenommen).
-  const schuetzen = geaendert || laeuft
+  // Ein laufender Vorlagen-Write ebenso — sein Ausgang ginge verloren (Codex P1d B-F2).
+  const schuetzen = geaendert || laeuft || vorlageSchreibt
   useEffect(() => {
     if (!schuetzen) return
     const warnen = (e: BeforeUnloadEvent) => {
@@ -121,6 +134,7 @@ export default function JagdregelnEditor({
 
   /** Lädt die Vorlagen beim Klick (E4, `ladeVorlagen`). */
   const vorlagenLaden = async () => {
+    setVorlageSichern(null)
     setVorlagen({ zustand: 'laedt' })
     try {
       const liste = await ladeVorlagen(nutzerId)
@@ -163,6 +177,22 @@ export default function JagdregelnEditor({
         {zeichen} von {JAGDREGELN_MAX_ZEICHEN} Zeichen
       </p>
 
+      {vorlageSichern?.art === 'offen' ? (
+        <VorlageSpeichern
+          nutzerId={nutzerId}
+          regeln={neu}
+          vorschlag="Jagdregeln"
+          aus={beschaeftigt}
+          onSchreibt={setVorlageSchreibt}
+          onFertig={(titel) => setVorlageSichern({ art: 'gespeichert', titel })}
+          onAbbrechen={() => setVorlageSichern(null)}
+        />
+      ) : vorlageSichern?.art === 'gespeichert' ? (
+        <p className="zentrale-hinweis" role="status">
+          Als Vorlage „{vorlageSichern.titel}“ gespeichert.
+        </p>
+      ) : null}
+
       {vorlagen === null ? null : vorlagen.zustand === 'laedt' ? (
         <p className="zentrale-hinweis">Vorlagen werden geladen …</p>
       ) : vorlagen.zustand === 'fehler' ? (
@@ -173,7 +203,7 @@ export default function JagdregelnEditor({
           </button>
         </div>
       ) : vorlagen.liste.length === 0 ? (
-        <p className="zentrale-hinweis">Noch keine Vorlagen — angelegt werden sie in der App (Du → Jagdeinstellungen).</p>
+        <p className="zentrale-hinweis">Noch keine Vorlagen. Speichere Regeln mit „Als Vorlage speichern“.</p>
       ) : (
         <div className="zentrale-inspektor-fuss jagd-regeln-vorlagen">
           {vorlagen.liste.map((v) => (
@@ -229,7 +259,28 @@ export default function JagdregelnEditor({
         <button type="button" disabled={gesperrt || vorlagen?.zustand === 'laedt'} onClick={() => void vorlagenLaden()}>
           Vorlage einfügen
         </button>
-        <button type="button" disabled={phase === 'schreibt' || rueckfrage !== null} onClick={schliessen}>
+        <button
+          type="button"
+          // Nicht, solange die Liste lädt: ihre späte Antwort stünde sonst neben dem Feld (Codex P1d B-F1).
+          disabled={
+            beschaeftigt ||
+            vorlageSchreibt ||
+            neu === null ||
+            vorlageSichern?.art === 'offen' ||
+            vorlagen?.zustand === 'laedt'
+          }
+          onClick={() => {
+            setVorlagen(null)
+            setVorlageSichern({ art: 'offen' })
+          }}
+        >
+          Als Vorlage speichern
+        </button>
+        <button
+          type="button"
+          disabled={phase === 'schreibt' || rueckfrage !== null || vorlageSchreibt}
+          onClick={schliessen}
+        >
           {geaendert ? 'Verwerfen …' : 'Schließen'}
         </button>
       </div>

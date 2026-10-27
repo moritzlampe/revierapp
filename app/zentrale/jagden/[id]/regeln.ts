@@ -609,6 +609,195 @@ export function blockTextSetzen(
   return [...ohne, { wildart_id: block.id, name: block.name, regeln: neu }]
 }
 
+// ── Als Vorlage speichern (P1d) ─────────────────────────────────────────────
+//
+// Kopien aus der App, Stand 27.10.2026 (Bauplan Portal Freigabe/Regeln V2.1,
+// E4): `VORLAGEN_MAX`, `VORLAGE_TITEL_MAX`, `gleicherTitel`, `vorlageFehler`
+// aus `src/lib/hunt/vorlagen.ts`, Testfälle aus `vorlagen.test.ts`.
+// `vorlageSpeichern` folgt `aendereVorlagen` (`src/lib/data/vorlagen.ts`),
+// Testfälle aus `data/__tests__/vorlagen.test.ts`. **Portal-eigen** daran:
+// - **nur unter neuem Namen** — ein vergebener wird abgelehnt, nicht ersetzt
+//   (E4; Ersetzen, Umbenennen, Löschen, Standard bleiben in der App);
+// - **das UPDATE nennt nur `regel_vorlagen`** (E4, Falle aus 140). Ein neuer
+//   Name berührt keinen Standard, und unter dem Compare-and-Swap bleiben die
+//   übrigen Spalten, wie sie gelesen wurden. Die App schreibt seit CN-382 das
+//   Paar mit dem Standard, weil sie umbenennen kann.
+
+/** Höchstens so viele Vorlagen nimmt die DB (CHECK in 140). */
+export const VORLAGEN_MAX = 50
+/** Längster Name einer Vorlage. */
+export const VORLAGE_TITEL_MAX = 60
+
+/** Gleicher Name ohne Gross/Klein und ohne Leerraum am Rand. */
+export function gleicherTitel(a: string, b: string): boolean {
+  return a.trim().toLocaleLowerCase('de') === b.trim().toLocaleLowerCase('de')
+}
+
+/**
+ * Was beim Speichern einer Vorlage nicht stimmt — `null`, wenn sie gehen darf.
+ * Die Regeln kommen fertig aus `regelnZumSpeichern` (`null` = keine Zeile).
+ */
+export function vorlageFehler(vorlagen: readonly RegelVorlage[], titel: string, regeln: string | null): string | null {
+  const name = titel.trim()
+  if (regeln === null) return 'Keine Regel zum Speichern.'
+  if (name === '') return 'Name fehlt.'
+  if (name.length > VORLAGE_TITEL_MAX) return `Name zu lang (höchstens ${VORLAGE_TITEL_MAX} Zeichen).`
+  // Dieselbe Grenze wie die Jagdregeln (138) — eine Vorlage passt in beide Editoren.
+  if (regeln.length > JAGDREGELN_MAX_ZEICHEN) return `Zu lang: ${regeln.length} von ${JAGDREGELN_MAX_ZEICHEN} Zeichen.`
+  if (!vorlagen.some((v) => gleicherTitel(v.titel, name)) && vorlagen.length >= VORLAGEN_MAX) {
+    return `Höchstens ${VORLAGEN_MAX} Vorlagen — lösch zuerst eine alte.`
+  }
+  return null
+}
+
+/** Portal-eigen: wie `vorlageFehler`, dazu ist ein vergebener Name ein Fehler (E4). */
+export function neueVorlageFehler(
+  vorlagen: readonly RegelVorlage[],
+  titel: string,
+  regeln: string | null,
+): string | null {
+  const belegt = vorlagen.find((v) => gleicherTitel(v.titel, titel))
+  if (belegt) return `Eine Vorlage „${belegt.titel}“ gibt es schon — wähl einen anderen Namen. Ersetzen geht in der App.`
+  return vorlageFehler(vorlagen, titel, regeln)
+}
+
+/** Eine Antwort von PostgREST, wie `maybeSingle()` sie liefert. */
+type Antwort = { data: unknown; error: { message: string; code?: string } | null; status?: number }
+
+/** Das Ende einer Supabase-Anfrage. */
+export interface VorlagenAntwort {
+  maybeSingle(): PromiseLike<Antwort>
+}
+
+/** Eine Supabase-Anfrage, so weit `vorlageSpeichern` sie filtert. */
+export interface VorlagenFilter extends VorlagenAntwort {
+  eq(spalte: string, wert: string): VorlagenFilter
+  is(spalte: string, wert: null): VorlagenFilter
+  select(spalten: string): VorlagenAntwort
+}
+
+/** Der Supabase-Client, so weit `vorlageSpeichern` ihn braucht — im Selbsttest eine Attrappe. */
+export interface VorlagenClient {
+  from(tabelle: 'user_settings'): {
+    select(spalten: string): VorlagenFilter
+    insert(zeile: { user_id: string; regel_vorlagen: RegelVorlage[] }): VorlagenFilter
+    update(zeile: { regel_vorlagen: RegelVorlage[] }): VorlagenFilter
+  }
+}
+
+/** Ein Grund, den der Nutzer so lesen soll, wie er ist. */
+export class VorlageNichtGespeichert extends Error {}
+
+/** Die Ablehnung des Servers mit Code und Status, wie `speicherAusgang` sie liest. */
+function abgelehnt({ error, status }: Antwort): Error {
+  return Object.assign(new Error(error?.message), {
+    code: error?.code ?? '',
+    status: status ?? null,
+    grund: error?.message ?? null,
+  })
+}
+
+/** Gleicher Inhalt? Als Tupel — jsonb ordnet Objektschlüssel um. */
+function gleicheVorlagen(daten: unknown, erwartet: readonly RegelVorlage[]): boolean {
+  const da = pruefeVorlagen((daten as { regel_vorlagen?: unknown } | null)?.regel_vorlagen)
+  return (
+    da !== undefined &&
+    da.length === erwartet.length &&
+    da.every((v, i) => v.titel === erwartet[i].titel && v.regeln === erwartet[i].regeln)
+  )
+}
+
+/** So oft wird bei einem gleichzeitigen Write neu gelesen und neu geprüft. */
+const VORLAGEN_RUNDEN = 3
+
+/**
+ * Hängt eine Vorlage unter neuem Namen an (E4): **frisch lesen, prüfen,
+ * schreiben — nur, wenn `updated_at` noch dasselbe ist.** Prallt der Write ab
+ * (App auf einem anderen Gerät, Sterne, Weg-Frist), geht es mit dem neuen
+ * Stand in die nächste Runde; ist der Name dann vergeben, wird nichts
+ * geschrieben. **Ohne Zeile wird EINGEFÜGT** — das ist der Normalfall (10 von
+ * 15 Konten, Schlusslesung V2 F1) —, und ein `23505` heisst: inzwischen
+ * angelegt, nächste Runde. Erfolg nur, wenn genau diese Liste zurückkommt (S1).
+ *
+ * Zwei Versuche gleichzeitig (der erste hängt hinter der Frist, der zweite
+ * läuft) ergeben trotzdem nur EINE Vorlage: wer zweiter schreibt, prallt am
+ * `updated_at` bzw. am `23505` ab und findet den Namen dann vergeben.
+ *
+ * Wirft `VorlageNichtGespeichert` mit lesbarem Grund, sonst die Ablehnung des
+ * Servers mit `code`/`status` (für `speicherAusgang`).
+ *
+ * @returns die gespeicherte Liste.
+ */
+export async function vorlageSpeichern(
+  client: VorlagenClient,
+  nutzerId: string,
+  titel: string,
+  regeln: string | null,
+): Promise<RegelVorlage[]> {
+  const name = titel.trim()
+  for (let runde = 0; runde < VORLAGEN_RUNDEN; runde++) {
+    const gelesen = await client
+      .from('user_settings')
+      .select('regel_vorlagen, updated_at')
+      .eq('user_id', nutzerId)
+      .maybeSingle()
+    // Ein Lesefehler heisst immer „nichts gespeichert": jede frühere Runde ist
+    // abgeprallt. Nur die abgelaufene Anmeldung bleibt ihr eigener Ausgang
+    // (Schlusslesung P1d F1).
+    if (gelesen.error) {
+      const fehler = abgelehnt(gelesen)
+      if (speicherAusgang(fehler).art === 'abgemeldet') throw fehler
+      throw new VorlageNichtGespeichert('Vorlagen gerade nicht abrufbar — nichts gespeichert. Bitte noch einmal versuchen.')
+    }
+    const zeile = gelesen.data as { regel_vorlagen: unknown; updated_at: string | null } | null
+    // Keine Zeile heisst „keine Vorlagen", aber nur mit 200 (wie `ladeVorlagen`).
+    if (!zeile && gelesen.status !== 200) {
+      throw new VorlageNichtGespeichert(`Leere Antwort (${gelesen.status}) — nicht vom Server.`)
+    }
+    const vorher = zeile ? pruefeVorlagen(zeile.regel_vorlagen) : []
+    // Unlesbar ist nie „keine" — sonst schriebe dieser Write alle anderen weg (S4).
+    if (vorher === undefined) throw new VorlageNichtGespeichert('Vorlagen gerade nicht lesbar.')
+    const fehler = neueVorlageFehler(vorher, name, regeln)
+    if (fehler !== null || regeln === null) throw new VorlageNichtGespeichert(fehler ?? 'Keine Regel zum Speichern.')
+    const neu = [...vorher, { titel: name, regeln }]
+
+    if (!zeile) {
+      const antwort = await client
+        .from('user_settings')
+        .insert({ user_id: nutzerId, regel_vorlagen: neu })
+        .select('regel_vorlagen')
+        .maybeSingle()
+      if (antwort.error?.code === '23505') continue
+      if (antwort.error) throw abgelehnt(antwort)
+      if (!gleicheVorlagen(antwort.data, neu)) throw new VorlageNichtGespeichert('Vorlage konnte nicht gespeichert werden.')
+      return neu
+    }
+
+    const anfrage = client.from('user_settings').update({ regel_vorlagen: neu }).eq('user_id', nutzerId)
+    const antwort = await (zeile.updated_at === null
+      ? anfrage.is('updated_at', null)
+      : anfrage.eq('updated_at', zeile.updated_at)
+    )
+      .select('regel_vorlagen')
+      .maybeSingle()
+    if (antwort.error) throw abgelehnt(antwort)
+    // 0 Zeilen: inzwischen geändert — neu lesen, neu prüfen.
+    if (!antwort.data) continue
+    if (!gleicheVorlagen(antwort.data, neu)) throw new VorlageNichtGespeichert('Vorlage konnte nicht gespeichert werden.')
+    return neu
+  }
+  throw new VorlageNichtGespeichert('Vorlagen wurden gerade woanders geändert — bitte noch einmal versuchen.')
+}
+
+/** Die Meldung zu einem gescheiterten `vorlageSpeichern` (Ausgänge wie E6). */
+export function vorlageMeldung(fehler: unknown): string {
+  if (fehler instanceof VorlageNichtGespeichert) return fehler.message
+  const ausgang = speicherAusgang(fehler)
+  if (ausgang.art === 'abgemeldet') return 'Anmeldung abgelaufen — in einem neuen Tab anmelden, dann hier erneut sichern.'
+  if (ausgang.art === 'abgelehnt') return `Der Server hat abgelehnt (${ausgang.code})${ausgang.grund}`
+  return 'Keine gültige Antwort vom Server — ob die Vorlage gespeichert wurde, zeigt „Vorlage einfügen“.'
+}
+
 // ── Sicht (141) ─────────────────────────────────────────────────────────────
 
 export type SchuetzenSicht = 'alles' | 'umkreis' | 'eigener'

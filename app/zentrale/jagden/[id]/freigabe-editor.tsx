@@ -31,6 +31,7 @@ import {
   type RegelVorlage,
 } from './regeln'
 import { sucheArten } from './suche'
+import VorlageSpeichern from './vorlage-speichern'
 
 type Block = { id: string; name: string }
 
@@ -51,6 +52,9 @@ type Vorlagen = { blockId: string } & (
   | { zustand: 'fehler'; text: string }
   | { zustand: 'da'; liste: RegelVorlage[] }
 )
+
+/** „Als Vorlage speichern" (P1d) je Block: das Namensfeld offen, oder danach die Meldung. */
+type VorlageSichern = { blockId: string } & ({ art: 'offen' } | { art: 'gespeichert'; titel: string })
 
 function Frage({ text, children }: { text: string; children: ReactNode }) {
   return (
@@ -119,17 +123,25 @@ export default function FreigabeEditor({
   // nur, wenn danach nichts kam — sonst überschriebe die späte Liste von
   // Block A die inzwischen gewählte von Block B (Codex P1c C-F4).
   const vorlagenLauf = useRef(0)
+  // Eines zur Zeit, unter genau diesem Block.
+  const [vorlageSichern, setVorlageSichern] = useState<VorlageSichern | null>(null)
+  const [vorlageSchreibt, setVorlageSchreibt] = useState(false)
   const [suche, setSuche] = useState('')
   const [offeneFamilie, setOffeneFamilie] = useState<string | null>(null)
 
   const stand = entwurfStand(zeilen, regeln, arten, basis)
   const laeuft = phase === 'schreibt' || phase === 'wartet'
-  const gesperrt = phase !== 'bearbeiten' || rueckfrage !== null
+  // Solange eine Vorlage gesichert wird, ebenfalls (`VorlageSpeichern`).
+  const gesperrt = phase !== 'bearbeiten' || rueckfrage !== null || vorlageSchreibt
+  // Keine Vorlage, solange der Editor speichert oder fragt — wohl aber in
+  // `veraltet` (Schlusslesung P1d F3, Moritz 27.10.2026; s. Jagdregeln-Editor).
+  const beschaeftigt = laeuft || rueckfrage !== null
   const voll = zeilen.length >= FREIGABE_MAX_ZEILEN
 
   // Reload und Tab schließen fragen nach, solange etwas verloren ginge (E9).
   // Link-Navigation im Portal erreicht das nicht (CP-107, hingenommen).
-  const schuetzen = stand.geaendert || laeuft
+  // Ein laufender Vorlagen-Write ebenso — sein Ausgang ginge verloren (Codex P1d B-F2).
+  const schuetzen = stand.geaendert || laeuft || vorlageSchreibt
   useEffect(() => {
     if (!schuetzen) return
     const warnen = (e: BeforeUnloadEvent) => {
@@ -192,11 +204,14 @@ export default function FreigabeEditor({
   /**
    * Nimmt Zeile `i` heraus. Verliert damit ein Block seine letzte Zeile,
    * geht seine Vorlagenliste mit — sonst stünde sie samt einer späten
-   * Antwort wieder da, sobald die Wildart zurückkommt (Codex P1c D2).
+   * Antwort wieder da, sobald die Wildart zurückkommt (Codex P1c D2). Dasselbe
+   * gilt für „Als Vorlage speichern".
    */
   const zeileWeg = (i: number) => {
     const rest = zeilen.filter((_, j) => j !== i)
-    if (vorlagen && !rest.some((z) => blockVon(z.art) === vorlagen.blockId)) vorlagenSchliessen()
+    const bleibt = (blockId: string) => rest.some((z) => blockVon(z.art) === blockId)
+    if (vorlagen && !bleibt(vorlagen.blockId)) vorlagenSchliessen()
+    if (vorlageSichern && !bleibt(vorlageSichern.blockId)) setVorlageSichern(null)
     setZeilen(rest)
   }
 
@@ -216,6 +231,7 @@ export default function FreigabeEditor({
 
   /** Lädt die Vorlagen beim Klick (E4) — je Block, eine Liste zur Zeit. */
   const vorlagenLaden = async (blockId: string) => {
+    setVorlageSichern(null)
     const nr = ++vorlagenLauf.current
     setVorlagen({ blockId, zustand: 'laedt' })
     try {
@@ -360,6 +376,8 @@ export default function FreigabeEditor({
 
   const blockAnzeigen = (block: Block) => {
     const liste = vorlagen?.blockId === block.id ? vorlagen : null
+    const text = regelnZumSpeichern([feldVon(block.id)])
+    const sichern = vorlageSichern?.blockId === block.id ? vorlageSichern : null
     return (
       <section key={block.id} className="jagd-freigabe-block">
         <h4>{block.name}</h4>
@@ -385,7 +403,7 @@ export default function FreigabeEditor({
             </button>
           </div>
         ) : liste.liste.length === 0 ? (
-          <p className="zentrale-hinweis">Noch keine Vorlagen — angelegt werden sie in der App (Du → Jagdeinstellungen).</p>
+          <p className="zentrale-hinweis">Noch keine Vorlagen. Speichere Regeln mit „Als Vorlage speichern“.</p>
         ) : (
           <div className="zentrale-inspektor-fuss jagd-regeln-vorlagen">
             {liste.liste.map((v) => (
@@ -410,16 +428,44 @@ export default function FreigabeEditor({
               Abbrechen
             </button>
           </Frage>
+        ) : sichern?.art === 'offen' ? (
+          <VorlageSpeichern
+            nutzerId={nutzerId}
+            regeln={text}
+            vorschlag={block.name}
+            aus={beschaeftigt}
+            onSchreibt={setVorlageSchreibt}
+            onFertig={(titel) => setVorlageSichern({ blockId: block.id, art: 'gespeichert', titel })}
+            onAbbrechen={() => setVorlageSichern(null)}
+          />
         ) : (
-          <button
-            type="button"
-            className="jagd-freigabe-vorlage"
-            disabled={gesperrt || liste?.zustand === 'laedt'}
-            onClick={() => void vorlagenLaden(block.id)}
-          >
-            Vorlage einfügen
-          </button>
+          <div>
+            <button
+              type="button"
+              className="jagd-freigabe-vorlage"
+              disabled={gesperrt || liste?.zustand === 'laedt'}
+              onClick={() => void vorlagenLaden(block.id)}
+            >
+              Vorlage einfügen
+            </button>
+            <button
+              type="button"
+              className="jagd-freigabe-vorlage"
+              disabled={beschaeftigt || vorlageSchreibt || text === null || vorlageSichern?.art === 'offen'}
+              onClick={() => {
+                vorlagenSchliessen()
+                setVorlageSichern({ blockId: block.id, art: 'offen' })
+              }}
+            >
+              Als Vorlage speichern
+            </button>
+          </div>
         )}
+        {sichern?.art === 'gespeichert' ? (
+          <p className="zentrale-hinweis" role="status">
+            Als Vorlage „{sichern.titel}“ gespeichert.
+          </p>
+        ) : null}
       </section>
     )
   }
@@ -552,7 +598,11 @@ export default function FreigabeEditor({
         >
           {laeuft ? 'Wird gespeichert …' : 'Speichern'}
         </button>
-        <button type="button" disabled={phase === 'schreibt' || rueckfrage !== null} onClick={schliessen}>
+        <button
+          type="button"
+          disabled={phase === 'schreibt' || rueckfrage !== null || vorlageSchreibt}
+          onClick={schliessen}
+        >
           {stand.geaendert ? 'Verwerfen …' : 'Schließen'}
         </button>
       </div>

@@ -48,6 +48,15 @@ import {
   type FreigabeRegel,
   type FreigabeZeile,
   type KatalogArt,
+  gleicherTitel,
+  neueVorlageFehler,
+  VORLAGEN_MAX,
+  vorlageFehler,
+  vorlageMeldung,
+  VorlageNichtGespeichert,
+  vorlageSpeichern,
+  type VorlagenClient,
+  type VorlagenFilter,
 } from './regeln.ts'
 
 const server = (extra: Partial<FreigabeZeile> = {}): FreigabeZeile => ({
@@ -573,4 +582,255 @@ assert.equal(alsFreigabeArt({ id: 'fu', name: 'Fuchs', eltern_id: null, geschlec
     rot,
     { wildart_id: 'fu', name: 'Fuchs', regeln: '• Neu' },
   ])
+}
+
+// ── P1d: Als Vorlage speichern ──────────────────────────────────────────────
+// Fälle aus `src/lib/hunt/__tests__/vorlagen.test.ts` (Name, vorlageFehler)
+// und `src/lib/data/__tests__/vorlagen.test.ts` (Schleife), Stand 27.10.2026.
+// Portal-eigen: vergebener Name, nur `regel_vorlagen` im UPDATE, Meldungen.
+
+// --- Name ---
+// Vergleicht ohne Gross/Klein und ohne Rand.
+assert.equal(gleicherTitel(' Rotwild ', 'rotwild'), true)
+assert.equal(gleicherTitel('Rotwild', 'Rotwild II'), false)
+
+// --- vorlageFehler ---
+// Lässt eine gültige Vorlage durch.
+assert.equal(vorlageFehler([], 'Rotwild', ROTWILD.regeln), null)
+// Verlangt Regeln und einen Namen.
+assert.match(vorlageFehler([], 'Rotwild', null) ?? '', /Keine Regel/)
+assert.match(vorlageFehler([], '  ', ROTWILD.regeln) ?? '', /Name fehlt/)
+assert.match(vorlageFehler([], 'x'.repeat(61), ROTWILD.regeln) ?? '', /zu lang/)
+assert.match(vorlageFehler([], 'Rotwild', `• ${'a'.repeat(4000)}`) ?? '', /Zu lang/)
+// Hält die Obergrenze — Ersetzen geht auch bei voller Liste.
+const VOLL = Array.from({ length: VORLAGEN_MAX }, (_, i) => ({ titel: `V${i}`, regeln: '• a' }))
+assert.match(vorlageFehler(VOLL, 'Neu', '• a') ?? '', /Höchstens/)
+assert.equal(vorlageFehler(VOLL, 'v3', '• b'), null)
+
+// --- neueVorlageFehler (Portal-eigen, E4): vergeben ist ein Fehler ---
+// Nennt die gespeicherte Schreibweise und verweist aufs Ersetzen in der App.
+assert.equal(
+  neueVorlageFehler([ROTWILD], ' rotwild ', '• a'),
+  'Eine Vorlage „Rotwild“ gibt es schon — wähl einen anderen Namen. Ersetzen geht in der App.',
+)
+// Auch bei voller Liste: vergeben, nicht „Höchstens" (beides stimmt, der Name ist der Grund).
+assert.match(neueVorlageFehler(VOLL, 'v3', '• b') ?? '', /gibt es schon/)
+assert.match(neueVorlageFehler(VOLL, 'Neu', '• b') ?? '', /Höchstens/)
+// Ein leerer Name trifft nie eine Vorlage, sondern „Name fehlt".
+assert.match(neueVorlageFehler([ROTWILD], '  ', '• a') ?? '', /Name fehlt/)
+assert.equal(neueVorlageFehler([ROTWILD], 'Drückjagd', '• a'), null)
+
+// --- vorlageSpeichern: Compare-and-Swap auf updated_at ---
+// Attrappe wie in der App: jede Antwort aus einer Warteschlange, jeder Aufruf
+// mit Art, Zeile und Filtern mitgeschrieben. **Ein Write ohne `.select()`
+// bekommt keine Zeile zurück** — wie der echte Server (Codex P1d A-F4).
+type Aufruf = { art: string; zeile?: unknown; filter: unknown[] }
+type MockAntwort = { data: unknown; error: { message: string; code?: string } | null; status?: number }
+function attrappe(antworten: MockAntwort[]) {
+  const aufrufe: Aufruf[] = []
+  const kette = (art: string, zeile?: unknown): VorlagenFilter => {
+    const aufruf: Aufruf = { art, zeile, filter: [] }
+    aufrufe.push(aufruf)
+    const k: VorlagenFilter = {
+      eq: (...f) => (aufruf.filter.push(['eq', ...f]), k),
+      is: (...f) => (aufruf.filter.push(['is', ...f]), k),
+      select: (spalten) => (aufruf.filter.push(['select', spalten]), k),
+      maybeSingle: () => {
+        const naechste = antworten.shift()
+        if (!naechste) throw new Error('Attrappe: keine Antwort mehr')
+        const ohneSelect = art !== 'lesen' && !aufruf.filter.some((f) => Array.isArray(f) && f[0] === 'select')
+        return Promise.resolve(ohneSelect ? { data: null, error: null, status: 204 } : { status: 200, ...naechste })
+      },
+    }
+    return k
+  }
+  const client: VorlagenClient = {
+    from: () => ({
+      select: () => kette('lesen'),
+      insert: (zeile) => kette('einfuegen', zeile),
+      update: (zeile) => kette('aendern', zeile),
+    }),
+  }
+  return { client, aufrufe }
+}
+const VA = { titel: 'A', regeln: '• a' }
+const VB = { titel: 'B', regeln: '• b' }
+const VC = { titel: 'C', regeln: '• c' }
+const gelesen = (vorlagen: unknown, marke: string | null = 't1') => ({
+  data: { regel_vorlagen: vorlagen, updated_at: marke },
+  error: null,
+})
+const zurueck = (vorlagen: unknown) => ({ data: { regel_vorlagen: vorlagen }, error: null })
+/** Wirft `vorlageSpeichern`? Gibt den Fehler zurück, sonst scheitert die Probe. */
+async function wirft(lauf: Promise<unknown>): Promise<unknown> {
+  try {
+    await lauf
+  } catch (e) {
+    return e
+  }
+  throw new Error('vorlageSpeichern hätte werfen müssen')
+}
+
+{
+  // Ändert die Zeile nur mit der gelesenen Marke und schreibt NUR `regel_vorlagen` (E4).
+  // jsonb ordnet Schlüssel um — der Vergleich darf daran nicht scheitern.
+  const { client, aufrufe } = attrappe([gelesen([VA]), zurueck([VA, { regeln: '• b', titel: 'B' }])])
+  assert.deepEqual(await vorlageSpeichern(client, 'u', ' B ', '• b'), [VA, VB])
+  assert.deepEqual(aufrufe[1], {
+    art: 'aendern',
+    zeile: { regel_vorlagen: [VA, VB] },
+    filter: [
+      ['eq', 'user_id', 'u'],
+      ['eq', 'updated_at', 't1'],
+      ['select', 'regel_vorlagen'],
+    ],
+  })
+}
+{
+  // Ohne Marke (`updated_at` null) prüft der Swap auf `is null`.
+  const { client, aufrufe } = attrappe([gelesen([], null), zurueck([VB])])
+  await vorlageSpeichern(client, 'u', 'B', '• b')
+  assert.deepEqual(aufrufe[1].filter, [
+    ['eq', 'user_id', 'u'],
+    ['is', 'updated_at', null],
+    ['select', 'regel_vorlagen'],
+  ])
+}
+{
+  // Abgeprallt (0 Zeilen): neu lesen, auf den NEUEN Stand anhängen.
+  const { client, aufrufe } = attrappe([
+    gelesen([VA]),
+    { data: null, error: null },
+    // Inzwischen hat ein anderes Gerät C gespeichert.
+    gelesen([VA, VC], 't2'),
+    zurueck([VA, VC, VB]),
+  ])
+  assert.deepEqual(await vorlageSpeichern(client, 'u', 'B', '• b'), [VA, VC, VB])
+  assert.deepEqual(aufrufe[3].filter.at(-2), ['eq', 'updated_at', 't2'])
+}
+{
+  // Abgeprallt, und im neuen Stand ist der Name vergeben → nichts geschrieben.
+  const { client, aufrufe } = attrappe([gelesen([VA]), { data: null, error: null }, gelesen([VA, VB], 't2')])
+  const e = await wirft(vorlageSpeichern(client, 'u', 'b', '• anders'))
+  assert.ok(e instanceof VorlageNichtGespeichert)
+  assert.match(vorlageMeldung(e), /„B“ gibt es schon/)
+  assert.deepEqual(
+    aufrufe.map((a) => a.art),
+    ['lesen', 'aendern', 'lesen'],
+  )
+}
+{
+  // Ohne Zeile wird eingefügt — nur `user_id` und `regel_vorlagen`; ein 23505
+  // heisst: inzwischen da, neue Runde, dann ändern.
+  const { client, aufrufe } = attrappe([
+    { data: null, error: null },
+    { data: null, error: { message: 'duplicate key', code: '23505' } },
+    gelesen([], 't3'),
+    zurueck([VB]),
+  ])
+  assert.deepEqual(await vorlageSpeichern(client, 'u', 'B', '• b'), [VB])
+  assert.deepEqual(
+    aufrufe.map((a) => a.art),
+    ['lesen', 'einfuegen', 'lesen', 'aendern'],
+  )
+  assert.deepEqual(aufrufe[1].zeile, { user_id: 'u', regel_vorlagen: [VB] })
+  assert.deepEqual(aufrufe[1].filter, [['select', 'regel_vorlagen']])
+}
+{
+  // Ohne Zeile, eingefügt und genau so zurück → Erfolg nach EINEM Write.
+  const { client, aufrufe } = attrappe([{ data: null, error: null }, zurueck([VB])])
+  assert.deepEqual(await vorlageSpeichern(client, 'u', 'B', '• b'), [VB])
+  assert.equal(aufrufe.length, 2)
+}
+{
+  // Auch beim EINFÜGEN: ein anderer Inhalt zurück ist kein Erfolg (S1).
+  const { client, aufrufe } = attrappe([{ data: null, error: null }, zurueck([VA])])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /nicht gespeichert/)
+  assert.deepEqual(
+    aufrufe.map((a) => a.art),
+    ['lesen', 'einfuegen'],
+  )
+}
+{
+  // Beim Einfügen ohne Zeile zurück: kein Erfolg, und KEINE neue Runde — die
+  // fände ihren eigenen Namen und meldete „gibt es schon".
+  const { client, aufrufe } = attrappe([
+    { data: null, error: null },
+    { data: null, error: null },
+  ])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /nicht gespeichert/)
+  assert.equal(aufrufe.length, 2)
+}
+{
+  // Gibt nach GENAU drei abgeprallten Runden auf, statt still zu überschreiben:
+  // sechs Anfragen, keine Antwort übrig (Codex P1d A-F3).
+  const antworten: MockAntwort[] = []
+  for (let i = 0; i < 3; i++) antworten.push(gelesen([], `t${i}`), { data: null, error: null })
+  const { client, aufrufe } = attrappe(antworten)
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /woanders geändert/)
+  assert.equal(aufrufe.length, 6)
+  assert.equal(antworten.length, 0)
+}
+{
+  // Kommt beim Ändern ein anderer Inhalt zurück, ist es kein Erfolg (S1).
+  const { client } = attrappe([gelesen([]), zurueck([VA])])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /nicht gespeichert/)
+}
+{
+  // Ein Fehler beim Schreiben wirft mit Code — als Ablehnung gemeldet.
+  const { client } = attrappe([
+    gelesen([]),
+    { data: null, error: { message: 'new row violates check constraint', code: '23514' } },
+  ])
+  assert.equal(
+    vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))),
+    'Der Server hat abgelehnt (23514) — new row violates check constraint',
+  )
+}
+{
+  // Netz weg beim SCHREIBEN (`code: ''`, Status 0): keine gültige Antwort,
+  // NICHT „abgelehnt ()" — ob der Write ankam, ist offen.
+  const { client } = attrappe([
+    gelesen([]),
+    { data: null, error: { message: 'TypeError: Failed to fetch', code: '' }, status: 0 },
+  ])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /^Keine gültige Antwort/)
+}
+{
+  // Netz weg oder Ablehnung beim LESEN: sicher nichts gespeichert, auch nach
+  // einer abgeprallten Runde (Schlusslesung P1d F1).
+  const netz = { data: null, error: { message: 'TypeError: Failed to fetch', code: '' }, status: 0 }
+  for (const antworten of [[netz], [gelesen([]), { data: null, error: null }, netz]] as MockAntwort[][]) {
+    const { client } = attrappe(antworten)
+    assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /nichts gespeichert/)
+  }
+  const { client } = attrappe([{ data: null, error: { message: 'boom', code: '57014' }, status: 500 }])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /nichts gespeichert/)
+}
+{
+  // Anmeldung abgelaufen (PGRST301) bzw. 401 → eigene Meldung.
+  const { client } = attrappe([{ data: null, error: { message: 'JWT expired', code: 'PGRST301' }, status: 401 }])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /^Anmeldung abgelaufen/)
+}
+{
+  // Leere Antwort mit anderem Status ist keine Auskunft — nichts geschrieben.
+  const { client, aufrufe } = attrappe([{ data: null, error: null, status: 204 }])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /204/)
+  assert.equal(aufrufe.length, 1)
+}
+{
+  // Unlesbar wirft, nie still zu „keine" (S4) — nichts geschrieben.
+  const { client, aufrufe } = attrappe([gelesen({ kaputt: true })])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', '• b'))), /nicht lesbar/)
+  assert.equal(aufrufe.length, 1)
+}
+{
+  // Ungültig (keine Regel, voll) wird gar nicht erst geschrieben.
+  const { client, aufrufe } = attrappe([gelesen([]), gelesen(VOLL)])
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'B', null))), /Keine Regel/)
+  assert.match(vorlageMeldung(await wirft(vorlageSpeichern(client, 'u', 'Neu', '• a'))), /Höchstens/)
+  assert.deepEqual(
+    aufrufe.map((a) => a.art),
+    ['lesen', 'lesen'],
+  )
 }

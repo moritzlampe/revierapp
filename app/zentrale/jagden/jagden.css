@@ -685,3 +685,6 @@
 .jagd-freigabe-vorlage { cursor: pointer; }
 .jagd-freigabe-zeile button:disabled,
 .jagd-freigabe-vorlage:disabled { opacity: 0.5; cursor: default; }
+/* P1d: „Als Vorlage speichern" neben „Vorlage einfügen", das Namensfeld darunter. */
+.jagd-freigabe-vorlage + .jagd-freigabe-vorlage { margin-left: 0.5rem; }
+.jagd-vorlage-speichern { margin-top: 0.5rem; }
