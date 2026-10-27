@@ -1050,11 +1050,27 @@ export function alsZeitstempel(lokal: string): string | null {
   if (Number.isNaN(alsUtc.getTime())) return null
   // Erste Näherung, dann den Versatz am ERGEBNIS nachmessen.
   const grob = new Date(alsUtc.getTime() - berlinVersatz(alsUtc))
-  return new Date(alsUtc.getTime() - berlinVersatz(grob)).toISOString()
+  const genau = new Date(alsUtc.getTime() - berlinVersatz(grob))
+  return Number.isNaN(genau.getTime()) ? null : genau.toISOString()
 }
 
-/** Wie weit Berlin an diesem Zeitpunkt vor UTC liegt, in Millisekunden. */
+/**
+ * Wie weit Berlin an diesem Zeitpunkt vor UTC liegt, in Millisekunden.
+ *
+ * **`NaN`, wenn Berlin dort kein vierstelliges Jahr zeigt, statt zu werfen.**
+ * `alsEingabewert` liefert unter 1000 ein Jahr ohne führende Nullen
+ * (`2-11-15T09:53`), ab 10000 ein fünfstelliges — beides ist kein Datum mehr,
+ * und das Folge-`toISOString()` warf `RangeError`. Die kleinen Jahre tippt
+ * jeder, der das Datumsfeld per Tastatur füllt (0002, 0020, 0202 …), und weil
+ * das Formular `alsZeitstempel` beim Rendern ruft, stürzte die Seite ab
+ * (Live-Klicktest 27.10.2026). `alsZeitstempel` macht daraus `null`.
+ *
+ * Ein Jahres-Riegel in `alsZeitstempel` wäre kürzer und ist geprüft
+ * verworfen: er sieht nur das getippte Jahr, nicht das Berliner — am
+ * 31.12.9999 ab 23:00 ist das schon 10000.
+ */
 function berlinVersatz(zeitpunkt: Date): number {
+  if (Number.isNaN(zeitpunkt.getTime())) return NaN
   return new Date(`${alsEingabewert(zeitpunkt.toISOString())}Z`).getTime() - zeitpunkt.getTime()
 }
 

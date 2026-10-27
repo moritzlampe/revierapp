@@ -960,6 +960,22 @@ assert.equal(
 
 assert.equal(alsZeitstempel(''), null)
 assert.equal(alsZeitstempel('kein datum'), null)
+
+// **Zwischenstaende beim Tippen des Jahres** (Live-Klicktest 27.10.2026). Chrome
+// meldet beim Eintippen von 15112026 nacheinander die Jahre 0002, 0020, 0202 —
+// jedes ein gueltiger Feldwert. `alsZeitstempel` warf darauf `RangeError:
+// Invalid time value`, und weil das Formular es beim Rendern aufruft
+// (`mehrtaegig(...)`), stuerzte die ganze Seite ab. Erwartet ist `null`, also
+// „noch kein Termin", bis das Jahr vollstaendig ist.
+assert.equal(alsZeitstempel('0002-11-15T09:00'), null)
+assert.equal(alsZeitstempel('0020-11-15T09:00'), null)
+assert.equal(alsZeitstempel('0202-11-15T09:00'), null)
+// Die obere Kante: getippt 9999, in Berlin schon 10000. Ein Riegel auf das
+// getippte Jahr liesse sie durch (Ponytail-Lesung, gemessen und verworfen).
+assert.equal(alsZeitstempel('9999-12-31T23:30'), null)
+assert.match(pruefeJagdEntwurf(entwurf({ termin: '0202-11-15T09:00' })) ?? '', /Datum/)
+assert.match(pruefeJagdEntwurf(entwurf({ bis: '0202-11-16T09:00' })) ?? '', /Datum/)
+
 assert.equal(alsEingabewert(null), '')
 assert.equal(alsEingabewert('kein datum'), '')
 
