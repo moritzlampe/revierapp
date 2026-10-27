@@ -5,6 +5,7 @@ import { useRef, useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../../schreiben'
 import { VORBEREITBARE_STATUS } from '../jagden'
+import JagdregelnEditor from './jagdregeln-editor'
 import {
   freigabeBloecke,
   hatGewicht,
@@ -42,9 +43,11 @@ export interface Katalogzeile {
 /**
  * Freigabe, Jagdregeln und „Was Schützen sehen" einer Jagd (Fahrplan P1a).
  *
- * **Freigabe und Regeln sind hier nur zu LESEN** — bearbeitet werden sie
- * vorerst in der App (Jagd → Regeln). Der Editor kommt mit P1b/P1c; bis dahin
- * steht der Hinweis da, damit niemand einen Knopf sucht, den es nicht gibt.
+ * **Die Jagdregeln sind seit P1b bearbeitbar** (`jagdregeln-editor.tsx`), unter
+ * `regelnBearbeitbar` (Bauplan Portal Freigabe/Regeln V2.1, E7). **Die
+ * Freigabe ist hier nur zu LESEN** — bearbeitet wird sie bis P1c in der App
+ * (Jagd → Regeln); bis dahin steht der Hinweis da, damit niemand einen Knopf
+ * sucht, den es nicht gibt.
  * Die Darstellung ist die der App (`regeln.ts`, Kopie aus `freigabe.ts`):
  * je Wildart ein Block, darunter, was frei ist, und die Regeln dieser Art.
  *
@@ -63,14 +66,27 @@ export default function RegelnBereich({
   roh,
   katalog,
   schreibbar,
+  regelnBearbeitbar,
+  nutzerId,
 }: {
   jagdId: string
   roh: RegelnRoh
   katalog: Katalogzeile[]
   schreibbar: boolean
+  /** Leitung, Jagd in Vorbereitung und nicht beendet (E7) — strenger als die App. */
+  regelnBearbeitbar: boolean
+  nutzerId: string
 }) {
   const router = useRouter()
   const [fehler, setFehler] = useState<string | null>(null)
+  /**
+   * Ob der Jagdregeln-Editor offen ist — **als Zustand, nicht aus den Props**
+   * (E6): kippt `regelnBearbeitbar` nach einem Nachladen auf falsch, bleibt
+   * der offene Entwurf stehen; sein Speichern prallt dann an 0 Zeilen ab.
+   */
+  const [editorOffen, setEditorOffen] = useState(false)
+  /** Was der Editor beim Schließen meldet („Doch gespeichert" …). */
+  const [hinweis, setHinweis] = useState<string | null>(null)
   const [laedtNach, starteRefresh] = useTransition()
   const [laeuft, setLaeuft] = useState(false)
   // Riegel als Ref, nicht als State: zwischen Klick und sperrendem Render
@@ -181,22 +197,57 @@ export default function RegelnBereich({
           {freigabe && hatGewicht(freigabe) ? <p className="zentrale-hinweis">Gewichte: aufgebrochen</p> : null}
         </>
       )}
+      <p className="zentrale-hinweis">Die Freigabe bearbeitest du vorerst in der App (Jagd → Regeln). Im Portal folgt sie.</p>
 
       <h3 className="jagd-regeln-titel">Jagdregeln</h3>
-      {jagdregeln === undefined ? (
-        <p className="zentrale-hinweis">Die Jagdregeln ließen sich nicht lesen.</p>
-      ) : jagdregeln === null ? (
-        <p className="zentrale-hinweis">Noch keine Jagdregeln eingetragen.</p>
+      {editorOffen ? (
+        <JagdregelnEditor
+          jagdId={jagdId}
+          // Nach dem Öffnen liest der Editor diesen Wert nicht mehr (Basis
+          // eingefroren); geöffnet wird er nur, wenn er lesbar war.
+          basis={jagdregeln ?? null}
+          nutzerId={nutzerId}
+          onSchliessen={(text) => {
+            setEditorOffen(false)
+            setHinweis(text)
+            starteRefresh(() => router.refresh())
+          }}
+        />
       ) : (
-        <ul className="jagd-regeln-punkte">
-          {regelPunkte(jagdregeln).map((r, i) => (
-            <li key={i}>{r}</li>
-          ))}
-        </ul>
+        <>
+          {jagdregeln === undefined ? (
+            <p className="zentrale-hinweis">Die Jagdregeln ließen sich nicht lesen.</p>
+          ) : jagdregeln === null ? (
+            <p className="zentrale-hinweis">Noch keine Jagdregeln eingetragen.</p>
+          ) : (
+            <ul className="jagd-regeln-punkte">
+              {regelPunkte(jagdregeln).map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          )}
+          {hinweis ? (
+            <p className="zentrale-hinweis" role="status">
+              {hinweis}
+            </p>
+          ) : null}
+          {/* Nur lesbare Jagdregeln öffnen den Editor (E7): unbekannter Inhalt
+              ginge beim Speichern verloren. */}
+          {regelnBearbeitbar && jagdregeln !== undefined ? (
+            <button
+              type="button"
+              className="zentrale-knopf"
+              disabled={laedtNach}
+              onClick={() => {
+                setHinweis(null)
+                setEditorOffen(true)
+              }}
+            >
+              {jagdregeln === null ? 'Jagdregeln eintragen' : 'Jagdregeln ändern'}
+            </button>
+          ) : null}
+        </>
       )}
-      <p className="zentrale-hinweis">
-        Freigabe und Jagdregeln bearbeitest du vorerst in der App (Jagd → Regeln). Im Portal folgt es.
-      </p>
 
       <h3 className="jagd-regeln-titel">Was Schützen sehen</h3>
       {sicht === undefined || angezeigt === undefined ? (

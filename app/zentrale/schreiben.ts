@@ -36,7 +36,41 @@
 /** Was PostgREST bei `.select()` zurückgibt, auf das reduziert, was hier zählt. */
 export type WriteErgebnis<T> = {
   data: T[] | null
-  error: { message: string } | null
+  error: { message: string; code?: string } | null
+  status?: number
+}
+
+/**
+ * Was `ausWriteErgebnis` wirft — mit dem, was ein Aufrufer zum Unterscheiden
+ * braucht, statt den Meldungstext zu durchsuchen (Bauplan Portal P1b/P1c,
+ * E6). Der Text ist derselbe wie vorher; wer `includes('kein Datensatz
+ * betroffen')` prüft (P1a), merkt nichts.
+ *
+ * - `keineZeile`: der Write traf 0 Zeilen, ohne dass der Server einen Fehler
+ *   meldete (RLS, Statusfilter, Compare-and-Swap).
+ * - `code`: der PostgREST-Code (SQLSTATE, `PGRST…`) — **auch `''`**: so meldet
+ *   postgrest-js einen Netzfehler, und das ist keine Ablehnung. Fehlt er
+ *   (`null`), kam keine PostgREST-Antwort (z. B. `400` der Cloudflare-Kante).
+ * - `status`: der HTTP-Status, wenn bekannt (`401` = Anmeldung abgelaufen).
+ * - `grund`: die Meldung des Servers ungekürzt, ohne den Vorsatz „… konnte
+ *   nicht geschrieben werden" — für eine Anzeige mit eigenem Satz davor.
+ */
+export class SchreibFehler extends Error {
+  readonly keineZeile: boolean
+  readonly code: string | null
+  readonly status: number | null
+  readonly grund: string | null
+
+  constructor(
+    message: string,
+    teile: { keineZeile: boolean; code: string | null; status: number | null; grund: string | null },
+  ) {
+    super(message)
+    this.keineZeile = teile.keineZeile
+    this.code = teile.code
+    this.status = teile.status
+    this.grund = teile.grund
+  }
 }
 
 /**
@@ -46,9 +80,14 @@ export type WriteErgebnis<T> = {
  * falsche Zahl — hier lieber laut scheitern als einen Erfolg melden, den es
  * nicht gab.
  */
-export function ausWriteErgebnis<T>({ data, error }: WriteErgebnis<T>, was: string): T {
+export function ausWriteErgebnis<T>({ data, error, status }: WriteErgebnis<T>, was: string): T {
   if (error) {
-    throw new Error(`${was} konnte nicht geschrieben werden: ${error.message}`)
+    throw new SchreibFehler(`${was} konnte nicht geschrieben werden: ${error.message}`, {
+      keineZeile: false,
+      code: error.code ?? null,
+      status: status ?? null,
+      grund: error.message,
+    })
   }
   if (!data || data.length === 0) {
     // „geschrieben" statt „gespeichert", und „gibt es nicht (mehr)" als erste
@@ -57,10 +96,11 @@ export function ausWriteErgebnis<T>({ data, error }: WriteErgebnis<T>, was: stri
     // häufigste 0-Zeilen-Fall eines DELETE ist nicht RLS, sondern eine Zeile,
     // die die Feld-App schon entfernt hat. Wer dann „eine RLS-Policy" liest,
     // sucht eine Berechtigung, die nie gefehlt hat.
-    throw new Error(
+    throw new SchreibFehler(
       `${was} wurde nicht geschrieben: kein Datensatz betroffen. Entweder gibt es ` +
         'die Zeile nicht (mehr), es greift eine RLS-Policy, oder dem Aufruf fehlt ' +
         '.select().',
+      { keineZeile: true, code: null, status: status ?? null, grund: null },
     )
   }
   // Mehr als eine Zeile heißt: die Einschränkung fehlt (z. B. kein .eq('id', …)).

@@ -8,6 +8,14 @@
 // Läuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 import assert from 'node:assert/strict'
 import {
+  abgelehntMitCode,
+  alsFeldtext,
+  jagdregelnGeaendert,
+  pruefeVorlagen,
+  regelnZumSpeichern,
+  speicherAusgang,
+  vorlageEinfuegen,
+  type RegelVorlage,
   freigabeBloecke,
   freigabeText,
   hatGewicht,
@@ -230,3 +238,112 @@ assert.deepEqual(sichtSpalte({ feld: 'gruppenleiter', wert: 'wie_schuetzen' }), 
   assert.equal(sichtEnthaelt(s, { feld: 'umkreisM', wert: 200 }), false)
   assert.equal(sichtEnthaelt(s, { feld: 'gruppenleiter', wert: 'wie_schuetzen' }), false)
 }
+
+// ── P1b: Jagdregeln bearbeiten ───────────────────────────────────────────────
+// Fälle aus `freigabe.test.ts` (regelnZumSpeichern) und `vorlagen.test.ts`
+// (pruefeVorlagen, vorlageEinfuegen), Stand 27.10.2026. Die Fälle von
+// `ablehnungsGrund` stehen unten bei `speicherAusgang`, das ihn bildet.
+
+// --- regelnZumSpeichern (CN-343) ---
+// Ohne Inhalt wird es null — wie im Trigger.
+assert.equal(regelnZumSpeichern([]), null)
+assert.equal(regelnZumSpeichern(['']), null)
+assert.equal(regelnZumSpeichern([' ', '\t', '\n']), null)
+// Jede nicht leere Zeile wird ein Punkt, Leerraum am Rand fällt weg.
+assert.equal(regelnZumSpeichern(['Kein Schuss ', '', ' Sauen bis 50 kg']), '• Kein Schuss\n• Sauen bis 50 kg')
+// Eingefügte Zeilenumbrüche werden eigene Punkte.
+assert.equal(regelnZumSpeichern(['A\nB']), '• A\n• B')
+// Hin und zurück bleibt der gespeicherte Text gleich.
+{
+  const gespeichert = '• Kein Schuss\n• Sauen bis 50 kg'
+  assert.equal(regelnZumSpeichern(regelPunkte(gespeichert)), gespeichert)
+}
+// Ein selbst getipptes „•" bleibt, auch über mehrere Rundreisen (Codex CN-343, Befund 1).
+{
+  const gespeichert = regelnZumSpeichern(['• A', '•', '••', '•B'])
+  assert.equal(gespeichert, '• • A\n• •\n• ••\n• •B')
+  assert.deepEqual(regelPunkte(gespeichert as string), ['• A', '•', '••', '•B'])
+  assert.equal(regelnZumSpeichern(regelPunkte(gespeichert as string)), gespeichert)
+}
+// CRLF aus eingefügtem Text wird zu sauberen Punkten.
+assert.equal(regelnZumSpeichern(['A\r\nB\r\n']), '• A\n• B')
+
+// --- pruefeVorlagen ---
+const ROTWILD: RegelVorlage = { titel: 'Rotwild', regeln: '• Aus Rudeln nur Kälber\n• Kalb vor Alttier' }
+const DRUECKJAGD: RegelVorlage = { titel: 'Drückjagd', regeln: '• Kein Schuss über die Kuppe' }
+// Nimmt eine Liste lesbarer Vorlagen, auch die leere.
+assert.deepEqual(pruefeVorlagen([ROTWILD]), [ROTWILD])
+assert.deepEqual(pruefeVorlagen([]), [])
+// Macht aus Unlesbarem „unbekannt", nie „keine Vorlagen" (S4).
+assert.equal(pruefeVorlagen(null), undefined)
+assert.equal(pruefeVorlagen({}), undefined)
+assert.equal(pruefeVorlagen([ROTWILD, 5]), undefined)
+assert.equal(pruefeVorlagen([{ titel: 'x' }]), undefined)
+assert.equal(pruefeVorlagen([{ titel: 3, regeln: 'a' }]), undefined)
+
+// --- vorlageEinfuegen ---
+// Hängt unten an, bestehende Zeilen bleiben.
+assert.deepEqual(vorlageEinfuegen(['Nur mit Signalfarbe'], ROTWILD), [
+  'Nur mit Signalfarbe',
+  'Aus Rudeln nur Kälber',
+  'Kalb vor Alttier',
+])
+// Lässt wortgleiche Regeln weg — auch bei zweimal derselben Vorlage.
+{
+  const einmal = vorlageEinfuegen([], ROTWILD)
+  assert.deepEqual(vorlageEinfuegen(einmal, ROTWILD), einmal)
+}
+// Zerlegt ein mehrzeiliges Feld vor dem Vergleich (Codex C9).
+assert.deepEqual(vorlageEinfuegen(['A\nAus Rudeln nur Kälber'], ROTWILD), ['A', 'Aus Rudeln nur Kälber', 'Kalb vor Alttier'])
+// Räumt die leere Zeile eines leeren Editors weg.
+assert.deepEqual(vorlageEinfuegen([''], DRUECKJAGD), ['Kein Schuss über die Kuppe'])
+
+// --- Portal-eigen: abgelehntMitCode (nativ ungetestet) ---
+assert.equal(abgelehntMitCode({ code: '22023' }), '22023')
+// Ein leerer Code ist keiner — so meldet postgrest-js einen Netzfehler.
+assert.equal(abgelehntMitCode({ code: '' }), null)
+assert.equal(abgelehntMitCode({ message: 'Bad Request' }), null)
+assert.equal(abgelehntMitCode(null), null)
+
+// --- Portal-eigen: das Textfeld (E3) ---
+// `null` öffnet ein leeres Feld (Codex 4a); sonst eine Regel je Zeile, ohne Punkt.
+assert.equal(alsFeldtext(null), '')
+assert.equal(alsFeldtext('• A\n• B'), 'A\nB')
+// Rundreise: was das Feld zeigt, speichert sich als derselbe Text.
+assert.equal(regelnZumSpeichern([alsFeldtext('• A\n• B')]), '• A\n• B')
+
+// --- Portal-eigen: „geändert" vergleicht beide Seiten normalisiert (E3) ---
+// Unverändert geöffnet ist nicht geändert — auch bei einem Servertext mit
+// Leerzeilen oder ohne Punkte (vor CN-343).
+assert.equal(jagdregelnGeaendert(regelnZumSpeichern([alsFeldtext('A\n\nB')]), 'A\n\nB'), false)
+assert.equal(jagdregelnGeaendert(null, null), false)
+assert.equal(jagdregelnGeaendert('• A', null), true)
+assert.equal(jagdregelnGeaendert(null, '• A'), true)
+assert.equal(jagdregelnGeaendert('• A\n• C', '• A\n• B'), true)
+
+// --- Portal-eigen: Ausgänge beim Speichern (E6) ---
+// Die Fehler haben die Form von `SchreibFehler` (`schreiben.ts`).
+const fehler = (teil: Record<string, unknown>) => ({ keineZeile: false, code: null, status: null, grund: null, ...teil })
+assert.deepEqual(speicherAusgang(fehler({ keineZeile: true, status: 200 })), { art: 'keineZeile' })
+assert.deepEqual(speicherAusgang(fehler({ code: 'PGRST301', status: 401, grund: 'JWT expired' })), { art: 'abgemeldet' })
+// 401 ohne Code (Antwort ohne PostgREST-JSON) ist ebenfalls abgelaufen.
+assert.deepEqual(speicherAusgang(fehler({ status: 401 })), { art: 'abgemeldet' })
+assert.deepEqual(
+  speicherAusgang(fehler({ code: '42501', status: 403, grund: 'Freigabe und Jagdregeln einer beendeten Jagd sind fest' })),
+  { art: 'abgelehnt', code: '42501', grund: ' — Freigabe und Jagdregeln einer beendeten Jagd sind fest' },
+)
+// Ohne Meldung (oder nur Leerraum) kein Zusatz — wie `ablehnungsGrund` der App.
+assert.deepEqual(speicherAusgang(fehler({ code: '42501', status: 403 })), { art: 'abgelehnt', code: '42501', grund: '' })
+assert.deepEqual(speicherAusgang(fehler({ code: '42501', grund: '  ' })), { art: 'abgelehnt', code: '42501', grund: '' })
+// Den App-Satz nimmt das Portal heraus — es gibt hier keine App zu aktualisieren.
+assert.deepEqual(
+  speicherAusgang(fehler({ code: '22023', status: 400, grund: 'Für Rotwild stehen Regeln je Wildart. Bitte die App aktualisieren.' })),
+  { art: 'abgelehnt', code: '22023', grund: ' — Für Rotwild stehen Regeln je Wildart.' },
+)
+// **Netzfehler (`code: ''`) ist KEINE Ablehnung** (Schlusslesung V2, F3).
+assert.deepEqual(speicherAusgang(fehler({ code: '', status: 0, grund: 'TypeError: fetch failed' })), { art: 'keineAntwort' })
+// Kante: `400` ohne PostgREST-Code.
+assert.deepEqual(speicherAusgang(fehler({ status: 400, grund: 'Bad Request' })), { art: 'keineAntwort' })
+// Ein fremder Fehler (Frist, Programmfehler) ist ebenfalls keine Antwort.
+assert.deepEqual(speicherAusgang(new Error('Keine Antwort vom Server (15 s).')), { art: 'keineAntwort' })
+assert.deepEqual(speicherAusgang(null), { art: 'keineAntwort' })

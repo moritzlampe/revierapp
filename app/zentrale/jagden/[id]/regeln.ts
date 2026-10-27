@@ -202,6 +202,134 @@ export function regelPunkte(text: string): string[] {
     .filter((z) => z !== '')
 }
 
+// ── Jagdregeln bearbeiten (P1b) ─────────────────────────────────────────────
+//
+// Kopien aus der App, Stand 27.10.2026 (Bauplan Portal Freigabe/Regeln V2.1,
+// E2): `JAGDREGELN_MAX_ZEICHEN`, `REGEL_PUNKT`, `regelnZumSpeichern` aus
+// `src/lib/hunt/freigabe.ts`; `abgelehntMitCode` aus
+// `src/lib/data/map-objects.ts`; `RegelVorlage`, `pruefeVorlagen`,
+// `vorlageEinfuegen` aus `src/lib/hunt/vorlagen.ts`. Testfälle aus
+// `freigabe.test.ts` und `vorlagen.test.ts`.
+// **Portal-eigen** (nativ inline in `RegelnAnsicht`/`RegelEingabe`):
+// `alsFeldtext`, `jagdregelnGeaendert`, `speicherAusgang` — Letzteres bildet
+// den Grund wie `ablehnungsGrund` der App, aber aus `SchreibFehler.grund`
+// statt aus `message` (Ponytail: eine Kopie mit einem Aufrufer über einen
+// Umweg war keine Kopie mehr, sondern Verpackung).
+
+/** Längste Jagdregeln, die die DB nimmt (`hunts_jagdregeln_form`, 138). */
+export const JAGDREGELN_MAX_ZEICHEN = 4000
+
+/** Anfang eines Punkts der Regel-Liste (CN-343). */
+const REGEL_PUNKT = '• '
+
+/**
+ * Jagdregeln zum Speichern (CN-343): jede nicht leere Zeile wird ein Punkt,
+ * leere fallen weg; bleibt keiner, `null` — wie im Trigger. Ein selbst
+ * getipptes „•" bleibt stehen (Begründung in der App).
+ */
+export function regelnZumSpeichern(zeilen: readonly string[]): string | null {
+  const punkte = zeilen
+    .flatMap((z) => z.split('\n'))
+    .map((z) => z.trim())
+    .filter((z) => z !== '')
+  return punkte.length === 0 ? null : punkte.map((p) => REGEL_PUNKT + p).join('\n')
+}
+
+/**
+ * Der Code einer Ablehnung, sonst `null`. Mit Code hat der Server geantwortet
+ * und nichts geschrieben; ohne — Frist, Netz, Kante — ist offen, was geschah.
+ * **`''` ist kein Code** (postgrest-js meldet so einen Netzfehler).
+ */
+export function abgelehntMitCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' && code !== '' ? code : null
+}
+
+/** Eine Vorlage aus `user_settings.regel_vorlagen` (140); `regeln` „• A\n• B". */
+export interface RegelVorlage {
+  titel: string
+  regeln: string
+}
+
+/** Liest die Vorlagen; Unlesbares → `undefined`, nie „keine Vorlagen" (S4). */
+export function pruefeVorlagen(roh: unknown): RegelVorlage[] | undefined {
+  if (!Array.isArray(roh)) return undefined
+  for (const v of roh) {
+    if (typeof v !== 'object' || v === null) return undefined
+    const { titel, regeln } = v as Record<string, unknown>
+    if (typeof titel !== 'string' || typeof regeln !== 'string') return undefined
+  }
+  return roh as RegelVorlage[]
+}
+
+/**
+ * Fügt eine Vorlage unten an, bestehende Zeilen bleiben; eine wortgleiche
+ * Regel kommt nicht doppelt, leere Zeilen fallen weg. Mehrzeilige Felder
+ * werden vor dem Vergleich zerlegt (Codex CN-348 C9).
+ */
+export function vorlageEinfuegen(zeilen: readonly string[], vorlage: RegelVorlage): string[] {
+  const da = zeilen
+    .flatMap((z) => z.split('\n'))
+    .map((z) => z.trim())
+    .filter((z) => z !== '')
+  const schon = new Set(da)
+  const dazu = regelPunkte(vorlage.regeln).filter((p) => {
+    if (schon.has(p)) return false
+    schon.add(p)
+    return true
+  })
+  return [...da, ...dazu]
+}
+
+/**
+ * Das Textfeld beim Öffnen: eine Regel je Zeile, ohne Punkt (Bauplan E3).
+ * `null` („noch nichts eingetragen") ist der häufige Fall und wird leer.
+ */
+export function alsFeldtext(basis: string | null): string {
+  return basis === null ? '' : regelPunkte(basis).join('\n')
+}
+
+/**
+ * Hat der Editor etwas geändert? **Beide Seiten normalisiert** (E3, wie
+ * `RegelnAnsicht.tsx:158`): ein Servertext mit Leerzeilen oder ohne Punkte
+ * hieße sonst schon beim Öffnen „geändert". Der Compare-and-Swap schickt
+ * trotzdem die ROHE Basis — verglichen wird gegen das, was der Server hält.
+ */
+export function jagdregelnGeaendert(neu: string | null, basis: string | null): boolean {
+  return neu !== (basis === null ? null : regelnZumSpeichern(regelPunkte(basis)))
+}
+
+/** Wie ein gescheitertes Speichern ausging (E6) — einer von vier Ausgängen. */
+export type SpeicherAusgang =
+  | { art: 'keineZeile' }
+  | { art: 'abgemeldet' }
+  | { art: 'abgelehnt'; code: string; grund: string }
+  | { art: 'keineAntwort' }
+
+/**
+ * Ordnet einen Fehler aus `schreibe()` einem Ausgang zu (E6). Liest die Felder
+ * von `SchreibFehler` (`schreiben.ts`) über ihre Namen, damit diese Datei
+ * ohne Importe bleibt.
+ *
+ * - `keineZeile` → 0 Zeilen (Compare-and-Swap, Statusfilter, RLS).
+ * - Code `PGRST30…` oder Status `401` → Anmeldung abgelaufen.
+ * - Sonst ein nichtleerer Code → abgelehnt; der Satz „Bitte die App
+ *   aktualisieren." des Triggers fällt weg — im Portal gibt es keine.
+ * - Alles andere (`code: ''`, kein Code, kein `SchreibFehler`) → keine
+ *   gültige Antwort: offen, ob geschrieben wurde.
+ */
+export function speicherAusgang(fehler: unknown): SpeicherAusgang {
+  if (typeof fehler !== 'object' || fehler === null) return { art: 'keineAntwort' }
+  const f = fehler as { keineZeile?: unknown; status?: unknown; grund?: unknown }
+  if (f.keineZeile === true) return { art: 'keineZeile' }
+  const code = abgelehntMitCode(fehler)
+  if (code?.startsWith('PGRST30') || f.status === 401) return { art: 'abgemeldet' }
+  if (code === null) return { art: 'keineAntwort' }
+  const grund = typeof f.grund === 'string' ? f.grund.replace(/\s*Bitte die App aktualisieren\.?/, '').trim() : ''
+  return { art: 'abgelehnt', code, grund: grund === '' ? '' : ` — ${grund}` }
+}
+
 // ── Sicht (141) ─────────────────────────────────────────────────────────────
 
 export type SchuetzenSicht = 'alles' | 'umkreis' | 'eigener'

@@ -6,7 +6,7 @@
 //
 // Laeuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 import assert from 'node:assert/strict'
-import { ausWriteErgebnis, schreibe, schreibeViele, type WriteErgebnis } from './schreiben.ts'
+import { ausWriteErgebnis, SchreibFehler, schreibe, schreibeViele, type WriteErgebnis } from './schreiben.ts'
 
 // Die R3-Allowlist ist am 29.07.2026 weggefallen (Phase 3 abgenommen, alle
 // Reviere bearbeitbar). Ihre drei Testfaelle sind mit ihr verschwunden — ein
@@ -36,6 +36,48 @@ assert.throws(() => ausWriteErgebnis({ data: [], error: null }, 'Reviergrenze'),
 // Der Hinweis auf das fehlende .select() muss in der Meldung stehen, sonst sucht
 // man beim naechsten Mal wieder an der falschen Stelle.
 assert.throws(() => ausWriteErgebnis({ data: null, error: null }, 'x'), /\.select\(\)/)
+
+// --- Ergebnisdeutung: der Fehler traegt, was der Aufrufer unterscheidet ---
+// (Bauplan Portal P1b/P1c, E6). Der Text bleibt derselbe — P1a prueft ihn.
+function geworfen(e: WriteErgebnis<unknown>): SchreibFehler {
+  try {
+    ausWriteErgebnis(e, 'Die Jagdregeln')
+  } catch (f) {
+    assert.ok(f instanceof SchreibFehler)
+    return f
+  }
+  throw new Error('hat nicht geworfen')
+}
+{
+  // 0 Zeilen: kein Code, `keineZeile`, Status durchgereicht.
+  const f = geworfen({ data: [], error: null, status: 200 })
+  assert.equal(f.keineZeile, true)
+  assert.equal(f.code, null)
+  assert.equal(f.status, 200)
+  assert.match(f.message, /kein Datensatz betroffen/)
+}
+{
+  // Abgelehnt mit Code: der Grund ungekuerzt, der Text wie bisher.
+  const f = geworfen({ data: null, error: { message: 'Für Rotwild stehen Regeln', code: '22023' }, status: 400 })
+  assert.equal(f.keineZeile, false)
+  assert.equal(f.code, '22023')
+  assert.equal(f.status, 400)
+  assert.equal(f.grund, 'Für Rotwild stehen Regeln')
+  assert.equal(f.message, 'Die Jagdregeln konnte nicht geschrieben werden: Für Rotwild stehen Regeln')
+}
+{
+  // **Netzfehler: postgrest-js liefert `code: ''`** — der leere String bleibt
+  // erhalten, damit der Aufrufer ihn NICHT als Ablehnung liest.
+  const f = geworfen({ data: null, error: { message: 'TypeError: fetch failed', code: '' }, status: 0 })
+  assert.equal(f.code, '')
+  assert.equal(f.status, 0)
+}
+{
+  // Kante (Cloudflare `400`): kein PostgREST-JSON, also gar kein Code.
+  assert.equal(geworfen({ data: null, error: { message: 'Bad Request' }, status: 400 }).code, null)
+  // Ohne Status (alte Aufrufer, Testdoubles) bleibt er `null`.
+  assert.equal(geworfen({ data: null, error: { message: 'x' } }).status, null)
+}
 
 // --- Ergebnisdeutung: genau eine Zeile ---
 assert.deepEqual(ausWriteErgebnis({ data: [{ id: 'a' }], error: null }, 'Objekt'), { id: 'a' })

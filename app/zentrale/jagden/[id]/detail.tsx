@@ -521,7 +521,15 @@ export default function Detail({
       ) : null}
 
       {regeln ? (
-        <RegelnBereich jagdId={jagd.id} roh={regeln} katalog={katalog} schreibbar={schreibbar} />
+        <RegelnBereich
+          jagdId={jagd.id}
+          roh={regeln}
+          katalog={katalog}
+          schreibbar={schreibbar}
+          // E7: zusätzlich nicht beendet — der Trigger aus 138 lehnt danach ab.
+          regelnBearbeitbar={schreibbar && jagd.ended_at === null}
+          nutzerId={eigeneId}
+        />
       ) : null}
 
       <h2 className="jagden-abschnitt">Teilnehmer</h2>
