@@ -5,12 +5,14 @@ import { useRef, useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../../schreiben'
 import { VORBEREITBARE_STATUS } from '../jagden'
+import FreigabeEditor from './freigabe-editor'
 import JagdregelnEditor from './jagdregeln-editor'
 import {
   freigabeBloecke,
   hatGewicht,
   pruefeFreigabe,
   pruefeFreigabeRegeln,
+  pruefeFreigabeVersion,
   pruefeJagdregeln,
   regelPunkte,
   SCHUETZEN_SICHTEN,
@@ -27,27 +29,37 @@ import {
 export interface RegelnRoh {
   freigabe: unknown
   freigabe_regeln: unknown
+  freigabe_version: unknown
   jagdregeln: unknown
   schuetzen_sicht: unknown
   sicht_umkreis_m: unknown
   gruppenleiter_sicht: unknown
 }
 
-/** Eine globale Art aus `wildarten` (096), so weit die Blöcke sie brauchen. */
+/**
+ * Eine globale Art aus `wildarten` (096, 097) — für die Blöcke der Anzeige
+ * und, seit P1c, für die Auswahl im Freigabe-Editor.
+ */
 export interface Katalogzeile {
   id: string
   name: string
   eltern_id: string | null
+  geschlecht_implizit: string | null
+  bejagdbar: boolean
+  suchbegriffe: string[]
 }
+
+/** Welcher Editor offen ist — immer höchstens einer (E7). */
+type Editor = 'freigabe' | 'jagdregeln'
 
 /**
  * Freigabe, Jagdregeln und „Was Schützen sehen" einer Jagd (Fahrplan P1a).
  *
- * **Die Jagdregeln sind seit P1b bearbeitbar** (`jagdregeln-editor.tsx`), unter
- * `regelnBearbeitbar` (Bauplan Portal Freigabe/Regeln V2.1, E7). **Die
- * Freigabe ist hier nur zu LESEN** — bearbeitet wird sie bis P1c in der App
- * (Jagd → Regeln); bis dahin steht der Hinweis da, damit niemand einen Knopf
- * sucht, den es nicht gibt.
+ * **Jagdregeln (P1b) und Freigabe (P1c) sind bearbeitbar**
+ * (`jagdregeln-editor.tsx`, `freigabe-editor.tsx`), unter `regelnBearbeitbar`
+ * (Bauplan Portal Freigabe/Regeln V2.1, E7); die Freigabe zusätzlich nur, wenn
+ * Freigabe, Regeln je Wildart UND Version lesbar sind — sonst ginge
+ * unbekannter Inhalt beim Speichern verloren.
  * Die Darstellung ist die der App (`regeln.ts`, Kopie aus `freigabe.ts`):
  * je Wildart ein Block, darunter, was frei ist, und die Regeln dieser Art.
  *
@@ -80,13 +92,28 @@ export default function RegelnBereich({
   const router = useRouter()
   const [fehler, setFehler] = useState<string | null>(null)
   /**
-   * Ob der Jagdregeln-Editor offen ist — **als Zustand, nicht aus den Props**
-   * (E6): kippt `regelnBearbeitbar` nach einem Nachladen auf falsch, bleibt
-   * der offene Entwurf stehen; sein Speichern prallt dann an 0 Zeilen ab.
+   * Welcher Editor offen ist — **als Zustand, nicht aus den Props** (E6):
+   * kippt `regelnBearbeitbar` nach einem Nachladen auf falsch, bleibt der
+   * offene Entwurf stehen; sein Speichern prallt dann an 0 Zeilen ab.
    */
-  const [editorOffen, setEditorOffen] = useState(false)
-  /** Was der Editor beim Schließen meldet („Doch gespeichert" …). */
-  const [hinweis, setHinweis] = useState<string | null>(null)
+  const [editorOffen, setEditorOffen] = useState<Editor | null>(null)
+  /**
+   * Was ein Editor beim Schließen meldet („Gespeichert.", „Doch gespeichert"
+   * …), unter dem Abschnitt, aus dem er kam. **Weg bei der nächsten Aktion**
+   * (Sicht ändern, einen Editor öffnen) — sonst stünde „Gespeichert." über
+   * einem Stand, den spätere Writes längst geändert haben (Schlusslesung P1b,
+   * Randnotiz).
+   */
+  const [hinweis, setHinweis] = useState<{ bei: Editor; text: string } | null>(null)
+  const oeffne = (editor: Editor) => {
+    setHinweis(null)
+    setEditorOffen(editor)
+  }
+  const schliesse = (editor: Editor) => (text: string | null) => {
+    setEditorOffen(null)
+    setHinweis(text === null ? null : { bei: editor, text })
+    starteRefresh(() => router.refresh())
+  }
   const [laedtNach, starteRefresh] = useTransition()
   const [laeuft, setLaeuft] = useState(false)
   // Riegel als Ref, nicht als State: zwischen Klick und sperrendem Render
@@ -104,6 +131,7 @@ export default function RegelnBereich({
 
   const freigabe = pruefeFreigabe(roh.freigabe)
   const jeArt = pruefeFreigabeRegeln(roh.freigabe_regeln)
+  const version = pruefeFreigabeVersion(roh.freigabe_version)
   const jagdregeln = pruefeJagdregeln(roh.jagdregeln)
   const sicht = sichtAusZeile(roh)
 
@@ -112,6 +140,13 @@ export default function RegelnBereich({
   )
   const bloecke =
     freigabe === undefined || jeArt === undefined ? null : freigabeBloecke(freigabe ?? [], katalogNachId, jeArt ?? [])
+  // E7: Freigabe, Regeln je Wildart UND Version lesbar — wie die App
+  // (`FreigabeAnsicht.tsx:127`), sonst ginge unbekannter Inhalt verloren.
+  const freigabeLesbar =
+    regelnBearbeitbar && freigabe !== undefined && jeArt !== undefined && version !== undefined
+  // Ein leerer Katalog sähe im Editor aus wie „keine Art gefunden" (S4,
+  // Codex P1c C-F3) — dann kein Editor, sondern der Grund.
+  const freigabeAenderbar = freigabeLesbar && katalog.length > 0
 
   const gesperrt = laeuft || laedtNach
   const angezeigt =
@@ -123,6 +158,7 @@ export default function RegelnBereich({
     setAusstehend(aenderung)
     setLaeuft(true)
     setFehler(null)
+    setHinweis(null)
     try {
       // **Der Statusfilter ist der Riegel gegen eine inzwischen gestartete
       // Jagd** (Fremdprüfung 26.10.2026, F1) — dieselbe Bauform wie beim
@@ -170,7 +206,20 @@ export default function RegelnBereich({
       <h2 className="jagden-abschnitt">Freigabe &amp; Regeln</h2>
 
       <h3 className="jagd-regeln-titel">Freigabe</h3>
-      {bloecke === null ? (
+      {editorOffen === 'freigabe' ? (
+        <FreigabeEditor
+          jagdId={jagdId}
+          // Nach dem Öffnen liest der Editor diese Werte nicht mehr (Basis
+          // eingefroren, E9); geöffnet wird er nur, wenn alle drei lesbar
+          // waren (`freigabeAenderbar`). Die Ersatzwerte greifen also nie beim
+          // Öffnen — und ein späteres Nachladen schließt den Entwurf nicht
+          // (E6), wie in der App (`FreigabeAnsicht.tsx:121`).
+          basis={{ freigabe: freigabe ?? null, regeln: jeArt ?? null, version: version ?? -1 }}
+          katalog={katalog}
+          nutzerId={nutzerId}
+          onSchliessen={schliesse('freigabe')}
+        />
+      ) : bloecke === null ? (
         <p className="zentrale-hinweis">Die Freigabe ließ sich nicht lesen.</p>
       ) : bloecke.length === 0 ? (
         <p className="zentrale-hinweis">Noch keine Freigabe eingetragen.</p>
@@ -197,21 +246,39 @@ export default function RegelnBereich({
           {freigabe && hatGewicht(freigabe) ? <p className="zentrale-hinweis">Gewichte: aufgebrochen</p> : null}
         </>
       )}
-      <p className="zentrale-hinweis">Die Freigabe bearbeitest du vorerst in der App (Jagd → Regeln). Im Portal folgt sie.</p>
+      {editorOffen === 'freigabe' ? null : (
+        <>
+          {hinweis?.bei === 'freigabe' ? (
+            <p className="zentrale-hinweis" role="status">
+              {hinweis.text}
+            </p>
+          ) : null}
+          {freigabeAenderbar ? (
+            <button
+              type="button"
+              className="zentrale-knopf"
+              disabled={laedtNach || editorOffen !== null}
+              onClick={() => oeffne('freigabe')}
+            >
+              {freigabe === null ? 'Freigabe eintragen' : 'Freigabe ändern'}
+            </button>
+          ) : freigabeLesbar ? (
+            <p className="zentrale-hinweis">
+              Der Wildartenkatalog kam leer an — die Freigabe lässt sich gerade nicht bearbeiten. Seite neu laden.
+            </p>
+          ) : null}
+        </>
+      )}
 
       <h3 className="jagd-regeln-titel">Jagdregeln</h3>
-      {editorOffen ? (
+      {editorOffen === 'jagdregeln' ? (
         <JagdregelnEditor
           jagdId={jagdId}
           // Nach dem Öffnen liest der Editor diesen Wert nicht mehr (Basis
           // eingefroren); geöffnet wird er nur, wenn er lesbar war.
           basis={jagdregeln ?? null}
           nutzerId={nutzerId}
-          onSchliessen={(text) => {
-            setEditorOffen(false)
-            setHinweis(text)
-            starteRefresh(() => router.refresh())
-          }}
+          onSchliessen={schliesse('jagdregeln')}
         />
       ) : (
         <>
@@ -226,9 +293,9 @@ export default function RegelnBereich({
               ))}
             </ul>
           )}
-          {hinweis ? (
+          {hinweis?.bei === 'jagdregeln' ? (
             <p className="zentrale-hinweis" role="status">
-              {hinweis}
+              {hinweis.text}
             </p>
           ) : null}
           {/* Nur lesbare Jagdregeln öffnen den Editor (E7): unbekannter Inhalt
@@ -237,11 +304,8 @@ export default function RegelnBereich({
             <button
               type="button"
               className="zentrale-knopf"
-              disabled={laedtNach}
-              onClick={() => {
-                setHinweis(null)
-                setEditorOffen(true)
-              }}
+              disabled={laedtNach || editorOffen !== null}
+              onClick={() => oeffne('jagdregeln')}
             >
               {jagdregeln === null ? 'Jagdregeln eintragen' : 'Jagdregeln ändern'}
             </button>

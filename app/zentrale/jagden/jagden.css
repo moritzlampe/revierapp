@@ -614,3 +614,74 @@
 .jagd-regeln-vorlagen { flex-wrap: wrap; align-items: center; border-top: 0; padding-left: 0; }
 /* Der Knopf „Jagdregeln ändern" klebte direkt an der letzten Regel (Klicktest 27.10.2026). */
 .jagd-regeln > .zentrale-knopf { margin-top: 0.5rem; }
+
+/* P1c: Freigabe-Editor — Katalog links, Entwurf rechts (Bauplan V2.1, E1).
+   Schmal untereinander, damit nichts quer scrollt. */
+.jagd-freigabe-editor {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 2fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .jagd-freigabe-editor { grid-template-columns: 1fr; }
+}
+.jagd-freigabe-katalog {
+  max-height: 36rem;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--z-border);
+  border-radius: 6px;
+}
+.jagd-freigabe-arten,
+.jagd-freigabe-arten ul { list-style: none; margin: 0; padding: 0; }
+.jagd-freigabe-arten ul { padding-left: 1rem; }
+.jagd-freigabe-arten button {
+  font: inherit;
+  font-size: 0.875rem;
+  width: 100%;
+  padding: 4px 6px;
+  text-align: left;
+  color: var(--z-text-primary);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.jagd-freigabe-arten button:hover:not(:disabled) { background: var(--z-bg-sunken); }
+.jagd-freigabe-arten button:focus-visible { outline: 2px solid var(--z-accent); outline-offset: -2px; }
+.jagd-freigabe-arten button:disabled { opacity: 0.5; cursor: default; }
+.jagd-freigabe-notiz { margin-left: 0.5rem; font-size: 0.75rem; color: var(--z-text-secondary); }
+.jagd-freigabe-block {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--z-border);
+  border-radius: 6px;
+}
+.jagd-freigabe-block h4 { margin: 0 0 0.25rem; font-size: 0.875rem; }
+.jagd-freigabe-zeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.25rem 0;
+  font-size: 0.875rem;
+}
+.jagd-freigabe-art { min-width: 9rem; }
+.jagd-freigabe-zeile input,
+.jagd-freigabe-zeile select,
+.jagd-freigabe-zeile button,
+.jagd-freigabe-vorlage {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 4px 8px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+.jagd-freigabe-zeile input { width: 5rem; }
+.jagd-freigabe-zeile button,
+.jagd-freigabe-vorlage { cursor: pointer; }
+.jagd-freigabe-zeile button:disabled,
+.jagd-freigabe-vorlage:disabled { opacity: 0.5; cursor: default; }

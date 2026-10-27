@@ -117,8 +117,10 @@ export default async function JagdDetailPage({
         // Ab `kind`: Freigabe, Regeln und Sicht (Fahrplan P1a, Migrationen
         // 138/140/141). Gelesen wird roh; was unlesbar ist, zeigt
         // `regeln-bereich.tsx` als „nicht lesbar", nicht als leer.
+        // `freigabe_version` (140) für den Compare-and-Swap des
+        // Freigabe-Editors (P1c, E7).
         .select(
-          'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id, kind, freigabe, freigabe_regeln, jagdregeln, schuetzen_sicht, sicht_umkreis_m, gruppenleiter_sicht'
+          'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id, kind, freigabe, freigabe_regeln, freigabe_version, jagdregeln, schuetzen_sicht, sicht_umkreis_m, gruppenleiter_sicht'
         )
         .eq('id', id)
         .maybeSingle(),
@@ -321,9 +323,18 @@ export default async function JagdDetailPage({
      * **In Welle 2 und nur für Gesellschaftsjagden** (Fremdprüfung 26.10.2026,
      * F3): in Welle 1 wartete auch „Nicht gefunden" auf ihn, und ein Fehler
      * hätte eine Einzeljagd abgebrochen, die gar keine Freigabe zeigt.
+     *
+     * **Seit P1c mit den Feldern der Eingabe** (Geschlechtsregel, bejagdbar,
+     * Suchbegriffe — wie `fetchWildarten()` der App) und **nach Name
+     * sortiert**: `sucheArten` lässt bei Gleichstand die Reihenfolge der
+     * Eingabe stehen, und die App sortiert genau hier, in der Abfrage.
      */
     jagd.kind === 'group'
-      ? supabase.from('wildarten').select('id, name, eltern_id', { count: 'exact' }).is('besitzer_id', null)
+      ? supabase
+          .from('wildarten')
+          .select('id, name, eltern_id, geschlecht_implizit, bejagdbar, suchbegriffe', { count: 'exact' })
+          .is('besitzer_id', null)
+          .order('name')
       : null,
   ])
 

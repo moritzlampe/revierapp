@@ -8,6 +8,20 @@
 // Läuft ohne Ausgabe durch, wenn alles stimmt; wirft sonst.
 import assert from 'node:assert/strict'
 import {
+  alsEntwurf,
+  alsFreigabeArt,
+  blockTextSetzen,
+  entwurfBloecke,
+  entwurfStand,
+  fassung,
+  fuegeHinzu,
+  konfliktBeimHinzufuegen,
+  pruefeEntwurf,
+  pruefeFreigabeVersion,
+  regelnZumSpeichernJeWildart,
+  verwaisteRegeln,
+  type EntwurfZeile,
+  type FreigabeArt,
   abgelehntMitCode,
   alsFeldtext,
   jagdregelnGeaendert,
@@ -347,3 +361,216 @@ assert.deepEqual(speicherAusgang(fehler({ status: 400, grund: 'Bad Request' })),
 // Ein fremder Fehler (Frist, Programmfehler) ist ebenfalls keine Antwort.
 assert.deepEqual(speicherAusgang(new Error('Keine Antwort vom Server (15 s).')), { art: 'keineAntwort' })
 assert.deepEqual(speicherAusgang(null), { art: 'keineAntwort' })
+
+// ════ P1c — Freigabe bearbeiten. Fälle aus `freigabe.test.ts`, Stand 27.10.2026 ════
+
+const SCHWARZWILD: FreigabeArt = { id: 'sw', name: 'Schwarzwild', elternId: null, geschlechtImplizit: false }
+const UEBERLAEUFER: FreigabeArt = { id: 'ul', name: 'Überläufer', elternId: 'sw', geschlechtImplizit: false }
+const KEILER: FreigabeArt = { id: 'ke', name: 'Keiler', elternId: 'sw', geschlechtImplizit: true }
+const FUCHS_ART: FreigabeArt = { id: 'fu', name: 'Fuchs', elternId: null, geschlechtImplizit: false }
+const ROTWILD_ART: FreigabeArt = { id: 'rw', name: 'Rotwild', elternId: null, geschlechtImplizit: false }
+const ROTKALB: FreigabeArt = { id: 'rk', name: 'Rotkalb', elternId: 'rw', geschlechtImplizit: false }
+const ARTEN: ReadonlyMap<string, FreigabeArt> = new Map([
+  ['rw', ROTWILD_ART],
+  ['rk', ROTKALB],
+  ['ul', UEBERLAEUFER],
+  ['sw', SCHWARZWILD],
+  ['fu', FUCHS_ART],
+])
+const ez = (art: FreigabeArt, extra: Partial<EntwurfZeile> = {}): EntwurfZeile => ({
+  art,
+  geschlecht: null,
+  gewichtMin: '',
+  gewichtMax: '',
+  ...extra,
+})
+const ROTWILD_REGEL: FreigabeRegel = { wildart_id: 'rw', name: 'Rotwild', regeln: '• Aus Rudeln nur Kälber\n• Kalb vor Alttier' }
+const FUCHS_REGEL: FreigabeRegel = { wildart_id: 'fu', name: 'Fuchs', regeln: '• Nur Jungfüchse' }
+
+// --- pruefeFreigabeVersion: ganze Zahl ab 0, sonst unbekannt ---
+assert.equal(pruefeFreigabeVersion(0), 0)
+assert.equal(pruefeFreigabeVersion(7), 7)
+assert.equal(pruefeFreigabeVersion(-1), undefined)
+assert.equal(pruefeFreigabeVersion(1.5), undefined)
+assert.equal(pruefeFreigabeVersion('3'), undefined)
+assert.equal(pruefeFreigabeVersion(undefined), undefined)
+
+// --- Oberart und Klassen schliessen sich aus ---
+assert.equal(konfliktBeimHinzufuegen(UEBERLAEUFER, [ez(SCHWARZWILD)]), 'oberart-frei')
+{
+  const zeilen = [ez(UEBERLAEUFER), ez(FUCHS_ART)]
+  assert.equal(konfliktBeimHinzufuegen(SCHWARZWILD, zeilen), 'ersetzt-klassen')
+  assert.deepEqual(
+    fuegeHinzu(zeilen, SCHWARZWILD).map((z) => z.art.id),
+    ['fu', 'sw'],
+  )
+}
+assert.equal(konfliktBeimHinzufuegen(FUCHS_ART, [ez(SCHWARZWILD)]), null)
+
+// --- pruefeEntwurf ---
+{
+  const r = pruefeEntwurf([ez(UEBERLAEUFER, { geschlecht: 'maennlich', gewichtMax: '50' }), ez(FUCHS_ART)])
+  assert.equal(r.gueltig, true)
+  assert.deepEqual(r.wert, [
+    { wildart_id: 'ul', name: 'Überläufer', geschlecht: 'maennlich', gewicht_min: null, gewicht_max: 50 },
+    { wildart_id: 'fu', name: 'Fuchs', geschlecht: null, gewicht_min: null, gewicht_max: null },
+  ])
+}
+assert.deepEqual(pruefeEntwurf([]), { fehler: [], wert: null, gueltig: true })
+for (const [gewichtMin, gewichtMax] of [
+  ['0', ''],
+  ['', '1000'],
+  ['47.5', ''],
+  ['', 'NaN'],
+  ['-3', ''],
+  // Portal-eigen (E1: Textfeld statt `type="number"`): „1e2" darf nicht durch.
+  ['1e2', ''],
+]) {
+  const r = pruefeEntwurf([ez(UEBERLAEUFER, { gewichtMin, gewichtMax })])
+  assert.equal(r.gueltig, false, `${gewichtMin}/${gewichtMax}`)
+  assert.match(r.fehler[0] ?? '', /ganzen kg/)
+}
+assert.match(pruefeEntwurf([ez(UEBERLAEUFER, { gewichtMin: '60', gewichtMax: '50' })]).fehler[0] ?? '', /grösser/)
+assert.equal(pruefeEntwurf([ez(KEILER, { geschlecht: 'maennlich' })]).gueltig, false)
+assert.deepEqual(pruefeEntwurf([ez(SCHWARZWILD), ez(UEBERLAEUFER)]).fehler, [
+  null,
+  'Die Oberart ist schon ganz freigegeben.',
+])
+assert.equal(
+  pruefeEntwurf([
+    ez(UEBERLAEUFER, { geschlecht: 'maennlich', gewichtMax: '50' }),
+    ez(UEBERLAEUFER, { geschlecht: 'maennlich', gewichtMin: '80' }),
+  ]).gueltig,
+  true,
+)
+assert.equal(pruefeEntwurf([ez(UEBERLAEUFER), ez(UEBERLAEUFER)]).gueltig, false)
+assert.equal(
+  pruefeEntwurf([ez(UEBERLAEUFER, { geschlecht: 'maennlich' }), ez(UEBERLAEUFER, { geschlecht: 'weiblich' })]).gueltig,
+  true,
+)
+{
+  const viele = Array.from({ length: 41 }, (_, i) =>
+    ez({ id: `a${i}`, name: `Art ${i}`, elternId: null, geschlechtImplizit: false }),
+  )
+  assert.equal(pruefeEntwurf(viele).gueltig, false)
+  assert.equal(pruefeEntwurf(viele.slice(0, 40)).gueltig, true)
+}
+
+// --- alsEntwurf ---
+assert.deepEqual(alsEntwurf([server({ gewicht_max: 50 })], new Map([['ul', UEBERLAEUFER]])), [
+  { art: UEBERLAEUFER, geschlecht: null, gewichtMin: '', gewichtMax: '50' },
+])
+assert.deepEqual(alsEntwurf([server()], new Map())[0].art, {
+  id: 'ul',
+  name: 'Überläufer',
+  elternId: null,
+  geschlechtImplizit: false,
+})
+
+// --- fassung: unabhängig von der Schlüsselreihenfolge ---
+{
+  const umgestellt = {
+    name: 'Überläufer',
+    geschlecht: null,
+    wildart_id: 'ul',
+    gewicht_max: null,
+    gewicht_min: null,
+  } as FreigabeZeile
+  assert.equal(fassung([umgestellt]), fassung([server()]))
+}
+
+// --- Regeln je Wildart im Editor ---
+assert.deepEqual(entwurfBloecke([ez(ROTKALB), ez(FUCHS_ART), ez(ROTKALB, { geschlecht: 'weiblich' })], ARTEN), [
+  { id: 'fu', name: 'Fuchs' },
+  { id: 'rw', name: 'Rotwild' },
+])
+assert.deepEqual(verwaisteRegeln([ROTWILD_REGEL, FUCHS_REGEL], [ez(ROTKALB)]), [FUCHS_REGEL])
+assert.deepEqual(verwaisteRegeln([ROTWILD_REGEL], [ez(ROTWILD_ART)]), [])
+assert.deepEqual(verwaisteRegeln([ROTWILD_REGEL], []), [ROTWILD_REGEL])
+// Oberart ersetzt Klassen: derselbe Block, die Regeln bleiben.
+assert.deepEqual(verwaisteRegeln([ROTWILD_REGEL], fuegeHinzu([ez(ROTKALB)], ROTWILD_ART)), [])
+assert.deepEqual(
+  regelnZumSpeichernJeWildart([ROTWILD_REGEL, FUCHS_REGEL])?.map((r) => r.name),
+  ['Fuchs', 'Rotwild'],
+)
+assert.equal(regelnZumSpeichernJeWildart([]), null)
+
+// ════ P1c — Portal-eigen ════
+
+// --- alsFreigabeArt ---
+assert.deepEqual(alsFreigabeArt({ id: 'ke', name: 'Keiler', eltern_id: 'sw', geschlecht_implizit: 'maennlich' }), KEILER)
+assert.equal(alsFreigabeArt({ id: 'fu', name: 'Fuchs', eltern_id: null, geschlecht_implizit: null }).geschlechtImplizit, false)
+
+// --- entwurfStand ---
+{
+  const basis = { freigabe: [server({ wildart_id: 'rk', name: 'Rotkalb' })], regeln: [ROTWILD_REGEL], version: 4 }
+  const zeilen = alsEntwurf(basis.freigabe, ARTEN)
+  // Unverändert geöffnet ist nicht geändert.
+  const offen = entwurfStand(zeilen, basis.regeln, ARTEN, basis)
+  assert.equal(offen.geaendert, false)
+  assert.deepEqual(offen.bloecke, [{ id: 'rw', name: 'Rotwild' }])
+  assert.deepEqual(offen.sichtbareRegeln, [ROTWILD_REGEL])
+  assert.deepEqual(offen.ausgeblendet, [])
+  assert.equal(offen.regelZeichen, ROTWILD_REGEL.regeln.length)
+  // Rotkalb entfernt: die Rotwild-Regeln bleiben im Zustand, werden aber
+  // nicht gesendet und stehen als ausgeblendet da (E1 Schritt 5).
+  const ohne = entwurfStand([], basis.regeln, ARTEN, basis)
+  assert.equal(ohne.sichtbareRegeln, null)
+  assert.deepEqual(ohne.ausgeblendet, [ROTWILD_REGEL])
+  assert.equal(ohne.regelZeichen, 0)
+  assert.equal(ohne.geaendert, true)
+  // Kommt Rotwild zurück, ist der Text wieder da — und nichts geändert.
+  assert.equal(entwurfStand(fuegeHinzu([], ROTKALB), basis.regeln, ARTEN, basis).geaendert, false)
+  // Ein geändertes Gewicht ist eine Änderung.
+  assert.equal(entwurfStand([{ ...zeilen[0], gewichtMax: '60' }], basis.regeln, ARTEN, basis).geaendert, true)
+}
+{
+  // Der Summenzähler zählt über ALLE gesendeten Blöcke (Fable B1): einzeln
+  // grün, zusammen zu lang.
+  const lang = (id: string, name: string, n: number): FreigabeRegel => ({ wildart_id: id, name, regeln: 'x'.repeat(n) })
+  const basis = { freigabe: null, regeln: null, version: 0 }
+  const s = entwurfStand([ez(ROTWILD_ART), ez(SCHWARZWILD)], [lang('rw', 'Rotwild', 2500), lang('sw', 'Schwarzwild', 2000)], ARTEN, basis)
+  assert.equal(s.regelZeichen, 4500)
+  assert.equal(s.regelnZuLang, true)
+  // Ein roher Block voller Leerzeilen zählt so lang, wie er gesendet wird und
+  // der Server ihn zählt (5) — nicht neu gefasst als „• A\n• B" (7, Codex D1).
+  const roh = entwurfStand([ez(FUCHS_ART)], [{ wildart_id: 'fu', name: 'Fuchs', regeln: 'A\n\n\nB' }], ARTEN, basis)
+  assert.equal(roh.regelZeichen, 5)
+  // UTF-16 wie die App (E3): ein Emoji zählt 2. 2000 Emoji = 4000 geht,
+  // ein Zeichen mehr nicht (Codex P1c A5).
+  const emoji = (n: number): FreigabeRegel[] => [{ wildart_id: 'fu', name: 'Fuchs', regeln: '🦊'.repeat(n) }]
+  assert.equal(entwurfStand([ez(FUCHS_ART)], emoji(2000), ARTEN, basis).regelZeichen, 4000)
+  assert.equal(entwurfStand([ez(FUCHS_ART)], emoji(2000), ARTEN, basis).regelnZuLang, false)
+  const drueber = [{ wildart_id: 'fu', name: 'Fuchs', regeln: '🦊'.repeat(2000) + 'x' }]
+  assert.equal(entwurfStand([ez(FUCHS_ART)], drueber, ARTEN, basis).regelnZuLang, true)
+}
+{
+  // Leere Basis (`null`) gegen leeren Entwurf: nicht geändert.
+  assert.equal(entwurfStand([], [], ARTEN, { freigabe: null, regeln: null, version: 0 }).geaendert, false)
+  // Eine ungültige Zeile ist eine Änderung, auch wenn sie im Speicherwert
+  // fehlt — sonst verwürfe „Schließen" sie ohne Rückfrage (Codex P1c A2/C-F2).
+  const ungueltig = [ez(FUCHS_ART, { gewichtMin: '0' })]
+  assert.equal(pruefeEntwurf(ungueltig).wert, null)
+  assert.equal(entwurfStand(ungueltig, [], ARTEN, { freigabe: null, regeln: null, version: 0 }).geaendert, true)
+}
+
+// --- blockTextSetzen: unberührt bleibt roh, normal-gleich bleibt roh (E3) ---
+{
+  const rohGespeichert: FreigabeRegel = { wildart_id: 'fu', name: 'Fuchs', regeln: 'A\n\nB' }
+  const block = { id: 'fu', name: 'Fuchs' }
+  // Getippt und normalisiert gleich dem Gespeicherten → der rohe Eintrag bleibt.
+  assert.deepEqual(blockTextSetzen([rohGespeichert], block, 'A\nB', [rohGespeichert]), [rohGespeichert])
+  assert.deepEqual(blockTextSetzen([], block, 'A\n\nB ', [rohGespeichert]), [rohGespeichert])
+  // Wirklich geändert → neu gefasst.
+  assert.deepEqual(blockTextSetzen([rohGespeichert], block, 'A\nC', [rohGespeichert]), [
+    { wildart_id: 'fu', name: 'Fuchs', regeln: '• A\n• C' },
+  ])
+  // Leer → Eintrag weg.
+  assert.deepEqual(blockTextSetzen([rohGespeichert], block, ' \n ', [rohGespeichert]), [])
+  // Andere Blöcke bleiben unberührt, roh.
+  const rot: FreigabeRegel = { wildart_id: 'rw', name: 'Rotwild', regeln: 'X\n\nY' }
+  assert.deepEqual(blockTextSetzen([rot], block, 'Neu', null), [
+    rot,
+    { wildart_id: 'fu', name: 'Fuchs', regeln: '• Neu' },
+  ])
+}

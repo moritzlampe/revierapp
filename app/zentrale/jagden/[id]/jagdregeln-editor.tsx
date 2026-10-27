@@ -1,51 +1,19 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { schreibe } from '../../schreiben'
 import { VORBEREITBARE_STATUS } from '../jagden'
+import { ladeVorlagen, useSpeicherLauf } from './editor-teile'
 import {
   alsFeldtext,
   JAGDREGELN_MAX_ZEICHEN,
   jagdregelnGeaendert,
   pruefeJagdregeln,
-  pruefeVorlagen,
   regelnZumSpeichern,
-  speicherAusgang,
   vorlageEinfuegen,
   type RegelVorlage,
-  type SpeicherAusgang,
 } from './regeln'
-
-/** Frist für Speichern und Vorlagen-Laden — wie die App (`SCHREIB_FRIST_MS`). */
-const FRIST_MS = 15_000
-
-const KEINE_ANTWORT =
-  'Keine gültige Antwort vom Server — der Entwurf bleibt stehen. Ob gespeichert wurde, siehst du nach dem Schließen.'
-
-/** Die Meldung zu einem gescheiterten Speichern (Bauplan Portal P1b/P1c, E6). */
-function meldungZu(ausgang: SpeicherAusgang): string {
-  switch (ausgang.art) {
-    case 'keineZeile':
-      return 'Nicht gespeichert: geändert, die Jagd läuft inzwischen, ist gelöscht, oder du leitest sie nicht mehr. Der Text bleibt zum Kopieren stehen; „Verwerfen" lädt den neuen Stand.'
-    case 'abgemeldet':
-      return 'Anmeldung abgelaufen — Text kopieren, in einem neuen Tab anmelden, dann hier erneut speichern.'
-    case 'abgelehnt':
-      return `Der Server hat abgelehnt (${ausgang.code})${ausgang.grund}`
-    case 'keineAntwort':
-      return KEINE_ANTWORT
-  }
-}
-
-type Phase =
-  /** Tippen, Speichern möglich. */
-  | 'bearbeiten'
-  /** Eine Anfrage läuft, die Frist ist noch nicht um: alles gesperrt. */
-  | 'schreibt'
-  /** Frist um, die Anfrage läuft weiter: Entwurf schreibgeschützt, Schließen geht (E9). */
-  | 'wartet'
-  /** 0 Zeilen: ein weiterer Versuch prallte an derselben Basis ab — Speichern bleibt gesperrt (E6). */
-  | 'veraltet'
 
 type Rueckfrage = { art: 'schliessen' } | { art: 'vorlage'; vorlage: RegelVorlage }
 
@@ -89,19 +57,10 @@ export default function JagdregelnEditor({
   // Eigener Eingabezustand, genau das Getippte (E3, Codex D3): der Text zum
   // Speichern wird daraus abgeleitet, nie zurück ins Feld geschrieben.
   const [feld, setFeld] = useState(() => alsFeldtext(basisProp))
-  const [phase, setPhase] = useState<Phase>('bearbeiten')
-  const [meldung, setMeldung] = useState<string | null>(null)
+  // Frist, Wettlauf, Ausgänge und der Doppelklick-Riegel (E6/E9).
+  const { phase, meldung, starte, lebt } = useSpeicherLauf()
   const [rueckfrage, setRueckfrage] = useState<Rueckfrage | null>(null)
   const [vorlagen, setVorlagen] = useState<Vorlagen | null>(null)
-  // Riegel als Ref, nicht als State (S5) — wie `regeln-bereich.tsx`.
-  const inArbeit = useRef(false)
-  const lebt = useRef(true)
-  useEffect(() => {
-    lebt.current = true
-    return () => {
-      lebt.current = false
-    }
-  }, [])
 
   const neu = regelnZumSpeichern([feld])
   const geaendert = jagdregelnGeaendert(neu, basis)
@@ -126,32 +85,20 @@ export default function JagdregelnEditor({
   }, [schuetzen])
 
   const speichern = () => {
-    if (inArbeit.current || gesperrt || !geaendert || zuLang) return
-    inArbeit.current = true
-    setPhase('schreibt')
-    setMeldung(null)
-    // Wettlauf ohne Abbruch (E9): nach der Frist läuft die Anfrage weiter,
-    // ihre Antwort wird verbucht, wenn sie kommt.
-    let fristUm = false
-    const frist = setTimeout(() => {
-      fristUm = true
-      if (!lebt.current) return
-      setPhase('wartet')
-      setMeldung(KEINE_ANTWORT)
-    }, FRIST_MS)
-    schreibe('Die Jagdregeln', () => {
-      const anfrage = createClient()
-        .from('hunts')
-        .update({ jagdregeln: neu })
-        .eq('id', jagdId)
-        .in('status', VORBEREITBARE_STATUS)
-      return (basis === null ? anfrage.is('jagdregeln', null) : anfrage.eq('jagdregeln', basis)).select('jagdregeln')
-    }).then(
-      (zeile) => {
-        clearTimeout(frist)
-        inArbeit.current = false
-        // Nach dem Schließen fällt die Antwort ins Leere (E9, hingenommen).
-        if (!lebt.current) return
+    if (gesperrt || !geaendert || zuLang) return
+    starte(
+      () =>
+        schreibe('Die Jagdregeln', () => {
+          const anfrage = createClient()
+            .from('hunts')
+            .update({ jagdregeln: neu })
+            .eq('id', jagdId)
+            .in('status', VORBEREITBARE_STATUS)
+          return (basis === null ? anfrage.is('jagdregeln', null) : anfrage.eq('jagdregeln', basis)).select(
+            'jagdregeln',
+          )
+        }),
+      (zeile, fristUm) => {
         const zurueck = pruefeJagdregeln((zeile as Record<string, unknown>).jagdregeln)
         onSchliessen(
           zurueck === undefined
@@ -163,14 +110,6 @@ export default function JagdregelnEditor({
                 'Gespeichert.',
         )
       },
-      (e: unknown) => {
-        clearTimeout(frist)
-        inArbeit.current = false
-        if (!lebt.current) return
-        const ausgang = speicherAusgang(e)
-        setPhase(ausgang.art === 'keineZeile' ? 'veraltet' : 'bearbeiten')
-        setMeldung(meldungZu(ausgang))
-      },
     )
   }
 
@@ -180,28 +119,12 @@ export default function JagdregelnEditor({
     else onSchliessen(null)
   }
 
-  /**
-   * Lädt die Vorlagen beim Klick, nicht beim Öffnen (E4) — frisch, falls in
-   * der App gerade eine angelegt wurde. **Keine Zeile ist der Normalfall**
-   * („keine Vorlagen"), aber nur mit Status 200; unlesbar heißt „nicht
-   * lesbar", nie „keine Vorlagen" (S4, wie `data/vorlagen.ts` der App).
-   */
+  /** Lädt die Vorlagen beim Klick (E4, `ladeVorlagen`). */
   const vorlagenLaden = async () => {
     setVorlagen({ zustand: 'laedt' })
     try {
-      const { data, error, status } = await Promise.race([
-        createClient().from('user_settings').select('regel_vorlagen').eq('user_id', nutzerId).maybeSingle(),
-        new Promise<never>((_, nein) =>
-          setTimeout(() => nein(new Error('Keine Antwort vom Server (15 s).')), FRIST_MS),
-        ),
-      ])
-      if (error) throw new Error(error.message)
-      if (!data && status !== 200) throw new Error(`Leere Antwort (${status}) — nicht vom Server.`)
-      const liste = data ? pruefeVorlagen(data.regel_vorlagen) : []
-      if (liste === undefined) throw new Error('Vorlagen gerade nicht lesbar.')
-      if (lebt.current) {
-        setVorlagen({ zustand: 'da', liste: [...liste].sort((a, b) => a.titel.localeCompare(b.titel, 'de')) })
-      }
+      const liste = await ladeVorlagen(nutzerId)
+      if (lebt.current) setVorlagen({ zustand: 'da', liste })
     } catch (e) {
       if (lebt.current) {
         setVorlagen({ zustand: 'fehler', text: e instanceof Error ? e.message : 'Vorlagen gerade nicht abrufbar.' })

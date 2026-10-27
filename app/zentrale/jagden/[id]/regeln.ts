@@ -330,6 +330,285 @@ export function speicherAusgang(fehler: unknown): SpeicherAusgang {
   return { art: 'abgelehnt', code, grund: grund === '' ? '' : ` — ${grund}` }
 }
 
+// ── Freigabe bearbeiten (P1c) ───────────────────────────────────────────────
+//
+// Kopien aus der App, Stand 27.10.2026 (Bauplan Portal Freigabe/Regeln V2.1,
+// E2), alle aus `src/lib/hunt/freigabe.ts`: `FREIGABE_MAX_ZEILEN`,
+// `FreigabeStand`, `pruefeFreigabeVersion`, `blockVon`, `FreigabeArt`,
+// `EntwurfZeile`, `konfliktBeimHinzufuegen`, `fuegeHinzu`, `alsEntwurf`,
+// `leseGewicht`, `pruefeEntwurf`, `entwurfBloecke`, `verwaisteRegeln`,
+// `regelnZumSpeichernJeWildart`, `fassung`, `fassungRegeln`. Testfälle aus
+// `freigabe.test.ts`. Die Suche liegt als ganzes Modul daneben (`suche.ts`).
+// **Portal-eigen** (nativ inline in `FreigabeAnsicht.tsx` und dort über die
+// Komponente nicht getestet): `alsFreigabeArt`, `entwurfStand`,
+// `blockTextSetzen`.
+
+/** Höchstens so viele Zeilen nimmt die DB (`hunts_freigabe_form`). */
+export const FREIGABE_MAX_ZEILEN = 40
+
+/**
+ * Ein BEKANNTER Stand der Freigabe — Arten, Regeln je Wildart und die Version
+ * für den Compare-and-Swap: die Basis des Editors. `null` = nicht eingetragen.
+ */
+export interface FreigabeStand {
+  freigabe: FreigabeZeile[] | null
+  regeln: FreigabeRegel[] | null
+  version: number
+}
+
+/** Die Version (140): eine ganze Zahl ab 0, sonst unbekannt. */
+export function pruefeFreigabeVersion(roh: unknown): number | undefined {
+  return typeof roh === 'number' && Number.isInteger(roh) && roh >= 0 ? roh : undefined
+}
+
+/**
+ * Der Block, unter dem eine Art steht: ihre Oberart, sonst sie selbst — wie
+ * der Trigger in 140 (`coalesce(eltern_id, id)`).
+ */
+export function blockVon(art: { id: string; elternId: string | null }): string {
+  return art.elternId ?? art.id
+}
+
+/** Was die Eingabe von einer Katalogart braucht. */
+export interface FreigabeArt {
+  id: string
+  name: string
+  elternId: string | null
+  /** Trägt die Art ihr Geschlecht schon (Keiler, Bache)? Dann keine Wahl. */
+  geschlechtImplizit: boolean
+}
+
+/** Eine Zeile im Entwurf — Gewichte als Text, so wie getippt. */
+export interface EntwurfZeile {
+  art: FreigabeArt
+  geschlecht: 'maennlich' | 'weiblich' | null
+  gewichtMin: string
+  gewichtMax: string
+}
+
+/**
+ * Darf diese Art zum Entwurf? Zeilen gelten nebeneinander (ODER) — neben
+ * „Schwarzwild" wäre „Überläufer · bis 50 kg" wirkungslos.
+ *
+ * - `oberart-frei`: ihre Oberart steht schon ganz drin → nicht wählbar.
+ * - `ersetzt-klassen`: sie IST die Oberart von Zeilen, die schon stehen →
+ *   nur nach Rückfrage, und dann ersetzt sie diese.
+ */
+export function konfliktBeimHinzufuegen(
+  art: FreigabeArt,
+  zeilen: readonly EntwurfZeile[],
+): 'oberart-frei' | 'ersetzt-klassen' | null {
+  if (art.elternId !== null && zeilen.some((z) => z.art.id === art.elternId)) return 'oberart-frei'
+  if (zeilen.some((z) => z.art.elternId === art.id)) return 'ersetzt-klassen'
+  return null
+}
+
+/** Fügt eine Art hinzu; ersetzt dabei ihre Klassen, wenn sie deren Oberart ist. */
+export function fuegeHinzu(zeilen: readonly EntwurfZeile[], art: FreigabeArt): EntwurfZeile[] {
+  return [
+    ...zeilen.filter((z) => z.art.elternId !== art.id),
+    { art, geschlecht: null, gewichtMin: '', gewichtMax: '' },
+  ]
+}
+
+/** Ein geladener Wert als Entwurf — `elternId` und Geschlechtsregel aus dem Katalog. */
+export function alsEntwurf(
+  zeilen: readonly FreigabeZeile[],
+  katalog: ReadonlyMap<string, FreigabeArt>,
+): EntwurfZeile[] {
+  return zeilen.map((z) => ({
+    art: katalog.get(z.wildart_id) ?? {
+      id: z.wildart_id,
+      name: z.name,
+      elternId: null,
+      geschlechtImplizit: false,
+    },
+    geschlecht: z.geschlecht,
+    gewichtMin: z.gewicht_min === null ? '' : String(z.gewicht_min),
+    gewichtMax: z.gewicht_max === null ? '' : String(z.gewicht_max),
+  }))
+}
+
+function leseGewicht(text: string): number | null | 'ungueltig' {
+  const t = text.trim()
+  if (t === '') return null
+  if (!/^\d{1,3}$/.test(t)) return 'ungueltig'
+  const kg = Number(t)
+  return kg >= 1 && kg <= 999 ? kg : 'ungueltig'
+}
+
+/**
+ * Prüft den Entwurf mit denselben Regeln wie der Trigger in 138 — damit die
+ * Eingabe an der Zeile sagt, was falsch ist. Der Trigger bleibt der Riegel.
+ *
+ * @returns je Zeile ein Fehlertext oder `null`, und die Liste zum Speichern
+ *   (`null`, wenn leer — „nicht eingetragen").
+ */
+export function pruefeEntwurf(zeilen: readonly EntwurfZeile[]): {
+  fehler: (string | null)[]
+  wert: FreigabeZeile[] | null
+  gueltig: boolean
+} {
+  const ids = new Set(zeilen.map((z) => z.art.id))
+  const gesehen = new Set<string>()
+  const wert: FreigabeZeile[] = []
+  const fehler = zeilen.map((z): string | null => {
+    const min = leseGewicht(z.gewichtMin)
+    const max = leseGewicht(z.gewichtMax)
+    // Exakte Dublette = alles gleich, auch das Gewicht: „männlich bis 50 kg"
+    // neben „männlich ab 80 kg" ist erlaubt.
+    const schluessel = `${z.art.id}:${z.geschlecht ?? ''}:${z.gewichtMin.trim()}:${z.gewichtMax.trim()}`
+    let text: string | null = null
+    if (min === 'ungueltig' || max === 'ungueltig') text = 'Gewicht in ganzen kg, 1 bis 999.'
+    else if (min !== null && max !== null && min > max) text = '„ab" ist grösser als „bis".'
+    else if (z.geschlecht !== null && z.art.geschlechtImplizit) text = 'Diese Art trägt ihr Geschlecht schon.'
+    else if (z.art.elternId !== null && ids.has(z.art.elternId)) text = 'Die Oberart ist schon ganz freigegeben.'
+    else if (gesehen.has(schluessel)) text = 'Diese Zeile steht schon da.'
+    gesehen.add(schluessel)
+    if (text === null && min !== 'ungueltig' && max !== 'ungueltig') {
+      wert.push({
+        wildart_id: z.art.id,
+        name: z.art.name,
+        geschlecht: z.geschlecht,
+        gewicht_min: min,
+        gewicht_max: max,
+      })
+    }
+    return text
+  })
+  const gueltig = fehler.every((f) => f === null) && zeilen.length <= FREIGABE_MAX_ZEILEN
+  return { fehler, wert: wert.length > 0 ? wert : null, gueltig }
+}
+
+/**
+ * Die Wildarten, für die man im Entwurf Regeln eintragen kann: je Zeile ihr
+ * Block (`blockVon`), jede einmal, alphabetisch.
+ */
+export function entwurfBloecke(
+  zeilen: readonly EntwurfZeile[],
+  katalog: ReadonlyMap<string, FreigabeArt>,
+): { id: string; name: string }[] {
+  const bloecke = new Map<string, string>()
+  for (const z of zeilen) {
+    const id = blockVon(z.art)
+    if (!bloecke.has(id)) bloecke.set(id, katalog.get(id)?.name ?? z.art.name)
+  }
+  return [...bloecke]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'))
+}
+
+/** Regeln, deren Wildart im Entwurf keinen Block mehr hat — der Trigger in 140 lehnt sie ab. */
+export function verwaisteRegeln(
+  regeln: readonly FreigabeRegel[],
+  zeilen: readonly EntwurfZeile[],
+): FreigabeRegel[] {
+  const bloecke = new Set(zeilen.map((z) => blockVon(z.art)))
+  return regeln.filter((r) => !bloecke.has(r.wildart_id))
+}
+
+/** Die Regeln zum Speichern: alphabetisch nach Wildart, `null`, wenn keine — wie im Trigger. */
+export function regelnZumSpeichernJeWildart(regeln: readonly FreigabeRegel[]): FreigabeRegel[] | null {
+  return regeln.length === 0 ? null : [...regeln].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+}
+
+/** Vergleichbare Form einer Freigabe — unabhängig von der Schlüsselreihenfolge des Servers. */
+export function fassung(wert: FreigabeZeile[] | string | null | undefined): string | null | undefined {
+  if (wert === undefined || wert === null) return wert
+  if (typeof wert === 'string') return wert
+  return JSON.stringify(wert.map((z) => [z.wildart_id, z.name, z.geschlecht, z.gewicht_min, z.gewicht_max]))
+}
+
+/** Vergleichbare Form der Regeln je Wildart — wie `fassung`. */
+export function fassungRegeln(regeln: readonly FreigabeRegel[] | null | undefined): string | null | undefined {
+  if (regeln === undefined || regeln === null) return regeln
+  return JSON.stringify(regeln.map((r) => [r.wildart_id, r.name, r.regeln]))
+}
+
+/** Katalogzeile (096, 097) → Eingabe-Art (`FreigabeAnsicht.tsx:57`). */
+export function alsFreigabeArt(w: {
+  id: string
+  name: string
+  eltern_id: string | null
+  geschlecht_implizit: string | null
+}): FreigabeArt {
+  return { id: w.id, name: w.name, elternId: w.eltern_id, geschlechtImplizit: w.geschlecht_implizit !== null }
+}
+
+/** Was der Editor aus Entwurf und Basis ableitet (`FreigabeAnsicht.tsx:288-303`). */
+export interface EntwurfStand {
+  pruefung: ReturnType<typeof pruefeEntwurf>
+  /** Die Wildarten des Entwurfs — je eine ein Regelfeld. */
+  bloecke: { id: string; name: string }[]
+  /** Was gesendet wird: nur Regeln, deren Wildart im Entwurf steht. */
+  sichtbareRegeln: FreigabeRegel[] | null
+  /** Regeln ohne Wildart im Entwurf — bleiben im Zustand, werden nicht gesendet. */
+  ausgeblendet: FreigabeRegel[]
+  /** Summe über die gesendeten Texte, UTF-16 wie die App (E3). */
+  regelZeichen: number
+  regelnZuLang: boolean
+  geaendert: boolean
+}
+
+/**
+ * Der abgeleitete Stand des Editors. **Gezählt und verglichen wird, was im
+ * Zustand steht**, also unberührte Blöcke roh, wie gespeichert (E3, Codex
+ * D1): ein roher Block voller Leerzeilen zählt so lang, wie der Server zählt.
+ */
+export function entwurfStand(
+  zeilen: readonly EntwurfZeile[],
+  regeln: readonly FreigabeRegel[],
+  arten: ReadonlyMap<string, FreigabeArt>,
+  basis: FreigabeStand,
+): EntwurfStand {
+  const pruefung = pruefeEntwurf(zeilen)
+  const bloecke = entwurfBloecke(zeilen, arten)
+  const blockIds = new Set(bloecke.map((b) => b.id))
+  const sichtbareRegeln = regelnZumSpeichernJeWildart(regeln.filter((r) => blockIds.has(r.wildart_id)))
+  const regelZeichen = (sichtbareRegeln ?? []).reduce((n, r) => n + r.regeln.length, 0)
+  return {
+    pruefung,
+    bloecke,
+    sichtbareRegeln,
+    ausgeblendet: regeln.filter((r) => !blockIds.has(r.wildart_id)),
+    regelZeichen,
+    regelnZuLang: regelZeichen > JAGDREGELN_MAX_ZEICHEN,
+    // Eine ungültige Zeile fehlt in `pruefung.wert` — ohne `!gueltig` hieße
+    // „Art dazu, Gewicht 0" nicht geändert, und Schließen wie Reload
+    // verwürfen sie ohne Rückfrage (Codex P1c A2/C-F2; in der App ebenso).
+    // *Preis, benannt (Schlusslesung P1c, F1):* eine schon gespeicherte
+    // ungültige Zeile (Dublette per REST, oder „050"/„50", CP-111) zeigt
+    // beim Öffnen „Verwerfen …", ohne dass jemand getippt hat. Gemessen
+    // 27.10.2026: 0 solcher Zeilen; Speichern ist ohnehin gesperrt, bis die
+    // Zeile entfernt ist.
+    geaendert:
+      !pruefung.gueltig ||
+      fassung(pruefung.wert) !== fassung(basis.freigabe) ||
+      fassungRegeln(sichtbareRegeln) !== fassungRegeln(regelnZumSpeichernJeWildart(basis.regeln ?? [])),
+  }
+}
+
+/**
+ * Das getippte Feld eines Blocks in den Zustand (E3, `regelUebernehmen`):
+ * neu gefasst über `regelnZumSpeichern`, leer entfernt den Eintrag. **Gleicht
+ * es normalisiert dem gespeicherten Text dieses Blocks, bleibt der rohe
+ * gespeicherte Eintrag stehen** — Tippen und Zurücktippen ändert dann nichts
+ * (Codex 4b, Schlusslesung F2). Andere Blöcke bleiben unberührt.
+ */
+export function blockTextSetzen(
+  regeln: readonly FreigabeRegel[],
+  block: { id: string; name: string },
+  feld: string,
+  gespeichert: readonly FreigabeRegel[] | null,
+): FreigabeRegel[] {
+  const ohne = regeln.filter((r) => r.wildart_id !== block.id)
+  const neu = regelnZumSpeichern([feld])
+  if (neu === null) return ohne
+  const alt = gespeichert?.find((r) => r.wildart_id === block.id)
+  if (alt && neu === regelnZumSpeichern(regelPunkte(alt.regeln))) return [...ohne, alt]
+  return [...ohne, { wildart_id: block.id, name: block.name, regeln: neu }]
+}
+
 // ── Sicht (141) ─────────────────────────────────────────────────────────────
 
 export type SchuetzenSicht = 'alles' | 'umkreis' | 'eigener'
