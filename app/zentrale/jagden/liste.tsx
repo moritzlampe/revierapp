@@ -10,6 +10,7 @@ import {
   beendet,
   einladungscode,
   filtere,
+  halbGetippt,
   jagdart,
   jagdjahre,
   jagdjahrLabel,
@@ -742,14 +743,14 @@ function Anlegen({
     }
   }
 
-  const absenden = async (e: React.FormEvent) => {
+  const absenden = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (inArbeit.current) return
 
     // Der Vorschlag greift erst hier, damit das Feld sichtbar leer bleiben darf.
     const mitName = { ...entwurf, name: entwurf.name.trim() || namensvorschlag(entwurf.termin) }
 
-    const problem = pruefeJagdEntwurf(mitName)
+    const problem = halbGetippt(e.currentTarget.elements) ?? pruefeJagdEntwurf(mitName)
     if (problem) {
       setFehler(problem)
       return

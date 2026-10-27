@@ -18,6 +18,7 @@ import {
   einladungscode,
   ersterWert,
   filtere,
+  halbGetippt,
   jagdAenderungen,
   jagdart,
   jagdjahre,
@@ -975,6 +976,14 @@ assert.equal(alsZeitstempel('0202-11-15T09:00'), null)
 assert.equal(alsZeitstempel('9999-12-31T23:30'), null)
 assert.match(pruefeJagdEntwurf(entwurf({ termin: '0202-11-15T09:00' })) ?? '', /Datum/)
 assert.match(pruefeJagdEntwurf(entwurf({ bis: '0202-11-16T09:00' })) ?? '', /Datum/)
+
+// **Ein halb getipptes Feld meldet der Browser als leer** — nur
+// `validity.badInput` verraet es. Ohne `halbGetippt` ging ein halbes Ende als
+// „kein Ende" durch (Codex, 27.10.2026). Felder ohne `validity` (Fieldset)
+// und vollstaendige Felder melden nichts.
+assert.equal(halbGetippt([]), null)
+assert.equal(halbGetippt([{}, { validity: { badInput: false } }]), null)
+assert.match(halbGetippt([{ validity: { badInput: false } }, { validity: { badInput: true } }]) ?? '', /halb/)
 
 assert.equal(alsEingabewert(null), '')
 assert.equal(alsEingabewert('kein datum'), '')

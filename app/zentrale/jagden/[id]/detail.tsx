@@ -16,6 +16,7 @@ import {
   datumTeil,
   entfernbar,
   erneutHinweis,
+  halbGetippt,
   mehrtaegig,
   spaetestesEndeDatum,
   terminText,
@@ -644,11 +645,11 @@ function JagdFormular({
   const [laeuft, setLaeuft] = useState(false)
   const inArbeit = useRef(false)
 
-  const absenden = async (e: React.FormEvent) => {
+  const absenden = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (inArbeit.current) return
 
-    const problem = pruefeJagdEntwurf(entwurf)
+    const problem = halbGetippt(e.currentTarget.elements) ?? pruefeJagdEntwurf(entwurf)
     if (problem) {
       setFehler(problem)
       return

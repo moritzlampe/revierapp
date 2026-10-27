@@ -943,6 +943,24 @@ export function spaetestesEndeDatum(termin: string): string {
 }
 
 /**
+ * Meldung, wenn ein Feld des Formulars nur halb getippt ist (`16.11.jjjj`),
+ * sonst `null`. Gehört VOR `pruefeJagdEntwurf`.
+ *
+ * **Der Browser meldet ein halbes Datum als LEER** — `value === ''`, nur
+ * `validity.badInput` verrät es (gemessen in Chrome, 27.10.2026).
+ * `pruefeJagdEntwurf` sieht also einen leeren Wert und muss ihn für Absicht
+ * halten: ein halbes Ende wurde als „kein Ende" gespeichert, die Jagd still
+ * eintägig (Codex, 27.10.2026, beim Fix des Tipp-Absturzes). Zeitfelder
+ * betrifft es nicht: ein geleertes Segment springt über `alsTerminwert`
+ * sichtbar auf die Voreinstellung zurück.
+ */
+export function halbGetippt(felder: ArrayLike<unknown>): string | null {
+  return Array.from(felder).some((f) => (f as HTMLInputElement).validity?.badInput)
+    ? 'Ein Datum ist nur halb eingetippt. Bitte vervollständigen oder leeren.'
+    : null
+}
+
+/**
  * Prüft einen Entwurf, bevor geschrieben wird. Gibt die Meldung zurück oder
  * `null`, wenn nichts zu beanstanden ist.
  *
