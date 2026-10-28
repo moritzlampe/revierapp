@@ -4,7 +4,9 @@ import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import type { Ort } from '../../objekte'
 import type { Punkt } from '../../revierkarte-map'
+import { imRechteck, type Standgruppe } from '../../revier/standgruppen'
 import { schreibe, schreibeViele } from '../../schreiben'
 import { sichtbarerName } from '../../namen'
 import { vorbereitbar } from '../jagden'
@@ -72,6 +74,7 @@ export default function TreibenBereich({
   jagdId,
   treiben,
   punkte,
+  gruppen,
   grenze,
   namen,
 }: {
@@ -79,6 +82,11 @@ export default function TreibenBereich({
   treiben: Treiben[]
   /** Nur Stände: alle 204 Standzeilen im Bestand zeigen auf genau diese drei Typen. */
   punkte: Punkt[]
+  /**
+   * Standgruppen des Reviers (P2b, Bauplan Verteilen §12 E16) — `null` heisst
+   * „nicht ladbar", nie „keine" (S4).
+   */
+  gruppen: Standgruppe[] | null
   grenze: [number, number][][] | null
   /** teilnahmeId → Anzeigename, für die Rückfragen mit Namen (Bauplan Verteilen B12). */
   namen: Record<string, string>
@@ -269,6 +277,27 @@ export default function TreibenBereich({
       return nachher
     })
   }
+
+  /**
+   * Eine Standgruppe ins Treiben übernehmen (Konzept Standgruppen §6.2,
+   * gelockt): **nur hinzufügen, nie entfernen**, und nur, was auf dieser Karte
+   * steht — `sichtbar` hält Nicht-Stände und Objekte im Papierkorb fern, die
+   * eine Gruppe tragen darf (112). Eine KOPIE: gespeichert wird über
+   * `standDiff` wie jeder Klick, das Treiben zeigt danach nicht auf die Gruppe.
+   */
+  function hinzufuegen(ids: readonly string[]) {
+    if (laeuftRef.current || ids.length === 0) return
+    setAbwahlFrage(null)
+    setMarkiert((vorher) => new Set([...vorher, ...ids]))
+  }
+  const gruppeUebernehmen = (gruppe: Standgruppe) => hinzufuegen(gruppe.staende.filter((id) => sichtbar.has(id)))
+
+  /**
+   * Rechteckauswahl, additiv wie auf der Revierseite (`arbeitsbereich.tsx`):
+   * ein Zug ist dieselbe Handlung wie ein Tipp, nur für mehrere Stände — er
+   * steht unter demselben Riegel.
+   */
+  const rechteck = (a: Ort, b: Ort) => hinzufuegen(imRechteck(punkte, sichtbar, a, b))
 
   /**
    * Ein Schreibvorgang, ein Riegel, eine Fehlerzeile.
@@ -735,7 +764,32 @@ export default function TreibenBereich({
                       </p>
                     )}
 
-                    <p className="zentrale-sub">Stände auf der Karte antippen.</p>
+                    {/* Gruppen übernehmen (E16). Die Zahl zählt nur, was noch
+                        hinzukommt — eine Gruppe, die schon ganz drin ist, hat 0. */}
+                    {gruppen === null ? (
+                      <p className="zentrale-hinweis">
+                        Die Standgruppen ließen sich nicht laden — Stände einzeln wählen geht weiter.
+                      </p>
+                    ) : gruppen.length === 0 ? (
+                      <p className="zentrale-sub">Keine Standgruppen — anlegen lassen sie sich unter „Revier“.</p>
+                    ) : (
+                      <div className="jagd-treiben-knoepfe" role="group" aria-label="Standgruppen übernehmen">
+                        {gruppen.map((g) => {
+                          const neu = g.staende.filter((id) => sichtbar.has(id) && !markiert.has(id)).length
+                          return (
+                            <button
+                              key={g.id}
+                              type="button"
+                              className="zentrale-abbrechen"
+                              disabled={busy || neu === 0}
+                              onClick={() => gruppeUebernehmen(g)}
+                            >
+                              + {g.name} ({neu})
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
 
                     {/* **`zentrale-karte-kasten` ist die vorhandene Klasse der
                         Revierkarte, keine zweite.** Sie bringt 420 px Standard,
@@ -792,8 +846,18 @@ export default function TreibenBereich({
                           punkte={punkte}
                           markiert={markiert}
                           aufAuswahl={umschalten}
+                          aufRechteck={rechteck}
                         />
                       </div>
+                      {/* **Pflicht, nicht Komfort** (C-45, Fable F4): solange der
+                          Editor offen ist, zieht die Maus ein Auswahlrechteck statt
+                          der Karte — `RechteckWahl` schaltet das Kartenziehen ab.
+                          Wie auf der Revierseite im Stände-Modus, und **im Kasten**,
+                          damit der Satz auch im Vollbild steht (Codex D6). */}
+                      <p className="zentrale-karte-hinweis">
+                        In die Karte tippen nimmt einen Stand ins Treiben auf oder heraus · ein Rechteck
+                        ziehen nimmt alle darin auf · zum Verschieben der Karte am Rad zoomen
+                      </p>
                     </div>
 
                     {abwahlFrage && (

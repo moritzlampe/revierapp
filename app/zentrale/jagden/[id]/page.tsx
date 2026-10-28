@@ -8,6 +8,7 @@ import { geladen, vollstaendig } from '../../laden'
 import type { Punkt } from '../../revierkarte-map'
 import Detail from './detail'
 import type { Katalogzeile, RegelnRoh } from './regeln-bereich'
+import { ausZeilen as gruppenAus, type Standgruppe, type StandgruppeZeile } from '../../revier/standgruppen'
 import { ausZeilen } from './treiben'
 import VerteilenBereich from './verteilen-bereich'
 import type { DriveRow, Pruefung, SeatRow } from './verteilen'
@@ -267,7 +268,7 @@ export default async function JagdDetailPage({
    * nimmt das anstandslos, und der Zweig bleibt derselbe wie vorher — eine Jagd
    * ohne Revier oder ohne Jagdleiterrecht stellt gar keine Abfrage.
    */
-  const [treibenErgebnis, objekteErgebnis, katalogErgebnis, sitzeErgebnis, pruefErgebnis] = await Promise.all([
+  const [treibenErgebnis, objekteErgebnis, katalogErgebnis, sitzeErgebnis, pruefErgebnis, gruppenErgebnis] = await Promise.all([
     treibenSichtbar
       ? supabase
           .from('hunt_drives')
@@ -368,12 +369,44 @@ export default async function JagdDetailPage({
           .select('map_object_id, status, checked_at, checked_by', { count: 'exact' })
           .eq('district_id', revier.id)
       : null,
+    /**
+     * Die Standgruppen des Reviers (P2b, Bauplan Verteilen §12 E16) — für
+     * „Gruppe ins Treiben übernehmen" (Konzept Standgruppen §6.2, gelockt).
+     * Dieselbe Abfrage wie auf der Revierseite (`revier/page.tsx`), samt
+     * ihrer bekannten Grenze: der Zähler deckt nur die Gruppen, nicht die
+     * eingebetteten Mitglieder — getragen von der strukturellen Schranke dort
+     * (eine Gruppe hat höchstens so viele Mitglieder wie das Revier Objekte).
+     * Lesen darf sie nur der Revierbesitzer (112); wer diesen Bereich sieht,
+     * ist es (`revier` lädt nur eigene Reviere, s. oben).
+     */
+    treibenSichtbar && revier
+      ? supabase
+          .from('standgruppen')
+          .select('id, name, standgruppen_staende ( map_object_id )', { count: 'exact' })
+          .eq('district_id', revier.id)
+          .order('name')
+      : null,
   ])
 
   const treibenZeilen = treibenErgebnis ? vollstaendig<DriveRow>(treibenErgebnis, 'Treiben') : []
   const sitze = sitzeErgebnis ? vollstaendig<SeatRow>(sitzeErgebnis, 'Sitzordnung') : []
 
   const objekte = objekteErgebnis ? vollstaendig<Objekt>(objekteErgebnis, 'Kartenobjekte') : []
+
+  /**
+   * **Ein Ladefehler der Standgruppen wird `null`, statt die Seite zu reissen**
+   * (Fable F12): `vollstaendig()` wirft, und die Gruppen sind eine optionale
+   * Leiste im Treiben-Editor. `null` heisst dort „nicht ladbar" — nie „keine
+   * Gruppen" (S4).
+   */
+  let gruppen: Standgruppe[] | null = []
+  if (gruppenErgebnis) {
+    try {
+      gruppen = gruppenAus(vollstaendig<StandgruppeZeile>(gruppenErgebnis, 'Standgruppen'))
+    } catch {
+      gruppen = null
+    }
+  }
 
   // Der Katalog wirft bei Kappung oder Fehler (`vollstaendig`): ohne ihn
   // stünden die Klassen der Freigabe ohne ihre Wildart da.
@@ -457,6 +490,7 @@ export default async function JagdDetailPage({
         istLeiter={istLeiter}
         treiben={ausZeilen(treibenZeilen)}
         punkte={punkte}
+        standgruppen={gruppen}
         grenze={revier ? parsePolygonHex(revier.boundary) : null}
         // Freigabe & Regeln nur bei Gesellschaftsjagden — wie nativ
         // (`teilnehmer.tsx`): eine Einzeljagd hat keine.

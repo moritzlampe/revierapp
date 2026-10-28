@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Punkt } from '../../revierkarte-map'
+import type { Standgruppe } from '../../revier/standgruppen'
 import { schreibe } from '../../schreiben'
 import TreibenBereich from './treiben-bereich'
 import RegelnBereich, { type Katalogzeile, type RegelnRoh } from './regeln-bereich'
@@ -85,6 +86,7 @@ export default function Detail({
   istLeiter,
   treiben,
   punkte,
+  standgruppen,
   grenze,
   regeln,
   katalog,
@@ -104,6 +106,8 @@ export default function Detail({
   treiben: Treiben[]
   /** Die Stände des Reviers als Kartenpunkte. Leer ohne Revier. */
   punkte: Punkt[]
+  /** Standgruppen des Reviers (P2b, E16) — `null` = nicht ladbar. */
+  standgruppen: Standgruppe[] | null
   grenze: [number, number][][] | null
   /** Freigabe, Regeln, Sicht (P1a) — `null` bei einer Einzeljagd. */
   regeln: RegelnRoh | null
@@ -617,6 +621,7 @@ export default function Detail({
           jagdId={jagd.id}
           treiben={treiben}
           punkte={punkte}
+          gruppen={standgruppen}
           grenze={grenze}
           namen={Object.fromEntries(teilnehmer.map((t) => [t.id, teilnehmerName(t, namen)]))}
         />

@@ -1161,7 +1161,21 @@ function Objekte({
             // nicht zweimal neu auf. Genau daran ist Schnitt 1 gescheitert, und
             // deshalb sitzt der Doppelklick-Riegel in `umschalten()` statt an
             // der Prop (s. `arbeitsbereich.tsx`).
-            key={`${p.id}|${aufAuswahl ? 'waehlbar' : 'starr'}`}
+            //
+            // **Seit P2b gehört auch der Namensmodus in den `key`** (Klicktest
+            // 28.10.2026, gemessen). Leaflet 1.9.4 hängt an ein HOVER-Schild
+            // `focus`/`blur`-Listener direkt ans SVG-Element
+            // (`_addFocusListeners`), und `unbindTooltip` nimmt sie nie wieder
+            // ab. Wird das Schild beim Hineinzoomen permanent, bleiben sie
+            // hängen: ein Klick fokussiert den Marker, der nächste Klick
+            // woanders löst `blur` aus — und das schließt das PERMANENTE
+            // Schild, bis die Seite neu lädt. Auf der Verteilen-Karte verschwand
+            // so „Sauberg 5 · heinrich" nach dem Einteilen. Vorbestehend auch
+            // auf der Revierseite (Auswahl per Klick), dort nur nie bemerkt.
+            // Ein neuer Marker hat ein neues Element ohne die alten Listener.
+            // Kosten: beim Überschreiten von `NAMEN_AB_ZOOM` bauen die Marker
+            // neu auf, sonst nur der eine, dessen Schild umschaltet.
+            key={`${p.id}|${aufAuswahl ? 'waehlbar' : 'starr'}|${nameSteht ? 'fest' : 'hover'}`}
             center={[p.lat, p.lng]}
             radius={5}
             interactive={!!aufAuswahl}
@@ -1177,15 +1191,20 @@ function Objekte({
               color: inIrgendeiner ? FOREST : '#FFFFFF',
               weight: inGruppe ? 3 : inIrgendeiner ? 2 : 1.5,
               // Alles, worauf ein Schütze sitzt, bekommt den Akzent — der Rest tritt zurück.
-              fillColor: istStand(p.typ) ? ACCENT : NEUTRAL,
+              // **Ein Ad-hoc-Sitz (Verteilen P2b, E15) ist hohl:** weisse Füllung
+              // im Akzent-Rand. Unterscheidbar vom Revierstand, ohne eine fünfte
+              // Farbe — und gefüllt statt `fill: false`, sonst nähme bei 5 px nur
+              // der Rand einen Klick an.
+              ...(p.typ === 'adhoc' ? { color: ACCENT, weight: 2.5 } : {}),
+              fillColor: p.typ === 'adhoc' ? '#FFFFFF' : istStand(p.typ) ? ACCENT : NEUTRAL,
               fillOpacity: gedimmt ? GEDIMMT : 0.9,
               opacity: gedimmt ? GEDIMMT : 1,
             }}
           >
-            {/* Das `key` erzwingt ein Neubinden: Leaflet liest `permanent` nur
-                beim Anlegen des Tooltips, ein bloßer Prop-Wechsel bliebe wirkungslos. */}
+            {/* Leaflet liest `permanent` nur beim Anlegen des Tooltips, ein bloßer
+                Prop-Wechsel bliebe wirkungslos — den Neuaufbau erzwingt der
+                `key` des Markers oben (Namensmodus), samt frischem Element. */}
             <Tooltip
-              key={nameSteht ? 'fest' : 'hover'}
               permanent={nameSteht}
               direction="top"
               offset={[0, -6]}
@@ -1252,6 +1271,97 @@ function Objekte({
 }
 
 /**
+ * Ablage eines Zugs aus einer Liste neben der Karte (Verteilen P2b, Bauplan
+ * §12 E14). HTML5-Ziehen: die Karte meldet nur **Containerpunkte** — Zeiger
+ * und sichtbare Punkte —, was ein Ziel ist und ob es ablegbar ist, entscheidet
+ * der Aufrufer. Leaflet selbst hört kein `dragover`/`drop` und verschiebt die
+ * Karte während eines HTML5-Zugs nicht (es kommen keine Mausereignisse).
+ */
+export type AblageProps = {
+  /** Nur Züge mit diesem Typ im `dataTransfer` — eine Datei oder ein Text von außen nicht. */
+  typ: string
+  /** Je `dragover`: Zeiger und sichtbare Punkte. Rückgabe: ablegbar. */
+  aufUeber: (zeiger: Pixel, punkte: PixelPunkt[]) => boolean
+  /** `drop` auf ein ablegbares Ziel, dazu der Eintrag des Zugs aus dem `dataTransfer`. */
+  aufAblage: (zeiger: Pixel, punkte: PixelPunkt[], nutzlast: string) => void
+  /** Der Zug hat die Karte verlassen. */
+  aufVerlassen: () => void
+}
+
+type Pixel = { x: number; y: number }
+type PixelPunkt = { id: string; x: number; y: number }
+
+function Ablage({ punkte, ablage }: { punkte: Punkt[]; ablage: AblageProps }) {
+  const map = useMap()
+  // Neueste Rückrufe und Punkte, ohne die Listener bei jedem Rendern neu zu binden.
+  const aktuell = useRef({ ablage, punkte })
+  useEffect(() => {
+    aktuell.current = { ablage, punkte }
+  })
+
+  useEffect(() => {
+    const el = map.getContainer()
+    const eigen = (e: DragEvent) =>
+      !!e.dataTransfer && Array.from(e.dataTransfer.types).includes(aktuell.current.ablage.typ)
+    /**
+     * **Nur Punkte im sichtbaren Ausschnitt** (Codex D4): ein Stand, dessen
+     * Mittelpunkt außerhalb liegt, wäre als Ziel die `auswahlId` — und
+     * `ZuAuswahl` schwenkte die Karte dann mitten im Zug zu ihm hin.
+     */
+    const lage = (e: DragEvent) => {
+      const grenzen = map.getBounds()
+      const zeiger = map.mouseEventToContainerPoint(e)
+      const sichtbar: PixelPunkt[] = []
+      for (const p of aktuell.current.punkte) {
+        if (!grenzen.contains([p.lat, p.lng])) continue
+        const c = map.latLngToContainerPoint([p.lat, p.lng])
+        sichtbar.push({ id: p.id, x: c.x, y: c.y })
+      }
+      return { zeiger: { x: zeiger.x, y: zeiger.y }, punkte: sichtbar }
+    }
+    // `dragenter` UND `dragover` abbrechen macht ein Element zum Ablageziel
+    // (HTML5) — beide mit derselben Zielprüfung (Codex P2b A5).
+    const ueber = (e: DragEvent) => {
+      if (!eigen(e) || !e.dataTransfer) return
+      const { zeiger, punkte } = lage(e)
+      // **Ohne Ziel KEIN `preventDefault`** (Fable F7): dann zeigen Chrome und
+      // Safari gleich „verboten", und der Browser löst gar kein `drop` aus —
+      // den Grund nennt der Aufrufer schon beim Überfahren (Codex D5).
+      if (aktuell.current.ablage.aufUeber(zeiger, punkte)) {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+      } else {
+        e.dataTransfer.dropEffect = 'none'
+      }
+    }
+    const ab = (e: DragEvent) => {
+      if (!eigen(e) || !e.dataTransfer) return
+      e.preventDefault()
+      const { zeiger, punkte } = lage(e)
+      aktuell.current.ablage.aufAblage(zeiger, punkte, e.dataTransfer.getData(aktuell.current.ablage.typ))
+    }
+    // `dragleave` feuert auch beim Wechsel auf ein Kindelement — nur ein
+    // Verlassen des Containers zählt.
+    const weg = (e: DragEvent) => {
+      if (!eigen(e)) return
+      if (e.relatedTarget instanceof Node && el.contains(e.relatedTarget)) return
+      aktuell.current.ablage.aufVerlassen()
+    }
+    el.addEventListener('dragenter', ueber)
+    el.addEventListener('dragover', ueber)
+    el.addEventListener('drop', ab)
+    el.addEventListener('dragleave', weg)
+    return () => {
+      el.removeEventListener('dragenter', ueber)
+      el.removeEventListener('dragover', ueber)
+      el.removeEventListener('drop', ab)
+      el.removeEventListener('dragleave', weg)
+    }
+  }, [map])
+  return null
+}
+
+/**
  * Revierkarte des Bereichs „Revier" — bis zum 08.08.2026 stand sie auf der
  * ÜBERSICHT, und dieser Satz sagte das auch; sie ist umgezogen, als der Bereich
  * seine eigene Route bekam.
@@ -1276,6 +1386,7 @@ export default function RevierkarteMap({
   gruppe,
   aufAuswahl,
   belegung,
+  ablage,
   randRechts = 0,
 }: KarteProps & {
   /**
@@ -1329,6 +1440,8 @@ export default function RevierkarteMap({
   aufAuswahl?: (id: string) => void
   /** Stand → Name; s. `Objekte`. */
   belegung?: Readonly<Record<string, string>>
+  /** Ablage eines Zugs aus der Schützenliste (Verteilen P2b) — nur die Verteilen-Karte setzt sie. */
+  ablage?: AblageProps
   /** Breite, die die Objektspalte rechts überdeckt — Zuschlag für `fitBounds`. */
   randRechts?: number
 }) {
@@ -1416,6 +1529,7 @@ export default function RevierkarteMap({
           Stützpunkte. Heute stellt kein Aufrufer diese Kombination her, und
           genau deshalb fiele es niemandem auf. */}
       {aufRechteck && !zeichnen && !setzen && <RechteckWahl aufWahl={aufRechteck} />}
+      {ablage && !zeichnen && !setzen && <Ablage punkte={punkte} ablage={ablage} />}
 
       {/* Während des Zeichnens ist die Auswahl aus: ein Klick soll dann einen
           Grenzpunkt setzen, nicht ein Objekt auswählen — der Marker würde das

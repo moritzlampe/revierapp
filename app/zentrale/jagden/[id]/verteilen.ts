@@ -14,12 +14,16 @@
  * Belegung als die App, und genau das soll sie nie (Bauplan B4, E3).
  *
  * **Eine Abweichung, bewusst:** kein `coord`. Im Portal liest ihn niemand —
- * die Matrix zeigt Namen, die Karte nimmt die Punkte der Seite. Ad-hoc-Sitze
- * auf der Karte kommen mit P2b, der Ort dann mit ihnen.
+ * die Matrix zeigt Namen, die Karte nimmt die Punkte der Seite. Den Ort der
+ * Ad-hoc-Sitze liest seit P2b `adhocPunkte` (Teil 3) direkt aus der Sitzzeile.
  *
  * **Teil 2 ist Portal-eigen:** Matrix, Bindung an Jagd und Revier (B6),
  * Rückfall-Auskunft (E3), Angebote je Zelle und das „Bild", gegen das ein
  * Write nach der Rückfrage frisch geprüft wird (E10).
+ *
+ * **Teil 3 ist die Karte als Eingabe (P2b, Bauplan §12):** Gründe vor
+ * `waehlen()` (E12), „entfernen" je Stand (E13), Ad-hoc-Punkte (E15) und das
+ * Ziel eines Zugs in Pixeln (E14).
  */
 
 // ===========================================================================
@@ -774,3 +778,138 @@ export function kartenNamen(daten: VerteilenDaten, spalte: string): Record<strin
   const geplant = spalte === JAGDWEIT ? null : (treiben.find((d) => d.id === spalte) ?? null)
   return standLabels(laufendes, seating, (pid) => daten.namen.get(pid), geplant)
 }
+
+// ===========================================================================
+// Teil 3 — Karte als Eingabe (P2b, Bauplan Verteilen §12, V2.5)
+// ===========================================================================
+
+/**
+ * Warum ein Angebot nicht wählbar ist — `null` = wählbar. Gesperrt sperrt wie
+ * die App (D2). Aus `verteilen-bereich.tsx` hierher gezogen, weil Matrix-Liste
+ * und Karte dieselben Gründe nennen müssen (E12).
+ */
+export function angebotAus(a: Angebot, daten: Pick<VerteilenDaten, 'pruefung'>): string | null {
+  if (a.aktuell) return 'steht schon hier'
+  if (a.sperre === 'gesperrt') {
+    const p = daten.pruefung?.get(a.standId)
+    const seit = p ? ` seit ${new Date(p.checked_at).toLocaleDateString('de-DE')}${p.pruefer ? ` (${p.pruefer})` : ''}` : ''
+    return `gesperrt${seit} — entsperren über eine neue Prüfung in der App oder im Objekt-Inspektor der Revierseite`
+  }
+  return null
+}
+
+/**
+ * Warum auf diesen Stand in dieser Spalte NIEMAND kommt — `null` = er ist
+ * angeboten und nicht gesperrt. Der Vorfilter vor `waehlen()` (E12): `bild()`
+ * liefert für einen nicht angebotenen Stand `null`, und `waehlen` kehrte dann
+ * still zurück. Die Person spielt hier keine Rolle (`aktuell` prüft
+ * `personGrund`).
+ */
+export function standGrund(daten: VerteilenDaten, spalte: string, standId: string, standName: string): string | null {
+  const a = angebote(daten, spalte, '').find((x) => x.standId === standId)
+  if (!a) {
+    // Jagdweit bietet die Matrix nur Revierstände an — ein Ad-hoc-Sitz wird
+    // dort in der App umgesetzt (§12.6, Nicht-Umfang).
+    if (spalte === JAGDWEIT) return `${standName}: Ad-hoc-Sitz — jagdweit nur in der App umzusetzen`
+    const t = daten.treiben.find((d) => d.id === spalte)
+    return `${standName} gehört nicht zur Standmenge von ${t?.name ?? 'diesem Treiben'}`
+  }
+  if (a.sperre === 'gesperrt') return `${a.name}: ${angebotAus({ ...a, aktuell: false }, daten)}`
+  return null
+}
+
+/**
+ * Warum diese Person nicht auf diesen (angebotenen) Stand kann — `null` = sie
+ * kann. Was `bild()` ablehnt, steht hier, damit es nie erst `schreiben()` mit
+ * dem falschen Grund „Belegung geändert" abweist (Fable F2: ohne Konto
+ * jagdweit).
+ */
+export function personGrund(daten: VerteilenDaten, spalte: string, teilnahmeId: string, standId: string): string | null {
+  const a = angebote(daten, spalte, teilnahmeId).find((x) => x.standId === standId)
+  if (!a) return 'hier nicht wählbar'
+  if (a.aktuell) return 'steht schon hier'
+  const b = bild(daten, spalte, teilnahmeId, standId)
+  if (!b) return 'hier nicht wählbar'
+  // Wer zuweisbar ist und trotzdem nicht empfangen darf, ist jagdweit ohne
+  // Konto (B1); ein Ausgeschiedener ist es auch mit Konto nicht (Codex P2b A2).
+  const t = daten.teilnehmer.find((x) => x.id === teilnahmeId)
+  if (!b.empfaengerZuweisbar) return t && zuweisbar(t) ? 'ohne Konto nur je Treiben' : 'nicht mehr zuweisbar'
+  return null
+}
+
+/**
+ * „<Name> entfernen" für einen gewählten Stand (E13) — nur bei einem DIREKTEN
+ * Inhaber mit Teilnahme-ID; ein geerbter Stand lässt sich in dieser Spalte
+ * nicht leeren, wie in der Matrix. Der Text nennt den Rückfall vorher
+ * (`leerenText`), denn auch die Matrix fragt beim Leeren nicht nach (Codex B2,
+ * Fable F10).
+ */
+export function entfernenAngebot(
+  daten: VerteilenDaten,
+  spalte: string,
+  standId: string,
+): { teilnahmeId: string; text: string } | null {
+  const inhaber = angebote(daten, spalte, '').find((x) => x.standId === standId)?.inhaber
+  if (!inhaber?.teilnahmeId) return null
+  return { teilnahmeId: inhaber.teilnahmeId, text: `${inhaber.name}: ${leerenText(daten, spalte, inhaber.teilnahmeId)}` }
+}
+
+/**
+ * Ad-hoc-Sitze als Kartenpunkte (E15): jede `adhoc`-Zeile mit Position —
+ * **auch ohne `user_id`**, ein geleerter Ad-hoc-Stand ist ein freier Stand; so
+ * zeigt ihn auch die App (`src/lib/data/markers.ts`). `seat_id` leer wie in
+ * `standGueltig`. Die ID ist die Sitz-PK, der Schlüsselraum der App, und die
+ * Punkte gehören NUR an die Verteilen-Karte (Fable F11).
+ */
+export function adhocPunkte(sitze: readonly SeatRow[]): { id: string; name: string; lat: number; lng: number }[] {
+  const punkte: { id: string; name: string; lat: number; lng: number }[] = []
+  for (const s of sitze) {
+    if (s.seat_type !== 'adhoc' || s.seat_id !== null || s.position_lat == null || s.position_lng == null) continue
+    punkte.push({ id: s.id, name: s.seat_name ?? 'Ad-hoc Stand', lat: s.position_lat, lng: s.position_lng })
+  }
+  return punkte
+}
+
+/** Ein Kartenpunkt in Containerpixeln. */
+export interface PixelPunkt {
+  id: string
+  x: number
+  y: number
+}
+
+/**
+ * Ab wie vielen Pixeln ein Stand kein Ziel mehr ist (E14) — in Pixeln, nicht
+ * Metern, also zoomunabhängig wie die Schwelle der Rechteckauswahl.
+ */
+export const ZIEL_RADIUS_PX = 24
+
+/**
+ * Der NÄCHSTE Punkt im Radius, gleich ob angeboten. Ob er ablegbar ist, prüft
+ * der Aufrufer danach (Codex B1): „der nächste angebotene" übersprang einen
+ * gesperrten Stand unter dem Zeiger, und der Nachbar bekam den Schützen.
+ * Gleich weit: der erste gewinnt.
+ */
+export function naechsterStand(
+  punkte: readonly PixelPunkt[],
+  zeiger: { x: number; y: number },
+): string | null {
+  const grenze = ZIEL_RADIUS_PX * ZIEL_RADIUS_PX
+  let bester: string | null = null
+  let besterAbstand = Infinity
+  for (const p of punkte) {
+    const abstand = (p.x - zeiger.x) ** 2 + (p.y - zeiger.y) ** 2
+    if (abstand <= grenze && abstand < besterAbstand) {
+      bester = p.id
+      besterAbstand = abstand
+    }
+  }
+  return bester
+}
+
+/**
+ * Der eigene Typ im `dataTransfer` — **kleingeschrieben**, Chrome schreibt
+ * eigene Typen klein, ein Vergleich gegen gemischte Schreibung fände ihn nie
+ * (Fable F7). Getragen wird nur die Zug-Nummer (Codex D3); die Person hält
+ * die Seite selbst.
+ */
+export const ZUG_TYP = 'application/x-quickhunt-schuetze'

@@ -8,20 +8,26 @@
 // Zusicherungen wie dort, nur ohne `coord` (s. Kopf von verteilen.ts).
 import assert from 'node:assert/strict'
 import {
+  adhocPunkte,
   angebote,
   baueMatrix,
   bild,
   buildHuntSeating,
+  entfernenAngebot,
   effectiveStand,
   gleichesBild,
   JAGDWEIT,
   kartenNamen,
   leerenText,
+  naechsterStand,
+  personGrund,
+  standGrund,
   standLabels,
   toDriveStand,
   umsetzFehler,
   UmsetzenUnbestaetigt,
   zuweisbar,
+  ZIEL_RADIUS_PX,
   type DriveRow,
   type DriveStand,
   type HuntDrive,
@@ -506,4 +512,83 @@ assert.equal(zuweisbar({ status: 'invited', entfernt_am: null }), true)
   const d = basis()
   d.objekte = [{ id: 'a', name: 'Stand 10' }, { id: 'b', name: 'Stand 2' }]
   assert.deepEqual(angebote(d, JAGDWEIT, 'pT').map((a) => a.name), ['Stand 2', 'Stand 10'])
+}
+
+// ===========================================================================
+// Teil 3 — Karte als Eingabe (P2b, Bauplan §12)
+// ===========================================================================
+
+// --- naechsterStand: der naechste im Radius, NICHT der naechste angebotene (Codex B1) ---
+{
+  const punkte = [
+    { id: 'gesperrt', x: 103, y: 100 },
+    { id: 'frei', x: 110, y: 100 },
+  ]
+  assert.equal(naechsterStand(punkte, { x: 100, y: 100 }), 'gesperrt', 'kein Ueberspringen zum Nachbarn')
+  assert.equal(naechsterStand(punkte, { x: 112, y: 100 }), 'frei')
+  assert.equal(naechsterStand([{ id: 'a', x: 100 + ZIEL_RADIUS_PX, y: 100 }], { x: 100, y: 100 }), 'a', 'Rand zaehlt')
+  assert.equal(naechsterStand([{ id: 'a', x: 100 + ZIEL_RADIUS_PX + 0.5, y: 100 }], { x: 100, y: 100 }), null, 'ausserhalb')
+  assert.equal(naechsterStand([], { x: 0, y: 0 }), null)
+  // Feste Zahlen, nicht die Konstante — sonst wanderte der Test mit ihr (Codex P2b A8).
+  assert.equal(naechsterStand([{ id: 'a', x: 0, y: 24 }], { x: 0, y: 0 }), 'a', '24 px senkrecht')
+  assert.equal(naechsterStand([{ id: 'a', x: 0, y: 25 }], { x: 0, y: 0 }), null, '25 px senkrecht')
+  assert.equal(naechsterStand([{ id: 'a', x: 18, y: 18 }], { x: 0, y: 0 }), null, 'schraeg 25,5 px')
+  assert.equal(naechsterStand([{ id: 'a', x: 16, y: 16 }], { x: 0, y: 0 }), 'a', 'schraeg 22,6 px')
+  assert.equal(naechsterStand([{ id: 'nah-x', x: 2, y: 20 }, { id: 'nah', x: 5, y: 5 }], { x: 0, y: 0 }), 'nah', 'y zaehlt mit')
+  assert.equal(naechsterStand([{ id: 'a', x: 5, y: 0 }, { id: 'b', x: -5, y: 0 }], { x: 0, y: 0 }), 'a', 'gleich weit: der erste')
+}
+
+// --- adhocPunkte: jede adhoc-Zeile mit Position, auch ohne Person (E15) ---
+{
+  const ohnePos: SeatRow = { ...adhocSeat('s3', 'u3', 'Ohne Ort'), position_lat: null }
+  const ohneLng: SeatRow = { ...adhocSeat('s6', 'u6', 'Ohne Laenge'), position_lng: null }
+  const mitSeat: SeatRow = { ...adhocSeat('s4', 'u4', 'Mit Seat'), seat_id: 'K1' }
+  const p = adhocPunkte([adhocSeat('s1', null, 'Leer'), adhocSeat('s2', 'u2', 'Besetzt'), ohnePos, ohneLng, mitSeat, assignedSeat('s5', 'u5', 'K1', 'K1')])
+  assert.deepEqual(p.map((x) => x.id), ['s1', 's2'], 'geleert zaehlt, ohne Ort / mit seat_id / assigned nicht')
+  assert.deepEqual(p[0], { id: 's1', name: 'Leer', lat: 53.1, lng: 10.5 })
+}
+
+// --- standGrund: nicht angeboten oder gesperrt, sonst null (E12) ---
+{
+  const d = basis()
+  assert.equal(standGrund(d, 't1', 'K4', 'K4'), 'K4 gehört nicht zur Standmenge von Treiben 1')
+  assert.equal(standGrund(d, 't1', 'K3', 'K3'), null)
+  assert.equal(standGrund(d, JAGDWEIT, 'K4', 'K4'), null, 'jagdweit jeder Revierstand')
+  assert.equal(standGrund(d, JAGDWEIT, 's-adhoc', 'Kanzel Bach'), 'Kanzel Bach: Ad-hoc-Sitz — jagdweit nur in der App umzusetzen')
+  d.pruefung = new Map([['K3', { status: 'gesperrt', checked_at: '2026-10-01', pruefer: null }]])
+  assert.match(standGrund(d, 't1', 'K3', 'K3') ?? '', /^K3: gesperrt seit /)
+  // Unbekannt ist kein Abweisungsgrund — `waehlen` fragt dann nach, wie die Matrix.
+  d.pruefung = null
+  assert.equal(standGrund(d, 't1', 'K3', 'K3'), null)
+}
+
+// --- personGrund: was bild() ablehnt, steht vorher da (Fable F2) ---
+{
+  const d = basis()
+  assert.equal(personGrund(d, JAGDWEIT, 'pG', 'K3'), 'ohne Konto nur je Treiben')
+  assert.equal(personGrund(d, 't1', 'pG', 'K3'), null, 'je Treiben geht der Gast')
+  assert.equal(personGrund(d, JAGDWEIT, 'pA', 'K1'), 'steht schon hier')
+  assert.equal(personGrund(d, 't1', 'pB', 'K1'), 'steht schon hier')
+  assert.equal(personGrund(d, 't1', 'pA', 'K1'), null, 'umsetzen ist erlaubt, die Rueckfrage kommt aus bild()')
+  assert.equal(personGrund(d, 't1', 'pA', 'K4'), 'hier nicht wählbar')
+  d.teilnehmer[3] = { ...d.teilnehmer[3], status: 'left', entfernt_am: '2026-10-28' }
+  assert.equal(personGrund(d, 't1', 'pT', 'K3'), 'nicht mehr zuweisbar')
+  assert.equal(personGrund(d, JAGDWEIT, 'pT', 'K3'), 'nicht mehr zuweisbar', 'ausgeschieden mit Konto ist kein Gast')
+}
+
+// --- entfernenAngebot: nur direkter Inhaber, Text nennt den Rueckfall (E13) ---
+{
+  const d = basis()
+  const t1 = entfernenAngebot(d, 't1', 'K1')
+  assert.equal(t1?.teilnahmeId, 'pB')
+  assert.equal(t1?.text, `Bernd: ${leerenText(d, 't1', 'pB')}`)
+  assert.match(t1?.text ?? '', /fällt auf K2 \(jagdweit\) zurück/)
+  assert.deepEqual(entfernenAngebot(d, JAGDWEIT, 'K1'), { teilnahmeId: 'pA', text: 'Anna: Jagdweiten Stand entfernen' })
+  assert.equal(entfernenAngebot(d, 't1', 'K3'), null, 'frei')
+  // Geerbt: Anna steht jagdweit auf K1 und erbt ihn in Treiben 1 — dort leert man nichts.
+  d.treiben[0].hunt_drive_stands[0].participant_id = null
+  assert.equal(entfernenAngebot(d, 't1', 'K1'), null)
+  // Jagdweit ein Sitz einer Person, die nicht zur Jagd gehoert (B6): kein Name, kein Entfernen.
+  d.sitze.push(assignedSeat('sX', 'u-fremd', 'K4', 'K4'))
+  assert.equal(entfernenAngebot(d, JAGDWEIT, 'K4'), null)
 }

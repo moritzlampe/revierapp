@@ -7,19 +7,26 @@ import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { vollstaendig } from '../../laden'
 import { STAND_TYPEN } from '../../objekte'
-import type { Punkt } from '../../revierkarte-map'
+import type { AblageProps, Punkt } from '../../revierkarte-map'
 import { schreibe, SchreibFehler } from '../../schreiben'
 import { vorbereitbar } from '../jagden'
 import {
+  adhocPunkte,
+  angebotAus,
   angebote,
   baueMatrix,
   bild,
+  entfernenAngebot,
   gleichesBild,
   JAGDWEIT,
   kartenNamen,
   leerenText,
+  naechsterStand,
+  personGrund,
+  standGrund,
   umsetzFehler,
   UmsetzenUnbestaetigt,
+  ZUG_TYP,
   zuweisbar,
   type Angebot,
   type Bild,
@@ -42,6 +49,11 @@ import {
  * (`stand_umsetzen`, `treiben_stand_umsetzen`) — sie setzen um, sie tauschen
  * nicht (D3). Die Rechenregeln stehen in `verteilen.ts`, hier nur Anzeige und
  * Schreibweg.
+ *
+ * **Seit P2b (Bauplan §12) ist die Karte auch Eingabe:** Stand anklicken, dann
+ * einen Namen in der Schützenliste (E13), oder einen Namen auf einen Stand
+ * ziehen (E14). Beide münden in `waehlen()` — dieselbe Rückfrage, derselbe
+ * Riegel, derselbe Schreibweg wie die Matrix (E12).
  */
 
 const Karte = dynamic(() => import('../../revierkarte-map'), {
@@ -114,9 +126,32 @@ export default function VerteilenBereich(props: VerteilenProps) {
   const [fehler, setFehler] = useState<string | null>(null)
   const [frage, setFrage] = useState<Frage | null>(null)
   const [offen, setOffen] = useState<{ teilnahmeId: string; spalte: string; ort: DOMRect } | null>(null)
-  const [kartenSpalte, setKartenSpalte] = useState(JAGDWEIT)
+  const [kartenWahl, setKartenSpalte] = useState(JAGDWEIT)
   /** Wohin der Fokus nach Escape oder einer abgeschlossenen Auswahl zurückkehrt (E1). */
   const fokusZiel = useRef<string | null>(null)
+  /**
+   * Wo die letzte Eingabe herkam — Fehler und Rückfrage stehen dort, wo
+   * hingesehen wird. Nach einer Ablage auf der Karte stünde die Rückfrage
+   * sonst über der Matrix, ausserhalb des Bildes.
+   */
+  const [herkunft, setHerkunft] = useState<'matrix' | 'karte'>('matrix')
+  /** Der auf der Karte gewählte Stand, für den ein Name gesucht wird (E13). */
+  const [standwahlRoh, setStandwahl] = useState<string | null>(null)
+  /**
+   * Der laufende Zug (E14). **Getrennt von der Standwahl** (Codex D1): die
+   * Karte bekommt `zug?.ziel ?? standwahl` als `auswahlId`, und ein Zug
+   * beendet die Standwahl, statt sie zu überschreiben.
+   */
+  const [zug, setZug] = useState<{ nr: number; teilnahmeId: string; ziel: string | null } | null>(null)
+  /**
+   * Die Nummer des gültigen Zugs. Sie reist im `dataTransfer` mit (Codex D3),
+   * und jede Änderung der Daten zählt sie hoch: `dragend` kommt nicht, wenn
+   * die Quelle mitten im Zug den DOM verlässt (Codex B3, Fable F5) — ein
+   * späterer `drop` mit alter Nummer schreibt dann nicht.
+   */
+  const zugNr = useRef(0)
+  /** Warum gerade nicht abgelegt oder gewählt werden kann — steht über der Karte, nie still (E12). */
+  const [kartenHinweis, setKartenHinweis] = useState<string | null>(null)
 
   const daten: VerteilenDaten = useMemo(
     () => ({
@@ -132,6 +167,29 @@ export default function VerteilenBereich(props: VerteilenProps) {
   const matrix = useMemo(() => baueMatrix(daten), [daten])
   const busy = laeuftZelle !== null || pending
 
+  /**
+   * **Die Kartenspalte muss es geben** (Fable F1) — abgeleitet beim Rendern,
+   * nicht per Effekt nachgezogen. Verschwindet ihr Treiben (gelöscht, dann
+   * Refresh), gilt Jagdweit; ein Effekt käme einen Render zu spät, und in dem
+   * griffe die Schützenliste auf die Zelle eines Treibens, das es nicht mehr
+   * gibt (im Klicktest so abgestürzt). Vorbestehend seit P2a: die Karte zeigte
+   * dann jagdweite Schilder unter dem alten Titel.
+   */
+  const kartenSpalte = matrix.spalten.some((s) => s.schluessel === kartenWahl) ? kartenWahl : JAGDWEIT
+  /**
+   * Die Standwahl gilt nur, solange die Kartenspalte den Stand noch anbietet
+   * (E13) — und nicht über den automatischen Rückfall auf Jagdweit hinweg:
+   * dort wird jeder Revierstand angeboten, ein Name schriebe dann jagdweit statt
+   * ins verschwundene Treiben (Schlusslesung P2b F1). Der Daten-Effekt räumt
+   * den Rohwert danach ab.
+   */
+  const standwahl =
+    standwahlRoh &&
+    kartenWahl === kartenSpalte &&
+    angebote(daten, kartenSpalte, '').some((a) => a.standId === standwahlRoh)
+      ? standwahlRoh
+      : null
+
   // Nach jedem Refresh: eine offene Rückfrage, deren Ausgangszustand nicht mehr
   // gilt, schliesst sich mit Hinweis statt zu schreiben (E1, E10). Eine offene
   // Liste schliesst sich immer.
@@ -143,6 +201,17 @@ export default function VerteilenBereich(props: VerteilenProps) {
     // Jede offene Liste schliesst: neue Daten können das Layout verschieben,
     // und die Liste stünde dann über einer fremden Zeile (Codex Delta 2).
     if (offen) setOffen(null)
+    // Ein laufender Zug gilt nicht mehr (E14).
+    zugNr.current++
+    setZug(null)
+    // Eine Standwahl, deren Stand die Spalte nicht mehr anbietet, ist vorbei —
+    // auch der Rohwert, sonst lebte sie beim Wiederhinzufügen ungefragt auf
+    // (Codex P2b B-S7).
+    if (standwahlRoh && !standwahl) setStandwahl(null)
+    // Den Rückfall auf Jagdweit festschreiben: sonst verwürfe die Bedingung
+    // `kartenWahl === kartenSpalte` oben auch jede NEUE Standwahl, bis jemand
+    // den Spaltenkopf anklickt (Codex P2b Delta 2).
+    if (kartenWahl !== kartenSpalte) setKartenSpalte(JAGDWEIT)
     // Nur auf neue Daten reagieren, nicht auf das Öffnen selbst.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [daten])
@@ -154,6 +223,16 @@ export default function VerteilenBereich(props: VerteilenProps) {
     fokusZiel.current = null
   })
 
+  // Escape hebt die Standwahl auf, ohne Write (E13).
+  useEffect(() => {
+    if (!standwahl) return
+    const taste = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setStandwahl(null)
+    }
+    document.addEventListener('keydown', taste)
+    return () => document.removeEventListener('keydown', taste)
+  }, [standwahl])
+
   const spalteVon = (schluessel: string) => matrix.spalten.find((s) => s.schluessel === schluessel)
 
   /**
@@ -161,10 +240,15 @@ export default function VerteilenBereich(props: VerteilenProps) {
    * E6) — gelesen wird erst nach der Bestätigung (E10), weil eine Rückfrage
    * beliebig lange offen stehen kann.
    */
-  function waehlen(teilnahmeId: string, spalte: string, standId: string | null) {
-    fokusZiel.current = `${teilnahmeId}|${spalte}`
+  function waehlen(teilnahmeId: string, spalte: string, standId: string | null, von: 'matrix' | 'karte' = 'matrix') {
+    // **Von der Karte kein Fokusziel** (Codex B5, Fable F3): der Effekt oben
+    // fokussierte sonst die Matrixzelle, und die Seite spränge nach jeder
+    // Ablage von der Karte weg.
+    fokusZiel.current = von === 'matrix' ? `${teilnahmeId}|${spalte}` : null
+    setHerkunft(von)
     setOffen(null)
     setFehler(null)
+    setKartenHinweis(null)
     const b = bild(daten, spalte, teilnahmeId, standId)
     if (!b) return
     if (b.frage || b.zielSperre === 'unbekannt') {
@@ -327,27 +411,146 @@ export default function VerteilenBereich(props: VerteilenProps) {
   const kartenTitel = spalteVon(kartenSpalte)?.titel ?? 'Jagdweit'
   const belegung = useMemo(() => kartenNamen(daten, kartenSpalte), [daten, kartenSpalte])
 
-  return (
-    <section className="jagd-verteilen" aria-labelledby="jagd-verteilen-titel">
-      <h2 id="jagd-verteilen-titel" className="jagden-abschnitt">
-        Schützen verteilen
-      </h2>
+  /**
+   * Die Punkte der Verteilen-Karte: Revierstände plus Ad-hoc-Sitze (E15).
+   * **Hier angehängt, nie in `page.tsx`** (Fable F11): dort ist `punkte` ein
+   * Array für beide Karten, und der Treiben-Bereich leitet daraus ab, was er
+   * speichern darf — eine Sitz-PK landete sonst als `map_object_id` in
+   * `standDiff`.
+   */
+  const kartenPunkte = useMemo<Punkt[]>(
+    () => [
+      ...props.punkte,
+      ...adhocPunkte(props.sitze).map((p) => ({
+        ...p,
+        typ: 'adhoc',
+        beschreibung: null,
+        fotoUrl: null,
+        pruefung: null,
+      })),
+    ],
+    [props.punkte, props.sitze],
+  )
+  const standName = (id: string) => kartenPunkte.find((p) => p.id === id)?.name ?? 'Stand'
+  const kartenSchreibbar = !!spalteVon(kartenSpalte)?.schreibbar
+  const eingabeFrei = kartenSchreibbar && !busy && frage === null
 
-      {/* Bis die Sichtgrenze steht (CP-116), sieht ein zugesagter Schütze sofort,
-          was hier geplant wird — damit niemand im Glauben plant, es sei
-          verborgen (Bauplan §9 D1, ganze Matrix). */}
-      <p className="zentrale-hinweis">
-        Zugesagte Schützen sehen derzeit sofort: ihren jagdweiten Stand im Banner der App und alle
-        ihre Stände (auch aus geplanten Treiben) auf der Karte. Den Stand eines Treibens nennt der
-        Banner erst beim Start.
-      </p>
+  /** Warum diese Person nicht auf diesen Stand kann — `null` = sie kann (E12). */
+  const zielGrund = (teilnahmeId: string, standId: string) =>
+    standGrund(daten, kartenSpalte, standId, standName(standId)) ?? personGrund(daten, kartenSpalte, teilnahmeId, standId)
 
-      {matrix.laeuft && (
-        <p className="zentrale-fehler" role="status">
-          {matrix.laeuft} läuft in der App — verteilen erst wieder, wenn es beendet ist.
-        </p>
-      )}
+  function standKlick(standId: string) {
+    if (!kartenSchreibbar) {
+      setKartenHinweis(
+        matrix.laeuft
+          ? `${matrix.laeuft} läuft in der App — verteilen erst wieder, wenn es beendet ist.`
+          : `${kartenTitel} ist nicht mehr geplant — dort wird nicht mehr verteilt.`,
+      )
+      return
+    }
+    if (!eingabeFrei) return
+    if (standwahl === standId) {
+      setStandwahl(null)
+      return
+    }
+    setFehler(null)
+    // Nicht angeboten → nur der Grund, keine Wahl. Gesperrt → Wahl mit Grund,
+    // „entfernen" bleibt möglich, Namen sind gesperrt (wie die Matrix-Liste).
+    if (!angebote(daten, kartenSpalte, '').some((a) => a.standId === standId)) {
+      setStandwahl(null)
+      setKartenHinweis(standGrund(daten, kartenSpalte, standId, standName(standId)))
+      return
+    }
+    setKartenHinweis(null)
+    setStandwahl(standId)
+  }
 
+  function nameWaehlen(teilnahmeId: string) {
+    if (!standwahl || !eingabeFrei) return
+    const grund = zielGrund(teilnahmeId, standwahl)
+    if (grund) {
+      setKartenHinweis(grund)
+      return
+    }
+    const stand = standwahl
+    setStandwahl(null)
+    waehlen(teilnahmeId, kartenSpalte, stand, 'karte')
+  }
+
+  function entfernen(teilnahmeId: string) {
+    if (!eingabeFrei) return
+    setStandwahl(null)
+    waehlen(teilnahmeId, kartenSpalte, null, 'karte')
+  }
+
+  function zugStart(e: React.DragEvent, teilnahmeId: string) {
+    if (!eingabeFrei) {
+      e.preventDefault()
+      return
+    }
+    const nr = ++zugNr.current
+    e.dataTransfer.setData(ZUG_TYP, String(nr))
+    e.dataTransfer.effectAllowed = 'move'
+    setStandwahl(null)
+    setKartenHinweis(null)
+    setFehler(null)
+    setZug({ nr, teilnahmeId, ziel: null })
+  }
+
+  function zugEnde() {
+    zugNr.current++
+    setZug(null)
+    setKartenHinweis(null)
+  }
+
+  /**
+   * Die Ablage (E14). Ziel ist der NÄCHSTE sichtbare Stand im Radius, und
+   * erst danach wird gefragt, ob er ablegbar ist (Codex B1). Ohne Ziel oder
+   * mit Grund: `false`, die Karte zeigt „verboten", und der Grund steht schon
+   * beim Überfahren da (Codex D5) — ein `drop` kommt dann gar nicht.
+   * Nur gesetzt, solange geschrieben werden darf: sonst nimmt die Karte
+   * nichts an (Riegel wie die Matrix).
+   */
+  const ablage: AblageProps | undefined = eingabeFrei
+    ? {
+        typ: ZUG_TYP,
+        aufUeber: (zeiger, punkte) => {
+          if (!zug) {
+            setKartenHinweis('Die Daten haben sich während des Ziehens geändert — bitte noch einmal ziehen.')
+            return false
+          }
+          const ziel = naechsterStand(punkte, zeiger)
+          // Nur bei Wechsel (Fable F8): Firefox feuert `dragover` fortlaufend.
+          setZug((z) => (z && z.ziel !== ziel ? { ...z, ziel } : z))
+          const grund = ziel ? zielGrund(zug.teilnahmeId, ziel) : null
+          setKartenHinweis(grund)
+          return ziel !== null && grund === null
+        },
+        aufAblage: (zeiger, punkte, roh) => {
+          setZug(null)
+          setKartenHinweis(null)
+          if (!zug || Number(roh) !== zugNr.current) {
+            setKartenHinweis('Die Daten haben sich während des Ziehens geändert — bitte noch einmal ziehen.')
+            return
+          }
+          const ziel = naechsterStand(punkte, zeiger)
+          if (!ziel) return
+          const grund = zielGrund(zug.teilnahmeId, ziel)
+          if (grund) {
+            setKartenHinweis(grund)
+            return
+          }
+          waehlen(zug.teilnahmeId, kartenSpalte, ziel, 'karte')
+        },
+        aufVerlassen: () => {
+          setZug((z) => (z && z.ziel !== null ? { ...z, ziel: null } : z))
+          setKartenHinweis(null)
+        },
+      }
+    : undefined
+
+  const meldungen = (
+    <>
       {fehler && (
         <p className="zentrale-fehler" role="alert">
           {fehler}
@@ -371,6 +574,31 @@ export default function VerteilenBereich(props: VerteilenProps) {
           </div>
         </div>
       )}
+    </>
+  )
+
+  return (
+    <section className="jagd-verteilen" aria-labelledby="jagd-verteilen-titel">
+      <h2 id="jagd-verteilen-titel" className="jagden-abschnitt">
+        Schützen verteilen
+      </h2>
+
+      {/* Bis die Sichtgrenze steht (CP-116), sieht ein zugesagter Schütze sofort,
+          was hier geplant wird — damit niemand im Glauben plant, es sei
+          verborgen (Bauplan §9 D1, ganze Matrix). */}
+      <p className="zentrale-hinweis">
+        Zugesagte Schützen sehen derzeit sofort: ihren jagdweiten Stand im Banner der App und alle
+        ihre Stände (auch aus geplanten Treiben) auf der Karte. Den Stand eines Treibens nennt der
+        Banner erst beim Start.
+      </p>
+
+      {matrix.laeuft && (
+        <p className="zentrale-fehler" role="status">
+          {matrix.laeuft} läuft in der App — verteilen erst wieder, wenn es beendet ist.
+        </p>
+      )}
+
+      {herkunft === 'matrix' && meldungen}
 
       {matrix.zeilen.length === 0 ? (
         <p className="zentrale-sub">Noch niemand eingeladen — wer zusagt oder eingeladen ist, steht hier.</p>
@@ -381,7 +609,11 @@ export default function VerteilenBereich(props: VerteilenProps) {
           laeuftZelle={laeuftZelle}
           gesperrt={busy || frage !== null}
           kartenSpalte={kartenSpalte}
-          aufKarte={setKartenSpalte}
+          aufKarte={(s) => {
+            setKartenSpalte(s)
+            setStandwahl(null)
+            setKartenHinweis(null)
+          }}
           // Die Fehlerzeile bleibt beim Öffnen stehen: verschwände sie, rutschte
           // die Tabelle nach dem Messen von `ort` nach oben, und die Liste stünde
           // über einer fremden Zeile. Geleert wird sie erst beim Wählen.
@@ -406,7 +638,7 @@ export default function VerteilenBereich(props: VerteilenProps) {
                       type="button"
                       className="zentrale-abbrechen"
                       data-zelle={`${z.teilnahmeId}|${s.schluessel}`}
-                      disabled={busy || !s.schreibbar}
+                      disabled={busy || frage !== null || !s.schreibbar}
                       onClick={() => waehlen(z.teilnahmeId, s.schluessel, null)}
                     >
                       entfernen
@@ -419,10 +651,44 @@ export default function VerteilenBereich(props: VerteilenProps) {
         </div>
       )}
 
-      <p className="zentrale-sub">Karte: {kartenTitel} — Spaltenkopf anklicken, um die Belegung eines Treibens zu sehen.</p>
-      <div className="zentrale-karte-kasten">
-        <div className="zentrale-karte-buehne">
-          <Karte grenze={props.grenze} punkte={props.punkte} belegung={belegung} />
+      <p className="zentrale-sub">
+        Karte: {kartenTitel} — Spaltenkopf anklicken, um die Belegung eines Treibens zu sehen. Einteilen: einen
+        Namen auf einen Stand ziehen, oder Stand anklicken und dann einen Namen.
+      </p>
+      {herkunft === 'karte' && meldungen}
+      <div className="jagd-verteilen-karte">
+        <Schuetzenliste
+          zeilen={matrix.zeilen}
+          spalte={kartenSpalte}
+          standwahl={standwahl}
+          standwahlName={standwahl ? standName(standwahl) : ''}
+          standwahlInhaber={standwahl ? (belegung[standwahl] ?? null) : null}
+          standwahlGrund={standwahl ? standGrund(daten, kartenSpalte, standwahl, standName(standwahl)) : null}
+          entfernen={standwahl ? entfernenAngebot(daten, kartenSpalte, standwahl) : null}
+          personGrund={(teilnahmeId) => (standwahl ? personGrund(daten, kartenSpalte, teilnahmeId, standwahl) : null)}
+          gesperrt={!eingabeFrei}
+          aufZugStart={zugStart}
+          aufZugEnde={zugEnde}
+          aufName={nameWaehlen}
+          aufEntfernen={entfernen}
+          aufAufheben={() => setStandwahl(null)}
+        />
+        <div className="zentrale-karte-kasten">
+          <div className="zentrale-karte-buehne">
+            <Karte
+              grenze={props.grenze}
+              punkte={kartenPunkte}
+              belegung={belegung}
+              auswahlId={zug?.ziel ?? standwahl}
+              aufAuswahl={standKlick}
+              ablage={ablage}
+            />
+          </div>
+          {kartenHinweis && (
+            <p className="zentrale-karte-hinweis" role="status">
+              {kartenHinweis}
+            </p>
+          )}
         </div>
       </div>
 
@@ -440,6 +706,111 @@ export default function VerteilenBereich(props: VerteilenProps) {
         />
       )}
     </section>
+  )
+}
+
+/**
+ * Die Schützenliste neben der Karte (E13, E14). Ohne Standwahl: Namen zum
+ * Ziehen. Mit Standwahl: dieselben Namen als Knöpfe — „wer kommt auf diesen
+ * Stand?". Eine Liste für beide Wege, keine zweite über der Karte (Fable F14).
+ * Reihenfolge wie die Matrix; den Zähler „ohne Stand" trägt deren Spaltenkopf.
+ */
+function Schuetzenliste({
+  zeilen,
+  spalte,
+  standwahl,
+  standwahlName,
+  standwahlInhaber,
+  standwahlGrund,
+  entfernen,
+  personGrund,
+  gesperrt,
+  aufZugStart,
+  aufZugEnde,
+  aufName,
+  aufEntfernen,
+  aufAufheben,
+}: {
+  zeilen: Zeile[]
+  spalte: string
+  standwahl: string | null
+  standwahlName: string
+  standwahlInhaber: string | null
+  /** Stand gesperrt (oder nicht angeboten): Namen gesperrt, „entfernen" bleibt. */
+  standwahlGrund: string | null
+  entfernen: { teilnahmeId: string; text: string } | null
+  personGrund: (teilnahmeId: string) => string | null
+  gesperrt: boolean
+  aufZugStart: (e: React.DragEvent, teilnahmeId: string) => void
+  aufZugEnde: () => void
+  aufName: (teilnahmeId: string) => void
+  aufEntfernen: (teilnahmeId: string) => void
+  aufAufheben: () => void
+}) {
+  return (
+    <div className="jagd-verteilen-schuetzen" aria-label="Schützen">
+      {standwahl ? (
+        <div className="jagd-verteilen-schuetzen-kopf">
+          <strong>Wer kommt auf {standwahlName}?</strong>
+          {standwahlInhaber && <span className="jagd-verteilen-rolle"> · jetzt {standwahlInhaber}</span>}
+          {standwahlGrund && <span className="jagd-verteilen-grund"> — {standwahlGrund}</span>}
+          <div className="jagd-treiben-knoepfe">
+            {entfernen && (
+              <button type="button" className="zentrale-abbrechen" disabled={gesperrt} onClick={() => aufEntfernen(entfernen.teilnahmeId)}>
+                {entfernen.text}
+              </button>
+            )}
+            <button type="button" className="zentrale-abbrechen" onClick={aufAufheben}>
+              aufheben
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="jagd-verteilen-schuetzen-kopf zentrale-sub">Auf einen Stand ziehen</p>
+      )}
+      <ul role="list">
+        {zeilen.map((z) => {
+          const ohneKonto = spalte === JAGDWEIT && z.userId === null
+          const ziehbar = !gesperrt && !ohneKonto
+          // Mit Standwahl ist dieselbe Zeile zusätzlich ein Knopf — und bleibt
+          // ziehbar, damit ein Zug die Standwahl beenden kann (Codex D1, P2b B2).
+          // Ein `<button>` ginge nicht: Firefox startet an ihm kein HTML5-Ziehen.
+          const grund = standwahl ? (standwahlGrund ? 'Stand gesperrt' : personGrund(z.teilnahmeId)) : null
+          const waehlbar = standwahl !== null && !gesperrt && grund === null
+          const waehle = () => {
+            if (waehlbar) aufName(z.teilnahmeId)
+          }
+          // Das `li` bleibt Listenelement; Rolle, Fokus und Ziehen trägt das
+          // innere Element (Codex P2b Delta 1, Punkt 4).
+          return (
+            <li key={z.teilnahmeId}>
+              <div
+                className={`jagd-verteilen-schuetze${ziehbar ? ' ziehbar' : ''}${waehlbar ? ' waehlbar' : ''}${standwahl && !waehlbar ? ' aus' : ''}`}
+                draggable={ziehbar}
+                title={grund ?? (ohneKonto ? 'Ohne Konto nur je Treiben' : undefined)}
+                role={standwahl ? 'button' : undefined}
+                tabIndex={waehlbar ? 0 : undefined}
+                aria-disabled={standwahl ? !waehlbar : undefined}
+                onClick={waehle}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    waehle()
+                  }
+                }}
+                onDragStart={(e) => aufZugStart(e, z.teilnahmeId)}
+                onDragEnd={aufZugEnde}
+              >
+                {z.name}{' '}
+                <span className="jagd-verteilen-rolle">
+                  · {grund ?? (ohneKonto ? 'nur je Treiben' : <Inhalt zelle={z.zellen[spalte]} />)}
+                </span>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 
@@ -468,7 +839,14 @@ function Tabelle({
             <th scope="col">Schütze</th>
             {spalten.map((s) => (
               <th key={s.schluessel} scope="col" aria-current={s.schluessel === kartenSpalte ? 'true' : undefined}>
-                <button type="button" className="jagd-verteilen-kopf" onClick={() => aufKarte(s.schluessel)}>
+                {/* Gesperrt wie die Zellen: während einer Rückfrage ist die
+                    Kartenspalte ihr Kontext (Schlusslesung P2b F2). */}
+                <button
+                  type="button"
+                  className="jagd-verteilen-kopf"
+                  disabled={gesperrt}
+                  onClick={() => aufKarte(s.schluessel)}
+                >
                   {s.titel}
                 </button>
                 <span className="jagd-verteilen-zaehler">
@@ -692,15 +1070,4 @@ function angebotText(a: Angebot): string {
   if (a.inhaber) text += ` · ${a.inhaber.name}`
   if (a.erbtHier) text += ` · jagdweit ${a.erbtHier}`
   return text
-}
-
-/** Warum ein Eintrag nicht wählbar ist — `null` = wählbar. Gesperrt sperrt wie die App (D2). */
-function angebotAus(a: Angebot, daten: VerteilenDaten): string | null {
-  if (a.aktuell) return 'steht schon hier'
-  if (a.sperre === 'gesperrt') {
-    const p = daten.pruefung?.get(a.standId)
-    const seit = p ? ` seit ${new Date(p.checked_at).toLocaleDateString('de-DE')}${p.pruefer ? ` (${p.pruefer})` : ''}` : ''
-    return `gesperrt${seit} — entsperren über eine neue Prüfung in der App oder im Objekt-Inspektor der Revierseite`
-  }
-  return null
 }

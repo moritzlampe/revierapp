@@ -880,3 +880,75 @@
 .jagd-verteilen-grund {
   font-size: 0.8rem;
 }
+
+/* --- Schützenliste neben der Karte (Portal P2b, Bauplan Verteilen §12) ------
+   Links die Namen, rechts die Karte, beide in Kartenhöhe (420 px wie
+   `.zentrale-karte-kasten`). Die Liste scrollt in sich (~40 Schützen bei Söder). */
+.jagd-verteilen-karte {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .jagd-verteilen-karte {
+    grid-template-columns: 1fr;
+  }
+}
+
+.jagd-verteilen-schuetzen {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+  background: var(--z-bg-elevated);
+}
+
+.jagd-verteilen-schuetzen ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jagd-verteilen-schuetzen-kopf {
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--z-border);
+  font-size: 0.875rem;
+}
+
+.jagd-verteilen-schuetze {
+  padding: 6px 12px;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--z-border);
+}
+
+.jagd-verteilen-schuetze.ziehbar {
+  cursor: grab;
+}
+
+.jagd-verteilen-schuetze.waehlbar {
+  cursor: pointer;
+}
+
+.jagd-verteilen-schuetze.ziehbar:hover,
+.jagd-verteilen-schuetze.waehlbar:hover {
+  background: var(--z-bg-sunken);
+}
+
+.jagd-verteilen-schuetze.waehlbar:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: -2px;
+}
+
+.jagd-verteilen-schuetze.aus {
+  color: var(--z-text-secondary);
+}
+
+/* Der Hinweis über der Karte nimmt keine Maus an: unter dem Zeiger
+   eingeblendet, löste er sonst ein `dragleave` der Karte aus und räumte Ziel
+   und Hinweis gleich wieder ab (Codex P2b B-S9). */
+.jagd-verteilen-karte .zentrale-karte-hinweis {
+  pointer-events: none;
+}
