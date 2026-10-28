@@ -1,8 +1,11 @@
 /**
- * Die Erinnerung „Ortung noch aus" — Nachrichten bauen und die Antwort von
- * Expo je Anspruch auswerten (CN-416, Bauplan
+ * Die Erinnerungen zur Ortung — Nachrichten bauen und die Antwort von Expo je
+ * Anspruch auswerten. Morgens „Ortung noch aus" (CN-416, Migration 144, Bauplan
  * `quickhunt-native/docs/konzepte/QuickHunt_Bauplan_Ortung_Erinnerung_V1.md`,
- * E4, E5, E9).
+ * E4, E5, E9), seit CN-427 abends „Jagdzeit vorbei — Ortung noch an"
+ * (Migration 145, Bauplan `…/QuickHunt_Bauplan_Ortung_Tagesende_V1.md`, E5).
+ * Die Auswertung ist für beide Arten dieselbe; Text, Daten, `ttl` und die
+ * Spalte des Compare-and-Swap hängen an der Art.
  *
  * **Warum das eine eigene Datei ist und nicht in der Route steht:** die
  * Auswertung entscheidet, welche beanspruchten Fenster zurückgegeben werden
@@ -25,13 +28,57 @@
  * (`node --experimental-strip-types`).
  */
 
-/** Eine Zeile aus `ortung_erinnerungen_beanspruchen()` (Migration 144). */
+/** Welche Erinnerung: morgens für Abgemeldete, abends für wer noch ortet. */
+export type Art = 'noch_aus' | 'noch_an'
+
+/**
+ * Je Art: die RPC, die beansprucht, das Feld ihrer Zeile mit dem Zeitpunkt
+ * und die Spalte der Marke, gegen die zurückgegeben wird.
+ */
+export const ARTEN = {
+  noch_aus: { rpc: 'ortung_erinnerungen_beanspruchen', feld: 'fensterbeginn', spalte: 'ortung_erinnert_fuer' },
+  noch_an: { rpc: 'ortung_tagesende_beanspruchen', feld: 'tagesende', spalte: 'ortung_tagesende_erinnert_fuer' },
+} as const
+
+/**
+ * Eine Zeile aus `ortung_erinnerungen_beanspruchen()` (144) bzw.
+ * `ortung_tagesende_beanspruchen()` (145), mit ihrer Art.
+ */
 export type Anspruch = {
+  art: Art
   user_id: string
   hunt_id: string
   jagdname: string
-  /** timestamptz, wie PostgREST ihn liefert (z. B. `2026-10-27T06:00:00+00:00`). */
-  fensterbeginn: string
+  /**
+   * Fensterbeginn `B` (`noch_aus`) bzw. Tagesende `E` (`noch_an`) — die
+   * beanspruchte Marke, timestamptz wie PostgREST ihn liefert (z. B.
+   * `2026-10-27T06:00:00+00:00`).
+   */
+  zeitpunkt: string
+}
+
+/**
+ * Eine RPC-Zeile in einen Anspruch der Art übersetzen. Wirft mit dem
+ * Feldnamen, wenn ein Feld fehlt oder der Zeitpunkt nicht lesbar ist
+ * (Schlusslesung Route F1): sonst ginge morgens `ttl: null` an Expo, und
+ * abends scheiterten Nachricht und Zurückgeben erst nach dem Beanspruchen.
+ * Heute unerreichbar — beide RPCs liefern alle vier Felder nicht-null; die
+ * Prüfung fängt einen umbenannten Feldnamen. Die Route meldet den Wurf als
+ * „Beanspruchen fehlgeschlagen" (500).
+ */
+export function alsAnspruch(art: Art, zeile: Record<string, unknown>): Anspruch {
+  const { rpc, feld } = ARTEN[art]
+  for (const f of ['user_id', 'hunt_id', 'jagdname', feld]) {
+    if (typeof zeile[f] !== 'string') throw new Error(`${rpc}: Feld ${f} fehlt oder ist kein Text`)
+  }
+  if (Number.isNaN(Date.parse(zeile[feld] as string))) throw new Error(`${rpc}: ${feld} nicht lesbar: ${zeile[feld]}`)
+  return {
+    art,
+    user_id: zeile.user_id as string,
+    hunt_id: zeile.hunt_id as string,
+    jagdname: zeile.jagdname as string,
+    zeitpunkt: zeile[feld] as string,
+  }
 }
 
 /** Eine Zeile aus `push_subscriptions` mit `kind = 'expo'`. */
@@ -42,9 +89,19 @@ export type Nachricht = {
   sound: 'default'
   title: string
   body: string
-  data: { type: 'ortung'; huntId: string }
-  /** Unix-Sekunden: Fensterbeginn + 30 min (E4, F-C11). */
-  expiration: number
+  /**
+   * ⛔ **Der Typ bleibt `ortung`, auch abends** (Bauplan CN-427 E7): ein eigener
+   * Typ würde von jedem älteren Build abgewiesen, der Tipp öffnete die App
+   * ohne Sprung. Die Art steht daneben; morgens bleiben die Daten wie vor
+   * CN-427.
+   */
+  data: { type: 'ortung'; huntId: string } | { type: 'ortung'; huntId: string; art: 'noch_an'; tagesende: string }
+  /**
+   * Sekunden, die Expo die Nachricht zustellbar hält (CN-426: `ttl` statt
+   * `expiration`, `ttl` hat bei Expo Vorrang). Berechnet unmittelbar vor dem
+   * Versand, mindestens 1.
+   */
+  ttl: number
 }
 
 export type Ziel = { nachricht: Nachricht; anspruch: number; anmeldungId: string }
@@ -68,7 +125,40 @@ export type Auswertung = {
   ticketFehler: string[]
 }
 
-const FENSTER_MS = 30 * 60 * 1000
+/**
+ * Bis wann eine Nachricht zustellbar bleibt (Bauplan CN-427 E5): morgens bis
+ * `B + 30 min` (das Fenster des Versands, wie vorher `expiration`), abends bis
+ * `E + 3 h 30 min` — 3 h ab dem regulären Sendezeitpunkt, damit ein Gerät ohne
+ * Netz am Stand sie auf dem Heimweg noch bekommt. Eine Nachtruhe ist das
+ * nicht: bei `E = 22:00` ist sie bis 01:30 zustellbar.
+ *
+ * ⚠ **Preis, benannt (M14):** eine Wiederholung kurz vor dem Ende des
+ * 30-min-Fensters schickt morgens nur wenige Sekunden `ttl`; Android (Doze)
+ * stellt sie dann womöglich nie zu — nicht neu gegenüber `expiration`.
+ */
+const ZUSTELLBAR_MS: Record<Art, number> = {
+  noch_aus: 30 * 60 * 1000,
+  noch_an: (3 * 60 + 30) * 60 * 1000,
+}
+
+function ttl(a: Anspruch, jetzt: number): number {
+  return Math.max(1, Math.ceil((Date.parse(a.zeitpunkt) + ZUSTELLBAR_MS[a.art] - jetzt) / 1000))
+}
+
+function inhalt(a: Anspruch): Pick<Nachricht, 'title' | 'body' | 'data'> {
+  if (a.art === 'noch_an') {
+    return {
+      title: 'Jagdzeit vorbei',
+      body: `Deine Ortung für ‚${a.jagdname}‘ ist noch an. Für heute abmelden?`,
+      data: { type: 'ortung', huntId: a.hunt_id, art: 'noch_an', tagesende: new Date(Date.parse(a.zeitpunkt)).toISOString() },
+    }
+  }
+  return {
+    title: 'Ortung noch aus',
+    body: `Deine Ortung für ‚${a.jagdname}‘ ist noch aus. Wieder einschalten?`,
+    data: { type: 'ortung', huntId: a.hunt_id },
+  }
+}
 
 /**
  * Eine Nachricht je gültigem Expo-Token. `istToken` ist
@@ -81,6 +171,7 @@ export function baueNachrichten(
   ansprueche: Anspruch[],
   anmeldungen: Anmeldung[],
   istToken: (t: unknown) => boolean,
+  jetzt: number = Date.now(),
 ): Ziel[] {
   const ziele: Ziel[] = []
   ansprueche.forEach((a, i) => {
@@ -91,14 +182,7 @@ export function baueNachrichten(
       ziele.push({
         anspruch: i,
         anmeldungId: an.id,
-        nachricht: {
-          to: token,
-          sound: 'default',
-          title: 'Ortung noch aus',
-          body: `Deine Ortung für ‚${a.jagdname}‘ ist noch aus. Wieder einschalten?`,
-          data: { type: 'ortung', huntId: a.hunt_id },
-          expiration: Math.floor((Date.parse(a.fensterbeginn) + FENSTER_MS) / 1000),
-        },
+        nachricht: { to: token, sound: 'default', ...inhalt(a), ttl: ttl(a, jetzt) },
       })
     }
   })
@@ -145,14 +229,15 @@ export function werteAus(ziele: Ziel[], chunks: ChunkErgebnis[], anzahlAnspruech
 
 /**
  * Die zwei Werte des Compare-and-Swap beim Zurückgeben (E4, Gesamtprüfung
- * S9): verglichen wird gegen genau den beanspruchten Fensterbeginn, gesetzt
- * wird `B − 1 ms` — NICHT `null`. Mit `null` käme ein früheres, schon
- * zugestelltes Fenster ein zweites Mal, wenn der Jagdleiter `B` zwischen zwei
- * Versuchen löscht. Beide als ISO in UTC, damit PostgREST sie in der URL
- * eindeutig liest (ein `+00:00` müsste kodiert werden).
+ * S9; für beide Arten gleich, CN-427 E4): verglichen wird gegen genau den
+ * beanspruchten Zeitpunkt, gesetzt wird `Zeitpunkt − 1 ms` — NICHT `null`.
+ * Mit `null` käme ein früheres, schon zugestelltes Fenster bzw. Tagesende ein
+ * zweites Mal, wenn der Jagdleiter es zwischen zwei Versuchen verlegt. Beide
+ * als ISO in UTC, damit PostgREST sie in der URL eindeutig liest (ein
+ * `+00:00` müsste kodiert werden).
  */
-export function casWerte(fensterbeginn: string): { alt: string; neu: string } {
-  const ms = Date.parse(fensterbeginn)
-  if (Number.isNaN(ms)) throw new Error(`Fensterbeginn nicht lesbar: ${fensterbeginn}`)
+export function casWerte(zeitpunkt: string): { alt: string; neu: string } {
+  const ms = Date.parse(zeitpunkt)
+  if (Number.isNaN(ms)) throw new Error(`Zeitpunkt nicht lesbar: ${zeitpunkt}`)
   return { alt: new Date(ms).toISOString(), neu: new Date(ms - 1).toISOString() }
 }

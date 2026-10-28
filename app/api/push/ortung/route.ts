@@ -1,21 +1,26 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { Expo } from 'expo-server-sdk'
 import {
+  alsAnspruch,
+  ARTEN,
   baueNachrichten,
   casWerte,
   werteAus,
   type Anmeldung,
   type Anspruch,
+  type Art,
   type ChunkErgebnis,
   type Ticket,
 } from '@/lib/push/ortung-erinnerung'
 
 /**
- * Erinnerung „Ortung noch aus" (CN-416, Migration 144). Bauplan:
+ * Erinnerung „Ortung noch aus" (CN-416, Migration 144) und seit CN-427
+ * „Jagdzeit vorbei — Ortung noch an" (Migration 145). Baupläne:
  * `quickhunt-native/docs/konzepte/QuickHunt_Bauplan_Ortung_Erinnerung_V1.md`,
- * E4 und E9.
+ * E4 und E9; `…/QuickHunt_Bauplan_Ortung_Tagesende_V1.md`, E5. Beide Arten
+ * laufen als eigener `lauf(art)` gleichzeitig, mit derselben Auswertung.
  *
  * **Wer ruft:** ein Coolify-Zeitplan alle 5 min im PWA-Container, per
  * `curl -sS --fail-with-body -m 50 -X POST -H @- http://localhost:3000/api/push/ortung` mit
@@ -24,11 +29,12 @@ import {
  * Route ist über quickhunt.de aus dem Internet erreichbar und allein durch
  * den Geheimwert geschützt.
  *
- * **Ablauf:** `ortung_erinnerungen_beanspruchen()` setzt je fälligem Fenster
- * die Marke und liefert die Empfänger → alle Expo-Token dieser Nutzer →
- * Versand → Auswertung je Anspruch (`src/lib/push/ortung-erinnerung.ts`) →
- * tote Token aufräumen → gescheiterte Ansprüche per Compare-and-Swap
- * zurückgeben; der nächste Takt im 30-min-Fenster versucht es erneut.
+ * **Ablauf je Art:** die RPC der Art (`ortung_erinnerungen_beanspruchen()`
+ * bzw. `ortung_tagesende_beanspruchen()`) setzt je fälligem Zeitpunkt die
+ * Marke und liefert die Empfänger → alle Expo-Token dieser Nutzer → Versand →
+ * Auswertung je Anspruch (`src/lib/push/ortung-erinnerung.ts`) → gescheiterte
+ * Ansprüche per Compare-and-Swap auf der Spalte der Art zurückgeben → tote
+ * Token aufräumen; der nächste Takt im 30-min-Fenster versucht es erneut.
  *
  * **Bewusst NICHT aus `send/route.ts` umgebaut:** die live Push-Route bleibt
  * unberührt. Übernommen sind Token-Filter, `chunkPushNotifications`, das
@@ -116,6 +122,8 @@ type Zaehler = {
   vielleichtGekappt: boolean
 }
 
+type Ergebnis = { status: number; antwort: Zaehler & { error?: string } }
+
 // Liest KEINEN Body (F-D7): der Zeitplan schickt `POST` ohne Rumpf.
 export async function POST(request: Request) {
   const geheim = process.env.CRON_SECRET
@@ -128,10 +136,29 @@ export async function POST(request: Request) {
   }
 
   const start = Date.now()
-  const rest = (frist: number) => Math.max(1, start + frist - Date.now())
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
+  // ⛔ **Zwei unabhängige Läufe, gleichzeitig** (Bauplan CN-427 E5): eine
+  // hängende RPC der einen Art frisst nicht die Frist der anderen, und der
+  // frühe Ausstieg bei 0 Ansprüchen betrifft nur die eigene Art. Beide
+  // rechnen gegen dieselben Fristen ab `start`.
+  const [nochAus, nochAn] = await Promise.all([
+    lauf('noch_aus', supabase, start),
+    lauf('noch_an', supabase, start),
+  ])
+  // Scheitert ein Lauf, meldet die Route 500 — der andere hat trotzdem
+  // zugestellt; welcher, steht je Art im JSON (Lesetabelle in AGENTS.md).
+  const status = Math.max(nochAus.status, nochAn.status)
+  return NextResponse.json({ noch_aus: nochAus.antwort, noch_an: nochAn.antwort }, { status })
+}
+
+/** Ein Lauf je Art: beanspruchen → Token → senden → zurückgeben → aufräumen. */
+async function lauf(art: Art, supabase: SupabaseClient, start: number): Promise<Ergebnis> {
+  const { rpc, spalte } = ARTEN[art]
+  // Log-Präfix je Art: zwei Läufe im Coolify-Protokoll sonst nicht zu trennen (Schlusslesung CN-427 Delta F16).
+  const log = `Ortung-Erinnerung (${art}):`
+  const rest = (frist: number) => Math.max(1, start + frist - Date.now())
   const z: Zaehler = {
     beansprucht: 0, gesendet: 0, zurueckgegeben: 0, nichtZurueckgegeben: 0, aufgeraeumt: 0, ticketFehler: 0,
     aufraeumenGescheitert: false, vielleichtGekappt: false,
@@ -139,16 +166,21 @@ export async function POST(request: Request) {
 
   let ansprueche: Anspruch[]
   try {
-    const { data, error } = await mitFrist(supabase.rpc('ortung_erinnerungen_beanspruchen'), rest(VERSAND_FRIST_MS))
+    const { data, error } = await mitFrist(supabase.rpc(rpc), rest(VERSAND_FRIST_MS))
     if (error) throw error
-    ansprueche = (data ?? []) as Anspruch[]
+    const zeilen = (data ?? []) as Record<string, unknown>[]
+    // VOR dem Übersetzen zählen: wirft `alsAnspruch`, sind die Zeilen trotzdem
+    // beansprucht, und die Antwort soll das zeigen (Codex F1-Delta, S4).
+    z.beansprucht = zeilen.length
+    ansprueche = zeilen.map((zeile) => alsAnspruch(art, zeile))
   } catch (err) {
-    // Nichts beansprucht — oder committet und die Antwort verloren (E4, hingenommen).
-    console.error('Ortung-Erinnerung: Beanspruchen fehlgeschlagen:', err)
-    return NextResponse.json({ error: 'Beanspruchen fehlgeschlagen', ...z }, { status: 500 })
+    // Nichts beansprucht — oder committet und die Antwort verloren (E4,
+    // hingenommen) — oder committet und eine Zeile unlesbar (`beansprucht` > 0,
+    // Schlusslesung F1): die Fenster dieses Laufs bleiben dann ohne Push.
+    console.error(`${log} Beanspruchen fehlgeschlagen:`, err)
+    return { status: 500, antwort: { error: 'Beanspruchen fehlgeschlagen', ...z } }
   }
-  z.beansprucht = ansprueche.length
-  if (ansprueche.length === 0) return NextResponse.json(z)
+  if (ansprueche.length === 0) return { status: 200, antwort: z }
   // Kappt PostgREST eine Antwort bei `max-rows`, blieben Fenster ohne Push
   // (Codex M1/S7, R1/S7; CN-422). Bei unserer Grösse theoretisch — der Riegel
   // ist, dass es laut wird statt still.
@@ -166,14 +198,14 @@ export async function POST(request: Request) {
       indizes.map(async (i) => {
         const a = ansprueche[i]
         try {
-          const { alt, neu } = casWerte(a.fensterbeginn)
+          const { alt, neu } = casWerte(a.zeitpunkt)
           const { data, error } = await mitFrist(
             supabase
               .from('hunt_participants')
-              .update({ ortung_erinnert_fuer: neu })
+              .update({ [spalte]: neu })
               .eq('hunt_id', a.hunt_id)
               .eq('user_id', a.user_id)
-              .eq('ortung_erinnert_fuer', alt)
+              .eq(spalte, alt)
               .select('id'),
             frist,
           )
@@ -182,7 +214,7 @@ export async function POST(request: Request) {
           if (data?.length === 1) z.zurueckgegeben++
           else z.nichtZurueckgegeben++
         } catch (err) {
-          console.error('Ortung-Erinnerung: Zurückgeben fehlgeschlagen:', a.hunt_id, a.user_id, err)
+          console.error(`${log} Zurückgeben fehlgeschlagen:`, a.hunt_id, a.user_id, err)
           z.nichtZurueckgegeben++
         }
       }),
@@ -199,7 +231,8 @@ export async function POST(request: Request) {
     const geraete = (anmeldungen.data ?? []) as Anmeldung[]
     if (geraete.length >= MAX_ROWS) vielleichtGekappt = z.vielleichtGekappt = true
 
-    const ziele = baueNachrichten(ansprueche, geraete, Expo.isExpoPushToken)
+    // `ttl` unmittelbar vor dem Versand (Bauplan CN-427 E5).
+    const ziele = baueNachrichten(ansprueche, geraete, Expo.isExpoPushToken, Date.now())
     // Nur fürs Zerlegen: gesendet wird mit `sendeChunk` (Kopf der Datei).
     const chunks = new Expo().chunkPushNotifications(ziele.map((ziel) => ziel.nachricht))
     // chunkPushNotifications erhält die Reihenfolge → globaler Offset genügt.
@@ -212,7 +245,7 @@ export async function POST(request: Request) {
           const tickets = await sendeChunk(chunk, rest(VERSAND_FRIST_MS))
           return { offset: eigenerOffset, tickets }
         } catch (err) {
-          console.error('Ortung-Erinnerung: Expo-Chunk fehlgeschlagen:', err)
+          console.error(`${log} Expo-Chunk fehlgeschlagen:`, err)
           return { offset: eigenerOffset, tickets: null }
         }
       }),
@@ -222,7 +255,7 @@ export async function POST(request: Request) {
     erfolg = auswertung.erfolg
     z.gesendet = auswertung.gesendet
     z.ticketFehler = auswertung.ticketFehler.length
-    for (const meldung of auswertung.ticketFehler) console.error('Ortung-Erinnerung: Expo-Ticket-Fehler:', meldung)
+    for (const meldung of auswertung.ticketFehler) console.error(`${log} Expo-Ticket-Fehler:`, meldung)
 
     // ⚠ ZUERST zurückgeben, DANN aufräumen (Codex R1, Punkt 3): ein hängendes
     // DELETE frässe sonst die Frist, und die Ansprüche blieben ohne Push.
@@ -238,18 +271,18 @@ export async function POST(request: Request) {
         if (error) throw error
         z.aufgeraeumt = data?.length ?? 0
       } catch (err) {
-        console.error('Ortung-Erinnerung: Aufräumen fehlgeschlagen:', err)
+        console.error(`${log} Aufräumen fehlgeschlagen:`, err)
         aufraeumenGescheitert = true
         z.aufraeumenGescheitert = true
       }
     }
-    if (vielleichtGekappt) console.error('Ortung-Erinnerung: Antwort womöglich bei max-rows gekappt', z)
+    if (vielleichtGekappt) console.error(`${log} Antwort womöglich bei max-rows gekappt`, z)
     // Laut scheitern: Coolify zeigt den Lauf dann als `failed` (E9).
     const gescheitert = auswertung.zuruecksetzen.length > 0 || aufraeumenGescheitert || vielleichtGekappt
-    return NextResponse.json(z, { status: gescheitert ? 500 : 200 })
+    return { status: gescheitert ? 500 : 200, antwort: z }
   } catch (err) {
-    console.error('Ortung-Erinnerung: Lauf abgebrochen:', err)
+    console.error(`${log} Lauf abgebrochen:`, err)
     await zurueckgeben(erfolg.flatMap((ok, i) => (ok ? [] : [i])))
-    return NextResponse.json({ error: 'Lauf abgebrochen', ...z }, { status: 500 })
+    return { status: 500, antwort: { error: 'Lauf abgebrochen', ...z } }
   }
 }
