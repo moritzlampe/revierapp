@@ -8,13 +8,16 @@ import { geladen, vollstaendig } from '../../laden'
 import type { Punkt } from '../../revierkarte-map'
 import Detail from './detail'
 import type { Katalogzeile, RegelnRoh } from './regeln-bereich'
-import { ausZeilen, type TreibenZeile } from './treiben'
+import { ausZeilen } from './treiben'
+import VerteilenBereich from './verteilen-bereich'
+import type { DriveRow, Pruefung, SeatRow } from './verteilen'
 import {
   ersterWert,
   type EinladbarerKontakt,
   type Jagd,
   type Profil,
   type Teilnehmer,
+  teilnehmerName,
   vorbereitbar,
 } from '../jagden'
 import '../jagden.css'
@@ -131,7 +134,10 @@ export default async function JagdDetailPage({
         .eq('hidden', false),
       supabase
         .from('hunt_participants')
-        .select('id, user_id, guest_name, role, tags, status, entfernt_am, kontakt_id')
+        // Mit Zähler: das Verteilen rechnet den Vorrang über ALLE Zeilen der
+        // Jagd, wie die App (Bauplan Verteilen B11) — eine abgeschnittene Liste
+        // hielte belegte Stände für frei.
+        .select('id, user_id, guest_name, role, tags, status, entfernt_am, kontakt_id', { count: 'exact' })
         .eq('hunt_id', id),
       // konto_namen() statt profiles — s. `src/lib/konto-namen.ts`. Die RPC
       // sortiert selbst nach display_name; das `.order` entfaellt deshalb,
@@ -174,7 +180,7 @@ export default async function JagdDetailPage({
     redirect(`/zentrale/jagden/${id}?revier=${revier.id}${chatFehlt ? '&chat=fehlt' : ''}`)
   }
 
-  const teilnehmer = geladen<Teilnehmer[]>(teilnehmerErgebnis, 'Teilnehmer')
+  const teilnehmer = vollstaendig<Teilnehmer>(teilnehmerErgebnis, 'Teilnehmer')
 
   // Alle Kontonamen in einem Rutsch — seit dem 22.08.2026 über `konto_namen()`
   // (115), nicht mehr über `profiles`.
@@ -261,14 +267,16 @@ export default async function JagdDetailPage({
    * nimmt das anstandslos, und der Zweig bleibt derselbe wie vorher — eine Jagd
    * ohne Revier oder ohne Jagdleiterrecht stellt gar keine Abfrage.
    */
-  const [treibenErgebnis, objekteErgebnis, katalogErgebnis] = await Promise.all([
+  const [treibenErgebnis, objekteErgebnis, katalogErgebnis, sitzeErgebnis, pruefErgebnis] = await Promise.all([
     treibenSichtbar
       ? supabase
           .from('hunt_drives')
           // Ein Literal, kein zusammengesetzter String: PostgREST typt den
           // Embed über die Select-Zeichenkette. Dieselbe Auflage wie nativ.
+          // Seit P2a mit Schütze und Standnamen wie `fetchHuntDrives` der App
+          // (Bauplan Verteilen E9) — der Treiben-Bereich nimmt nur, was er kennt.
           .select(
-            'id, name, sequence, status, hunt_drive_stands ( id, map_object_id, seat_assignment_id )',
+            'id, name, sequence, status, hunt_drive_stands ( id, map_object_id, seat_assignment_id, participant_id, map_objects ( name ), hunt_seat_assignments ( seat_name ) )',
             { count: 'exact' }
           )
           .eq('hunt_id', id)
@@ -336,11 +344,34 @@ export default async function JagdDetailPage({
           .is('besitzer_id', null)
           .order('name')
       : null,
+    /**
+     * Die jagdweite Sitzordnung (P2a) — mit dem Embed wie die App
+     * (`SEAT_SELECT` in `src/lib/data/map.ts`), damit der Rückfall-Text den
+     * Namen nennt, den die App zeigt (Bauplan Verteilen E3). Ob ein Stand
+     * zuordenbar ist, entscheidet trotzdem die Objektliste unten (B6).
+     */
+    treibenSichtbar
+      ? supabase
+          .from('hunt_seat_assignments')
+          .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng, map_objects ( name )', {
+            count: 'exact',
+          })
+          .eq('hunt_id', id)
+      : null,
+    /**
+     * Der Prüfstand der Stände (117), wie auf der Revierseite — gesperrte
+     * Stände sperren das Einteilen wie in der App (Bauplan Verteilen E6, D2).
+     */
+    treibenSichtbar && revier
+      ? supabase
+          .from('map_object_letzte_pruefung')
+          .select('map_object_id, status, checked_at, checked_by', { count: 'exact' })
+          .eq('district_id', revier.id)
+      : null,
   ])
 
-  const treibenZeilen = treibenErgebnis
-    ? vollstaendig<TreibenZeile>(treibenErgebnis, 'Treiben')
-    : []
+  const treibenZeilen = treibenErgebnis ? vollstaendig<DriveRow>(treibenErgebnis, 'Treiben') : []
+  const sitze = sitzeErgebnis ? vollstaendig<SeatRow>(sitzeErgebnis, 'Sitzordnung') : []
 
   const objekte = objekteErgebnis ? vollstaendig<Objekt>(objekteErgebnis, 'Kartenobjekte') : []
 
@@ -374,6 +405,33 @@ export default async function JagdDetailPage({
     return acc
   }, [])
 
+  const kontoNamen = Object.fromEntries(profile.map((p) => [p.id, p.display_name ?? '']))
+  const teilnehmerNamen = Object.fromEntries(teilnehmer.map((t) => [t.id, teilnehmerName(t, kontoNamen)]))
+
+  /**
+   * **Ein Ladefehler des Prüfstands bricht die Seite nicht ab, er wird
+   * `null`** — und `null` heisst im Verteilen „unbekannt", nie „nicht
+   * gesperrt" (S4): jedes Einteilen fragt dann wie die App nach. Abgeschnitten
+   * gilt dasselbe; eine halbe Liste wäre ein stilles „nicht gesperrt".
+   */
+  let pruefung: Record<string, Pruefung> | null = null
+  if (pruefErgebnis) {
+    try {
+      const zeilen = vollstaendig<{ map_object_id: string; status: string; checked_at: string; checked_by: string | null }>(
+        pruefErgebnis,
+        'Prüfstand'
+      )
+      pruefung = Object.fromEntries(
+        zeilen.map((z) => [
+          z.map_object_id,
+          { status: z.status, checked_at: z.checked_at, pruefer: z.checked_by ? (kontoNamen[z.checked_by] || null) : null },
+        ])
+      )
+    } catch {
+      pruefung = null
+    }
+  }
+
   return (
     <div className="zentrale-wrap">
       {chatFehlt ? (
@@ -405,6 +463,20 @@ export default async function JagdDetailPage({
         regeln={jagd.kind === 'group' ? (jagd as RegelnRoh) : null}
         katalog={katalog}
       />
+      {treibenSichtbar && revier ? (
+        <VerteilenBereich
+          jagdId={jagd.id}
+          revierId={revier.id}
+          teilnehmer={teilnehmer}
+          namen={teilnehmerNamen}
+          sitze={sitze}
+          treiben={treibenZeilen}
+          objekte={objekte}
+          pruefung={pruefung}
+          punkte={punkte}
+          grenze={parsePolygonHex(revier.boundary)}
+        />
+      ) : null}
     </div>
   )
 }

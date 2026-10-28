@@ -613,7 +613,13 @@ export default function Detail({
           und `grenze` null. Ohne Revier gibt es keine Karte und damit keine
           Standauswahl; ohne Jagdleiterrecht wiese RLS jeden Write ab. */}
       {schreibbar && revierId ? (
-        <TreibenBereich jagdId={jagd.id} treiben={treiben} punkte={punkte} grenze={grenze} />
+        <TreibenBereich
+          jagdId={jagd.id}
+          treiben={treiben}
+          punkte={punkte}
+          grenze={grenze}
+          namen={Object.fromEntries(teilnehmer.map((t) => [t.id, teilnehmerName(t, namen)]))}
+        />
       ) : null}
     </>
   )

@@ -957,6 +957,7 @@ function Objekte({
   markiert,
   gruppe,
   aufAuswahl,
+  belegung,
 }: {
   punkte: Punkt[]
   /**
@@ -1012,6 +1013,14 @@ function Objekte({
   markiert?: ReadonlySet<string>
   /** `undefined`, solange die Grenze gezeichnet wird — dann sind Klicks Punkte. */
   aufAuswahl?: (id: string) => void
+  /**
+   * Stand → Name des Schützen (Portal P2a, Verteilen). **Ein belegter Stand
+   * trägt sein Schild bei jedem Zoom**, nicht erst ab `NAMEN_AB_ZOOM`: die
+   * Belegungsansicht beantwortet „wer steht wo", und genau das stünde sonst
+   * erst ab Zoom 16 da (Bauplan Verteilen E1, Schwelle je Aufrufer). Freie
+   * Stände bleiben bei der Regel unten.
+   */
+  belegung?: Readonly<Record<string, string>>
 }) {
   const map = useMap()
   const [zoom, setZoom] = useState(() => map.getZoom())
@@ -1121,7 +1130,8 @@ function Objekte({
          * einen Namen. Ersatz sind die Zoomstufe (ab 16 stehen ohnehin alle)
          * und das Überfahren; die Zugehörigkeit trägt weiter der bronzene Ring.
          */
-        const nameSteht = namenFest || p.id === auswahlId
+        const belegtVon = belegung?.[p.id]
+        const nameSteht = namenFest || p.id === auswahlId || belegtVon !== undefined
         return (
           <CircleMarker
             // Die Interaktivität gehört in den `key`, so unschön das aussieht.
@@ -1182,6 +1192,7 @@ function Objekte({
               className="zentrale-karte-label"
             >
               {p.name}
+              {belegtVon !== undefined ? ` · ${belegtVon}` : ''}
               {/* **Auch das Wort hängt am Modus**, nicht nur der Ring. Sonst
                   verriete der Tooltip einen Zustand, für den auf der Karte
                   keine Marke steht — und „nur in der Wartungssicht" wäre eine
@@ -1264,6 +1275,7 @@ export default function RevierkarteMap({
   markiert,
   gruppe,
   aufAuswahl,
+  belegung,
   randRechts = 0,
 }: KarteProps & {
   /**
@@ -1315,6 +1327,8 @@ export default function RevierkarteMap({
   /** Mehrfachauswahl der Treiben-Karte (4b) — s. `Objekte`. */
   markiert?: ReadonlySet<string>
   aufAuswahl?: (id: string) => void
+  /** Stand → Name; s. `Objekte`. */
+  belegung?: Readonly<Record<string, string>>
   /** Breite, die die Objektspalte rechts überdeckt — Zuschlag für `fitBounds`. */
   randRechts?: number
 }) {
@@ -1427,6 +1441,7 @@ export default function RevierkarteMap({
         // Zielen auf einen Grenzpunkt schwerer, nicht leichter.
         gruppe={zeichnen || setzen ? undefined : gruppe}
         aufAuswahl={waehlbar}
+        belegung={belegung}
       />
       <ZuAuswahl
         id={zeichnen ? null : auswahlId}

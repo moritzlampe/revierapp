@@ -688,3 +688,195 @@
 /* P1d: „Als Vorlage speichern" neben „Vorlage einfügen", das Namensfeld darunter. */
 .jagd-freigabe-vorlage + .jagd-freigabe-vorlage { margin-left: 0.5rem; }
 .jagd-vorlage-speichern { margin-top: 0.5rem; }
+
+/* --- Schützen verteilen (Portal P2a, Bauplan Verteilen V2.2) ------------------
+   Zeilen- und Spaltenköpfe fixiert, die Matrix scrollt waagrecht (E1). Rot und
+   Gelb sind Zellenmarken mit WORT daneben, nie nur Farbe (§2.4). */
+.jagd-verteilen {
+  margin-top: 2rem;
+}
+
+.jagd-verteilen-rahmen {
+  /* Beide Achsen im Rahmen, mit Höhengrenze — sonst hängt `top: 0` der
+     Spaltenköpfe am Rahmen, der nie senkrecht scrollt, und bei 30 Schützen
+     wandern die Treibennamen aus dem Bild (Schlusslesung F3). */
+  overflow: auto;
+  max-height: 70vh;
+  max-width: 100%;
+  margin: 0.75rem 0 1rem;
+  border: 1px solid var(--z-border);
+  border-radius: 10px;
+}
+
+.jagd-verteilen-tabelle {
+  width: max-content;
+  min-width: 100%;
+  /* `.zentrale-tabelle` trägt `overflow: hidden` (für die Eckenrundung) — das
+     macht die TABELLE zum Haftbezug, und weil sie nie scrollt, klebt kein
+     Kopf (Delta-Schlusslesung, gemessen: Kopf −41,5 px, mit `visible` 0).
+     Rand und Rundung trägt deshalb der Rahmen. */
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+}
+
+.jagd-verteilen-tabelle th,
+.jagd-verteilen-tabelle td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.jagd-verteilen-tabelle thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--z-bg-elevated);
+  height: auto;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.jagd-verteilen-tabelle tbody th,
+.jagd-verteilen-tabelle thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--z-bg-elevated);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.875rem;
+  color: var(--z-text-primary);
+}
+
+.jagd-verteilen-tabelle thead th:first-child {
+  z-index: 3;
+}
+
+.jagd-verteilen-tabelle thead th[aria-current='true'] {
+  box-shadow: inset 0 -2px 0 var(--z-accent);
+}
+
+.jagd-verteilen-kopf {
+  display: block;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.jagd-verteilen-zaehler {
+  display: block;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.jagd-verteilen-rolle {
+  color: var(--z-text-secondary);
+  font-weight: 400;
+}
+
+.jagd-verteilen-zelle {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  min-width: 9rem;
+  padding: 4px 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.jagd-verteilen-zelle:hover:not(:disabled) {
+  border-color: var(--z-border-strong);
+}
+
+.jagd-verteilen-zelle:focus-visible {
+  outline: 2px solid var(--z-accent);
+  outline-offset: 1px;
+}
+
+.jagd-verteilen-zelle:disabled {
+  cursor: default;
+}
+
+.jagd-verteilen-geerbt {
+  color: var(--z-text-secondary);
+}
+
+.jagd-verteilen-rot {
+  color: var(--z-gesperrt);
+  font-weight: 600;
+}
+
+.jagd-verteilen-gelb {
+  color: var(--z-mangel);
+}
+
+.jagd-verteilen-frage {
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  background: var(--z-bg-elevated);
+}
+
+.jagd-verteilen-frage p {
+  margin: 0;
+}
+
+.jagd-verteilen-ausgeschieden ul {
+  margin: 0.25rem 0 1rem;
+  padding-left: 1.25rem;
+}
+
+/* Die Liste hängt per Portal an `.zentrale` (E1) — eigene Ebene über der Karte. */
+.jagd-verteilen-liste {
+  z-index: 2000;
+  min-width: 16rem;
+  max-width: 22rem;
+  max-height: 18rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--z-bg-elevated);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+  font-size: 0.875rem;
+}
+
+.jagd-verteilen-liste:focus-visible {
+  outline: 2px solid var(--z-accent);
+}
+
+.jagd-verteilen-listenkopf {
+  padding: 4px 12px 6px;
+  font-size: 0.75rem;
+  color: var(--z-text-secondary);
+  border-bottom: 1px solid var(--z-border);
+}
+
+.jagd-verteilen-eintrag {
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.jagd-verteilen-eintrag.aktiv {
+  background: var(--z-bg-sunken);
+}
+
+.jagd-verteilen-eintrag.aus {
+  color: var(--z-text-secondary);
+  cursor: default;
+}
+
+.jagd-verteilen-grund {
+  font-size: 0.8rem;
+}

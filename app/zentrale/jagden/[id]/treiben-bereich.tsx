@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Punkt } from '../../revierkarte-map'
 import { schreibe, schreibeViele } from '../../schreiben'
 import { sichtbarerName } from '../../namen'
+import { vorbereitbar } from '../jagden'
 import {
   bearbeitbar,
   markierungAus,
@@ -32,6 +33,34 @@ import {
  * Revier-Editor für eine neue Seite anzufassen.
  */
 
+/** Eine Rückfrage steht offen — kein Fehler, nichts geschrieben, nichts neu laden. */
+class Rueckfrage extends Error {}
+
+/** Wer in einem Treiben eingeteilt ist: Namen für die Rückfrage, Schlüssel (Zeile:Schütze) für den Vergleich. */
+interface Belegung {
+  namen: string[]
+  schluessel: string
+}
+
+function gleicheMenge(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((x) => b.includes(x))
+}
+
+/** Abgewählte Standzeilen, so wie sie frisch gelesen und bestätigt wurden (B12). */
+interface Abwahl {
+  /**
+   * Die abgewählten Zeilen-IDs, so wie sie ANGEFRAGT wurden. Gegen sie — nicht
+   * gegen die gefundenen — prüft der nächste Klick, ob die Bestätigung noch zur
+   * Auswahl passt: eine seither verschwundene Zeile ist keine Abweichung, sie
+   * wird nur nicht gelöscht (Schlusslesung F1, sonst endlose Rückfrage).
+   */
+  angefragt: string[]
+  /** Zeilen ohne Schützen — gelöscht nur, solange sie leer sind. */
+  leer: string[]
+  /** Belegte Zeilen samt dem bestätigten Schützen — gelöscht nur mit genau ihm. */
+  belegt: { id: string; teilnahmeId: string; text: string }[]
+}
+
 // react-leaflet fasst beim Import `window` an — `ssr:false` ist Pflicht, und
 // `next/dynamic` mit `ssr:false` geht nur aus einer Client-Komponente heraus.
 const Karte = dynamic(() => import('../../revierkarte-map'), {
@@ -44,12 +73,15 @@ export default function TreibenBereich({
   treiben,
   punkte,
   grenze,
+  namen,
 }: {
   jagdId: string
   treiben: Treiben[]
   /** Nur Stände: alle 204 Standzeilen im Bestand zeigen auf genau diese drei Typen. */
   punkte: Punkt[]
   grenze: [number, number][][] | null
+  /** teilnahmeId → Anzeigename, für die Rückfragen mit Namen (Bauplan Verteilen B12). */
+  namen: Record<string, string>
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -58,6 +90,16 @@ export default function TreibenBereich({
   const [name, setName] = useState('')
   const [neu, setNeu] = useState('')
   const [loeschFrage, setLoeschFrage] = useState<string | null>(null)
+  /** Wer im zu löschenden Treiben eingeteilt ist — frisch gelesen; `null` = liest noch, Text = Fehler. */
+  const [loeschBelegung, setLoeschBelegung] = useState<Belegung | string | null>(null)
+  /** Belegte Stände in der Abwahl, die bestätigt werden müssen (B12). */
+  const [abwahlFrage, setAbwahlFrage] = useState<Abwahl | null>(null)
+  /**
+   * Ein Zähler je Öffnen der Löschfrage: eine späte Antwort einer früheren
+   * Öffnung — auch desselben Treibens — fällt weg, statt die angezeigte
+   * Belegung nachträglich zu ersetzen (Codex Delta C1).
+   */
+  const loeschVersuch = useRef(0)
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
 
@@ -185,6 +227,7 @@ export default function TreibenBereich({
     setName(t.name)
     setFehler(null)
     setLoeschFrage(null)
+    setAbwahlFrage(null)
   }
 
   function schliessen() {
@@ -204,6 +247,7 @@ export default function TreibenBereich({
     setMarkiert(new Set())
     setName('')
     setFehler(null)
+    setAbwahlFrage(null)
   }
 
   function umschalten(standId: string) {
@@ -217,6 +261,8 @@ export default function TreibenBereich({
     // je Speichern: sichtbares Flackern für einen Riegel, den ein früher
     // `return` billiger hat.
     if (laeuftRef.current) return
+    // Eine bestätigte Abwahl gilt nur für die Auswahl, zu der sie gestellt wurde.
+    setAbwahlFrage(null)
     setMarkiert((vorher) => {
       const nachher = new Set(vorher)
       if (!nachher.delete(standId)) nachher.add(standId)
@@ -242,6 +288,7 @@ export default function TreibenBereich({
       danach?.()
       startTransition(() => router.refresh())
     } catch (e) {
+      if (e instanceof Rueckfrage) return
       // **Der Fehler wird ausgewiesen, nicht verschluckt.** Häufigste Ursache ist
       // ein veralteter Stand: parallel gelöschte Standzeilen (0 statt 1 betroffen)
       // oder ein parallel hinzugefügter Stand (23505 am UNIQUE).
@@ -271,6 +318,28 @@ export default function TreibenBereich({
 
   const busy = laeuft || pending
 
+  /**
+   * **Die Gates aus Bauplan Verteilen B9, frisch vor einem Write, der Belegung
+   * berührt** — Standmenge speichern, Treiben löschen. Die Jagd muss
+   * vorbereitbar sein, kein Treiben darf laufen (sonst verschöbe sich der
+   * Rückfall im laufenden Treiben), das eigene muss noch geplant sein. RLS
+   * prüft keinen Status. Anlegen und Umbenennen berühren weder Belegung noch
+   * Rückfall und bleiben deshalb frei (Fable R3-10).
+   */
+  async function pruefeTreiben(client: ReturnType<typeof createClient>, treibenId: string) {
+    const [jagd, alle] = await Promise.all([
+      client.from('hunts').select('status').eq('id', jagdId).maybeSingle(),
+      client.from('hunt_drives').select('id, name, status').eq('hunt_id', jagdId),
+    ])
+    if (jagd.error || alle.error) throw new Error(`Der Zustand war nicht zu prüfen: ${(jagd.error ?? alle.error)?.message}`)
+    if (!jagd.data || !vorbereitbar(jagd.data.status))
+      throw new Error('Diese Jagd ist nicht mehr in Vorbereitung (gestartet, beendet oder nicht erreichbar).')
+    const laufend = (alle.data ?? []).find((d) => d.status === 'active')
+    if (laufend) throw new Error(`${laufend.name} läuft in der App — erst wieder, wenn es beendet ist.`)
+    if ((alle.data ?? []).find((d) => d.id === treibenId)?.status !== 'pending')
+      throw new Error('Dieses Treiben ist nicht mehr geplant.')
+  }
+
   function anlegen() {
     const sauber = sichtbarerName(neu)
     if (sauber.length === 0) return
@@ -293,12 +362,57 @@ export default function TreibenBereich({
     )
   }
 
-  function speichern() {
+  /**
+   * Speichern, zweistufig, sobald belegte Stände abgewählt sind (Bauplan
+   * Verteilen B12). **Eine Bestätigung aus dem geladenen Bild genügt nicht:**
+   * `diff` rechnet aus Props, eine Belegung, die die App seit dem Laden gesetzt
+   * hat, ginge still mit. Deshalb werden die abgewählten Zeilen frisch gelesen;
+   * stehen Schützen darauf, fragt die Seite mit Namen, und das DELETE ist an
+   * genau die bestätigte Belegung gebunden — eine Abweichung meldet
+   * `schreibeViele` bzw. `schreibe` laut, statt sie still mitzunehmen.
+   */
+  function speichern(bestaetigt?: Abwahl) {
     if (!offen || !speicherbar) return
     void fuehreAus(
       'Das Speichern',
       async () => {
         const client = createClient()
+        const standmenge = diff.legen.length > 0 || diff.loeschen.length > 0
+        if (standmenge) await pruefeTreiben(client, offen.id)
+
+        let abwahl = bestaetigt
+        // Eine Bestätigung gilt für genau einen Versuch: scheitert er (eine
+        // Belegung hat sich geändert), liest der nächste Klick frisch und fragt
+        // mit den neuen Namen, statt dieselbe veraltete Bestätigung zu wiederholen.
+        setAbwahlFrage(null)
+        // Und nur für genau die Abwahl, zu der sie gestellt wurde: hat ein Refresh
+        // `diff` seither verändert, wird frisch gelesen und neu gefragt (Codex C2).
+        if (abwahl && !gleicheMenge(abwahl.angefragt, diff.loeschen)) {
+          abwahl = undefined
+        }
+        if (!abwahl && diff.loeschen.length > 0) {
+          const { data, error } = await client
+            .from('hunt_drive_stands')
+            .select('id, participant_id, map_objects ( name )')
+            .in('id', diff.loeschen)
+          if (error) throw new Error(`Die Belegung war nicht zu prüfen: ${error.message}`)
+          const zeilen = (data ?? []) as unknown as { id: string; participant_id: string | null; map_objects: { name: string } | null }[]
+          abwahl = {
+            angefragt: [...diff.loeschen],
+            leer: zeilen.filter((z) => !z.participant_id).map((z) => z.id),
+            belegt: zeilen
+              .filter((z) => z.participant_id)
+              .map((z) => ({
+                id: z.id,
+                teilnahmeId: z.participant_id as string,
+                text: `${namen[z.participant_id as string] ?? 'Unbekannt'} (${z.map_objects?.name ?? 'Stand'})`,
+              })),
+          }
+          if (abwahl.belegt.length > 0) {
+            setAbwahlFrage(abwahl)
+            throw new Rueckfrage()
+          }
+        }
 
         if (nameGeaendert) {
           await schreibe('Der Name des Treibens', () =>
@@ -343,9 +457,20 @@ export default function TreibenBereich({
               .select('id'),
           )
         }
-        if (diff.loeschen.length > 0) {
-          await schreibeViele('Die abgewählten Stände', diff.loeschen.length, () =>
-            client.from('hunt_drive_stands').delete().in('id', diff.loeschen).select('id'),
+        if (abwahl && abwahl.leer.length > 0) {
+          const leer = abwahl.leer
+          await schreibeViele('Die abgewählten Stände', leer.length, () =>
+            client.from('hunt_drive_stands').delete().in('id', leer).is('participant_id', null).select('id'),
+          )
+        }
+        for (const b of abwahl?.belegt ?? []) {
+          await schreibe(`Der Stand von ${b.text}`, () =>
+            client
+              .from('hunt_drive_stands')
+              .delete()
+              .eq('id', b.id)
+              .eq('participant_id', b.teilnahmeId)
+              .select('id'),
           )
         }
       },
@@ -353,13 +478,86 @@ export default function TreibenBereich({
     )
   }
 
-  function loeschen(t: Treiben) {
+  /**
+   * Wer in einem Treiben eingeteilt ist: Namen für die Rückfrage und ein
+   * Schlüssel (Zeile + Schütze), gegen den das Löschen nach der Bestätigung
+   * frisch vergleicht.
+   */
+  async function leseBelegung(treibenId: string): Promise<Belegung> {
+    const { data, error } = await createClient()
+      .from('hunt_drive_stands')
+      .select('id, participant_id, map_objects ( name ), hunt_seat_assignments ( seat_name )')
+      .eq('drive_id', treibenId)
+      .not('participant_id', 'is', null)
+    if (error) throw new Error(`Wer eingeteilt ist, ließ sich nicht lesen: ${error.message}`)
+    const zeilen = (data ?? []) as unknown as {
+      id: string
+      participant_id: string
+      map_objects: { name: string } | null
+      hunt_seat_assignments: { seat_name: string | null } | null
+    }[]
+    return {
+      schluessel: zeilen.map((z) => `${z.id}:${z.participant_id}`).sort().join(','),
+      namen: zeilen.map(
+        (z) =>
+          `${namen[z.participant_id] ?? 'Unbekannt'} (${z.map_objects?.name ?? z.hunt_seat_assignments?.seat_name ?? 'Stand'})`,
+      ),
+    }
+  }
+
+  /** Die Rückfrage zum Treiben-Löschen nennt die Eingeteilten — aus einer frischen Lesung (B12). */
+  async function loeschenFragen(t: Treiben) {
+    const meins = ++loeschVersuch.current
+    setLoeschFrage(t.id)
+    setLoeschBelegung(null)
+    try {
+      const b = await leseBelegung(t.id)
+      if (loeschVersuch.current !== meins) return
+      setLoeschBelegung(b)
+    } catch (e) {
+      if (loeschVersuch.current !== meins) return
+      setLoeschBelegung(`${e instanceof Error ? e.message : String(e)} — Löschen erst nach erneutem Versuch.`)
+    }
+  }
+
+  /**
+   * `angezeigt` ist der Schlüssel der Belegung, die die Rückfrage GENANNT hat —
+   * als Wert übergeben, nicht aus einem Ref gelesen, damit keine späte Antwort
+   * ihn zwischen Klick und Vergleich ändern kann (Codex Delta C1).
+   */
+  function loeschen(t: Treiben, angezeigt: string | null) {
     void fuehreAus(
       'Das Löschen',
       async () => {
         const client = createClient()
+        await pruefeTreiben(client, t.id)
+        // **Die Belegung nach der Bestätigung noch einmal** (Codex C1): wer
+        // seit der Rückfrage eingeteilt wurde, ginge sonst per CASCADE mit, ohne
+        // je genannt worden zu sein. Abweichung → neue Rückfrage mit den Namen.
+        //
+        // Offen bleibt, benannt wie in Bauplan E10 („Was bleibt"): das Fenster
+        // zwischen dieser Lesung und dem DELETE. Ganz zu wäre es nur mit einer
+        // transaktionalen RPC (Migration, Anker 2).
+        const jetzt = await leseBelegung(t.id)
+        if (angezeigt === null || jetzt.schluessel !== angezeigt) {
+          loeschVersuch.current++
+          setLoeschBelegung(jetzt)
+          // Ohne angezeigte Belegung (die erste Lesung war gescheitert) hat sich
+          // nichts „geändert" — dann sagt der Satz, was wirklich los ist.
+          setFehler(
+            angezeigt === null
+              ? 'Wer eingeteilt ist, ist jetzt gelesen — bitte die Liste bestätigen.'
+              : 'Die Belegung hat sich seit der Rückfrage geändert — bitte die neue Liste bestätigen.',
+          )
+          throw new Rueckfrage()
+        }
+        // `.eq('status', 'pending')` macht das Gate für DIESES Treiben atomar
+        // (Bauplan Verteilen B12, Fable R3-8): startet die App es eine
+        // Millisekunde nach der Prüfung, trifft das DELETE 0 Zeilen und
+        // `schreibe` meldet es — statt die Belegung eines LAUFENDEN Treibens
+        // per Kaskade mitzunehmen.
         await schreibe('Das Treiben', () =>
-          client.from('hunt_drives').delete().eq('id', t.id).select('id'),
+          client.from('hunt_drives').delete().eq('id', t.id).eq('status', 'pending').select('id'),
         )
       },
       () => {
@@ -440,33 +638,43 @@ export default function TreibenBereich({
                    * Protokoll eines gelaufenen Jagdtags.
                    *
                    * Das ist ein UI-Gate. **RLS kennt den Status nicht** — sie
-                   * fragt nur nach Jagdleiterschaft. Der Rest des Rennens bleibt
-                   * damit offen und ist benannt statt behauptet: startet die
-                   * Feld-App ein Treiben, während diese Seite offen steht, gilt
-                   * hier weiter der alte Status. Ihn zu schließen braucht eine
-                   * Policy oder RPC, die `status = 'pending'` beim Write prüft —
-                   * eine Migration, also Anker 2 und Moritz' Freigabe. Der
-                   * Fensterrahmen ist klein: die Sektion erscheint ohnehin nur
-                   * bei `vorbereitbar(jagd.status)`.
+                   * fragt nur nach Jagdleiterschaft. **Für das Treiben selbst
+                   * ist das Rennen seit P2a zu** (Bauplan Verteilen B12): das
+                   * DELETE trägt `.eq('status', 'pending')`, und davor prüft
+                   * `pruefeTreiben` frisch. Offen bleibt es für die
+                   * STANDZEILEN beim Speichern einer Standmenge — dort bräuchte
+                   * eine atomare Statusprüfung eine Policy oder RPC, also eine
+                   * Migration (Anker 2); gebunden ist dort die Belegung.
                    */}
                   {!aenderbar ? null : loeschFrage === t.id ? (
                     <>
                       <span className="jagd-treiben-frage">
-                        Löschen? Die {t.stands.length} zugeordneten Stände gehen mit, samt
-                        eingeteilter Schützen.
+                        Löschen? Die {t.stands.length} zugeordneten Stände gehen mit
+                        {loeschBelegung === null
+                          ? ' — Belegung wird gelesen …'
+                          : typeof loeschBelegung === 'string'
+                            ? `. ${loeschBelegung}`
+                            : loeschBelegung.namen.length === 0
+                              ? '; niemand ist eingeteilt.'
+                              : `, eingeteilt sind: ${loeschBelegung.namen.join(', ')}.`}
                       </span>
                       <button
                         type="button"
                         className="zentrale-knopf"
-                        onClick={() => loeschen(t)}
-                        disabled={busy}
+                        onClick={() =>
+                          loeschen(t, typeof loeschBelegung === 'object' && loeschBelegung ? loeschBelegung.schluessel : null)
+                        }
+                        disabled={busy || loeschBelegung === null}
                       >
                         Ja, löschen
                       </button>
                       <button
                         type="button"
                         className="zentrale-abbrechen"
-                        onClick={() => setLoeschFrage(null)}
+                        onClick={() => {
+                          loeschVersuch.current++
+                          setLoeschFrage(null)
+                        }}
                         disabled={busy}
                       >
                         Abbrechen
@@ -476,7 +684,7 @@ export default function TreibenBereich({
                     <button
                       type="button"
                       className="zentrale-knopf"
-                      onClick={() => setLoeschFrage(t.id)}
+                      onClick={() => void loeschenFragen(t)}
                       disabled={busy}
                     >
                       Löschen
@@ -588,14 +796,20 @@ export default function TreibenBereich({
                       </div>
                     </div>
 
+                    {abwahlFrage && (
+                      <p className="jagd-treiben-frage" role="alert">
+                        Abgewählt sind belegte Stände: {abwahlFrage.belegt.map((b) => b.text).join(', ')}.
+                        Beim Speichern verlieren sie dort ihren Stand in diesem Treiben.
+                      </p>
+                    )}
                     <div className="jagd-treiben-knoepfe">
                       <button
                         type="button"
                         className="zentrale-knopf"
-                        onClick={speichern}
+                        onClick={() => speichern(abwahlFrage ?? undefined)}
                         disabled={busy || !speicherbar}
                       >
-                        {busy ? 'Speichert …' : 'Speichern'}
+                        {busy ? 'Speichert …' : abwahlFrage ? 'Ja, trotzdem speichern' : 'Speichern'}
                       </button>
                       <button
                         type="button"
