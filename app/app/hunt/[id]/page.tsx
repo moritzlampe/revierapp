@@ -16,6 +16,7 @@ import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 import { isHuntScheduled } from '@/lib/hunt/status'
+import { freigabeHinweis, freigabeRueckfrage, staendeAbErreicht, staendeOffen } from '@/lib/hunt/staende-freigabe'
 import { showToast } from '@/lib/erlegung/toast'
 import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog, Stop, CalendarBlank, Plus, Trash, MagnifyingGlass } from '@phosphor-icons/react'
 import { WildIcon } from '@/components/icons/WildIcon'
@@ -86,7 +87,7 @@ function FreigabeToggle({ noun, hint, open, busy, onToggle, Icon }: {
   )
 }
 
-type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; scheduled_for: string | null; chat_open: boolean; map_open: boolean; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
+type Hunt = { id: string; name: string; type: string; kind: 'group' | 'solo'; status: string; invite_code: string; wild_presets: string[]; started_at: string; scheduled_for: string | null; chat_open: boolean; map_open: boolean; schuetzen_sicht?: string | null; signal_mode: string; district_id: string | null; creator_id: string; boundary: unknown | null }
 type Participant = { id: string; user_id: string | null; guest_name: string | null; role: string; tags: string[]; status: string; stand_id: string | null; anonym_fest?: boolean | null; profiles: { display_name: string; anonymize_kills: boolean } | null }
 type SeatAssignment = { id: string; user_id: string | null; seat_id: string | null; seat_type: string; seat_name: string | null; position_lat: number | null; position_lng: number | null; adhoc_subtype?: 'leiter' | 'hochsitz' | 'sitzstock' | null }
 
@@ -129,6 +130,27 @@ export default function HuntPage() {
   const inviteLaeuft = useRef(false)
   const [chatOpenBusy, setChatOpenBusy] = useState(false)
   const [mapOpenBusy, setMapOpenBusy] = useState(false)
+  /**
+   * CP-116 (E8, Punkt 2): Riegel gegen den Doppelklick auf die Karten-Freigabe —
+   * **ein Ref, gesetzt VOR der Rückfrage**, wie `inviteLaeuft` beim Entfernen.
+   * `mapOpenBusy` greift erst nach dem Render.
+   */
+  const kartenFreigabeLaeuft = useRef(false)
+  /**
+   * CP-116 (E8, Punkt 5, V1.4): nur die zuletzt GESTARTETE Lesung von Sitzen
+   * bzw. Kartenobjekten gilt — sonst überschriebe eine vor der Öffnung
+   * gestartete, leere Erstladung, die spät eintrifft, die neue Lesung.
+   */
+  const sitzLauf = useRef(0)
+  const objekteLauf = useRef(0)
+  /**
+   * CP-116 (Codex PWA 13/14): zählt jede Lesung des Jagdkopfs (`loadHunt`), und
+   * welche Jagd die Seite gerade zeigt (`null` nach dem Abbau). Eine Freigabe,
+   * deren Antwort nach einer neueren Kopflesung eintrifft, übernimmt ihren Wert
+   * nicht blind; eine bestätigte Rückfrage schreibt nicht in eine verlassene Jagd.
+   */
+  const kopfLauf = useRef(0)
+  const seiteJagd = useRef<string | null>(null)
   // "Jetzt"-Snapshot für die Chat-Schreibsperre (Date.now() gehört nicht in den
   // Render — Purity). Auf Mount gesetzt; der ~1-Min-Edge bis zum Cron-Flip ist egal.
   const [nowMs, setNowMs] = useState(0)
@@ -231,11 +253,18 @@ export default function HuntPage() {
     )
   }, [geoState.position, geoState.accuracy, geoState.isLocked, myParticipantId, myParticipation?.status, hunt?.id, supabase])
 
-  const loadMapObjects = useCallback(async (districtId: string) => {
+  // `melden`: beim stillen Wiederholen der Flanke (CP-116) kein zweiter Toast.
+  // Rückgabe: `true` nur, wenn DIESE Lesung ihr Ergebnis angewandt hat — eine
+  // überholte gilt als nicht geliefert (Codex Nachtrag 4): die neuere kann
+  // gescheitert sein, und ihr Ergebnis liest außer der Flanke niemand.
+  const loadMapObjects = useCallback(async (districtId: string, melden = true): Promise<boolean> => {
+    const lauf = ++objekteLauf.current
     const { data: mapObjects, error } = await supabase
       .from('map_objects')
       .select('id, name, type, position, description')
       .eq('district_id', districtId)
+    // CP-116: eine überholte Lesung (vor der Öffnung gestartet) wendet nichts an.
+    if (lauf !== objekteLauf.current) return false
 
     /**
      * **Der Fehler wurde bis zum 26.08.2026 gar nicht gelesen** — hier stand
@@ -255,11 +284,14 @@ export default function HuntPage() {
      * Nachladen ist der alte Stand die bessere Auskunft als ein erfundener
      * leerer — dieselbe Entscheidung wie bei den Teilnehmern in `loadHunt`.
      */
-    if (error) {
-      console.warn('[loadMapObjects] map_objects-Query fehlgeschlagen:', error)
-      return
+    // CP-116 (Codex PWA 11): auch für den Nutzer laut, nicht nur in der
+    // Konsole — seit 146 lädt die Seite die Objekte beim Öffnen der Stände
+    // nach, und ein stilles Scheitern hieße „kein Stand".
+    if (error || !mapObjects) {
+      console.warn('[loadMapObjects] map_objects-Query fehlgeschlagen:', error ?? 'keine Zeilenliste')
+      if (melden) showToast('Die Kartenobjekte konnten nicht geladen werden.', 'warning')
+      return false
     }
-    if (!mapObjects) return
 
     const parsed: StandData[] = []
     let ohnePosition = 0
@@ -286,7 +318,33 @@ export default function HuntPage() {
       )
     }
     setStands(parsed)
+    return true
   }, [supabase])
+
+  /**
+   * Sitzplätze (Hochsitz-Zuweisungen, Ad-hoc-Stände, freie Positionen). Seit
+   * CP-116 eigene Funktion: beim Öffnen der Stände lädt die Seite GEZIELT sie
+   * nach, nicht `loadHunt` — das öffnete unter `afterKill=1` den Solo-Dialog
+   * erneut (E8, Punkt 5, Codex Delta 2).
+   * **Ein Fehler meldet sich** und lässt den alten Stand stehen (S4): vorher
+   * wurde er nicht gelesen, und eine gescheiterte Abfrage hieß „keine Stände".
+   */
+  const ladeSitze = useCallback(async (melden = true): Promise<boolean> => {
+    const lauf = ++sitzLauf.current
+    const { data, error } = await supabase
+      .from('hunt_seat_assignments')
+      .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng, adhoc_subtype')
+      .eq('hunt_id', params.id)
+    // Überholt: nicht geliefert (s. `loadMapObjects`, Codex Nachtrag 4).
+    if (lauf !== sitzLauf.current) return false
+    if (error || !Array.isArray(data)) {
+      console.error('[hunt] Sitzplätze konnten nicht geladen werden:', error)
+      if (melden) showToast('Die Stände konnten nicht geladen werden.', 'warning')
+      return false
+    }
+    setSeatAssignments(data)
+    return true
+  }, [supabase, params.id])
 
   const loadDistrictData = useCallback(async (districtId: string) => {
     // Reviergrenze + Name laden
@@ -313,13 +371,20 @@ export default function HuntPage() {
   }, [supabase, loadMapObjects])
 
   const loadHunt = useCallback(async () => {
+    const lauf = ++kopfLauf.current
     const { data: hunt } = await supabase.from('hunts').select('*').eq('id', params.id).single()
     if (!hunt) { router.push('/app?tab=jagden'); return }
 
     const { data: parts, error: teilnehmerFehler } = await supabase.from('hunt_participants').select('*, profiles(display_name, anonymize_kills)').eq('hunt_id', params.id)
     const { data: { user } } = await supabase.auth.getUser()
 
-    setHunt(hunt)
+    // CP-116 (Codex PWA-Delta 1): kam seit dem Start dieser Lesung ein neueres
+    // Kopf-Ereignis — eine Freigabe oder eine jüngere Lesung —, ist ihr
+    // `map_open` womöglich überholt. Dann bleibt der angezeigte Wert; der Rest
+    // des Kopfs gilt.
+    setHunt(prev =>
+      lauf === kopfLauf.current || !prev || prev.id !== hunt.id ? hunt : { ...hunt, map_open: prev.map_open },
+    )
     setUserId(user?.id ?? null)
 
     // **Ein gescheiterter Nachladelauf darf die Liste nicht LEEREN**
@@ -362,11 +427,7 @@ export default function HuntPage() {
     }
 
     // Seat Assignments laden (Hochsitz-Zuweisungen, Ad-hoc Stände, freie Positionen)
-    const { data: assignments } = await supabase
-      .from('hunt_seat_assignments')
-      .select('id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng, adhoc_subtype')
-      .eq('hunt_id', params.id)
-    setSeatAssignments(assignments || [])
+    await ladeSitze()
 
     // Revier-Daten laden (Grenze + Hochsitze)
     if (hunt.district_id) {
@@ -376,11 +437,58 @@ export default function HuntPage() {
       const parsed = parsePolygonHex(hunt.boundary)
       if (parsed) setBoundary(parsed)
     }
-  }, [supabase, params.id, router, loadDistrictData])
+  }, [supabase, params.id, router, loadDistrictData, ladeSitze])
 
   useEffect(() => { loadHunt() }, [loadHunt])
 
-  useEffect(() => { setNowMs(Date.now()) }, [])
+  useEffect(() => {
+    seiteJagd.current = typeof params.id === 'string' ? params.id : null
+    return () => { seiteJagd.current = null }
+  }, [params.id])
+
+  // CP-116 (E8, Punkt 5): ein Minutentakt statt eines einmaligen Schnappschusses.
+  // Ohne ihn öffnete sich der Karten-Reiter einer offenen Seite um T−1h nie;
+  // ein `setTimeout` auf T−1h liefe bei mehr als 24,8 Tagen Vorlauf über und
+  // feuerte sofort. Heilt nebenbei `chatWritable`. Eine Minute Verzug ist
+  // hingenommen.
+  useEffect(() => {
+    setNowMs(Date.now())
+    const takt = setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => clearInterval(takt)
+  }, [])
+
+  // CP-116 (E8, Punkt 5): gehen die Stände auf (Freigabe oder T−1h), lädt die
+  // Seite Sitze UND Kartenobjekte nach — der eigene Stand eines Schützen kommt
+  // als Kartenobjekt (`staende_der_teilnahme`, 146), die Sitzzeile allein zeigt
+  // ihn nicht. Nur auf der Flanke zu → offen, und nur für DIESE Jagd: bei einem
+  // Jagdwechsel beginnt die Beobachtung neu.
+  // ⚠ Hingenommen (§6): eine Rücknahme räumt eine offene Seite nicht ab — sie
+  // zeigt Geladenes weiter, bis sie neu lädt (kein Realtime auf `hunts`).
+  const offenJetzt = hunt && isHuntScheduled(hunt.status) ? staendeOffen(hunt.map_open, hunt.scheduled_for, nowMs) : null
+  // ⛔ **Scheitert das Nachladen, gilt die Flanke als nicht gesehen**
+  // (Schlusslesung PWA F1): sonst bliebe die Karte nach dem 06:00-Funkloch
+  // leer, bis jemand die Seite von Hand neu lädt — genau der Fall, für den die
+  // Grenze gebaut ist (E7). Der nächste Minutentakt versucht es wieder; der
+  // Toast kommt nur beim ersten Fehlschlag, nicht jede Minute.
+  const offenVorher = useRef<{ id: string; offen: boolean; erneut?: boolean } | null>(null)
+  useEffect(() => {
+    if (!hunt || offenJetzt === null) return
+    const vorher = offenVorher.current
+    offenVorher.current = { id: hunt.id, offen: offenJetzt }
+    if (vorher?.id !== hunt.id || vorher.offen || !offenJetzt) return
+    const melden = !vorher.erneut
+    const jagdId = hunt.id
+    void Promise.all([
+      ladeSitze(melden),
+      hunt.district_id ? loadMapObjects(hunt.district_id, melden) : Promise.resolve(true),
+    ]).then(([sitze, objekte]) => {
+      if ((!sitze || !objekte) && offenVorher.current?.id === jagdId) {
+        offenVorher.current = { id: jagdId, offen: false, erneut: true }
+      }
+    })
+    // `nowMs` steht hier für die Wiederholung: der Minutentakt lässt den Effekt
+    // erneut laufen, auch wenn „offen" sich nicht ändert.
+  }, [hunt, offenJetzt, nowMs, ladeSitze, loadMapObjects])
 
   // Kontakte für die Einladungsverwaltung — nur laden, wenn geplante Jagd + Jagdleiter.
   useEffect(() => {
@@ -672,24 +780,62 @@ export default function HuntPage() {
       window.dispatchEvent(new CustomEvent('quickhunt:toast', { detail: { message: 'Konnte Chat-Freigabe nicht ändern', type: 'warning' } }))
       return
     }
-    setHunt({ ...hunt, chat_open: next })
+    // Funktional (CP-116, Codex PWA 16): eine parallel bestätigte
+    // Karten-Freigabe überschriebe der alte Kopf sonst wieder mit `false`.
+    setHunt(prev => (prev && prev.id === hunt.id ? { ...prev, chat_open: next } : prev))
     router.refresh()
   }
 
-  // C2: Karten-Freigabe — symmetrisch zu toggleChatOpen. Setzt hunts.map_open;
-  // joined-Mitglieder sehen die Karte erst danach (nur lesen, kein Einzeichnen).
-  async function toggleMapOpen() {
-    if (!hunt || mapOpenBusy) return
-    setMapOpenBusy(true)
-    const next = !hunt.map_open
-    const { error } = await supabase.from('hunts').update({ map_open: next }).eq('id', hunt.id)
-    setMapOpenBusy(false)
-    if (error) {
-      window.dispatchEvent(new CustomEvent('quickhunt:toast', { detail: { message: 'Konnte Karten-Freigabe nicht ändern', type: 'warning' } }))
-      return
+  // C2: Karten-Freigabe. Setzt hunts.map_open; joined-Mitglieder sehen die
+  // Karte erst danach (nur lesen, kein Einzeichnen).
+  // ⛔ **Seit CP-116 (Migration 146) ist `map_open` die Freigabe der Stände** —
+  // ohne sie liefert der Server Schützen bis T−1h weder Sitzordnung noch
+  // eigenen Stand. Darum (E8, Punkt 2): der ZIELWERT statt `!hunt.map_open`,
+  // `.select('map_open')` und genau eine Zeile als Erfolg (S1) — ein stiller
+  // Fehlschlag hieße, der Jagdleiter glaubt freigegeben zu haben, und die
+  // Schützen sehen nichts. Freigeben fragt nach, Zurücknehmen nicht.
+  async function setzeKartenFreigabe(ziel: boolean) {
+    if (!hunt || kartenFreigabeLaeuft.current) return
+    kartenFreigabeLaeuft.current = true
+    const jagdId = hunt.id
+    // `finally` gibt Riegel und Anzeige auf JEDEM Weg frei, auch bei einer
+    // Ausnahme im `await` (Codex PWA 2).
+    try {
+      if (ziel) {
+        const ok = await confirmSheet({
+          title: 'Stände freigeben?',
+          description: freigabeRueckfrage(hunt.schuetzen_sicht, hunt.scheduled_for, nowMs),
+          confirmLabel: 'Freigeben',
+        })
+        // Abgebaut oder andere Jagd, während die Rückfrage stand: nichts
+        // schreiben (Codex PWA 14, CN-264).
+        if (!ok || seiteJagd.current !== jagdId) return
+      }
+      setMapOpenBusy(true)
+      // Das Schreiben ist selbst ein Kopf-Ereignis: eine vorher gestartete,
+      // noch fliegende `loadHunt`-Lesung überschreibt `map_open` danach nicht.
+      const meinLauf = ++kopfLauf.current
+      const { data, error } = await supabase.from('hunts').update({ map_open: ziel }).eq('id', jagdId).select('map_open')
+      if (seiteJagd.current !== jagdId) return
+      if (error || !Array.isArray(data) || data.length !== 1 || data[0].map_open !== ziel) {
+        if (error) console.error('[hunt] Karten-Freigabe fehlgeschlagen:', error)
+        showToast(error ? 'Konnte Karten-Freigabe nicht ändern' : 'Karten-Freigabe nicht gespeichert — fehlt dir das Recht?', 'warning')
+        return
+      }
+      // Startete inzwischen eine neuere Kopflesung (etwa nach einem
+      // Portal-Schreiben), ist die eigene Antwort nicht mehr sicher die neueste
+      // — und jene vielleicht vor dem Commit gelesen. Dann den Kopf noch einmal
+      // lesen statt ihn zu überschreiben (Codex PWA 13).
+      if (kopfLauf.current !== meinLauf) {
+        void loadHunt()
+      } else {
+        setHunt(prev => (prev && prev.id === jagdId ? { ...prev, map_open: data[0].map_open } : prev))
+      }
+      router.refresh()
+    } finally {
+      kartenFreigabeLaeuft.current = false
+      setMapOpenBusy(false)
     }
-    setHunt({ ...hunt, map_open: next })
-    router.refresh()
   }
 
   if (loading) return <div className="min-h-dvh flex items-center justify-center" style={{ background: 'var(--bg)' }}><p style={{ color: 'var(--text-3)' }}>Lädt...</p></div>
@@ -762,7 +908,11 @@ export default function HuntPage() {
     // C2: Karte ist vor Go-Live für den Ersteller immer sichtbar (Planungsarbeit —
     // Treiben/Stände einzeichnen), für andere joined erst nach Freigabe (map_open).
     // Live (status='active') landet nie in diesem Branch → kein Live-Zweig nötig (L3).
-    const mapVisible = isCreator || hunt.map_open
+    // CP-116 (E8, Punkt 1): und ab T−1h — dann liefert der Server die Stände auch
+    // ohne Freigabe. Gerechnet mit der Gerätezeit plus 60 s Puffer (hingenommen,
+    // wie bei `chatWritable`); den Treiben-Zweig kennt die PWA nicht (§6).
+    const staendeAutomatischOffen = staendeAbErreicht(hunt.scheduled_for, nowMs)
+    const mapVisible = isCreator || staendeOffen(hunt.map_open, hunt.scheduled_for, nowMs)
     const scheduledTabs: Array<'plan' | 'karte' | 'chat'> = mapVisible
       ? ['plan', 'karte', 'chat']
       : ['plan', 'chat']
@@ -916,14 +1066,22 @@ export default function HuntPage() {
               {isCreator && (
                 <div className="space-y-2">
                   <div className="text-sm font-semibold" style={{ color: 'var(--text-2)' }}>Vor dem Start freigeben</div>
-                  <FreigabeToggle
-                    noun="Karte"
-                    hint="Zugesagte sehen die geplanten Stände & Treiben (nur ansehen)."
-                    open={hunt.map_open}
-                    busy={mapOpenBusy}
-                    onToggle={toggleMapOpen}
-                    Icon={MapTrifold}
-                  />
+                  {/* CP-116 (E8, Punkt 4): ab T−1h öffnet der Server Karte und
+                      Stände von selbst — der Schalter täte nichts mehr. */}
+                  {!staendeAutomatischOffen && (
+                    <FreigabeToggle
+                      noun="Karte"
+                      hint={
+                        hunt.map_open
+                          ? 'Zugesagte sehen die geplanten Stände & Treiben (nur ansehen).'
+                          : `Zugesagte sehen die geplanten Stände & Treiben (nur ansehen). ${freigabeHinweis(hunt.scheduled_for, nowMs)}`
+                      }
+                      open={hunt.map_open}
+                      busy={mapOpenBusy}
+                      onToggle={() => void setzeKartenFreigabe(!hunt.map_open)}
+                      Icon={MapTrifold}
+                    />
+                  )}
                   <FreigabeToggle
                     noun="Chat"
                     hint="Zugesagte können schon vor dem Start schreiben."
