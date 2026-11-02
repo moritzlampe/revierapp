@@ -600,13 +600,19 @@ export function rolle(wert: string | null): string {
   return ROLLE_LABEL[wert as Rolle] ?? 'Unbekannt'
 }
 
-/** `participant_tag` — zwei Werte, additiv zur Rolle. */
-export const TAGS = ['gruppenleiter', 'hundefuehrer'] as const
+/**
+ * `participant_tag` — drei Werte, additiv zur Rolle, in Enum-Reihenfolge.
+ * `schweisshundfuehrer` kam mit 148 (Jagdrollen Block A, E-A1); seitdem heisst
+ * `hundefuehrer` im Text Stöberhundführer, der Wert selbst bleibt, weil alte
+ * Builds ihn lesen.
+ */
+export const TAGS = ['gruppenleiter', 'hundefuehrer', 'schweisshundfuehrer'] as const
 export type Tag = (typeof TAGS)[number]
 
 const TAG_LABEL: Record<Tag, string> = {
   gruppenleiter: 'Gruppenleiter',
-  hundefuehrer: 'Hundeführer',
+  hundefuehrer: 'Stöberhundführer',
+  schweisshundfuehrer: 'Schweißhundführer',
 }
 
 export function tag(wert: string): string {

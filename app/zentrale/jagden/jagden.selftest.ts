@@ -42,6 +42,7 @@ import {
   sortiere,
   sortiereTeilnehmer,
   tag,
+  TAGS,
   teilnahme,
   teilnehmerName,
   termin,
@@ -425,7 +426,10 @@ assert.equal(rolle('schuetze'), 'Schütze')
 assert.equal(rolle('treiber'), 'Treiber')
 assert.equal(rolle(null), 'Unbekannt')
 
-assert.equal(tag('hundefuehrer'), 'Hundeführer')
+assert.equal(tag('hundefuehrer'), 'Stöberhundführer')
+assert.equal(tag('schweisshundfuehrer'), 'Schweißhundführer')
+// 148: die Schalter im Teilnehmer-Block kommen aus TAGS, in Enum-Reihenfolge.
+assert.deepEqual([...TAGS], ['gruppenleiter', 'hundefuehrer', 'schweisshundfuehrer'])
 // Ein unbekannter Tag gibt sich selbst zurueck statt "Unbekannt": die Spalte
 // ist ein Enum-Array, ein neuer Wert waere eine Migration und soll dann lesbar
 // durchkommen, nicht als Fehler aussehen.

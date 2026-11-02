@@ -2042,7 +2042,7 @@ export type Database = {
         | "sonstiges"
       participant_role: "jagdleiter" | "schuetze" | "treiber"
       participant_status: "invited" | "joined" | "left"
-      participant_tag: "gruppenleiter" | "hundefuehrer"
+      participant_tag: "gruppenleiter" | "hundefuehrer" | "schweisshundfuehrer"
       rsvp_status: "offen" | "zugesagt" | "abgesagt"
       tracking_priority: "niedrig" | "mittel" | "hoch" | "sofort"
       tracking_status:
@@ -2286,7 +2286,7 @@ export const Constants = {
       ],
       participant_role: ["jagdleiter", "schuetze", "treiber"],
       participant_status: ["invited", "joined", "left"],
-      participant_tag: ["gruppenleiter", "hundefuehrer"],
+      participant_tag: ["gruppenleiter", "hundefuehrer", "schweisshundfuehrer"],
       rsvp_status: ["offen", "zugesagt", "abgesagt"],
       tracking_priority: ["niedrig", "mittel", "hoch", "sofort"],
       tracking_status: [

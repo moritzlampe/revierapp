@@ -72,7 +72,10 @@ export type Kategorie = (typeof KATEGORIEN)[number]['wert']
  */
 export const TAGS = [
   { wert: 'gruppenleiter', label: 'Gruppenleiter' },
-  { wert: 'hundefuehrer', label: 'Hundeführer' },
+  { wert: 'hundefuehrer', label: 'Stöberhundführer' },
+  // 148: ohne diesen Eintrag würfe `normiert()` den Wert beim Speichern eines
+  // Kontakts still weg (Bauplan Jagdrollen Block A, E-A7).
+  { wert: 'schweisshundfuehrer', label: 'Schweißhundführer' },
 ] as const satisfies readonly { wert: string; label: string }[]
 
 export type Tag = (typeof TAGS)[number]['wert']

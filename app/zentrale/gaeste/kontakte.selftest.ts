@@ -502,7 +502,11 @@ assert.deepEqual(
   ['schuetze', 'jaegerei', 'treiber', 'schweisshundfuehrer'],
   'kontakt_kategorie aus 094',
 )
-assert.deepEqual(TAGS.map((x) => x.wert), ['gruppenleiter', 'hundefuehrer'], 'participant_tag')
+assert.deepEqual(
+  TAGS.map((x) => x.wert),
+  ['gruppenleiter', 'hundefuehrer', 'schweisshundfuehrer'],
+  'participant_tag aus 148',
+)
 
 // normKategorien: Anzeigeordnung, egal wie geklickt wurde.
 assert.deepEqual(normiert2K(['treiber', 'schuetze']), ['schuetze', 'treiber'])
@@ -515,6 +519,11 @@ assert.deepEqual(normiert2K(['schuetze', 'buchhalter']), ['schuetze'])
 assert.deepEqual(normiert2K(null), [])
 assert.deepEqual(normiert2K(undefined), [])
 assert.deepEqual(normiert2T(['hundefuehrer', 'gruppenleiter']), ['gruppenleiter', 'hundefuehrer'])
+// 148: der neue Wert ueberlebt das Speichern (vorher fiel er hier still weg).
+assert.deepEqual(
+  normiert2T(['schweisshundfuehrer', 'gruppenleiter']),
+  ['gruppenleiter', 'schweisshundfuehrer'],
+)
 
 // mehrfachText: Beschriftungen in Anzeigeordnung, leer heisst null (der
 // Inspektor zeigt dann „+ hinzufügen" statt einer leeren Zeile).
