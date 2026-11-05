@@ -72,7 +72,8 @@ export type Kategorie = (typeof KATEGORIEN)[number]['wert']
  */
 export const TAGS = [
   { wert: 'gruppenleiter', label: 'Gruppenleiter' },
-  { wert: 'hundefuehrer', label: 'Stöberhundführer' },
+  // CN-455: ohne Rolle heisst der Hunde-Tag Hundeführer (Moritz, bestätigt 05.11.2026).
+  { wert: 'hundefuehrer', label: 'Hundeführer' },
   // 148: ohne diesen Eintrag würfe `normiert()` den Wert beim Speichern eines
   // Kontakts still weg (Bauplan Jagdrollen Block A, E-A7).
   { wert: 'schweisshundfuehrer', label: 'Schweißhundführer' },

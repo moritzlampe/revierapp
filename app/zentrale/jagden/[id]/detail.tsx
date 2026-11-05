@@ -40,6 +40,7 @@ import {
   kandidaten,
   sichtbareKandidaten,
   tag,
+  tagListe,
   teilnahme,
   teilnehmerName,
   vorbereitbar,
@@ -922,6 +923,10 @@ function Zeile({
     void fuehreAus(() => aufAendern(t.id, { tags: neu }))
   }
 
+  // Die Rolle, die die Auswahl ZEIGT — der Hunde-Tag heisst danach (CN-455,
+  // Codex R2 S9: ohne Rolle zeigte die Auswahl „Schütze", der Tag „Hundeführer").
+  const gezeigteRolle = SETZBARE_ROLLEN.includes(t.role as never) ? (t.role as string) : 'schuetze'
+
   return (
     <tr>
       <td>{name}</td>
@@ -929,7 +934,7 @@ function Zeile({
       <td>
         {aenderbar ? (
           <select
-            value={SETZBARE_ROLLEN.includes(t.role as never) ? (t.role as string) : 'schuetze'}
+            value={gezeigteRolle}
             disabled={blockiert}
             aria-label={`Rolle von ${name}`}
             onChange={(e) => void fuehreAus(() => aufAendern(t.id, { role: e.target.value }))}
@@ -956,12 +961,12 @@ function Zeile({
                   disabled={blockiert}
                   onChange={() => tagsUmschalten(wert)}
                 />
-                {tag(wert)}
+                {tag(wert, gezeigteRolle)}
               </label>
             ))}
           </span>
         ) : (
-          (t.tags ?? []).map(tag).join(', ') || '—'
+          tagListe(t.tags, t.role)
         )}
       </td>
 

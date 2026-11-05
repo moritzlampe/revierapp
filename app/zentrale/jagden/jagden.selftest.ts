@@ -42,6 +42,7 @@ import {
   sortiere,
   sortiereTeilnehmer,
   tag,
+  tagListe,
   TAGS,
   teilnahme,
   teilnehmerName,
@@ -426,7 +427,19 @@ assert.equal(rolle('schuetze'), 'Schütze')
 assert.equal(rolle('treiber'), 'Treiber')
 assert.equal(rolle(null), 'Unbekannt')
 
-assert.equal(tag('hundefuehrer'), 'Stöberhundführer')
+// CN-455: der Hunde-Tag heisst je Rolle anders, ohne Rolle Hundeführer.
+assert.equal(tag('hundefuehrer'), 'Hundeführer')
+assert.equal(tag('hundefuehrer', 'schuetze'), 'Standschnaller')
+assert.equal(tag('hundefuehrer', 'treiber'), 'Hundeführer')
+assert.equal(tag('hundefuehrer', 'jagdleiter'), 'Hundeführer')
+assert.equal(tag('schweisshundfuehrer', 'schuetze'), 'Schweißhundführer')
+assert.equal(tag('gruppenleiter', 'schuetze'), 'Gruppenleiter')
+// CN-455: Jagdleiter ist einfach Jagdleiter — keine Merkmale in der Lesezelle.
+assert.equal(tagListe(['hundefuehrer', 'gruppenleiter'], 'jagdleiter'), '—')
+assert.equal(tagListe(['hundefuehrer', 'schweisshundfuehrer'], 'schuetze'), 'Standschnaller, Schweißhundführer')
+assert.equal(tagListe(['hundefuehrer'], 'treiber'), 'Hundeführer')
+assert.equal(tagListe([], 'schuetze'), '—')
+assert.equal(tagListe(null, 'treiber'), '—')
 assert.equal(tag('schweisshundfuehrer'), 'Schweißhundführer')
 // 148: die Schalter im Teilnehmer-Block kommen aus TAGS, in Enum-Reihenfolge.
 assert.deepEqual([...TAGS], ['gruppenleiter', 'hundefuehrer', 'schweisshundfuehrer'])

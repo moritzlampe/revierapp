@@ -602,21 +602,38 @@ export function rolle(wert: string | null): string {
 
 /**
  * `participant_tag` — drei Werte, additiv zur Rolle, in Enum-Reihenfolge.
- * `schweisshundfuehrer` kam mit 148 (Jagdrollen Block A, E-A1); seitdem heisst
- * `hundefuehrer` im Text Stöberhundführer, der Wert selbst bleibt, weil alte
- * Builds ihn lesen.
+ * `schweisshundfuehrer` kam mit 148 (Jagdrollen Block A, E-A1). Der Wert
+ * `hundefuehrer` bleibt, weil alte Builds ihn lesen.
  */
 export const TAGS = ['gruppenleiter', 'hundefuehrer', 'schweisshundfuehrer'] as const
 export type Tag = (typeof TAGS)[number]
 
 const TAG_LABEL: Record<Tag, string> = {
   gruppenleiter: 'Gruppenleiter',
-  hundefuehrer: 'Stöberhundführer',
+  hundefuehrer: 'Hundeführer',
   schweisshundfuehrer: 'Schweißhundführer',
 }
 
-export function tag(wert: string): string {
+/**
+ * CN-455 (Moritz, 03.11.2026): `hundefuehrer` heisst je Rolle anders — beim
+ * Schützen **Standschnaller**, beim Treiber **Hundeführer**; ohne bekannte
+ * Rolle ebenfalls Hundeführer (Gästeliste, bestätigt 05.11.2026). Dieselben
+ * Wörter wie die App (`N/src/lib/hunt/rolle-im-blatt.ts`, `hundBegriff`).
+ */
+export function tag(wert: string, rolleWert?: string | null): string {
+  if (wert === 'hundefuehrer' && rolleWert === 'schuetze') return 'Standschnaller'
   return TAG_LABEL[wert as Tag] ?? wert
+}
+
+/**
+ * Die Tag-Zelle einer Teilnehmerzeile, die nicht bearbeitet wird. **Der
+ * Jagdleiter ist einfach Jagdleiter** (Moritz, 03.11.2026): keine Merkmale
+ * daneben, wie in der App (`N/src/lib/hunt/einlade-funktion.ts`,
+ * `funktionsMarken`) — er leitet und sieht ohnehin alles (Codex R2, Punkt 3).
+ */
+export function tagListe(tags: readonly string[] | null, rolleWert: string | null): string {
+  if (rolleWert === 'jagdleiter') return '—'
+  return (tags ?? []).map((w) => tag(w, rolleWert)).join(', ') || '—'
 }
 
 /**
