@@ -918,6 +918,42 @@
   font-size: 0.875rem;
 }
 
+/* Suche und Filter der Schützenliste (Paket 2a) — bleiben beim Scrollen der
+   Liste stehen, sie liegen im selben Kasten mit `overflow: auto`. */
+.jagd-verteilen-suche {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--z-bg-elevated);
+  border-bottom: 1px solid var(--z-border);
+}
+.jagd-verteilen-suche select,
+.jagd-verteilen-suche input {
+  font: inherit;
+  font-size: 0.8125rem;
+  width: 100%;
+  padding: 5px 8px;
+  color: var(--z-text-primary);
+  background: var(--z-bg-base);
+  border: 1px solid var(--z-border-strong);
+  border-radius: 6px;
+}
+/* Der Statusabsatz steht immer da (Ansage für Screenreader), leer ohne Rand. */
+.jagd-verteilen-status:empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+/* „offen" hebt sich ab: das sind die, bei denen die Zusage noch fehlt. */
+.jagd-verteilen-antwort.ist-invited {
+  color: var(--z-accent);
+  font-weight: 600;
+}
+
 .jagd-verteilen-schuetze {
   padding: 6px 12px;
   font-size: 0.875rem;

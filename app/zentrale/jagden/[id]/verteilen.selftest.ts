@@ -10,7 +10,11 @@ import assert from 'node:assert/strict'
 import {
   adhocPunkte,
   angebote,
+  antwortText,
   baueMatrix,
+  listeLeerText,
+  namePasst,
+  schuetzenFiltern,
   bild,
   buildHuntSeating,
   entfernenAngebot,
@@ -591,4 +595,60 @@ assert.equal(zuweisbar({ status: 'invited', entfernt_am: null }), true)
   // Jagdweit ein Sitz einer Person, die nicht zur Jagd gehoert (B6): kein Name, kein Entfernen.
   d.sitze.push(assignedSeat('sX', 'u-fremd', 'K4', 'K4'))
   assert.equal(entfernenAngebot(d, JAGDWEIT, 'K4'), null)
+}
+
+// --- Schützenliste: Suche und Filter (Paket 2a) ---
+{
+  // Vergleichsformen: Umlaute ausgeschrieben UND vereinfacht, ß, Akzente, Ł, Trennzeichen.
+  assert.ok(namePasst('Müller', 'mueller'))
+  assert.ok(namePasst('Müller', 'muller'))
+  assert.ok(namePasst('Mueller', 'müller'))
+  assert.ok(namePasst('Weiß', 'weiss'))
+  assert.ok(namePasst('René', 'rene'))
+  assert.ok(namePasst('Łukasz', 'lukasz'))
+  assert.ok(namePasst('Karl-Heinz', 'karlheinz'))
+  assert.ok(namePasst('O’Connor', "o'connor"))
+  assert.ok(namePasst('O’Connor', 'oconnor'))
+  // Die zwei Fälle, an denen eine einzige verlustbehaftete Form scheiterte (Codex-Delta 2a und 2):
+  assert.ok(namePasst('Anna-Eva', 'eva'))
+  assert.ok(namePasst('Anna-Elisabeth', 'annaelisabeth'))
+  assert.ok(namePasst('Udo-Ernst', 'udoernst'))
+  assert.ok(namePasst('Michael', 'micha'))
+  assert.ok(!namePasst('Anna', 'bernd'))
+  // Codex-Delta 3: zerlegter Umlaut, typografischer Bindestrich, gemischte Formen über Bindestrich.
+  assert.ok(namePasst('Mu\u0308ller', 'mueller'))
+  assert.ok(namePasst('Karl\u2011Heinz', 'karlheinz'))
+  const mg = [{ teilnahmeId: 'm', status: 'joined', name: 'Müller-Günther' }]
+  assert.equal(schuetzenFiltern(mg, 'alle', new Set(), 'mueller-gunther').length, 1)
+  assert.equal(schuetzenFiltern(mg, 'alle', new Set(), 'muller-guenther').length, 1)
+  // Ein Suchwort nur aus Trennzeichen filtert nichts weg.
+  assert.deepEqual(schuetzenFiltern([{ teilnahmeId: 'x', status: 'joined', name: 'Anna' }], 'alle', new Set(), ' - '), [{ teilnahmeId: 'x', status: 'joined', name: 'Anna' }])
+
+  // `ohne` ist genau die Menge hinter `ohneStand` — Kopfzahl und Filter laufen nie auseinander.
+  const m = baueMatrix(basis())
+  for (const s of m.spalten) assert.equal(s.ohne.length, s.ohneStand, `ohne = ohneStand in ${s.schluessel}`)
+  assert.deepEqual(m.spalten[0].ohne, ['pG', 'pT'], 'jagdweit ohne Stand: Gast und Theo')
+  assert.equal(m.zeilen[2].status, 'invited', 'Status reist mit der Zeile')
+
+  const jw = new Set(m.spalten[0].ohne)
+  const namen = (zs: { name: string }[]) => zs.map((z) => z.name)
+  assert.deepEqual(namen(schuetzenFiltern(m.zeilen, 'alle', jw, '')), ['Anna', 'Bernd', 'Gast', 'Theo'])
+  assert.deepEqual(namen(schuetzenFiltern(m.zeilen, 'ohne', jw, '')), ['Gast', 'Theo'])
+  assert.deepEqual(namen(schuetzenFiltern(m.zeilen, 'zugesagt', jw, '')), ['Anna', 'Bernd', 'Theo'])
+  assert.deepEqual(namen(schuetzenFiltern(m.zeilen, 'offen', jw, '')), ['Gast'])
+  // Suche: Teilwort, Gross/klein, mehrere Wörter müssen alle passen, Filter UND Suche.
+  assert.deepEqual(namen(schuetzenFiltern(m.zeilen, 'alle', jw, ' an ')), ['Anna'])
+  assert.deepEqual(namen(schuetzenFiltern(m.zeilen, 'alle', jw, 'E')), ['Bernd', 'Theo'])
+  assert.deepEqual(namen(schuetzenFiltern(m.zeilen, 'ohne', jw, 'the')), ['Theo'])
+  assert.deepEqual(namen(schuetzenFiltern(m.zeilen, 'ohne', jw, 'anna')), [])
+  assert.deepEqual(namen(schuetzenFiltern([{ teilnahmeId: 'x', status: 'joined', name: 'Hans Müller' }], 'alle', jw, 'muell hans')), ['Hans Müller'])
+
+  assert.equal(antwortText('joined'), 'zugesagt')
+  assert.equal(antwortText('invited'), 'offen')
+  assert.equal(antwortText('declined'), null)
+
+  // Leertext nennt den Suchtext, damit er nicht wie „niemand da" liest.
+  assert.equal(listeLeerText('alle', ' xy '), 'Niemand passt zu „xy".')
+  assert.equal(listeLeerText('ohne', 'xy'), 'Niemand passt zu „xy" unter „Ohne Stand".')
+  assert.equal(listeLeerText('ohne', ''), 'Alle haben einen Stand.')
 }

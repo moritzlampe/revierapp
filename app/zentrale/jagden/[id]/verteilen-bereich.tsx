@@ -15,6 +15,12 @@ import {
   adhocPunkte,
   angebotAus,
   angebote,
+  antwortText,
+  LISTEN_FILTER,
+  listeLeerText,
+  passtFilter,
+  schuetzenFiltern,
+  type ListenFilter,
   baueMatrix,
   bild,
   entfernenAngebot,
@@ -226,11 +232,18 @@ export default function VerteilenBereich(props: VerteilenProps) {
     fokusZiel.current = null
   })
 
-  // Escape hebt die Standwahl auf, ohne Write (E13).
+  // Escape hebt die Standwahl auf, ohne Write (E13) — außer jemand hat es
+  // schon behandelt: Escape im Suchfeld der Schützenliste leert nur die Suche.
+  // `stopPropagation()` dort genügt NICHT: Next hängt React an `document`,
+  // also an denselben Knoten wie dieser Listener (Klicktest 17.11.2026).
+  // Reacts Listener ist seit der Hydrierung registriert und läuft deshalb vor
+  // diesem; `defaultPrevented` ist hier also schon gesetzt.
   useEffect(() => {
     if (!standwahl) return
     const taste = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setStandwahl(null)
+      // `repeat`: ein gehaltenes Escape, das zuerst die Suche leerte, soll
+      // nicht im nächsten Wiederholungs-Tastendruck die Standwahl nehmen (Codex 2a/B F1).
+      if (e.key === 'Escape' && !e.defaultPrevented && !e.repeat) setStandwahl(null)
     }
     document.addEventListener('keydown', taste)
     return () => document.removeEventListener('keydown', taste)
@@ -663,6 +676,7 @@ export default function VerteilenBereich(props: VerteilenProps) {
         <Schuetzenliste
           zeilen={matrix.zeilen}
           spalte={kartenSpalte}
+          ohne={spalteVon(kartenSpalte)?.ohne ?? []}
           standwahl={standwahl}
           standwahlName={standwahl ? standName(standwahl) : ''}
           standwahlInhaber={standwahl ? (belegung[standwahl] ?? null) : null}
@@ -717,10 +731,16 @@ export default function VerteilenBereich(props: VerteilenProps) {
  * Ziehen. Mit Standwahl: dieselben Namen als Knöpfe — „wer kommt auf diesen
  * Stand?". Eine Liste für beide Wege, keine zweite über der Karte (Fable F14).
  * Reihenfolge wie die Matrix; den Zähler „ohne Stand" trägt deren Spaltenkopf.
+ *
+ * **Suche und Filter (Paket 2a, 17.11.2026):** reine Ansicht über derselben
+ * Liste; ein ausgeblendeter Name bleibt in der Matrix. Beides bleibt bei einer
+ * Standwahl stehen — wer „Ohne Stand" sucht, will genau aus dieser Menge
+ * wählen. Der Zustand lebt hier und überlebt `router.refresh()`.
  */
 function Schuetzenliste({
   zeilen,
   spalte,
+  ohne,
   standwahl,
   standwahlName,
   standwahlInhaber,
@@ -736,6 +756,8 @@ function Schuetzenliste({
 }: {
   zeilen: Zeile[]
   spalte: string
+  /** `Spalte.ohne` der Kartenspalte — dieselbe Menge wie deren Kopfzahl. */
+  ohne: string[]
   standwahl: string | null
   standwahlName: string
   standwahlInhaber: string | null
@@ -750,8 +772,45 @@ function Schuetzenliste({
   aufEntfernen: (teilnahmeId: string) => void
   aufAufheben: () => void
 }) {
+  const [suche, setSuche] = useState('')
+  const [filter, setFilter] = useState<ListenFilter>('alle')
+  const ohneMenge = useMemo(() => new Set(ohne), [ohne])
+  const sichtbar = schuetzenFiltern(zeilen, filter, ohneMenge, suche)
+
   return (
     <div className="jagd-verteilen-schuetzen" aria-label="Schützen">
+      <div className="jagd-verteilen-suche">
+        <select
+          value={filter}
+          aria-label="Schützen filtern"
+          autoComplete="off"
+          onChange={(e) => setFilter(e.target.value as ListenFilter)}
+        >
+          {LISTEN_FILTER.map((f) => (
+            <option key={f.wert} value={f.wert}>
+              {f.label} ({zeilen.filter((z) => passtFilter(z, f.wert, ohneMenge)).length})
+            </option>
+          ))}
+        </select>
+        <input
+          type="search"
+          value={suche}
+          placeholder="Name suchen …"
+          aria-label="Schützen nach Namen suchen"
+          autoComplete="off"
+          onChange={(e) => setSuche(e.target.value)}
+          onKeyDown={(e) => {
+            // Escape leert das Feld — von Hand, Firefox tut es bei `search`
+            // nicht. `preventDefault` sagt dem Standwahl-Listener am
+            // `document`, dass dieses Escape erledigt ist (Schlusslesung F6;
+            // `stopPropagation` allein trug nicht, s. dort).
+            if (e.key === 'Escape' && suche) {
+              e.preventDefault()
+              setSuche('')
+            }
+          }}
+        />
+      </div>
       {standwahl ? (
         <div className="jagd-verteilen-schuetzen-kopf">
           <strong>Wer kommt auf {standwahlName}?</strong>
@@ -771,8 +830,13 @@ function Schuetzenliste({
       ) : (
         <p className="jagd-verteilen-schuetzen-kopf zentrale-sub">Auf einen Stand ziehen</p>
       )}
+      {/* `role="status"` steht immer da, damit Screenreader das Erscheinen der Meldung ansagen (Codex 2a/B F2). */}
+      <p role="status" className={`jagd-verteilen-status${sichtbar.length === 0 ? ' jagd-verteilen-schuetzen-kopf zentrale-sub' : ''}`}>
+        {sichtbar.length === 0 ? listeLeerText(filter, suche) : null}
+      </p>
       <ul role="list">
-        {zeilen.map((z) => {
+        {sichtbar.map((z) => {
+          const antwort = antwortText(z.status)
           const ohneKonto = spalte === JAGDWEIT && z.userId === null
           const ziehbar = !gesperrt && !ohneKonto
           // Mit Standwahl ist dieselbe Zeile zusätzlich ein Knopf — und bleibt
@@ -806,7 +870,8 @@ function Schuetzenliste({
               >
                 {z.name}{' '}
                 <span className="jagd-verteilen-rolle">
-                  · {grund ?? (ohneKonto ? 'nur je Treiben' : <Inhalt zelle={z.zellen[spalte]} />)}
+                  {antwort && <span className={`jagd-verteilen-antwort ist-${z.status}`}>· {antwort} </span>}·{' '}
+                  {grund ?? (ohneKonto ? 'nur je Treiben' : <Inhalt zelle={z.zellen[spalte]} />)}
                 </span>
               </div>
             </li>

@@ -367,6 +367,14 @@ export interface Spalte {
   schreibbar: boolean
   /** Zuweisbare ohne Stand in dieser Spalte — nach dem Resolver, also wie die App. */
   ohneStand: number
+  /**
+   * Dieselben als Teilnahme-IDs — der Filter „Ohne Stand" der Schützenliste
+   * (Paket 2a) nimmt GENAU diese Menge, damit Kopfzahl und Filter nie
+   * auseinanderlaufen (Schlusslesung Vermerk-Bauplan F5). Preis, benannt:
+   * jagdweit stehen Gäste ohne Konto immer darin (sie sind dort nicht
+   * einteilbar), und im Treiben fehlt, wer einen fremd belegten Stand erbt.
+   */
+  ohne: string[]
   /** Gültige Stände dieser Spalte, die nach der effektiven Belegung niemandem gehören (E4). */
   frei: number
 }
@@ -404,6 +412,8 @@ export interface Zeile {
   userId: string | null
   name: string
   rolle: string | null
+  /** `joined` oder `invited` (nur Zuweisbare stehen in `zeilen`) — für die Antwort am Namen (Paket 2a). */
+  status: string | null
   zellen: Record<string, Zelle>
 }
 
@@ -477,7 +487,7 @@ export function baueMatrix(daten: VerteilenDaten): Matrix {
   const zeileVon = (t: TeilnehmerRoh): Zeile => {
     const zellen: Record<string, Zelle> = { [JAGDWEIT]: zelleJagdweit(t) }
     for (const d of treiben) zellen[d.id] = zelleTreiben(t, d)
-    return { teilnahmeId: t.id, userId: t.user_id, name: nameVon(daten, t.id), rolle: t.role, zellen }
+    return { teilnahmeId: t.id, userId: t.user_id, name: nameVon(daten, t.id), rolle: t.role, status: t.status, zellen }
   }
 
   const sortiert = (liste: Zeile[]) =>
@@ -500,14 +510,16 @@ export function baueMatrix(daten: VerteilenDaten): Matrix {
 
   const spalte = (d: HuntDrive | null): Spalte => {
     const belegt = standSeating(d, seating)
+    const ohne = zeilen
+      .filter((z) => (d ? effectiveStand(z.teilnahmeId, d, seating) === null : !seating.has(z.teilnahmeId)))
+      .map((z) => z.teilnahmeId)
     return {
       schluessel: d ? d.id : JAGDWEIT,
       titel: d ? d.name : 'Jagdweit',
       treiben: d,
       schreibbar: laufendes === null && (d === null || d.status === 'pending'),
-      ohneStand: zeilen.filter((z) =>
-        d ? effectiveStand(z.teilnahmeId, d, seating) === null : !seating.has(z.teilnahmeId),
-      ).length,
+      ohneStand: ohne.length,
+      ohne,
       frei: gueltigeStaende(d).filter((id) => !belegt.has(id)).length,
     }
   }
@@ -913,3 +925,83 @@ export function naechsterStand(
  * die Seite selbst.
  */
 export const ZUG_TYP = 'application/x-quickhunt-schuetze'
+
+// --- Schützenliste: Suche und Filter (Paket 2a, 17.11.2026) ---
+
+/** Wonach die Schützenliste filtert. Reine Ansicht — kein Write hängt daran. */
+export type ListenFilter = 'alle' | 'ohne' | 'zugesagt' | 'offen'
+
+export const LISTEN_FILTER: { wert: ListenFilter; label: string }[] = [
+  { wert: 'alle', label: 'Alle' },
+  { wert: 'ohne', label: 'Ohne Stand' },
+  { wert: 'zugesagt', label: 'Zugesagt' },
+  { wert: 'offen', label: 'Offen' },
+]
+
+/** Bindestriche (auch typografische U+2010–2015), Apostrophe, Punkt (Codex-Delta 3, F3). */
+const TRENNER = /[-\u2010-\u2015'\u2018\u2019`.]/g
+
+/**
+ * Zwei Vergleichsformen eines Namens — ausgeschrieben (ä → ae, „mueller"
+ * findet Müller) und vereinfacht (ä → a, „muller" findet Müller). Beide: klein,
+ * ohne Akzente (René, Łukasz — `NFD`), ß → ss, ohne Bindestrich, Apostroph und
+ * Punkt („karlheinz" findet Karl-Heinz, „oconnor" O'Connor).
+ *
+ * **Bewusst KEIN „ae → a"** wie in `normalisiere()` (`suche.ts`, Kopie des
+ * nativen Moduls, bleibt unangetastet): die Abbildung verliert Information, und
+ * zusammen mit dem Wegfall der Trennzeichen brach jede Reihenfolge einen
+ * anderen Namen — „Anna-Eva" (Codex-Delta 2a) oder „Anna-Elisabeth"
+ * (Codex-Delta 2). Zwei verlustfreie Formen statt einer verlustbehafteten.
+ * Kein Import: läuft unter blankem Node.
+ */
+export function namensFormen(text: string): [ausgeschrieben: string, vereinfacht: string] {
+  // NFC zuerst: ein zerlegtes „u + ¨" wird zu „ü", sonst griffe die Umlaut-Ersetzung nicht (Codex-Delta 3, F2).
+  const klein = text.normalize('NFC').toLowerCase().replace(/ł/g, 'l').replace(/ß/g, 'ss')
+  const ohneAkzent = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(TRENNER, '')
+  return [ohneAkzent(klein.replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')), ohneAkzent(klein)]
+}
+
+/** Kommt das Suchwort im Namen vor — in mindestens einer der beiden Formen? */
+export function namePasst(name: string, wort: string): boolean {
+  const [nA, nV] = namensFormen(name)
+  const [wA, wV] = namensFormen(wort)
+  return nA.includes(wA) || nV.includes(wV)
+}
+
+/** Passt eine Zeile zum Filter? `ohne` = `Spalte.ohne` der Kartenspalte. */
+export function passtFilter(z: Pick<Zeile, 'teilnahmeId' | 'status'>, filter: ListenFilter, ohne: ReadonlySet<string>): boolean {
+  if (filter === 'ohne') return ohne.has(z.teilnahmeId)
+  if (filter === 'zugesagt') return z.status === 'joined'
+  if (filter === 'offen') return z.status === 'invited'
+  return true
+}
+
+/** Filter UND Suche; jedes Suchwort muss im Namen vorkommen. Reihenfolge bleibt die der Matrix. */
+export function schuetzenFiltern<Z extends Pick<Zeile, 'teilnahmeId' | 'status' | 'name'>>(
+  zeilen: readonly Z[],
+  filter: ListenFilter,
+  ohne: ReadonlySet<string>,
+  suche: string,
+): Z[] {
+  // Auch an Bindestrichen teilen: jeder Teil darf seine eigene Umlautform haben
+  // („mueller-gunther" findet Müller-Günther, Codex-Delta 3, F1).
+  const woerter = suche.split(/[\s\-\u2010-\u2015]+/).filter((w) => namensFormen(w)[1] !== '')
+  return zeilen.filter((z) => passtFilter(z, filter, ohne) && woerter.every((w) => namePasst(z.name, w)))
+}
+
+/** Die Antwort am Namen: „zugesagt" oder „offen". */
+export function antwortText(status: string | null): string | null {
+  if (status === 'joined') return 'zugesagt'
+  if (status === 'invited') return 'offen'
+  return null
+}
+
+/** Was bei leerem Ergebnis dasteht — ein vergessener Suchtext soll sich nicht wie „niemand da" lesen. */
+export function listeLeerText(filter: ListenFilter, suche: string): string {
+  const f = LISTEN_FILTER.find((x) => x.wert === filter)?.label ?? 'Alle'
+  if (suche.trim()) return `Niemand passt zu „${suche.trim()}"${filter === 'alle' ? '' : ` unter „${f}"`}.`
+  if (filter === 'ohne') return 'Alle haben einen Stand.'
+  if (filter === 'zugesagt') return 'Noch niemand hat zugesagt.'
+  if (filter === 'offen') return 'Niemand ist mehr offen.'
+  return 'Noch niemand eingeladen.'
+}
