@@ -270,9 +270,17 @@ function Ausschnitt({
   grenze,
   punkte,
   randRechts,
-}: KarteProps & { randRechts: number }) {
+  flaeche,
+}: KarteProps & { randRechts: number; flaeche?: readonly { lat: number; lng: number }[] | null }) {
   const map = useMap()
   const hatGefittet = useRef(false)
+  /**
+   * Die Treiben-Fläche BEIM MONTIEREN (P2c, Codex A9): ohne sie öffnete ein
+   * Revier ohne Grenze und Stände in der Deutschland-Ansicht, die gespeicherte
+   * Fläche außerhalb. Eingefroren, damit Zeichnen nie einen Fit auslöst — der
+   * dritte gesetzte Punkt spränge sonst auf Höchstzoom.
+   */
+  const startFlaeche = useRef(flaeche)
 
   useEffect(() => {
     const beobachter = new ResizeObserver(() => map.invalidateSize({ animate: false }))
@@ -305,6 +313,7 @@ function Ausschnitt({
     const ecken: [number, number][] = [
       ...(grenze?.flat() ?? []),
       ...punkte.map((p) => [p.lat, p.lng] as [number, number]),
+      ...(startFlaeche.current ?? []).map((p) => [p.lat, p.lng] as [number, number]),
     ]
     // Noch nichts da heißt noch nicht gefittet: der erste Lauf kann vor den
     // Daten kommen, und dann muss der nächste ihn nachholen.
@@ -1388,6 +1397,7 @@ export default function RevierkarteMap({
   belegung,
   ablage,
   randRechts = 0,
+  flaeche,
 }: KarteProps & {
   /**
    * Wartungssicht: nur damit trägt die Karte Zustandsringe.
@@ -1444,6 +1454,12 @@ export default function RevierkarteMap({
   ablage?: AblageProps
   /** Breite, die die Objektspalte rechts überdeckt — Zuschlag für `fitBounds`. */
   randRechts?: number
+  /**
+   * Treiben-Fläche als Hintergrund (P2c) — nur Anzeige, ohne Klick. Beim
+   * Zeichnen zeigt der Zeichenlayer den Entwurf, dann bleibt sie weg (wie die
+   * Grenze: zwei Wahrheiten in einem Bild).
+   */
+  flaeche?: readonly { lat: number; lng: number }[] | null
 }) {
   const gewaehlt = punkte.find((p) => p.id === auswahlId)
 
@@ -1500,6 +1516,16 @@ export default function RevierkarteMap({
           // denselben `key`-Neuaufbau wie bei den Markern, für nichts.
           interactive={false}
           pathOptions={{ color: ACCENT, weight: 2.5, fillColor: ACCENT, fillOpacity: 0.07 }}
+        />
+      )}
+
+      {!zeichnen && flaeche && flaeche.length >= 3 && (
+        <Polygon
+          positions={flaeche.map((p) => [p.lat, p.lng] as L.LatLngTuple)}
+          interactive={false}
+          // Ruhiges Grau wie die App im laufenden Treiben (`active-drive-fill`,
+          // Slate), gestrichelt, damit es sich von der Reviergrenze abhebt.
+          pathOptions={{ color: NEUTRAL, weight: 1.5, dashArray: '5 4', fillColor: NEUTRAL, fillOpacity: 0.12 }}
         />
       )}
 
@@ -1565,7 +1591,7 @@ export default function RevierkarteMap({
       {/* Bewusst nur die GESPEICHERTE Grenze und die Objekte: bekäme `Ausschnitt`
           den Entwurf, liefe fitBounds bei jedem gesetzten Punkt erneut und die
           Karte würde unter der Hand wegrutschen. */}
-      <Ausschnitt grenze={grenze} punkte={punkte} randRechts={randRechts} />
+      <Ausschnitt grenze={grenze} punkte={punkte} randRechts={randRechts} flaeche={flaeche} />
     </MapContainer>
   )
 }

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { freigabeHinweis, freigabeRueckfrage, staendeAbErreicht } from '@/lib/hunt/staende-freigabe'
+import { freigabeHinweis, freigabeKarteFrei, freigabeRueckfrage, staendeAbErreicht } from '@/lib/hunt/staende-freigabe'
 import { schreibe, SchreibFehler } from '../../schreiben'
 import { VORBEREITBARE_STATUS } from '../jagden'
 
@@ -156,7 +156,7 @@ export default function StaendeFreigabe({
           {offenOhneSchalter
             ? `Zugesagte Schützen sehen ${was} — ab einer Stunde vor Jagdbeginn oder nach dem Start. `
             : daten.mapOpen
-              ? `Stände für Schützen freigegeben: zugesagte Schützen sehen ${was}. `
+              ? `Stände für Schützen freigegeben: zugesagte Schützen sehen ${was}. ${freigabeKarteFrei(daten.schuetzenSicht)} `
               : `Stände für Schützen verborgen — bis zur Freigabe sieht nur die Leitung die Einteilung. ${freigabeHinweis(daten.scheduledFor, jetzt)} `}
           Den Stand eines Treibens nennt der Banner in der App erst beim Start.
         </p>

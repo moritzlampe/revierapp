@@ -16,7 +16,7 @@ import type { StandData } from '@/components/hunt/MapContent'
 import { getAvatarColor } from '@/lib/avatar-color'
 import { useConfirmSheet } from '@/components/ui/ConfirmSheet'
 import { isHuntScheduled } from '@/lib/hunt/status'
-import { freigabeHinweis, freigabeRueckfrage, staendeAbErreicht, staendeOffen } from '@/lib/hunt/staende-freigabe'
+import { freigabeHinweis, freigabeKarteFrei, freigabeRueckfrage, staendeAbErreicht, staendeOffen } from '@/lib/hunt/staende-freigabe'
 import { showToast } from '@/lib/erlegung/toast'
 import { MapTrifold, WarningCircle, ChatCircle, Star, Crosshair, UsersThree, Dog, Stop, CalendarBlank, Plus, Trash, MagnifyingGlass } from '@phosphor-icons/react'
 import { WildIcon } from '@/components/icons/WildIcon'
@@ -1073,7 +1073,7 @@ export default function HuntPage() {
                       noun="Karte"
                       hint={
                         hunt.map_open
-                          ? 'Zugesagte sehen die geplanten Stände & Treiben (nur ansehen).'
+                          ? `Zugesagte sehen die geplanten Stände & Treiben (nur ansehen). ${freigabeKarteFrei(hunt.schuetzen_sicht)}`.trim()
                           : `Zugesagte sehen die geplanten Stände & Treiben (nur ansehen). ${freigabeHinweis(hunt.scheduled_for, nowMs)}`
                       }
                       open={hunt.map_open}

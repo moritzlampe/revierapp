@@ -278,7 +278,7 @@ export default async function JagdDetailPage({
           // Seit P2a mit Schütze und Standnamen wie `fetchHuntDrives` der App
           // (Bauplan Verteilen E9) — der Treiben-Bereich nimmt nur, was er kennt.
           .select(
-            'id, name, sequence, status, hunt_drive_stands ( id, map_object_id, seat_assignment_id, participant_id, map_objects ( name ), hunt_seat_assignments ( seat_name ) )',
+            'id, name, sequence, status, polygon, hunt_drive_stands ( id, map_object_id, seat_assignment_id, participant_id, map_objects ( name ), hunt_seat_assignments ( seat_name ) )',
             { count: 'exact' }
           )
           .eq('hunt_id', id)

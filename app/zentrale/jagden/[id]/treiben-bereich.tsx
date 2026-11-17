@@ -3,7 +3,10 @@
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, useTransition } from 'react'
+import { useBoundaryEditor } from '@/hooks/useBoundaryEditor'
+import { parsePolygonHex, polygonAreaHectares } from '@/lib/geo-utils'
 import { createClient } from '@/lib/supabase/client'
+import { ewktAus, nurEinRing, pruefeGrenze } from '../../grenze'
 import type { Ort } from '../../objekte'
 import type { Punkt } from '../../revierkarte-map'
 import { imRechteck, type Standgruppe } from '../../revier/standgruppen'
@@ -12,6 +15,8 @@ import { sichtbarerName } from '../../namen'
 import { vorbereitbar } from '../jagden'
 import {
   bearbeitbar,
+  flaechePunkte,
+  gleicheFlaeche,
   markierungAus,
   naechsteSequenz,
   standDiff,
@@ -23,8 +28,9 @@ import {
  *
  * Was hier geht: Treiben anlegen, umbenennen, löschen und ihre **Standmenge**
  * auf der Karte festlegen. Was NICHT geht: Schützen auf Stände verteilen
- * (Schnitt 2), ein Treiben starten oder beenden (Konzept §3 — der Jagdtag
- * gehört der App), und das Treiben-Polygon zeichnen.
+ * (Schnitt 2) und ein Treiben starten oder beenden (Konzept §3 — der Jagdtag
+ * gehört der App). Seit P2c (Bauplan Verteilen E8) auch die **Treiben-Fläche**
+ * (`hunt_drives.polygon`): die App zeichnet sie im laufenden Treiben.
  *
  * **Die Karte ist `revierkarte-map` selbst, nicht eine zweite.** Sie hält keinen
  * eigenen Zustand („sie stellt ihn nur dar"), deshalb kostet eine zweite
@@ -110,6 +116,17 @@ export default function TreibenBereich({
   const loeschVersuch = useRef(0)
   const [fehler, setFehler] = useState<string | null>(null)
   const [laeuft, setLaeuft] = useState(false)
+  /**
+   * Was ein Klick in die Karte tut (P2c): einen Stand wählen ODER einen
+   * Eckpunkt der Fläche setzen. Beides zugleich geht nicht, beide wollen den
+   * Klick — `revierkarte-map` schaltet Auswahl und Rechteck ab, solange
+   * `zeichnen` gesetzt ist.
+   */
+  const [art, setArt] = useState<'staende' | 'flaeche'>('staende')
+  /** Entwurf der Fläche — derselbe Zeichner wie an der Reviergrenze (nur benutzt, R1). */
+  const zeichner = useBoundaryEditor()
+  /** Die Fläche, wie sie beim Öffnen gespeichert war — Vergleichsbasis des Entwurfs. */
+  const [flaecheStart, setFlaecheStart] = useState<{ lat: number; lng: number }[]>([])
 
   /**
    * Der Doppelklick-Riegel ist ein **Ref**, kein State (S5). Zwei schnelle Tipps
@@ -226,13 +243,35 @@ export default function TreibenBereich({
    * totem Knopf — dieselbe Begründung wie an `revier-name.tsx`.
    */
   const nameLeer = offen !== null && nameNeu.length === 0
+
+  /**
+   * Die Fläche: Entwurf gegen den Stand BEIM ÖFFNEN — nicht gegen die frischen
+   * Props (Codex A2). Sonst machte der Refresh nach einem gescheiterten
+   * Speichern aus einer inzwischen fremd gesetzten Fläche eine „Änderung", und
+   * der nächste Klick schriebe den unberührten leeren Entwurf als `null` darüber.
+   * Geändert ist also nur, was der Nutzer selbst gezeichnet hat; schreibt er,
+   * gilt wie beim Namen der letzte Schreiber.
+   */
+  const ringe = offen ? parsePolygonHex(offen.polygon) : null
+  const flaecheNeu = offen !== null && !gleicheFlaeche(flaecheStart, zeichner.drawPoints)
+  /**
+   * Eine Fläche mit Loch kann der Zeichner nicht: er lädt nur den ersten Ring
+   * und speicherte die Löcher still weg (Backlog E-R4, `nurEinRing`). Heute
+   * schreibt niemand sonst Flächen — der Riegel kostet eine Zeile.
+   */
+  const flaecheZeichenbar = nurEinRing(ringe)
+
   const speicherbar =
-    !nameLeer && (diff.loeschen.length > 0 || diff.legen.length > 0 || nameGeaendert)
+    !nameLeer && (diff.loeschen.length > 0 || diff.legen.length > 0 || nameGeaendert || flaecheNeu)
 
   function oeffnen(t: Treiben) {
     setOffenId(t.id)
     setMarkiert(markierungAus(t))
     setName(t.name)
+    setArt('staende')
+    const gespeichert = parsePolygonHex(t.polygon)
+    setFlaecheStart(flaechePunkte(gespeichert))
+    zeichner.startEditing(gespeichert)
     setFehler(null)
     setLoeschFrage(null)
     setAbwahlFrage(null)
@@ -254,8 +293,19 @@ export default function TreibenBereich({
     setOffenId(null)
     setMarkiert(new Set())
     setName('')
+    setArt('staende')
+    zeichner.stopEditing()
+    zeichner.reset()
+    setFlaecheStart([])
     setFehler(null)
     setAbwahlFrage(null)
+  }
+
+  /** Zeichen-Klicks unter demselben Riegel wie `umschalten` — ein früher `return`, kein Prop-Wechsel. */
+  function wennFrei<A extends unknown[]>(f: (...a: A) => void) {
+    return (...a: A) => {
+      if (!laeuftRef.current) f(...a)
+    }
   }
 
   function umschalten(standId: string) {
@@ -402,6 +452,16 @@ export default function TreibenBereich({
    */
   function speichern(bestaetigt?: Abwahl) {
     if (!offen || !speicherbar) return
+    // Eine leere Fläche heisst „entfernen"; nur eine gesetzte wird geprüft —
+    // dieselbe Prüfung wie an der Reviergrenze, BEVOR etwas geschrieben ist.
+    const flaeche = zeichner.drawPoints
+    if (flaecheNeu && flaeche.length > 0) {
+      const problem = pruefeGrenze(flaeche, 'Fläche')
+      if (problem) {
+        setFehler(problem)
+        return
+      }
+    }
     void fuehreAus(
       'Das Speichern',
       async () => {
@@ -447,6 +507,28 @@ export default function TreibenBereich({
           await schreibe('Der Name des Treibens', () =>
             client.from('hunt_drives').update({ name: nameNeu }).eq('id', offen.id).select('id'),
           )
+        }
+
+        /**
+         * Die Fläche (P2c). EWKT, weil PostgREST Geometrie als GeoJSON LIEFERT,
+         * aber als EWKT-String NIMMT (`grenze.ts`, AGENTS.md SQL-Regeln).
+         * `.eq('status', 'pending')`: startet die App das Treiben zwischen Öffnen
+         * und Speichern, trifft das UPDATE 0 Zeilen und `schreibe` meldet es —
+         * statt die Fläche eines laufenden Treibens unter den Schützen zu ändern.
+         */
+        if (flaecheNeu) {
+          await schreibe('Die Fläche des Treibens', () =>
+            client
+              .from('hunt_drives')
+              .update({ polygon: flaeche.length > 0 ? ewktAus(flaeche) : null })
+              .eq('id', offen.id)
+              .eq('status', 'pending')
+              .select('id'),
+          )
+          // Ab hier ist der Entwurf der gespeicherte Stand — scheitert danach ein
+          // Stand-Write, bleibt der Editor offen, und ein „Fläche entfernen"
+          // muss gegen DIESEN Stand als Änderung zählen (Schlusslesung F1).
+          setFlaecheStart(flaeche)
         }
 
         /**
@@ -638,6 +720,7 @@ export default function TreibenBereich({
                         Jagdleiter einen Stand, den er nie findet. */}
                     {adhoc > 0 ? ` (${adhoc} aus der App)` : ''}
                   </span>
+                  {t.polygon ? <span className="zentrale-pill">mit Fläche</span> : null}
                   {!aenderbar && <span className="zentrale-pill">{t.status}</span>}
                 </div>
 
@@ -649,7 +732,7 @@ export default function TreibenBereich({
                       onClick={() => (offenId === t.id ? schliessen() : oeffnen(t))}
                       disabled={busy}
                     >
-                      {offenId === t.id ? 'Schließen' : 'Stände wählen'}
+                      {offenId === t.id ? 'Schließen' : 'Stände & Fläche'}
                     </button>
                   ) : (
                     // Ein gelaufenes Treiben ist ein Protokoll des Jagdtags. Der
@@ -764,9 +847,39 @@ export default function TreibenBereich({
                       </p>
                     )}
 
+                    {/* Was die Karte gerade bearbeitet (P2c). */}
+                    <div className="jagd-treiben-knoepfe" role="group" aria-label="Auf der Karte bearbeiten">
+                      <button
+                        type="button"
+                        className={art === 'staende' ? 'zentrale-knopf' : 'zentrale-abbrechen'}
+                        aria-pressed={art === 'staende'}
+                        onClick={() => setArt('staende')}
+                        disabled={busy}
+                      >
+                        Stände
+                      </button>
+                      <button
+                        type="button"
+                        className={art === 'flaeche' ? 'zentrale-knopf' : 'zentrale-abbrechen'}
+                        aria-pressed={art === 'flaeche'}
+                        onClick={() => setArt('flaeche')}
+                        disabled={busy || !flaecheZeichenbar}
+                      >
+                        Fläche
+                      </button>
+                    </div>
+                    {!flaecheZeichenbar && (
+                      <p className="zentrale-hinweis">
+                        Diese Fläche hat mehrere Ringe und ist hier nicht bearbeitbar — sie bleibt, wie sie ist.
+                      </p>
+                    )}
+                    {flaecheStart.length > 0 && zeichner.drawPoints.length === 0 && (
+                      <p className="zentrale-hinweis">Die Fläche wird beim Speichern entfernt — Abbrechen behält sie.</p>
+                    )}
+
                     {/* Gruppen übernehmen (E16). Die Zahl zählt nur, was noch
                         hinzukommt — eine Gruppe, die schon ganz drin ist, hat 0. */}
-                    {gruppen === null ? (
+                    {art === 'flaeche' ? null : gruppen === null ? (
                       <p className="zentrale-hinweis">
                         Die Standgruppen ließen sich nicht laden — Stände einzeln wählen geht weiter.
                       </p>
@@ -823,11 +936,37 @@ export default function TreibenBereich({
                       <div className="zentrale-karte-knoepfe">
                         {/* Die vorhandene Klasse aus `zentrale.css`, nicht die
                             eigene — Begründung im Grabstein in `jagden.css`. */}
-                        <span className="zentrale-karte-zaehler">
-                          {markiert.size} gewählt
-                          {diff.legen.length > 0 ? ` · +${diff.legen.length}` : ''}
-                          {diff.loeschen.length > 0 ? ` · −${diff.loeschen.length}` : ''}
-                        </span>
+                        {art === 'staende' ? (
+                          <span className="zentrale-karte-zaehler">
+                            {markiert.size} gewählt
+                            {diff.legen.length > 0 ? ` · +${diff.legen.length}` : ''}
+                            {diff.loeschen.length > 0 ? ` · −${diff.loeschen.length}` : ''}
+                          </span>
+                        ) : (
+                          <>
+                            {/* „≈" wie an der Reviergrenze: der Client rechnet auf der Kugel. */}
+                            <span className="zentrale-karte-zaehler">
+                              {zeichner.drawPoints.length} Punkte
+                              {zeichner.drawPoints.length >= 3
+                                ? ` · ≈ ${polygonAreaHectares(zeichner.drawPoints).toFixed(1)} ha`
+                                : ''}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={zeichner.undo}
+                              disabled={busy || zeichner.drawPoints.length === 0}
+                            >
+                              Letzten Punkt zurück
+                            </button>
+                            <button
+                              type="button"
+                              onClick={zeichner.clearAll}
+                              disabled={busy || zeichner.drawPoints.length === 0}
+                            >
+                              Fläche entfernen
+                            </button>
+                          </>
+                        )}
                         {/* Im Vollbild sinnlos — die Zwischengröße ist dort keine
                             Größe mehr. Wortgleich zur Revierkarte, damit dieselbe
                             Geste hier nicht anders heißt. */}
@@ -847,6 +986,20 @@ export default function TreibenBereich({
                           markiert={markiert}
                           aufAuswahl={umschalten}
                           aufRechteck={rechteck}
+                          // Mit Loch nicht als Hintergrund: der Entwurf trägt nur
+                          // den Außenring, das Loch erschiene gefüllt (Codex A7).
+                          flaeche={flaecheZeichenbar ? zeichner.drawPoints : null}
+                          zeichnen={
+                            art === 'flaeche'
+                              ? {
+                                  punkte: zeichner.drawPoints,
+                                  aufKlick: wennFrei(zeichner.addPoint),
+                                  aufZug: wennFrei(zeichner.dragVertex),
+                                  aufLoeschen: wennFrei(zeichner.deleteVertex),
+                                  aufEinfuegen: wennFrei(zeichner.insertMidpoint),
+                                }
+                              : undefined
+                          }
                         />
                       </div>
                       {/* **Pflicht, nicht Komfort** (C-45, Fable F4): solange der
@@ -855,8 +1008,9 @@ export default function TreibenBereich({
                           Wie auf der Revierseite im Stände-Modus, und **im Kasten**,
                           damit der Satz auch im Vollbild steht (Codex D6). */}
                       <p className="zentrale-karte-hinweis">
-                        In die Karte tippen nimmt einen Stand ins Treiben auf oder heraus · ein Rechteck
-                        ziehen nimmt alle darin auf · zum Verschieben der Karte am Rad zoomen
+                        {art === 'staende'
+                          ? 'In die Karte tippen nimmt einen Stand ins Treiben auf oder heraus · ein Rechteck ziehen nimmt alle darin auf · zum Verschieben der Karte am Rad zoomen'
+                          : 'In die Karte klicken setzt Eckpunkte · Punkte ziehen verschiebt sie · kleine Punkte dazwischen fügen ein · Klick auf einen Punkt löscht ihn (ab 4)'}
                       </p>
                     </div>
 

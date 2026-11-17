@@ -71,7 +71,9 @@ export function freigabeHinweis(scheduledFor: string | null | undefined, nowMs: 
 
 /**
  * Die Rückfrage vor dem Freigeben — wörtlich wie in der App (E3): der erste
- * Satz folgt der Sichtstufe, der zweite nennt den Zeitpunkt.
+ * Satz folgt der Sichtstufe, der zweite nennt den Zeitpunkt, der dritte
+ * (`freigabeKarte`, seit 161) sagt, was die Freigabe vor dem Jagdtag zusätzlich
+ * öffnet.
  */
 export function freigabeRueckfrage(
   schuetzenSicht: string | null | undefined,
@@ -83,5 +85,32 @@ export function freigabeRueckfrage(
       ? 'Alle zugesagten Schützen sehen dann ihren Stand und die Sitzordnung.'
       : 'Alle zugesagten Schützen sehen dann ihren Stand.'
   const wann = wannAutomatisch(scheduledFor, nowMs)
-  return `${was} ${wann ? `Ohne Freigabe geschieht das automatisch ${wann}.` : 'Ohne Freigabe geschieht das automatisch beim Jagdstart.'}`
+  const karte = freigabeKarte(schuetzenSicht, wann)
+  return `${was} ${wann ? `Ohne Freigabe geschieht das automatisch ${wann}.` : 'Ohne Freigabe geschieht das automatisch beim Jagdstart.'}${karte ? ` ${karte}` : ''}`
+}
+
+/**
+ * Was die Freigabe seit Migration 161 (CN-539, Portal CP-137) VOR dem Jagdtag
+ * zusätzlich öffnet — wortgleich zur App (`freigabeStreifen` in
+ * `quickhunt-native/src/lib/hunt/sicht.ts`). `revier_offen` gibt unter `alles`
+ * Zonen und Einrichtungen frei, unter `umkreis` nur Einrichtungen im Umkreis,
+ * unter `eigener` nichts. **Am Jagdtag kein Satz:** dann ist die Karte ab 0 Uhr
+ * ohnehin offen (Codex 161 C4). `wann` ist `wannAutomatisch(...)`.
+ */
+export function freigabeKarte(schuetzenSicht: string | null | undefined, wann: string | null): string {
+  if (wann?.startsWith('heute')) return ''
+  if (schuetzenSicht === 'alles') return 'Die Revierkarte sehen sie damit sofort und können sie herunterladen.'
+  if (schuetzenSicht === 'umkreis') return 'Die Einrichtungen in ihrem Umkreis sehen sie damit sofort.'
+  return ''
+}
+
+/**
+ * Derselbe Inhalt für den Zustandssatz bei schon erteilter Freigabe (Portal und
+ * PWA-Schalter) — wie die App-Zeile „Stände und Revierkarte für Schützen frei"
+ * nur unter `alles`.
+ */
+export function freigabeKarteFrei(schuetzenSicht: string | null | undefined): string {
+  if (schuetzenSicht === 'alles') return 'Die Revierkarte sehen sie schon vor dem Jagdtag.'
+  if (schuetzenSicht === 'umkreis') return 'Die Einrichtungen in ihrem Umkreis sehen sie schon vor dem Jagdtag.'
+  return ''
 }

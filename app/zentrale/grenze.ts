@@ -84,9 +84,9 @@ function schneidenSich(a1: Punkt, a2: Punkt, b1: Punkt, b2: Punkt): boolean {
  * Nutzer sieht die Zahl. Unsinnige, aber gültige Eingabe zu verhindern ist nicht
  * Aufgabe dieser Prüfung.
  */
-export function pruefeGrenze(punkte: Punkt[]): string | null {
+export function pruefeGrenze(punkte: Punkt[], wort: 'Grenze' | 'Fläche' = 'Grenze'): string | null {
   if (punkte.length < 3) {
-    return `Eine Grenze braucht mindestens 3 Punkte — gesetzt sind ${punkte.length}.`
+    return `Eine ${wort} braucht mindestens 3 Punkte — gesetzt sind ${punkte.length}.`
   }
 
   const n = punkte.length
@@ -98,7 +98,7 @@ export function pruefeGrenze(punkte: Punkt[]): string | null {
       if (j === i + 1) continue
       if (i === 0 && j === n - 1) continue
       if (schneidenSich(a1, a2, punkte[j], punkte[(j + 1) % n])) {
-        return 'Die Grenze überschneidet oder berührt sich selbst. Punkte entwirren, dann speichern.'
+        return `Die ${wort} überschneidet oder berührt sich selbst. Punkte entwirren, dann speichern.`
       }
     }
   }

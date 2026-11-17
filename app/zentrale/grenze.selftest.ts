@@ -22,6 +22,8 @@ assert.equal(
 
 // --- pruefeGrenze: zu wenige Punkte ---
 assert.match(pruefeGrenze([])!, /mindestens 3 Punkte/)
+assert.match(pruefeGrenze([])!, /^Eine Grenze/, 'Vorgabe bleibt die Reviergrenze')
+assert.match(pruefeGrenze([], 'Fläche')!, /^Eine Fläche braucht/, 'Treiben-Flaeche (P2c)')
 assert.match(pruefeGrenze([{ lat: 53.2, lng: 10.3 }])!, /gesetzt sind 1/)
 assert.match(pruefeGrenze([{ lat: 53.2, lng: 10.3 }, { lat: 53.3, lng: 10.3 }])!, /gesetzt sind 2/)
 

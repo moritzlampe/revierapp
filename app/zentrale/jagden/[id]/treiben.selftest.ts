@@ -10,6 +10,8 @@ import assert from 'node:assert/strict'
 import {
   ausZeilen,
   bearbeitbar,
+  flaechePunkte,
+  gleicheFlaeche,
   markierungAus,
   naechsteSequenz,
   standDiff,
@@ -146,6 +148,21 @@ assert.deepEqual(ausDrei[0].stands, [
   { id: 'r2', standId: 'S1', fest: false },
 ])
 assert.deepEqual(ausZeilen([]), [], 'eine Jagd ohne Treiben')
+assert.equal(ausDrei[0].polygon, null, 'ohne Flaeche in der Zeile: null, nicht undefined')
+const geo = { type: 'Polygon', coordinates: [[[10, 53], [10.1, 53], [10, 53.1], [10, 53]]] }
+assert.equal(ausZeilen([{ id: 't2', name: 'X', sequence: 2, status: 'pending', polygon: geo, hunt_drive_stands: [] }])[0].polygon, geo, 'die Flaeche geht roh durch')
+
+// --- flaechePunkte() / gleicheFlaeche(): Entwurf gegen gespeicherte Flaeche (P2c) ---
+const ringe: [number, number][][] = [[[53, 10], [53, 10.1], [53.1, 10], [53, 10]]]
+const pkt = flaechePunkte(ringe)
+assert.deepEqual(pkt, [{ lat: 53, lng: 10 }, { lat: 53, lng: 10.1 }, { lat: 53.1, lng: 10 }], 'Schlusspunkt faellt weg, [lat,lng] -> {lat,lng}')
+assert.deepEqual(flaechePunkte(null), [], 'keine Flaeche')
+assert.deepEqual(flaechePunkte([[[53, 10], [53, 10.1], [53.1, 10]]]).length, 3, 'offener Ring bleibt ganz')
+assert.equal(gleicheFlaeche(pkt, flaechePunkte(ringe)), true, 'blosses Oeffnen ist keine Aenderung')
+assert.equal(gleicheFlaeche(pkt, pkt.slice(0, 2)), false, 'ein Punkt weniger')
+assert.equal(gleicheFlaeche(pkt, [pkt[0], pkt[1], { lat: 53.1, lng: 10.0001 }]), false, 'ein Punkt verschoben')
+assert.equal(gleicheFlaeche(pkt, [pkt[1], pkt[0], pkt[2]]), false, 'Reihenfolge zaehlt')
+assert.equal(gleicheFlaeche([], []), true, 'leer bleibt leer')
 
 // --- markierungAus(): der Ausgangszustand der Karte ---
 const einTreiben: Treiben = {

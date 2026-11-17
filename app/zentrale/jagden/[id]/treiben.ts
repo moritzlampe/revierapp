@@ -34,6 +34,12 @@ export interface Treiben {
   sequence: number
   status: string
   stands: TreibenStand[]
+  /**
+   * Die Treiben-Fläche (`hunt_drives.polygon`, P2c), roh wie PostgREST sie
+   * liefert (GeoJSON-Objekt) — geparst wird im Bereich mit `parsePolygonHex`,
+   * weil diese Datei importfrei bleibt. `null` = keine Fläche.
+   */
+  polygon: unknown
 }
 
 /**
@@ -74,6 +80,8 @@ export interface TreibenZeile {
   name: string
   sequence: number
   status: string
+  /** Optional: der Verteilen-Bereich liest dieselbe Zeile, braucht die Fläche aber nicht. */
+  polygon?: unknown
   hunt_drive_stands: {
     id: string
     map_object_id: string | null
@@ -95,6 +103,7 @@ export function ausZeilen(zeilen: readonly TreibenZeile[]): Treiben[] {
     name: z.name,
     sequence: z.sequence,
     status: z.status,
+    polygon: z.polygon ?? null,
     stands: z.hunt_drive_stands.flatMap<TreibenStand>((s) =>
       s.map_object_id
         ? [{ id: s.id, standId: s.map_object_id, fest: true }]
@@ -230,4 +239,25 @@ export function standDiff(
   const legen = [...markiert].filter((id) => !vorhanden.has(id) && sichtbar.has(id))
 
   return { loeschen, legen }
+}
+
+/**
+ * Der Ring einer gespeicherten Fläche als Punktliste OHNE den Schlusspunkt —
+ * genau so, wie `useBoundaryEditor.startEditing` ihn in den Entwurf lädt. Nur
+ * dann ist der Vergleich mit dem Entwurf (`gleicheFlaeche`) beim blossen Öffnen
+ * gleich, und ein Klick auf Speichern schreibt kein ungefragtes UPDATE.
+ */
+export function flaechePunkte(ringe: [number, number][][] | null): { lat: number; lng: number }[] {
+  const ring = ringe?.[0] ?? []
+  const n = ring.length
+  const zu = n > 1 && ring[0][0] === ring[n - 1][0] && ring[0][1] === ring[n - 1][1]
+  return (zu ? ring.slice(0, -1) : ring).map(([lat, lng]) => ({ lat, lng }))
+}
+
+/** Gleiche Punkte in gleicher Reihenfolge — sonst ist die Fläche geändert. */
+export function gleicheFlaeche(
+  a: readonly { lat: number; lng: number }[],
+  b: readonly { lat: number; lng: number }[],
+): boolean {
+  return a.length === b.length && a.every((p, i) => p.lat === b[i].lat && p.lng === b[i].lng)
 }

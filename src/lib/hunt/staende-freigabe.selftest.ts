@@ -11,6 +11,7 @@ import {
   STAENDE_VORLAUF_MS,
   UHR_PUFFER_MS,
   freigabeHinweis,
+  freigabeKarteFrei,
   freigabeRueckfrage,
   staendeAb,
   staendeAbErreicht,
@@ -61,7 +62,7 @@ assert.equal(freigabeHinweis(null, VORHER), 'Ohne Freigabe automatisch beim Jagd
 
 assert.equal(
   freigabeRueckfrage('alles', TERMIN, VORHER),
-  'Alle zugesagten Schützen sehen dann ihren Stand und die Sitzordnung. Ohne Freigabe geschieht das automatisch am 01.12. um 06:00.',
+  'Alle zugesagten Schützen sehen dann ihren Stand und die Sitzordnung. Ohne Freigabe geschieht das automatisch am 01.12. um 06:00. Die Revierkarte sehen sie damit sofort und können sie herunterladen.',
 )
 assert.equal(
   freigabeRueckfrage('eigener', null, VORHER),
@@ -71,5 +72,25 @@ assert.equal(
   freigabeRueckfrage(undefined, TERMIN, ms('2026-12-01T03:00:00Z')),
   'Alle zugesagten Schützen sehen dann ihren Stand. Ohne Freigabe geschieht das automatisch heute um 06:00.',
 )
+
+// CP-137 (161): Kartensatz nur unter `alles`, Einrichtungen unter `umkreis`, nie am Jagdtag — wie die App.
+assert.equal(
+  freigabeRueckfrage('umkreis', TERMIN, VORHER),
+  'Alle zugesagten Schützen sehen dann ihren Stand. Ohne Freigabe geschieht das automatisch am 01.12. um 06:00. Die Einrichtungen in ihrem Umkreis sehen sie damit sofort.',
+)
+assert.equal(
+  freigabeRueckfrage('alles', TERMIN, ms('2026-12-01T03:00:00Z')),
+  'Alle zugesagten Schützen sehen dann ihren Stand und die Sitzordnung. Ohne Freigabe geschieht das automatisch heute um 06:00.',
+  'am Jagdtag ist die Karte ohnehin offen',
+)
+assert.equal(
+  freigabeRueckfrage('alles', null, VORHER),
+  'Alle zugesagten Schützen sehen dann ihren Stand und die Sitzordnung. Ohne Freigabe geschieht das automatisch beim Jagdstart.'+' Die Revierkarte sehen sie damit sofort und können sie herunterladen.',
+  'ohne Termin: kein Jagdtag bekannt, Satz bleibt (App: z === null)',
+)
+assert.equal(freigabeKarteFrei('alles'), 'Die Revierkarte sehen sie schon vor dem Jagdtag.')
+assert.equal(freigabeKarteFrei('umkreis'), 'Die Einrichtungen in ihrem Umkreis sehen sie schon vor dem Jagdtag.')
+assert.equal(freigabeKarteFrei('eigener'), '')
+assert.equal(freigabeKarteFrei(undefined), '')
 
 console.log('staende-freigabe: alle Proben grün')
