@@ -10,6 +10,7 @@ import { STAND_TYPEN } from '../../objekte'
 import type { AblageProps, Punkt } from '../../revierkarte-map'
 import { schreibe, SchreibFehler } from '../../schreiben'
 import { vorbereitbar } from '../jagden'
+import StaendeFreigabe, { type FreigabeDaten } from './staende-freigabe'
 import {
   adhocPunkte,
   angebotAus,
@@ -83,6 +84,8 @@ export interface VerteilenProps {
   pruefung: Record<string, Pruefung> | null
   punkte: Punkt[]
   grenze: [number, number][][] | null
+  /** Freigabe der Stände (CP-116): Kopfdaten der Jagd. */
+  freigabe: FreigabeDaten
 }
 
 const SITZ_SELECT = 'id, user_id, seat_id, seat_type, seat_name, position_lat, position_lng, map_objects ( name )'
@@ -583,14 +586,14 @@ export default function VerteilenBereich(props: VerteilenProps) {
         Schützen verteilen
       </h2>
 
-      {/* Bis die Sichtgrenze steht (CP-116), sieht ein zugesagter Schütze sofort,
-          was hier geplant wird — damit niemand im Glauben plant, es sei
-          verborgen (Bauplan §9 D1, ganze Matrix). */}
-      <p className="zentrale-hinweis">
-        Zugesagte Schützen sehen derzeit sofort: ihren jagdweiten Stand im Banner der App und alle
-        ihre Stände (auch aus geplanten Treiben) auf der Karte. Den Stand eines Treibens nennt der
-        Banner erst beim Start.
-      </p>
+      {/* Wer was sieht, sagt seit CP-116 (Migration 146) die Freigabe — hier
+          stand bis dahin „Zugesagte Schützen sehen derzeit sofort …" (Bauplan
+          Verteilen §9 D1). Satz und Schalter leben in `staende-freigabe.tsx`. */}
+      <StaendeFreigabe
+        jagdId={jagdId}
+        daten={props.freigabe}
+        treibenGestartet={props.treiben.some((t) => t.status !== 'pending')}
+      />
 
       {matrix.laeuft && (
         <p className="zentrale-fehler" role="status">

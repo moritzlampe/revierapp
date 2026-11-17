@@ -122,9 +122,10 @@ export default async function JagdDetailPage({
         // 138/140/141). Gelesen wird roh; was unlesbar ist, zeigt
         // `regeln-bereich.tsx` als „nicht lesbar", nicht als leer.
         // `freigabe_version` (140) für den Compare-and-Swap des
-        // Freigabe-Editors (P1c, E7).
+        // Freigabe-Editors (P1c, E7). `map_open` = Freigabe der Stände
+        // (CP-116, Migration 146) für `staende-freigabe.tsx`.
         .select(
-          'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id, kind, freigabe, freigabe_regeln, freigabe_version, jagdregeln, schuetzen_sicht, sicht_umkreis_m, gruppenleiter_sicht'
+          'id, name, type, status, scheduled_for, scheduled_until, started_at, ended_at, created_at, creator_id, district_id, kind, freigabe, freigabe_regeln, freigabe_version, jagdregeln, schuetzen_sicht, sicht_umkreis_m, gruppenleiter_sicht, map_open'
         )
         .eq('id', id)
         .maybeSingle(),
@@ -509,6 +510,13 @@ export default async function JagdDetailPage({
           pruefung={pruefung}
           punkte={punkte}
           grenze={parsePolygonHex(revier.boundary)}
+          freigabe={{
+            kind: jagd.kind,
+            mapOpen: jagd.map_open === true,
+            scheduledFor: jagd.scheduled_for,
+            startedAt: jagd.started_at,
+            schuetzenSicht: jagd.schuetzen_sicht,
+          }}
         />
       ) : null}
     </div>
