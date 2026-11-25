@@ -209,6 +209,9 @@ async function filterStummgeschaltete(
   )
 }
 
+/** Kennung eines Kontos im Rumpf (Zweig `stern`): sonst endete ein Tippfehler als 500 aus der RPC. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function POST(request: Request) {
   try {
     const { huntId, groupId, messageText, isDirect, chatName, url, recipientUserId, kind, type, event, driveName, licenseId, sprungHuntId, sprungAnblickId } = await request.json()
@@ -219,7 +222,8 @@ export async function POST(request: Request) {
     // schein-Push (31.07.2026) aus demselben Grund: sein Text entsteht aus
     // Aussteller und Reviername, beide serverseitig aufgelöst — der Absender
     // kann kein Wort davon bestimmen.
-    if (type !== 'drive' && type !== 'schein' && !messageText) {
+    // stern-Push (CN-577, Migration 166): ebenso fester Text aus dem Absendernamen.
+    if (type !== 'drive' && type !== 'schein' && type !== 'stern' && !messageText) {
       return NextResponse.json({ error: 'messageText ist Pflicht' }, { status: 400 })
     }
 
@@ -325,6 +329,30 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true })
       }
       recipientUserIds = [empfaenger as string]
+    } else if (type === 'stern') {
+      // Stern unter Freunden (CN-577, Bauplan „Stand und Akku" E10): „<Name>
+      // zeigt dir auf gemeinsamen Jagden seinen Standort". OB die Push geht,
+      // entscheidet die DB, nicht der Rumpf: `stern_push_beanspruchen` setzt
+      // atomar `push_am` und antwortet nur `true`, wenn der ABSENDER (aus dem
+      // Token, nie aus dem Body) dem Empfänger einen aktiven Stern gibt, die
+      // Rückfrage offen ist, keine Gegen-Freigabe besteht und die letzte Push
+      // älter als 7 Tage ist. Ein Doppeltipp ergibt eine Push.
+      if (typeof recipientUserId !== 'string' || !UUID_RE.test(recipientUserId)) {
+        return NextResponse.json({ error: 'recipientUserId ist Pflicht' }, { status: 400 })
+      }
+      const { data: beansprucht, error: sternFehler } = await supabase.rpc('stern_push_beanspruchen', {
+        p_geber: senderId,
+        p_empfaenger: recipientUserId,
+      })
+      // Wie beim schein: ein fehlendes EXECUTE sähe sonst aus wie „kein Stern".
+      if (sternFehler) {
+        console.error('Push-Route stern: Anspruch nicht prüfbar:', sternFehler)
+        return NextResponse.json({ error: 'Interner Fehler' }, { status: 500 })
+      }
+      if (beansprucht !== true) {
+        return NextResponse.json({ ok: true })
+      }
+      recipientUserIds = [recipientUserId]
     } else if (type === 'drive') {
       // Treiben-Push (T0.C1 D4): gleiche Empfänger wie der Jagd-Chat — zugesagte
       // Teilnehmer der Jagd, Sender rausgefiltert.
@@ -585,17 +613,21 @@ export async function POST(request: Request) {
     //
     // Das Muster ist nicht neu: `type === 'schein'` antwortet aus demselben
     // Grund seit je neutral (s. unten). Hier kommt der Chat dazu.
-    const verbirgtVersand = type === 'schein' || stummGruppeId !== null
+    const verbirgtVersand = type === 'schein' || type === 'stern' || stummGruppeId !== null
 
     if (recipientUserIds.length === 0) {
       return NextResponse.json(verbirgtVersand ? { ok: true } : { sent: 0 })
     }
 
     // Push-Subscriptions aller Empfänger laden (inkl. kind für die web/expo-Partition)
-    const { data: subscriptions } = await supabase
+    const { data: subscriptions, error: abosFehler } = await supabase
       .from('push_subscriptions')
       .select('id, user_id, subscription, kind')
       .in('user_id', recipientUserIds)
+    // Bisher still als „keine Abos" gelesen (Codex App C5). Verhalten bleibt, der
+    // Fehler steht jetzt im Log. Beim `stern` ist der 7-Tage-Anspruch dann
+    // verbraucht — benannter Preis: die Rückfrage steht trotzdem in der Gästeliste.
+    if (abosFehler) console.error('Push-Route: Abos nicht lesbar:', abosFehler)
 
     if (!subscriptions || subscriptions.length === 0) {
       // Diese Stelle erreicht ein schein-Request, sobald der Eingeladene zwar
@@ -643,6 +675,11 @@ export async function POST(request: Request) {
       body = scheinRevier
         ? `${wer} hat dir einen Begehungsschein für ${scheinRevier} ausgestellt.`
         : `${wer} hat dir einen Begehungsschein ausgestellt.`
+    } else if (type === 'stern') {
+      title = 'Standort freigegeben'
+      const wer = displayName || 'Jemand'
+      // Antworten geht nur in der App (Codex App C2): die PWA hat keine Gästeliste mit Stern.
+      body = `${wer} zeigt dir auf gemeinsamen Jagden seinen Standort. Zurück freigeben kannst du in der App unter Du → Gästeliste.`
     } else if (kind === 'rsvp') {
       // RSVP-Benachrichtigung: "Hans hat zugesagt" (messageText = "hat zugesagt").
       title = chatName || 'QuickHunt'
@@ -690,7 +727,7 @@ export async function POST(request: Request) {
     // Für schein gar nicht erst aus dem Body: das Ziel steht fest, und was
     // feststeht, soll der Aufrufer nicht bestimmen können.
     const safeUrl =
-      type === 'schein'
+      type === 'schein' || type === 'stern'
         ? '/app/du'
         : typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')
           ? url
@@ -718,7 +755,9 @@ export async function POST(request: Request) {
         ? `drive-${huntId}`
         : type === 'schein'
           ? `schein-${licenseId}`
-          : (groupId || huntId || recipientUserId || 'chat'),
+          : type === 'stern'
+            ? `stern-${senderId}`
+            : (groupId || huntId || recipientUserId || 'chat'),
       ...(type === 'drive' ? { data: { huntId, event } } : {}),
     })
 
@@ -811,7 +850,9 @@ export async function POST(request: Request) {
             ? { huntId, event }
             : type === 'schein'
               ? { type: 'schein', url: safeUrl }
-              : chatGruppeId
+              : type === 'stern'
+                ? { type: 'stern', url: safeUrl }
+                : chatGruppeId
                 ? { type: 'chat', groupId: chatGruppeId, url: safeUrl, ...(sprungZiel ?? {}) }
                 : { url: safeUrl },
       }))
